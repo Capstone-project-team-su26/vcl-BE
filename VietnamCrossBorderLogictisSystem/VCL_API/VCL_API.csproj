@@ -10,4 +10,8 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\VCL_BLL\VCL_BLL.csproj" />
+  </ItemGroup>
+
 </Project>
