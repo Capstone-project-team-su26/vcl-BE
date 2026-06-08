@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Threading.Tasks;
+using VCL_DLL.Interface;
 using VCL_DLL.Models;
 
 namespace VCL_DLL.Repositories
