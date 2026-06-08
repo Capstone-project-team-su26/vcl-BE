@@ -2,8 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
-using VCL_BLL.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Authorization;
+using VCL_BLL.Interface;
 
 namespace VCL_API.Controllers
 {
@@ -18,7 +19,11 @@ namespace VCL_API.Controllers
             _authService = authService;
         }
 
+        /// <summary>
+        /// Register a new user account
+        /// </summary>
         [HttpPost("register")]
+        [AllowAnonymous]
         public async Task<IActionResult> Register(RegisterRequest request)
         {
             try
@@ -32,7 +37,11 @@ namespace VCL_API.Controllers
             }
         }
 
+        /// <summary>
+        /// Login and get JWT token
+        /// </summary>
         [HttpPost("login")]
+        [AllowAnonymous]
         public async Task<IActionResult> Login(LoginRequest request)
         {
             try
