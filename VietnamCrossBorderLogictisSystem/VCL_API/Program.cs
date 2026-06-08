@@ -1,3 +1,5 @@
+using VCL_API.Injection;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -6,6 +8,9 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Add project services
+builder.Services.AddProjectServices(builder.Configuration);
 
 var app = builder.Build();
 
