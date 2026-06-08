@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace VCL_DLL.Repositories
+namespace VCL_DLL.Interface
 {
     public interface IGenericRepository<T> where T : class
     {

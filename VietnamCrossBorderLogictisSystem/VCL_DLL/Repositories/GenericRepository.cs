@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using VCL_DLL.Models;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using VCL_DLL.Interface;
 
 namespace VCL_DLL.Repositories
 {

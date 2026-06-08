@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using VCL_DLL.Models;
 
-namespace VCL_DLL.Repositories
+namespace VCL_DLL.Interface
 {
     public interface IUnitOfWork : IDisposable
     {
