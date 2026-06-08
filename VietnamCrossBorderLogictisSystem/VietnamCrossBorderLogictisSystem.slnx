@@ -1,1 +1,5 @@
-<Solution />
+<Solution>
+  <Project Path="VCL_API/VCL_API.csproj" Id="aaf2791f-b9c0-447d-afcf-720b92ee1456" />
+  <Project Path="VCL_BLL/VCL_BLL.csproj" Id="aa323f04-8541-44c1-93a8-2b4415e9b4f6" />
+  <Project Path="VCL_DLL/VCL_DLL.csproj" Id="5569a583-a252-4853-99c9-906ab94fe776" />
+</Solution>
