@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using VCL_DLL.Interface;
@@ -24,6 +24,7 @@ namespace VCL_API.Injection
             services.AddScoped<IUnitOfWork, UnitOfWork>();
 
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IEmailService, EmailService>();
 
             // Add JWT Authentication
             var jwtSettings = configuration.GetSection("JWT");
