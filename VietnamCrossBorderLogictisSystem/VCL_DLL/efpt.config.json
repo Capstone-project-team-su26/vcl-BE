@@ -1,0 +1,162 @@
+﻿{
+   "CodeGenerationMode": 4,
+   "ContextClassName": "VCLDBContext",
+   "ContextNamespace": null,
+   "FilterSchemas": false,
+   "IncludeConnectionString": false,
+   "IrregularWords": null,
+   "MinimumProductVersion": "2.6.1465",
+   "ModelNamespace": null,
+   "OutputContextPath": null,
+   "OutputPath": "Models",
+   "PluralRules": null,
+   "PreserveCasingWithRegex": true,
+   "ProjectRootNamespace": "VCL_DLL",
+   "Schemas": null,
+   "SelectedHandlebarsLanguage": 2,
+   "SelectedToBeGenerated": 0,
+   "SingularRules": null,
+   "T4TemplatePath": null,
+   "Tables": [
+      {
+         "Name": "[dbo].[BINS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[CARRIERS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[COMPANIES]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[CUSTOMERS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[CUSTOMS_DECLARATIONS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[CUSTOMS_DOCUMENTS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[CUSTOMS_TAXES]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[DOMESTIC_WAYBILLS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[INVOICE_ITEMS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[INVOICES]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[MASTER_BOXES]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[NOTIFICATIONS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[ORDER_ITEMS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[ORDERS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[PARCELS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[PAYMENTS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[QUOTATIONS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[RESTRICTED_ITEMS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[SERVICE_PRICINGS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[SHELVES]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[SHIPMENT_HANDOVERS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[SHIPMENTS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[SUPPORT_TICKETS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[TRACKINGS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[USERS]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[WAREHOUSE_ZONES]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[WAREHOUSES]",
+         "ObjectType": 0
+      },
+      {
+         "Name": "[dbo].[WRO_REQUESTS]",
+         "ObjectType": 0
+      }
+   ],
+   "UiHint": null,
+   "UncountableWords": null,
+   "UseAsyncStoredProcedureCalls": true,
+   "UseBoolPropertiesWithoutDefaultSql": false,
+   "UseDatabaseNames": false,
+   "UseDatabaseNamesForRoutines": true,
+   "UseDateOnlyTimeOnly": true,
+   "UseDbContextSplitting": false,
+   "UseDecimalDataAnnotationForSprocResult": true,
+   "UseFluentApiOnly": true,
+   "UseHandleBars": false,
+   "UseHierarchyId": false,
+   "UseInflector": true,
+   "UseInternalAccessModifiersForSprocsAndFunctions": false,
+   "UseLegacyPluralizer": false,
+   "UseManyToManyEntity": false,
+   "UseNoDefaultConstructor": false,
+   "UseNoNavigations": false,
+   "UseNoObjectFilter": false,
+   "UseNodaTime": false,
+   "UseNullableReferences": false,
+   "UsePrefixNavigationNaming": false,
+   "UseSchemaFolders": false,
+   "UseSchemaNamespaces": false,
+   "UseSpatial": false,
+   "UseT4": false,
+   "UseT4Split": false,
+   "UseTypedTvpParameters": true
+}
