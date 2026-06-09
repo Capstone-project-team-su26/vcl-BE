@@ -1,0 +1,6 @@
+@VCL_API_HostAddress = http://localhost:5209
+
+GET {{VCL_API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
