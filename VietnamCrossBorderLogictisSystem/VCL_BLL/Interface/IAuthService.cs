@@ -7,15 +7,5 @@ namespace VCL_BLL.Interface
     {
         Task<AuthResponse> LoginAsync(LoginRequest request);
         Task<Guid> RegisterAsync(RegisterRequest request);
-
-        /// <summary>
-        /// Xử lý yêu cầu quên mật khẩu: sinh token và gửi email.
-        /// </summary>
-        Task ForgotPasswordAsync(ForgotPasswordRequestDto request);
-
-        /// <summary>
-        /// Xác thực token và đặt lại mật khẩu mới.
-        /// </summary>
-        Task ResetPasswordAsync(ResetPasswordRequestDto request);
     }
 }
