@@ -1,209 +1,199 @@
-# VCL Backend — Tài liệu tích hợp API cho Frontend
+# VCL Backend - Tài liệu tích hợp API cho Frontend
 
-> **Hệ thống:** Vietnam Cross-Border Logistics System (VCL)  
-> **Cập nhật:** 10/06/2026  
-> **Phiên bản API:** Đang phát triển (hiện có module **Authentication**)
-
----
-
-## Mục lục
-
-1. [Thông tin chung](#1-thông-tin-chung)
-2. [Xác thực JWT](#2-xác-thực-jwt)
-3. [Định dạng lỗi](#3-định-dạng-lỗi)
-4. [API Authentication](#4-api-authentication)
-5. [API Quản lý Người dùng (Admin)](#5-api-quản-lý-người-dùng-admin)
-6. [TypeScript types (tham khảo)](#6-typescript-types-tham-khảo)
-7. [Ví dụ gọi API](#7-ví-dụ-gọi-api)
-8. [Lưu ý cho FE](#8-lưu-ý-cho-fe)
-9. [API dự kiến (chưa triển khai)](#9-api-dự-kiến-chưa-triển-khai)
-
----
+> Hệ thống: Vietnam Cross-Border Logistics System (VCL)
+>
+> Cập nhật: 12/06/2026
+>
+> Module hiện có: Authentication và User Management
 
 ## 1. Thông tin chung
 
-### Base URL (Development)
+### Base URL Development
 
 | Profile | URL |
-|---------|-----|
+|---|---|
 | HTTP | `http://localhost:5209` |
 | HTTPS | `https://localhost:7237` |
-| IIS Express | `http://localhost:54037` / `https://localhost:44395` |
 
-**Prefix chung:** Tất cả endpoint đều nằm dưới `/api/...`
+Swagger UI: `{BASE_URL}/swagger`
 
-**Swagger UI (chỉ môi trường Development):** `{BASE_URL}/swagger`
+Tất cả request/response JSON sử dụng `camelCase`.
 
-### Headers mặc định
+### Headers
 
-| Header | Giá trị | Bắt buộc |
-|--------|---------|----------|
-| `Content-Type` | `application/json` | Có (với POST có body) |
-| `Accept` | `application/json` | Khuyến nghị |
-| `Authorization` | `Bearer {accessToken}` | Có (với API yêu cầu đăng nhập) |
-
-### Quy ước đặt tên JSON
-
-- Backend ASP.NET Core mặc định serialize JSON theo **camelCase** (ví dụ: `fullName`, `userId`).
-- Các field kiểu `DateTime` trả về dạng ISO 8601 UTC (ví dụ: `2026-06-10T08:30:00Z`).
-- Field `Guid` trả về dạng chuỗi UUID (ví dụ: `"3fa85f64-5717-4562-b3fc-2c963f66afa6"`).
-
----
-
-## 2. Xác thực JWT
-
-Sau khi **đăng nhập thành công**, FE lưu `token` từ response và gửi kèm mọi request cần bảo vệ:
-
-```
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```http
+Content-Type: application/json
+Authorization: Bearer {accessToken}
 ```
 
-### Thông tin token
+Header `Authorization` chỉ bắt buộc với API có ghi chú `Admin`.
 
-| Thuộc tính | Giá trị |
-|------------|---------|
-| Thuật toán | HS256 |
-| Issuer | `vcl-system` |
-| Audience | `vcl-clients` |
-| Thời hạn | **240 phút** (4 giờ) — cấu hình trong `JWT:TokenValidityInMinutes` |
+## 2. JWT Authentication
 
-### Claims bên trong JWT
+Sau khi đăng nhập, FE lưu `token` và gắn vào các request được bảo vệ:
+
+```typescript
+config.headers.Authorization = `Bearer ${token}`;
+```
+
+JWT hiện có các claim:
 
 | Claim | Nội dung |
-|-------|----------|
-| `nameid` | `UserId` (Guid) |
-| `unique_name` | Họ tên đầy đủ |
-| `email` | Email đăng nhập |
-| `role` | Vai trò (`User`, …) |
+|---|---|
+| `nameid` | User ID |
+| `name` | Họ tên |
+| `email` | Email |
+| `role` | Vai trò người dùng |
 
-### Phản hồi khi token không hợp lệ / hết hạn
+Token mặc định có hiệu lực 240 phút. Hệ thống chưa có refresh token.
 
-- HTTP **401 Unauthorized**
-- FE nên redirect về trang đăng nhập hoặc gọi lại flow login.
+| Status | Ý nghĩa |
+|---|---|
+| `401 Unauthorized` | Thiếu token, token sai/hết hạn hoặc đăng nhập thất bại |
+| `403 Forbidden` | Token hợp lệ nhưng không có role được yêu cầu |
 
-> **Lưu ý:** Hiện chưa có API refresh token. Khi token hết hạn, người dùng cần đăng nhập lại.
+Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ `Bearer`.
 
----
+## 3. Tổng hợp endpoint
 
-## 3. Định dạng lỗi
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| `POST` | `/api/Auth/customer/register` | Public | Khởi tạo đăng ký khách hàng và gửi OTP |
+| `POST` | `/api/Auth/customer/verify-otp` | Public | Xác thực OTP và kích hoạt tài khoản |
+| `POST` | `/api/Auth/customer/resend-otp` | Public | Gửi lại OTP |
+| `POST` | `/api/Auth/login` | Public | Đăng nhập và nhận JWT |
+| `POST` | `/api/Auth/forgot-password` | Public | Gửi reset token qua email |
+| `POST` | `/api/Auth/reset-password` | Public | Đặt lại mật khẩu |
+| `POST` | `/api/Auth/admin/register` | Admin | Admin tạo tài khoản nhân viên |
+| `PUT` | `/api/User/{id}/lock` | Admin | Khóa tài khoản |
+| `PUT` | `/api/User/{id}/unlock` | Admin | Mở khóa tài khoản |
 
-Các endpoint Auth trả lỗi theo dạng object JSON:
+## 4. Đăng ký khách hàng
 
-```json
-{
-  "message": "Mô tả lỗi"
-}
+### 4.1. Gửi thông tin đăng ký
+
+```http
+POST /api/Auth/customer/register
 ```
-
-| HTTP Status | Ý nghĩa thường gặp |
-|-------------|-------------------|
-| `400 Bad Request` | Dữ liệu không hợp lệ / business rule (ví dụ: email không tồn tại) |
-| `401 Unauthorized` | Sai email hoặc mật khẩu |
-| `409 Conflict` | Email đã được đăng ký |
-| `201 Created` | Đăng ký thành công |
-| `200 OK` | Thao tác thành công |
-
----
-
-## 4. API Authentication
-
-**Controller:** `AuthController`  
-**Base route:** `/api/auth`
-
----
-
-### 4.1. Đăng ký tài khoản
-
-```
-POST /api/auth/register
-```
-
-**Auth:** Không cần (`AllowAnonymous`)
-
-**Request body:**
 
 ```json
 {
   "fullName": "Nguyễn Văn A",
-  "email": "user@example.com",
-  "password": "YourPassword123",
-  "phone": "0901234567"
+  "email": "customer@example.com",
+  "password": "Password123",
+  "phone": "0901234567",
+  "country": "Vietnam",
+  "address": "Ho Chi Minh City"
 }
 ```
 
-| Field | Type | Bắt buộc | Mô tả |
-|-------|------|----------|-------|
-| `fullName` | `string` | Có | Họ và tên |
-| `email` | `string` | Có | Email (unique, không phân biệt hoa thường) |
-| `password` | `string` | Có | Mật khẩu (được hash BCrypt phía server) |
-| `phone` | `string` | Có | Số điện thoại |
+| Field | Ràng buộc |
+|---|---|
+| `fullName` | Bắt buộc, tối đa 255 ký tự |
+| `email` | Bắt buộc, đúng định dạng email, tối đa 255 ký tự |
+| `password` | Bắt buộc, từ 8 đến 100 ký tự |
+| `phone` | Bắt buộc, đúng định dạng số điện thoại, tối đa 50 ký tự |
+| `country` | Bắt buộc, tối đa 100 ký tự |
+| `address` | Bắt buộc |
 
-**Response thành công — `201 Created`**
+Response `200 OK`:
 
 ```json
 {
-  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+  "message": "OTP da duoc gui den email cua ban."
 }
 ```
 
-**Response lỗi — `409 Conflict`**
+Sau request này:
+
+- `User` và `Customer` được tạo với status `PendingVerification`.
+- OTP gồm 6 chữ số, có hiệu lực 5 phút.
+- Không được yêu cầu gửi OTP mới trong vòng 60 giây.
+- Tài khoản chưa thể đăng nhập trước khi xác thực OTP.
+
+Response thường gặp:
+
+| Status | Trường hợp |
+|---|---|
+| `400` | Gửi OTP lại quá sớm hoặc dữ liệu validation không hợp lệ |
+| `409` | Email đã được sử dụng |
+
+### 4.2. Xác thực OTP
+
+```http
+POST /api/Auth/customer/verify-otp
+```
 
 ```json
 {
-  "message": "Email already in use"
+  "email": "customer@example.com",
+  "otp": "123456"
 }
 ```
 
-**Hành vi phía server khi đăng ký thành công:**
-- `role` = `"User"`
-- `userType` = `"Customer"`
-- `status` = `"Active"`
+`otp` bắt buộc gồm đúng 6 chữ số.
 
----
-
-### 4.2. Đăng nhập
-
-```
-POST /api/auth/login
-```
-
-**Auth:** Không cần (`AllowAnonymous`)
-
-**Request body:**
+Response `200 OK`:
 
 ```json
 {
-  "email": "user@example.com",
-  "password": "YourPassword123"
+  "message": "Dang ky tai khoan thanh cong.",
+  "customerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 }
 ```
 
-| Field | Type | Bắt buộc | Mô tả |
-|-------|------|----------|-------|
-| `email` | `string` | Có | Email đăng nhập |
-| `password` | `string` | Có | Mật khẩu |
+Khi thành công, status của `User` và `Customer` được chuyển thành `Active`.
 
-**Response thành công — `200 OK`**
+Response `400 Bad Request` khi OTP sai, hết hạn, không tồn tại hoặc đã nhập sai quá 5 lần.
+
+### 4.3. Gửi lại OTP
+
+```http
+POST /api/Auth/customer/resend-otp
+```
+
+```json
+{
+  "email": "customer@example.com"
+}
+```
+
+Response `200 OK`:
+
+```json
+{
+  "message": "OTP moi da duoc gui den email cua ban."
+}
+```
+
+Chỉ được gửi lại sau 60 giây. OTP cũ hết hiệu lực khi OTP mới được tạo.
+
+## 5. Đăng nhập
+
+```http
+POST /api/Auth/login
+```
+
+```json
+{
+  "email": "customer@example.com",
+  "password": "Password123"
+}
+```
+
+Response `200 OK`:
 
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expiresAt": "2026-06-10T12:30:00Z",
+  "expiresAt": "2026-06-12T04:00:00Z",
   "userId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "fullName": "Nguyễn Văn A",
-  "role": "User"
+  "role": "Customer"
 }
 ```
 
-| Field | Type | Mô tả |
-|-------|------|-------|
-| `token` | `string` | JWT access token — lưu vào localStorage / cookie / memory |
-| `expiresAt` | `string` (ISO 8601) | Thời điểm token hết hạn (UTC) |
-| `userId` | `string` (Guid) | ID người dùng |
-| `fullName` | `string` | Họ tên |
-| `role` | `string` | Vai trò trong hệ thống |
-
-**Response lỗi — `401 Unauthorized`**
+Response `401 Unauthorized`:
 
 ```json
 {
@@ -211,29 +201,23 @@ POST /api/auth/login
 }
 ```
 
----
+API không cho đăng nhập nếu tài khoản bị khóa, chưa `Active`, hoặc Customer chưa xác thực email.
 
-### 4.3. Quên mật khẩu
+## 6. Quản lý mật khẩu
 
+### 6.1. Quên mật khẩu
+
+```http
+POST /api/Auth/forgot-password
 ```
-POST /api/auth/forgot-password
-```
-
-**Auth:** Không cần (`AllowAnonymous`)
-
-**Request body:**
 
 ```json
 {
-  "email": "user@example.com"
+  "email": "customer@example.com"
 }
 ```
 
-| Field | Type | Bắt buộc | Mô tả |
-|-------|------|----------|-------|
-| `email` | `string` | Có | Email tài khoản cần đặt lại mật khẩu |
-
-**Response thành công — `200 OK`**
+Response `200 OK`:
 
 ```json
 {
@@ -241,46 +225,24 @@ POST /api/auth/forgot-password
 }
 ```
 
-**Response lỗi — `400 Bad Request`**
+Backend gửi reset token qua email. Token có hiệu lực 1 giờ.
+
+Response `400 Bad Request` nếu email không tồn tại.
+
+### 6.2. Đặt lại mật khẩu
+
+```http
+POST /api/Auth/reset-password
+```
 
 ```json
 {
-  "message": "Email không tồn tại trong hệ thống."
+  "token": "reset-token-from-email",
+  "newPassword": "NewPassword123"
 }
 ```
 
-**Flow phía FE cần biết:**
-1. User nhập email → gọi API này.
-2. Backend gửi email chứa **reset token** (URL-safe Base64, hiệu lực **1 giờ**).
-3. Token được hiển thị trong email (chưa có deep-link URL — FE cần có trang nhập token + mật khẩu mới).
-
-**Gợi ý UI FE:** Trang `/reset-password` với 2 field: `token` (copy từ email) và `newPassword`.
-
----
-
-### 4.4. Đặt lại mật khẩu
-
-```
-POST /api/auth/reset-password
-```
-
-**Auth:** Không cần (`AllowAnonymous`)
-
-**Request body:**
-
-```json
-{
-  "token": "abc123-url-safe-base64-token",
-  "newPassword": "NewSecurePassword456"
-}
-```
-
-| Field | Type | Bắt buộc | Mô tả |
-|-------|------|----------|-------|
-| `token` | `string` | Có | Token nhận từ email (forgot-password) |
-| `newPassword` | `string` | Có | Mật khẩu mới |
-
-**Response thành công — `200 OK`**
+Response `200 OK`:
 
 ```json
 {
@@ -288,41 +250,61 @@ POST /api/auth/reset-password
 }
 ```
 
-**Response lỗi — `400 Bad Request`**
+Response `400 Bad Request` nếu token không hợp lệ hoặc đã hết hạn.
+
+## 7. Admin tạo tài khoản nhân viên
+
+```http
+POST /api/Auth/admin/register
+Authorization: Bearer {adminToken}
+```
+
+Yêu cầu JWT có role chính xác là `Admin`.
 
 ```json
 {
-  "message": "Token không hợp lệ hoặc đã hết hạn."
+  "fullName": "SALE 01",
+  "email": "sale01@employee.com",
+  "password": "Employee123",
+  "phone": "0999999999",
+  "role": "Sale"
 }
 ```
 
----
+Response `201 Created`:
 
-## 5. API Quản lý Người dùng (Admin)
-
-**Controller:** `UserController`  
-**Base route:** `/api/user`
-
-> **Lưu ý quan trọng:** Các API trong phần này yêu cầu người dùng phải đăng nhập và có quyền `Admin`. Truyền header `Authorization: Bearer <token>` vào request.
-
----
-
-### 5.1. Khóa tài khoản
-
-Khóa tài khoản người dùng có dấu hiệu vi phạm hoặc nghỉ việc. Khi tài khoản bị khóa, người dùng sẽ không thể đăng nhập.
-
-```
-PUT /api/user/{id}/lock
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+}
 ```
 
-**Auth:** Yêu cầu quyền `Admin` (`[Authorize(Roles = "Admin")]`)
+Tài khoản được tạo với:
 
-**Path parameters:**
-| Parameter | Type | Bắt buộc | Mô tả |
-|-----------|------|----------|-------|
-| `id` | `string` (Guid) | Có | ID của người dùng cần khóa |
+- `userType = "Employee"`
+- `status = "Active"`
+- `role` lấy từ request
 
-**Response thành công — `200 OK`**
+Response:
+
+| Status | Trường hợp |
+|---|---|
+| `401` | Thiếu/sai/hết hạn token |
+| `403` | Token không có role `Admin` |
+| `409` | Email đã được sử dụng |
+
+Lưu ý: backend hiện chưa giới hạn danh sách role nhân viên. FE nên dùng đúng role do nghiệp vụ thống nhất, ví dụ `Sale`, `WarehouseStaff`, `OperationsManager`, `Delivery`.
+
+## 8. Khóa và mở khóa tài khoản
+
+### 8.1. Khóa tài khoản
+
+```http
+PUT /api/User/{id}/lock
+Authorization: Bearer {adminToken}
+```
+
+Response `200 OK`:
 
 ```json
 {
@@ -330,32 +312,14 @@ PUT /api/user/{id}/lock
 }
 ```
 
-**Response lỗi — `400 Bad Request`**
+### 8.2. Mở khóa tài khoản
 
-```json
-{
-  "message": "Người dùng không tồn tại."
-}
+```http
+PUT /api/User/{id}/unlock
+Authorization: Bearer {adminToken}
 ```
 
----
-
-### 5.2. Mở khóa tài khoản
-
-Mở khóa cho tài khoản đã bị khóa sau khi đã xác minh.
-
-```
-PUT /api/user/{id}/unlock
-```
-
-**Auth:** Yêu cầu quyền `Admin` (`[Authorize(Roles = "Admin")]`)
-
-**Path parameters:**
-| Parameter | Type | Bắt buộc | Mô tả |
-|-----------|------|----------|-------|
-| `id` | `string` (Guid) | Có | ID của người dùng cần mở khóa |
-
-**Response thành công — `200 OK`**
+Response `200 OK`:
 
 ```json
 {
@@ -363,33 +327,40 @@ PUT /api/user/{id}/unlock
 }
 ```
 
-**Response lỗi — `400 Bad Request`**
+Hai endpoint yêu cầu role `Admin`. Response `400` nếu thao tác thất bại hoặc user không tồn tại.
 
-```json
-{
-  "message": "Người dùng không tồn tại."
-}
-```
-
----
-
-## 6. TypeScript types (tham khảo)
-
-FE có thể copy các interface sau vào project:
+## 9. TypeScript types
 
 ```typescript
-// ─── Request types ───────────────────────────────────────────
-
-export interface RegisterRequest {
+export interface CustomerRegisterRequest {
   fullName: string;
   email: string;
   password: string;
   phone: string;
+  country: string;
+  address: string;
+}
+
+export interface VerifyCustomerOtpRequest {
+  email: string;
+  otp: string;
+}
+
+export interface ResendCustomerOtpRequest {
+  email: string;
 }
 
 export interface LoginRequest {
   email: string;
   password: string;
+}
+
+export interface AdminRegisterRequest {
+  fullName: string;
+  email: string;
+  password: string;
+  phone: string;
+  role: string;
 }
 
 export interface ForgotPasswordRequest {
@@ -401,44 +372,45 @@ export interface ResetPasswordRequest {
   newPassword: string;
 }
 
-// ─── Response types ──────────────────────────────────────────
-
 export interface AuthResponse {
   token: string;
-  expiresAt: string;   // ISO 8601 UTC
-  userId: string;      // Guid
+  expiresAt: string;
+  userId: string;
   fullName: string;
   role: string;
-}
-
-export interface RegisterResponse {
-  id: string;          // Guid
 }
 
 export interface MessageResponse {
   message: string;
 }
 
+export interface VerifyOtpResponse extends MessageResponse {
+  customerId: string;
+}
+
+export interface CreatedUserResponse {
+  id: string;
+}
+
 export interface ApiError {
-  message: string;
+  message?: string;
+  error?: string;
+  status?: number;
 }
 ```
 
----
-
-## 7. Ví dụ gọi API
-
-### Axios (khuyến nghị)
+## 10. Axios integration
 
 ```typescript
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5209',
-  headers: { 'Content-Type': 'application/json' },
+export const api = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'https://localhost:7237',
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
-// Gắn token tự động
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('accessToken');
   if (token) {
@@ -447,139 +419,51 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// ─── Login ───────────────────────────────────────────────────
-export async function login(email: string, password: string) {
-  const { data } = await api.post<AuthResponse>('/api/auth/login', {
-    email,
-    password,
-  });
-  localStorage.setItem('accessToken', data.token);
-  localStorage.setItem('tokenExpiresAt', data.expiresAt);
-  return data;
-}
-
-// ─── Register ────────────────────────────────────────────────
-export async function register(payload: RegisterRequest) {
-  const { data } = await api.post<RegisterResponse>('/api/auth/register', payload);
-  return data;
-}
-
-// ─── Forgot password ─────────────────────────────────────────
-export async function forgotPassword(email: string) {
-  const { data } = await api.post<MessageResponse>('/api/auth/forgot-password', { email });
-  return data;
-}
-
-// ─── Reset password ──────────────────────────────────────────
-export async function resetPassword(token: string, newPassword: string) {
-  const { data } = await api.post<MessageResponse>('/api/auth/reset-password', {
-    token,
-    newPassword,
-  });
-  return data;
-}
-```
-
-### Fetch API
-
-```typescript
-const BASE_URL = 'http://localhost:5209';
-
-async function login(email: string, password: string) {
-  const res = await fetch(`${BASE_URL}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.message ?? 'Login failed');
-  }
-
-  return res.json() as Promise<AuthResponse>;
-}
-```
-
----
-
-## 8. Lưu ý cho FE
-
-### CORS
-
-Backend **chưa cấu hình CORS**. Khi FE chạy trên origin khác (ví dụ `http://localhost:5173`), cần một trong hai cách:
-
-1. **BE bổ sung CORS** — liên hệ team BE để whitelist origin FE.
-2. **Dùng proxy trong Vite/Webpack** — ví dụ Vite:
-
-```typescript
-// vite.config.ts
-export default defineConfig({
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:5209',
-        changeOrigin: true,
-      },
-    },
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('accessToken');
+    }
+    return Promise.reject(error);
   },
-});
+);
 ```
 
-Khi dùng proxy, `baseURL` của axios có thể để rỗng hoặc `/`.
+Ví dụ flow đăng ký khách hàng:
 
-### Biến môi trường FE gợi ý
+```typescript
+export async function registerCustomer(payload: CustomerRegisterRequest) {
+  return api.post<MessageResponse>('/api/Auth/customer/register', payload);
+}
 
-```env
-VITE_API_BASE_URL=http://localhost:5209
+export async function verifyCustomerOtp(payload: VerifyCustomerOtpRequest) {
+  return api.post<VerifyOtpResponse>('/api/Auth/customer/verify-otp', payload);
+}
+
+export async function resendCustomerOtp(email: string) {
+  return api.post<MessageResponse>('/api/Auth/customer/resend-otp', { email });
+}
 ```
 
-### Swagger
+## 11. Lưu ý tích hợp FE
 
-Trong Development, mở `{BASE_URL}/swagger` để xem schema OpenAPI và test trực tiếp (có hỗ trợ nhập Bearer token).
+- Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
+- Email OTP/reset password có thể bị Gmail đưa vào Spam trong môi trường test.
+- FE nên disable nút gửi lại OTP trong 60 giây.
+- OTP hết hạn sau 5 phút.
+- Không cho user truy cập portal trước khi verify OTP và login thành công.
+- Khi API trả `401`, xóa session và chuyển về trang login.
+- Khi API trả `403`, hiển thị thông báo không đủ quyền.
+- API hiện chưa hỗ trợ refresh token.
 
-### Quản lý session FE
+### Routing FE gợi ý
 
-| Hành động | Gợi ý |
-|-----------|-------|
-| Sau login | Lưu `token`, `expiresAt`, `userId`, `fullName`, `role` |
-| Trước mỗi request protected | Kiểm tra `expiresAt`; nếu hết hạn → logout |
-| Logout | Xóa token khỏi storage, redirect `/login` |
-| 401 từ API | Clear session + redirect login |
-
-### Trang FE tương ứng (gợi ý routing)
-
-| Trang | API liên quan |
-|-------|---------------|
-| `/register` | `POST /api/auth/register` |
-| `/login` | `POST /api/auth/login` |
-| `/forgot-password` | `POST /api/auth/forgot-password` |
-| `/reset-password` | `POST /api/auth/reset-password` |
-
----
-
-## 9. API dự kiến (chưa triển khai)
-
-Database đã có các entity sau — team BE sẽ bổ sung controller tương ứng trong các sprint tiếp theo. FE có thể chuẩn bị module trước:
-
-| Module | Entity liên quan |
-|--------|------------------|
-| Đơn hàng | `Order`, `OrderItem` |
-| Vận chuyển | `Shipment`, `Parcel`, `Tracking`, `Carrier` |
-| Kho | `Warehouse`, `WarehouseZone`, `Shelf`, `Bin`, `MasterBox` |
-| Hải quan | `CustomsDeclaration`, `CustomsDocument`, `CustomsTaxis`, `RestrictedItem` |
-| Thanh toán | `Payment`, `Invoice`, `InvoiceItem`, `Quotation`, `ServicePricing` |
-| Hỗ trợ | `SupportTicket`, `Notification` |
-| WRO | `WroRequest`, `ShipmentHandover` |
-| Khách hàng / Công ty | `Customer`, `Company`, `User` |
-| Vận đơn nội địa | `DomesticWaybill` |
-
-> Khi có API mới, file này sẽ được cập nhật. FE có thể theo dõi qua Swagger hoặc PR từ team BE.
-
----
-
-## Liên hệ
-
-- **Repository BE:** `vcl-BE`
-- **Project API:** `VietnamCrossBorderLogictisSystem/VCL_API`
-- **Swagger (dev):** `http://localhost:5209/swagger`
+| Trang | API |
+|---|---|
+| `/register` | `POST /api/Auth/customer/register` |
+| `/verify-email` | `POST /api/Auth/customer/verify-otp`, `resend-otp` |
+| `/login` | `POST /api/Auth/login` |
+| `/forgot-password` | `POST /api/Auth/forgot-password` |
+| `/reset-password` | `POST /api/Auth/reset-password` |
+| `/admin/users/create` | `POST /api/Auth/admin/register` |
