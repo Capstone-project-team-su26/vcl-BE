@@ -29,6 +29,16 @@ public partial class User
 
     public DateTime? ResetPasswordExpiry { get; set; }
 
+    public bool IsEmailVerified { get; set; }
+
+    public string? EmailVerificationOtpHash { get; set; }
+
+    public DateTime? EmailVerificationOtpExpiry { get; set; }
+
+    public int EmailVerificationFailedAttempts { get; set; }
+
+    public DateTime? LastOtpSentAt { get; set; }
+
     public virtual ICollection<Company> Companies { get; set; } = new List<Company>();
 
     public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();

@@ -39,6 +39,68 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Start customer registration and send a six-digit OTP by email.
+        /// </summary>
+        [HttpPost("customer/register")]
+        [AllowAnonymous]
+        public async Task<IActionResult> RegisterCustomer([FromBody] CustomerRegisterRequest request)
+        {
+            try
+            {
+                await _authService.RegisterCustomerAsync(request);
+                return Ok(new { message = "OTP da duoc gui den email cua ban." });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
+            catch (AuthException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Verify the registration OTP and create the customer account.
+        /// </summary>
+        [HttpPost("customer/verify-otp")]
+        [AllowAnonymous]
+        public async Task<IActionResult> VerifyCustomerOtp([FromBody] VerifyCustomerOtpRequest request)
+        {
+            try
+            {
+                var customerId = await _authService.VerifyCustomerOtpAsync(request);
+                return Ok(new { message = "Dang ky tai khoan thanh cong.", customerId });
+            }
+            catch (AuthException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Send a new registration OTP after the cooldown period.
+        /// </summary>
+        [HttpPost("customer/resend-otp")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ResendCustomerOtp([FromBody] ResendCustomerOtpRequest request)
+        {
+            try
+            {
+                await _authService.ResendCustomerOtpAsync(request);
+                return Ok(new { message = "OTP moi da duoc gui den email cua ban." });
+            }
+            catch (AuthException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Login and get JWT token
         /// </summary>
         [HttpPost("login")]

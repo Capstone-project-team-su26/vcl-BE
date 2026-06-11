@@ -11,5 +11,6 @@ namespace VCL_BLL.Interface
         /// <param name="toName">Tên hiển thị của người nhận.</param>
         /// <param name="resetToken">Token đặt lại mật khẩu.</param>
         Task SendPasswordResetEmailAsync(string toEmail, string toName, string resetToken);
+        Task SendCustomerRegistrationOtpAsync(string toEmail, string toName, string otp, int expiryMinutes);
     }
 }

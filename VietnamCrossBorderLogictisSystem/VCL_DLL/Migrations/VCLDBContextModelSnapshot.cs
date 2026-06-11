@@ -1191,10 +1191,31 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("email");
 
+                    b.Property<int>("EmailVerificationFailedAttempts")
+                        .HasColumnType("int")
+                        .HasColumnName("email_verification_failed_attempts");
+
+                    b.Property<DateTime?>("EmailVerificationOtpExpiry")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("email_verification_otp_expiry");
+
+                    b.Property<string>("EmailVerificationOtpHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("email_verification_otp_hash");
+
                     b.Property<string>("FullName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("full_name");
+
+                    b.Property<bool>("IsEmailVerified")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_email_verified");
+
+                    b.Property<DateTime?>("LastOtpSentAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("last_otp_sent_at");
 
                     b.Property<string>("Password")
                         .HasMaxLength(255)

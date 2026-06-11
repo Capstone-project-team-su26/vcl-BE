@@ -872,9 +872,20 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Email)
                 .HasMaxLength(255)
                 .HasColumnName("email");
+            entity.Property(e => e.EmailVerificationFailedAttempts)
+                .HasColumnName("email_verification_failed_attempts");
+            entity.Property(e => e.EmailVerificationOtpExpiry)
+                .HasColumnName("email_verification_otp_expiry");
+            entity.Property(e => e.EmailVerificationOtpHash)
+                .HasMaxLength(64)
+                .HasColumnName("email_verification_otp_hash");
             entity.Property(e => e.FullName)
                 .HasMaxLength(255)
                 .HasColumnName("full_name");
+            entity.Property(e => e.IsEmailVerified)
+                .HasColumnName("is_email_verified");
+            entity.Property(e => e.LastOtpSentAt)
+                .HasColumnName("last_otp_sent_at");
             entity.Property(e => e.Password)
                 .HasMaxLength(255)
                 .HasColumnName("password");
