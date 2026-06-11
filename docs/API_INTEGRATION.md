@@ -12,10 +12,11 @@
 2. [Xác thực JWT](#2-xác-thực-jwt)
 3. [Định dạng lỗi](#3-định-dạng-lỗi)
 4. [API Authentication](#4-api-authentication)
-5. [TypeScript types (tham khảo)](#5-typescript-types-tham-khảo)
-6. [Ví dụ gọi API](#6-ví-dụ-gọi-api)
-7. [Lưu ý cho FE](#7-lưu-ý-cho-fe)
-8. [API dự kiến (chưa triển khai)](#8-api-dự-kiến-chưa-triển-khai)
+5. [API Quản lý Người dùng (Admin)](#5-api-quản-lý-người-dùng-admin)
+6. [TypeScript types (tham khảo)](#6-typescript-types-tham-khảo)
+7. [Ví dụ gọi API](#7-ví-dụ-gọi-api)
+8. [Lưu ý cho FE](#8-lưu-ý-cho-fe)
+9. [API dự kiến (chưa triển khai)](#9-api-dự-kiến-chưa-triển-khai)
 
 ---
 
@@ -297,7 +298,82 @@ POST /api/auth/reset-password
 
 ---
 
-## 5. TypeScript types (tham khảo)
+## 5. API Quản lý Người dùng (Admin)
+
+**Controller:** `UserController`  
+**Base route:** `/api/user`
+
+> **Lưu ý quan trọng:** Các API trong phần này yêu cầu người dùng phải đăng nhập và có quyền `Admin`. Truyền header `Authorization: Bearer <token>` vào request.
+
+---
+
+### 5.1. Khóa tài khoản
+
+Khóa tài khoản người dùng có dấu hiệu vi phạm hoặc nghỉ việc. Khi tài khoản bị khóa, người dùng sẽ không thể đăng nhập.
+
+```
+PUT /api/user/{id}/lock
+```
+
+**Auth:** Yêu cầu quyền `Admin` (`[Authorize(Roles = "Admin")]`)
+
+**Path parameters:**
+| Parameter | Type | Bắt buộc | Mô tả |
+|-----------|------|----------|-------|
+| `id` | `string` (Guid) | Có | ID của người dùng cần khóa |
+
+**Response thành công — `200 OK`**
+
+```json
+{
+  "message": "Khóa tài khoản thành công."
+}
+```
+
+**Response lỗi — `400 Bad Request`**
+
+```json
+{
+  "message": "Người dùng không tồn tại."
+}
+```
+
+---
+
+### 5.2. Mở khóa tài khoản
+
+Mở khóa cho tài khoản đã bị khóa sau khi đã xác minh.
+
+```
+PUT /api/user/{id}/unlock
+```
+
+**Auth:** Yêu cầu quyền `Admin` (`[Authorize(Roles = "Admin")]`)
+
+**Path parameters:**
+| Parameter | Type | Bắt buộc | Mô tả |
+|-----------|------|----------|-------|
+| `id` | `string` (Guid) | Có | ID của người dùng cần mở khóa |
+
+**Response thành công — `200 OK`**
+
+```json
+{
+  "message": "Mở khóa tài khoản thành công."
+}
+```
+
+**Response lỗi — `400 Bad Request`**
+
+```json
+{
+  "message": "Người dùng không tồn tại."
+}
+```
+
+---
+
+## 6. TypeScript types (tham khảo)
 
 FE có thể copy các interface sau vào project:
 
@@ -350,7 +426,7 @@ export interface ApiError {
 
 ---
 
-## 6. Ví dụ gọi API
+## 7. Ví dụ gọi API
 
 ### Axios (khuyến nghị)
 
@@ -427,7 +503,7 @@ async function login(email: string, password: string) {
 
 ---
 
-## 7. Lưu ý cho FE
+## 8. Lưu ý cho FE
 
 ### CORS
 
@@ -482,7 +558,7 @@ Trong Development, mở `{BASE_URL}/swagger` để xem schema OpenAPI và test t
 
 ---
 
-## 8. API dự kiến (chưa triển khai)
+## 9. API dự kiến (chưa triển khai)
 
 Database đã có các entity sau — team BE sẽ bổ sung controller tương ứng trong các sprint tiếp theo. FE có thể chuẩn bị module trước:
 

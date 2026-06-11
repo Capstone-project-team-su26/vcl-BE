@@ -68,6 +68,9 @@ namespace VCL_BLL.Services
             if (user == null || !PasswordHelper.VerifyPassword(request.Password, user.Password))
                 throw new UnauthorizedAccessException("Invalid credentials");
 
+            if (user.Status == "Locked")
+                throw new UnauthorizedAccessException("Tài khoản của bạn đã bị khóa.");
+
             var authClaims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
