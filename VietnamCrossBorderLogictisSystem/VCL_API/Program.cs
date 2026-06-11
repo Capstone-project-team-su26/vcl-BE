@@ -1,4 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using VCL_API.Injection;
+using VCL_BLL.Seeding;
+using VCL_DLL.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +16,15 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddProjectServices(builder.Configuration);
 
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment() &&
+    builder.Configuration.GetValue("SeedData:Enabled", true))
+{
+    using var scope = app.Services.CreateScope();
+    var context = scope.ServiceProvider.GetRequiredService<VCLDBContext>();
+    await context.Database.MigrateAsync();
+    await VCLDatabaseSeeder.SeedAsync(context);
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
