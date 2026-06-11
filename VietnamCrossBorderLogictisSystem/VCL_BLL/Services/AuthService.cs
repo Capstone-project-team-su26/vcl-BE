@@ -47,8 +47,8 @@ namespace VCL_BLL.Services
                 Email = request.Email,
                 Phone = request.Phone,
                 Password = PasswordHelper.HashPassword(request.Password),
-                Role = "User",
-                UserType = "Customer",
+                Role = request.Role,
+                UserType = "Employee",
                 Status = "Active",
                 CreatedAt = DateTime.UtcNow
             };
