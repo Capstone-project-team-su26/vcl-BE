@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
@@ -59,6 +60,199 @@ namespace VCL_BLL.Services
             return user.Id;
         }
 
+        public async Task RegisterCustomerAsync(CustomerRegisterRequest request)
+        {
+            const int otpExpiryMinutes = 5;
+            var email = NormalizeEmail(request.Email);
+            var userRepo = _unitOfWork.Repository<User>();
+            var users = await userRepo.GetAllAsync();
+            var user = users.FirstOrDefault(u =>
+                string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase));
+            var otp = GenerateOtp();
+            var now = DateTime.UtcNow;
+
+            if (user is not null && user.IsEmailVerified)
+                throw new InvalidOperationException("Email da duoc su dung.");
+
+            if (user is not null &&
+                !string.Equals(user.UserType, "Customer", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Email da duoc su dung.");
+            }
+
+            if (user?.LastOtpSentAt is DateTime lastSentAt &&
+                now - lastSentAt < TimeSpan.FromMinutes(1))
+            {
+                throw new AuthException("Vui long cho 60 giay truoc khi gui lai OTP.");
+            }
+
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customers = await customerRepo.GetAllAsync();
+            Customer customer;
+
+            if (user is null)
+            {
+                var userId = Guid.NewGuid();
+                var customerId = Guid.NewGuid();
+                user = new User
+                {
+                    Id = userId,
+                    Email = email,
+                    Role = "Customer",
+                    UserType = "Customer",
+                    Status = "PendingVerification",
+                    CreatedAt = now,
+                    IsEmailVerified = false
+                };
+                customer = new Customer
+                {
+                    Id = customerId,
+                    UserId = userId,
+                    CustomerCode = $"CUS-{now:yyyyMMddHHmmss}-{customerId.ToString("N")[..6].ToUpperInvariant()}",
+                    CustomerType = "Individual",
+                    Status = "PendingVerification",
+                    CreatedAt = now
+                };
+
+                await userRepo.AddAsync(user);
+                await customerRepo.AddAsync(customer);
+            }
+            else
+            {
+                customer = customers.FirstOrDefault(c => c.UserId == user.Id)
+                    ?? throw new InvalidOperationException("Khong tim thay ho so khach hang.");
+            }
+
+            user.FullName = request.FullName.Trim();
+            user.Phone = request.Phone.Trim();
+            user.Password = PasswordHelper.HashPassword(request.Password);
+            user.Status = "PendingVerification";
+            user.IsEmailVerified = false;
+            user.EmailVerificationOtpHash = HashOtp(email, otp);
+            user.EmailVerificationOtpExpiry = now.AddMinutes(otpExpiryMinutes);
+            user.LastOtpSentAt = now;
+            user.EmailVerificationFailedAttempts = 0;
+
+            customer.FullName = user.FullName;
+            customer.Email = email;
+            customer.Phone = user.Phone;
+            customer.Country = request.Country.Trim();
+            customer.Address = request.Address.Trim();
+            customer.Status = "PendingVerification";
+
+            await _unitOfWork.SaveChangesAsync();
+            await _emailService.SendCustomerRegistrationOtpAsync(
+                email,
+                user.FullName,
+                otp,
+                otpExpiryMinutes);
+        }
+
+        public async Task<Guid> VerifyCustomerOtpAsync(VerifyCustomerOtpRequest request)
+        {
+            const int maxFailedAttempts = 5;
+            var email = NormalizeEmail(request.Email);
+            var userRepo = _unitOfWork.Repository<User>();
+            var users = await userRepo.GetAllAsync();
+            var user = users.FirstOrDefault(u =>
+                string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(u.UserType, "Customer", StringComparison.OrdinalIgnoreCase));
+
+            if (user is null || user.IsEmailVerified)
+                throw new AuthException("Khong tim thay yeu cau dang ky.");
+
+            if (user.EmailVerificationOtpExpiry is null ||
+                user.EmailVerificationOtpExpiry < DateTime.UtcNow)
+            {
+                throw new AuthException("Ma OTP da het han. Vui long yeu cau gui lai.");
+            }
+
+            if (user.EmailVerificationFailedAttempts >= maxFailedAttempts)
+                throw new AuthException("Ban da nhap sai OTP qua so lan cho phep. Vui long gui lai OTP.");
+
+            if (string.IsNullOrEmpty(user.EmailVerificationOtpHash))
+                throw new AuthException("Ma OTP khong hop le.");
+
+            var suppliedHash = HashOtp(email, request.Otp);
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(user.EmailVerificationOtpHash),
+                    Encoding.UTF8.GetBytes(suppliedHash)))
+            {
+                user.EmailVerificationFailedAttempts++;
+                userRepo.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+                throw new AuthException("Ma OTP khong chinh xac.");
+            }
+
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customers = await customerRepo.GetAllAsync();
+            var customer = customers.FirstOrDefault(c => c.UserId == user.Id)
+                ?? throw new InvalidOperationException("Khong tim thay ho so khach hang.");
+
+            user.IsEmailVerified = true;
+            user.Status = "Active";
+            user.EmailVerificationOtpHash = null;
+            user.EmailVerificationOtpExpiry = null;
+            user.LastOtpSentAt = null;
+            user.EmailVerificationFailedAttempts = 0;
+            customer.Status = "Active";
+
+            userRepo.Update(user);
+            customerRepo.Update(customer);
+            await _unitOfWork.SaveChangesAsync();
+
+            return customer.Id;
+        }
+
+        public async Task ResendCustomerOtpAsync(ResendCustomerOtpRequest request)
+        {
+            const int otpExpiryMinutes = 5;
+            var email = NormalizeEmail(request.Email);
+            var userRepo = _unitOfWork.Repository<User>();
+            var users = await userRepo.GetAllAsync();
+            var user = users.FirstOrDefault(u =>
+                string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(u.UserType, "Customer", StringComparison.OrdinalIgnoreCase));
+
+            if (user is null || user.IsEmailVerified)
+                throw new AuthException("Khong tim thay yeu cau dang ky.");
+
+            var now = DateTime.UtcNow;
+            if (user.LastOtpSentAt.HasValue &&
+                now - user.LastOtpSentAt.Value < TimeSpan.FromMinutes(1))
+            {
+                throw new AuthException("Vui long cho 60 giay truoc khi gui lai OTP.");
+            }
+
+            var otp = GenerateOtp();
+            user.EmailVerificationOtpHash = HashOtp(email, otp);
+            user.EmailVerificationOtpExpiry = now.AddMinutes(otpExpiryMinutes);
+            user.LastOtpSentAt = now;
+            user.EmailVerificationFailedAttempts = 0;
+            userRepo.Update(user);
+            await _unitOfWork.SaveChangesAsync();
+
+            await _emailService.SendCustomerRegistrationOtpAsync(
+                email,
+                user.FullName,
+                otp,
+                otpExpiryMinutes);
+        }
+
+        private static string NormalizeEmail(string email) =>
+            email.Trim().ToLowerInvariant();
+
+        private static string GenerateOtp() =>
+            RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+
+        private string HashOtp(string email, string otp)
+        {
+            var secret = _configuration["JWT:SecretKey"]
+                ?? throw new InvalidOperationException("JWT:SecretKey is not configured.");
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+            return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{email}:{otp}")));
+        }
+
         public async Task<AuthResponse> LoginAsync(LoginRequest request)
         {
             var userRepo = _unitOfWork.Repository<User>();
@@ -70,6 +264,13 @@ namespace VCL_BLL.Services
 
             if (user.Status == "Locked")
                 throw new UnauthorizedAccessException("Tài khoản của bạn đã bị khóa.");
+
+            if (!string.Equals(user.Status, "Active", StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(user.UserType, "Customer", StringComparison.OrdinalIgnoreCase) &&
+                 !user.IsEmailVerified))
+            {
+                throw new UnauthorizedAccessException("Tai khoan chua duoc xac thuc.");
+            }
 
             var authClaims = new List<Claim>
             {
