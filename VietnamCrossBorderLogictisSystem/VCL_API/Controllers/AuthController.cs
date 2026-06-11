@@ -21,10 +21,10 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Register a new user account
+        /// Register a new employee account (Admin only)
         /// </summary>
-        [HttpPost("register")]
-        [AllowAnonymous]
+        [HttpPost("admin/register")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Register(RegisterRequest request)
         {
             try
