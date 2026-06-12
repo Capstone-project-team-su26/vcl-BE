@@ -15,29 +15,31 @@ namespace VCL_BLL.Services
             _configuration = configuration;
         }
 
-        public async Task SendPasswordResetEmailAsync(
+        public async Task SendPasswordResetOtpAsync(
             string toEmail,
             string toName,
-            string resetToken)
+            string otp,
+            int expiryMinutes)
         {
             var settings = GetSmtpSettings();
             var safeName = System.Net.WebUtility.HtmlEncode(toName);
-            var safeToken = System.Net.WebUtility.HtmlEncode(resetToken);
             var message = CreateMessage(settings, toEmail, toName);
-            message.Subject = "[VCL] Password reset request";
+            message.Subject = "[VCL] Mã OTP đặt lại mật khẩu";
             message.Body = new BodyBuilder
             {
                 HtmlBody = $@"
 <div style=""font-family:Arial,sans-serif;max-width:600px;margin:0 auto"">
-    <h2 style=""color:#2c3e50"">Reset your VCL password</h2>
-    <p>Hello <strong>{safeName}</strong>,</p>
-    <p>Use the token below to reset your password. It is valid for one hour.</p>
-    <div style=""background:#f4f4f4;padding:16px;word-break:break-all;font-family:monospace"">
-        {safeToken}
+    <h2 style=""color:#2c3e50"">Đặt lại mật khẩu VCL</h2>
+    <p>Xin chào <strong>{safeName}</strong>,</p>
+    <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.</p>
+    <p>Mã OTP của bạn là:</p>
+    <div style=""background:#f4f4f4;padding:16px;text-align:center;font-size:30px;font-weight:bold;letter-spacing:8px"">
+        {otp}
     </div>
-    <p style=""color:#777;font-size:12px"">Ignore this email if you did not request a password reset.</p>
+    <p>Mã này có hiệu lực trong <strong>{expiryMinutes} phút</strong>. Không chia sẻ mã này với bất kỳ ai.</p>
+    <p style=""color:#777;font-size:12px"">Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email này.</p>
 </div>",
-                TextBody = $"Hello {toName},\n\nYour VCL password reset token is: {resetToken}\nThe token is valid for one hour."
+                TextBody = $"Xin chào {toName},\n\nMã OTP đặt lại mật khẩu VCL của bạn: {otp}\nMã có hiệu lực trong {expiryMinutes} phút."
             }.ToMessageBody();
 
             await SendAsync(message, settings);

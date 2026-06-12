@@ -1217,6 +1217,9 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("last_otp_sent_at");
 
+                    b.Property<DateTime?>("LastResetOtpSentAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Password")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
@@ -1227,10 +1230,13 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("phone");
 
-                    b.Property<DateTime?>("ResetPasswordExpiry")
+                    b.Property<int>("ResetPasswordFailedAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ResetPasswordOtpExpiry")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("ResetPasswordToken")
+                    b.Property<string>("ResetPasswordOtpHash")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Role")

@@ -25,9 +25,13 @@ public partial class User
 
     public DateTime? CreatedAt { get; set; }
 
-    public string? ResetPasswordToken { get; set; }
+    public string? ResetPasswordOtpHash { get; set; }
 
-    public DateTime? ResetPasswordExpiry { get; set; }
+    public DateTime? ResetPasswordOtpExpiry { get; set; }
+
+    public int ResetPasswordFailedAttempts { get; set; }
+
+    public DateTime? LastResetOtpSentAt { get; set; }
 
     public bool IsEmailVerified { get; set; }
 
