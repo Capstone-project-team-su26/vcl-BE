@@ -296,57 +296,89 @@ namespace VCL_BLL.Services
         /// <inheritdoc/>
         public async Task ForgotPasswordAsync(ForgotPasswordRequestDto request)
         {
+            const int otpExpiryMinutes = 5;
+            const int rateLimitSeconds = 60;
+
+            var email = NormalizeEmail(request.Email);
             var userRepo = _unitOfWork.Repository<User>();
             var users = await userRepo.GetAllAsync();
-
-            // Tìm user theo email (case-insensitive)
             var user = users.FirstOrDefault(u =>
-                u.Email.Equals(request.Email, StringComparison.OrdinalIgnoreCase));
+                string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase));
 
             if (user is null)
                 throw new AuthException("Email không tồn tại trong hệ thống.");
 
-            // Sinh token ngẫu nhiên dùng Base64 an toàn (32 bytes = 256 bits entropy)
-            var tokenBytes = RandomNumberGenerator.GetBytes(32);
-            var resetToken = Convert.ToBase64String(tokenBytes)
-                                    .Replace("+", "-")
-                                    .Replace("/", "_")
-                                    .TrimEnd('=');   // URL-safe Base64
+            // Rate-limit: chờ 60 giây trước khi gửi lại
+            var now = DateTime.UtcNow;
+            if (user.LastResetOtpSentAt.HasValue &&
+                now - user.LastResetOtpSentAt.Value < TimeSpan.FromSeconds(rateLimitSeconds))
+            {
+                throw new AuthException($"Vui lòng chờ {rateLimitSeconds} giây trước khi gửi lại mã OTP.");
+            }
 
-            // Cập nhật token và thời gian hết hạn (1 giờ kể từ UTC hiện tại)
-            user.ResetPasswordToken = resetToken;
-            user.ResetPasswordExpiry = DateTime.UtcNow.AddHours(1);
+            // Sinh OTP 6 số và hash bằng HMAC-SHA256
+            var otp = GenerateOtp();
+            user.ResetPasswordOtpHash = HashOtp(email, otp);
+            user.ResetPasswordOtpExpiry = now.AddMinutes(otpExpiryMinutes);
+            user.ResetPasswordFailedAttempts = 0;
+            user.LastResetOtpSentAt = now;
 
             userRepo.Update(user);
             await _unitOfWork.SaveChangesAsync();
 
-            // Gửi email chứa token cho người dùng
-            await _emailService.SendPasswordResetEmailAsync(
+            await _emailService.SendPasswordResetOtpAsync(
                 toEmail: user.Email,
                 toName: user.FullName ?? user.Email,
-                resetToken: resetToken);
+                otp: otp,
+                expiryMinutes: otpExpiryMinutes);
         }
 
         /// <inheritdoc/>
         public async Task ResetPasswordAsync(ResetPasswordRequestDto request)
         {
+            const int maxFailedAttempts = 5;
+
+            var email = NormalizeEmail(request.Email);
             var userRepo = _unitOfWork.Repository<User>();
             var users = await userRepo.GetAllAsync();
-
-            // Tìm user có token khớp
             var user = users.FirstOrDefault(u =>
-                u.ResetPasswordToken == request.Token);
+                string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase));
 
-            // Kiểm tra token không tồn tại HOẶC đã hết hạn
-            if (user is null || user.ResetPasswordExpiry < DateTime.UtcNow)
-                throw new AuthException("Token không hợp lệ hoặc đã hết hạn.");
+            if (user is null)
+                throw new AuthException("Email không tồn tại trong hệ thống.");
 
-            // Hash mật khẩu mới bằng BCrypt
+            // Kiểm tra OTP hết hạn
+            if (user.ResetPasswordOtpExpiry is null ||
+                user.ResetPasswordOtpExpiry < DateTime.UtcNow)
+                throw new AuthException("Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại.");
+
+            // Brute-force protection
+            if (user.ResetPasswordFailedAttempts >= maxFailedAttempts)
+                throw new AuthException("Bạn đã nhập sai OTP quá số lần cho phép. Vui lòng yêu cầu gửi lại mã mới.");
+
+            if (string.IsNullOrEmpty(user.ResetPasswordOtpHash))
+                throw new AuthException("Mã OTP không hợp lệ.");
+
+            // So sánh hash theo thời gian hằng định (timing-safe)
+            var suppliedHash = HashOtp(email, request.Otp);
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(user.ResetPasswordOtpHash),
+                    Encoding.UTF8.GetBytes(suppliedHash)))
+            {
+                user.ResetPasswordFailedAttempts++;
+                userRepo.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+                throw new AuthException("Mã OTP không chính xác.");
+            }
+
+            // OTP hợp lệ — cập nhật mật khẩu mới
             user.Password = PasswordHelper.HashPassword(request.NewPassword);
 
-            // Xóa dấu vết token sau khi sử dụng
-            user.ResetPasswordToken = null;
-            user.ResetPasswordExpiry = null;
+            // Xóa dấu vết OTP sau khi dùng
+            user.ResetPasswordOtpHash = null;
+            user.ResetPasswordOtpExpiry = null;
+            user.ResetPasswordFailedAttempts = 0;
+            user.LastResetOtpSentAt = null;
 
             userRepo.Update(user);
             await _unitOfWork.SaveChangesAsync();

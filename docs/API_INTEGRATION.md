@@ -2,7 +2,7 @@
 
 > Hệ thống: Vietnam Cross-Border Logistics System (VCL)
 >
-> Cập nhật: 12/06/2026
+> Cập nhật: 12/06/2026 — Forgot Password chuyển sang dùng OTP thay Token
 >
 > Module hiện có: Authentication và User Management
 
@@ -62,8 +62,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/Auth/customer/verify-otp` | Public | Xác thực OTP và kích hoạt tài khoản |
 | `POST` | `/api/Auth/customer/resend-otp` | Public | Gửi lại OTP |
 | `POST` | `/api/Auth/login` | Public | Đăng nhập và nhận JWT |
-| `POST` | `/api/Auth/forgot-password` | Public | Gửi reset token qua email |
-| `POST` | `/api/Auth/reset-password` | Public | Đặt lại mật khẩu |
+| `POST` | `/api/Auth/forgot-password` | Public | Gửi OTP 6 số qua email (hết hạn 5 phút) |
+| `POST` | `/api/Auth/reset-password` | Public | Xác thực OTP và đặt lại mật khẩu |
 | `POST` | `/api/Auth/admin/register` | Admin | Admin tạo tài khoản nhân viên |
 | `PUT` | `/api/User/{id}/lock` | Admin | Khóa tài khoản |
 | `PUT` | `/api/User/{id}/unlock` | Admin | Mở khóa tài khoản |
@@ -225,9 +225,19 @@ Response `200 OK`:
 }
 ```
 
-Backend gửi reset token qua email. Token có hiệu lực 1 giờ.
+Backend sinh OTP 6 chữ số và gửi qua email. OTP có hiệu lực **5 phút**.
 
-Response `400 Bad Request` nếu email không tồn tại.
+Lưu ý:
+
+- FE nên disable nút "Gửi lại" trong **60 giây** sau mỗi lần gửi.
+- OTP mới tạo sẽ vô hiệu hóa OTP cũ.
+
+Response `400 Bad Request`:
+
+| Trường hợp | Message |
+|---|---|
+| Email không tồn tại | `"Email không tồn tại trong hệ thống."` |
+| Gửi lại quá sớm (< 60s) | `"Vui lòng chờ 60 giây trước khi gửi lại mã OTP."` |
 
 ### 6.2. Đặt lại mật khẩu
 
@@ -237,10 +247,17 @@ POST /api/Auth/reset-password
 
 ```json
 {
-  "token": "reset-token-from-email",
+  "email": "customer@example.com",
+  "otp": "847291",
   "newPassword": "NewPassword123"
 }
 ```
+
+| Field | Ràng buộc |
+|---|---|
+| `email` | Bắt buộc, đúng định dạng email |
+| `otp` | Bắt buộc, đúng 6 chữ số |
+| `newPassword` | Bắt buộc |
 
 Response `200 OK`:
 
@@ -250,7 +267,16 @@ Response `200 OK`:
 }
 ```
 
-Response `400 Bad Request` nếu token không hợp lệ hoặc đã hết hạn.
+Response `400 Bad Request`:
+
+| Trường hợp | Message |
+|---|---|
+| Email không tồn tại | `"Email không tồn tại trong hệ thống."` |
+| OTP hết hạn | `"Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại."` |
+| OTP không chính xác | `"Mã OTP không chính xác."` |
+| Nhập sai quá 5 lần | `"Bạn đã nhập sai OTP quá số lần cho phép. Vui lòng yêu cầu gửi lại mã mới."` |
+
+Khi nhập sai OTP, hệ thống đếm số lần thất bại. Sau **5 lần sai**, OTP bị khóa và phải yêu cầu gửi lại từ đầu.
 
 ## 7. Admin tạo tài khoản nhân viên
 
@@ -368,7 +394,8 @@ export interface ForgotPasswordRequest {
 }
 
 export interface ResetPasswordRequest {
-  token: string;
+  email: string;
+  otp: string;
   newPassword: string;
 }
 
@@ -444,12 +471,23 @@ export async function verifyCustomerOtp(payload: VerifyCustomerOtpRequest) {
 export async function resendCustomerOtp(email: string) {
   return api.post<MessageResponse>('/api/Auth/customer/resend-otp', { email });
 }
+
+export async function forgotPassword(email: string) {
+  return api.post<MessageResponse>('/api/Auth/forgot-password', { email });
+}
+
+export async function resetPassword(payload: ResetPasswordRequest) {
+  return api.post<MessageResponse>('/api/Auth/reset-password', payload);
+}
 ```
 
 ## 11. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
-- Email OTP/reset password có thể bị Gmail đưa vào Spam trong môi trường test.
+- Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
+- OTP đặt lại mật khẩu hết hạn sau **5 phút** (khác với OTP đăng ký cũng 5 phút).
+- FE nên disable nút gửi lại OTP đặt lại mật khẩu trong 60 giây (giống luồng đăng ký).
+- Sau 5 lần nhập sai OTP đặt lại mật khẩu, user phải bấm "Gửi lại" để nhận OTP mới.
 - FE nên disable nút gửi lại OTP trong 60 giây.
 - OTP hết hạn sau 5 phút.
 - Không cho user truy cập portal trước khi verify OTP và login thành công.

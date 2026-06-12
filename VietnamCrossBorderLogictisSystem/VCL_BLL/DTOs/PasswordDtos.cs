@@ -8,7 +8,7 @@ namespace VCL_BLL.DTOs
     public record ForgotPasswordRequestDto(string Email);
 
     /// <summary>
-    /// DTO cho API POST /api/auth/reset-password
+    /// DTO cho API POST /api/auth/reset-password (dùng OTP thay token)
     /// </summary>
-    public record ResetPasswordRequestDto(string Token, string NewPassword);
+    public record ResetPasswordRequestDto(string Email, string Otp, string NewPassword);
 }
