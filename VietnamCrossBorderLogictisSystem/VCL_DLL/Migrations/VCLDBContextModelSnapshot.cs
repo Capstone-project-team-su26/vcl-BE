@@ -647,6 +647,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("length");
 
+                    b.Property<Guid?>("OrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_id");
+
                     b.Property<string>("ProductName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
@@ -679,6 +683,8 @@ namespace VCL_DLL.Migrations
                         .HasName("PK__ORDER_IT__3213E83F13F43A7F");
 
                     b.HasIndex("CompanyId");
+
+                    b.HasIndex("OrderId");
 
                     b.ToTable("ORDER_ITEMS", (string)null);
                 });
@@ -1545,7 +1551,14 @@ namespace VCL_DLL.Migrations
                         .HasForeignKey("CompanyId")
                         .HasConstraintName("FK_ITEM_COMP");
 
+                    b.HasOne("VCL_DLL.Models.Order", "Order")
+                        .WithMany("OrderItems")
+                        .HasForeignKey("OrderId")
+                        .HasConstraintName("FK_ITEM_ORDER");
+
                     b.Navigation("Company");
+
+                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Parcel", b =>
@@ -1787,6 +1800,8 @@ namespace VCL_DLL.Migrations
 
             modelBuilder.Entity("VCL_DLL.Models.Order", b =>
                 {
+                    b.Navigation("OrderItems");
+
                     b.Navigation("Parcels");
 
                     b.Navigation("Quotations");

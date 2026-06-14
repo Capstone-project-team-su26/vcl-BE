@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace VCL_DLL.Migrations
 {
     /// <inheritdoc />
-    public partial class AddResetPasswordFields : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -54,8 +54,15 @@ namespace VCL_DLL.Migrations
                     user_type = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     created_at = table.Column<DateTime>(type: "datetime2", nullable: true, defaultValueSql: "(getutcdate())"),
-                    ResetPasswordToken = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ResetPasswordExpiry = table.Column<DateTime>(type: "datetime2", nullable: true)
+                    ResetPasswordOtpHash = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ResetPasswordOtpExpiry = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ResetPasswordFailedAttempts = table.Column<int>(type: "int", nullable: false),
+                    LastResetOtpSentAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    is_email_verified = table.Column<bool>(type: "bit", nullable: false),
+                    email_verification_otp_hash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    email_verification_otp_expiry = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    email_verification_failed_attempts = table.Column<int>(type: "int", nullable: false),
+                    last_otp_sent_at = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -197,34 +204,6 @@ namespace VCL_DLL.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ORDER_ITEMS",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "(newid())"),
-                    company_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    sku = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    product_name = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
-                    description = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    weight = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    width = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    height = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    length = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    unit = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    product_type = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    declared_value = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    created_at = table.Column<DateTime>(type: "datetime2", nullable: true, defaultValueSql: "(getutcdate())")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK__ORDER_IT__3213E83F13F43A7F", x => x.id);
-                    table.ForeignKey(
-                        name: "FK_ITEM_COMP",
-                        column: x => x.company_id,
-                        principalTable: "COMPANIES",
-                        principalColumn: "id");
-                });
-
-            migrationBuilder.CreateTable(
                 name: "SHELVES",
                 columns: table => new
                 {
@@ -304,35 +283,36 @@ namespace VCL_DLL.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "BINS",
+                name: "ORDER_ITEMS",
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "(newid())"),
-                    product_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    warehouse_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    shelf_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    bin_code = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    max_volume = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    current_volume = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    max_weight = table.Column<decimal>(type: "decimal(18,2)", nullable: true)
+                    order_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    company_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    sku = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    product_name = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
+                    description = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    weight = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    width = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    height = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    length = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    unit = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    product_type = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    declared_value = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    created_at = table.Column<DateTime>(type: "datetime2", nullable: true, defaultValueSql: "(getutcdate())")
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK__BINS__3213E83F5D6097FF", x => x.id);
+                    table.PrimaryKey("PK__ORDER_IT__3213E83F13F43A7F", x => x.id);
                     table.ForeignKey(
-                        name: "FK_BIN_PRODUCT",
-                        column: x => x.product_id,
-                        principalTable: "ORDER_ITEMS",
+                        name: "FK_ITEM_COMP",
+                        column: x => x.company_id,
+                        principalTable: "COMPANIES",
                         principalColumn: "id");
                     table.ForeignKey(
-                        name: "FK_BIN_SHELF",
-                        column: x => x.shelf_id,
-                        principalTable: "SHELVES",
-                        principalColumn: "id");
-                    table.ForeignKey(
-                        name: "FK_BIN_WH",
-                        column: x => x.warehouse_id,
-                        principalTable: "WAREHOUSES",
+                        name: "FK_ITEM_ORDER",
+                        column: x => x.order_id,
+                        principalTable: "ORDERS",
                         principalColumn: "id");
                 });
 
@@ -391,6 +371,39 @@ namespace VCL_DLL.Migrations
                         name: "FK_QUOTE_WRO",
                         column: x => x.wro_id,
                         principalTable: "WRO_REQUESTS",
+                        principalColumn: "id");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "BINS",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "(newid())"),
+                    product_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    warehouse_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    shelf_id = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    bin_code = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    max_volume = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    current_volume = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    max_weight = table.Column<decimal>(type: "decimal(18,2)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK__BINS__3213E83F5D6097FF", x => x.id);
+                    table.ForeignKey(
+                        name: "FK_BIN_PRODUCT",
+                        column: x => x.product_id,
+                        principalTable: "ORDER_ITEMS",
+                        principalColumn: "id");
+                    table.ForeignKey(
+                        name: "FK_BIN_SHELF",
+                        column: x => x.shelf_id,
+                        principalTable: "SHELVES",
+                        principalColumn: "id");
+                    table.ForeignKey(
+                        name: "FK_BIN_WH",
+                        column: x => x.warehouse_id,
+                        principalTable: "WAREHOUSES",
                         principalColumn: "id");
                 });
 
@@ -764,6 +777,11 @@ namespace VCL_DLL.Migrations
                 name: "IX_ORDER_ITEMS_company_id",
                 table: "ORDER_ITEMS",
                 column: "company_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ORDER_ITEMS_order_id",
+                table: "ORDER_ITEMS",
+                column: "order_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ORDERS_company_id",
