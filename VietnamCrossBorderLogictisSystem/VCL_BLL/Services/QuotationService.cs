@@ -182,5 +182,66 @@ namespace VCL_BLL.Services
                 ? ExpressServiceFee
                 : ConsolidationServiceFee;
         }
+
+        /// <inheritdoc/>
+        public async Task<AcceptQuotationResponse> AcceptQuotationAsync(Guid quotationId, Guid userId)
+        {
+            // 1. Tìm Quotation
+            var quotationRepo = _unitOfWork.Repository<Quotation>();
+            var quotation = await quotationRepo.GetByIdAsync(quotationId);
+
+            if (quotation == null)
+                throw new NotFoundException($"Không tìm thấy báo giá với ID: {quotationId}");
+
+            // 2. Kiểm tra trạng thái — chỉ DRAFT mới được accept
+            if (string.Equals(quotation.Status, "ACCEPTED", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Báo giá này đã được xác nhận trước đó.");
+
+            if (string.Equals(quotation.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Báo giá này đã bị hủy, không thể xác nhận.");
+
+            if (!string.Equals(quotation.Status, "DRAFT", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException($"Không thể xác nhận báo giá ở trạng thái: {quotation.Status}");
+
+            // 3. Kiểm tra hết hạn
+            if (quotation.ExpiredAt.HasValue && quotation.ExpiredAt.Value < DateTime.UtcNow)
+                throw new ArgumentException("Báo giá đã hết hạn. Vui lòng tạo báo giá mới.");
+
+            // 4. Kiểm tra Quotation thuộc đúng khách đang đăng nhập
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(quotation.OrderId);
+
+            if (order == null)
+                throw new NotFoundException("Không tìm thấy đơn hàng liên quan đến báo giá.");
+
+            // Tra ngược: Order.CustomerId → Customer.UserId == userId
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var allCustomers = await customerRepo.GetAllAsync();
+            var customer = allCustomers.FirstOrDefault(c => c.Id == order.CustomerId);
+
+            if (customer == null || customer.UserId != userId)
+                throw new UnauthorizedAccessException("Bạn không có quyền xác nhận báo giá này.");
+
+            // 5. Cập nhật trạng thái
+            var now = DateTime.UtcNow;
+
+            quotation.Status = "ACCEPTED";
+            quotationRepo.Update(quotation);
+
+            order.Status = "WAITING_FOR_PARCEL";
+            orderRepo.Update(order);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            // 6. Trả về response
+            return new AcceptQuotationResponse
+            {
+                QuotationId = quotation.Id,
+                OrderId = order.Id,
+                QuotationStatus = quotation.Status,
+                OrderStatus = order.Status,
+                AcceptedAt = now
+            };
+        }
     }
 }
