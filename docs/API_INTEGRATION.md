@@ -2,9 +2,9 @@
 
 > Hệ thống: Vietnam Cross-Border Logistics System (VCL)
 >
-> Cập nhật: 12/06/2026 — Forgot Password chuyển sang dùng OTP thay Token
+> Cập nhật: 15/06/2026 — Thêm API Báo Giá Tạm Tính (Quotation Estimate)
 >
-> Module hiện có: Authentication và User Management
+> Module hiện có: Authentication, User Management, Quotation
 
 ## 1. Thông tin chung
 
@@ -67,6 +67,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/Auth/admin/register` | Admin | Admin tạo tài khoản nhân viên |
 | `PUT` | `/api/User/{id}/lock` | Admin | Khóa tài khoản |
 | `PUT` | `/api/User/{id}/unlock` | Admin | Mở khóa tài khoản |
+| `POST` | `/api/orders/{orderId}/quotation/estimate` | Authenticated | Tạo báo giá tạm tính cho đơn ký gửi |
 
 ## 4. Đăng ký khách hàng
 
@@ -355,7 +356,94 @@ Response `200 OK`:
 
 Hai endpoint yêu cầu role `Admin`. Response `400` nếu thao tác thất bại hoặc user không tồn tại.
 
-## 9. TypeScript types
+## 9. Báo giá tạm tính (Quotation Estimate)
+
+Tạo báo giá tạm tính cho yêu cầu ký gửi dựa trên thông tin Order và Order_Items. Đây chỉ là báo giá ước tính, chưa phải báo giá chốt sau khi kho cân đo thực tế.
+
+```http
+POST /api/orders/{orderId}/quotation/estimate
+Authorization: Bearer {token}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `orderId` | `Guid` | ID của đơn hàng ký gửi |
+
+Không cần request body — hệ thống tự lấy thông tin từ Order và OrderItems.
+
+### 9.1. Công thức tính phí
+
+| Thành phần | Công thức |
+|---|---|
+| Total Weight | `Σ OrderItem.Weight` (kg) |
+| Total Volume | `Σ (Length × Width × Height)` (cm³) |
+| Volumetric Weight | `TotalVolume / 5000` (tiêu chuẩn IATA) |
+| Chargeable Weight | `MAX(TotalWeight, VolumetricWeight)` |
+| Freight Charge | `ChargeableWeight × Rate` (từ bảng ServicePricing) |
+| Service Fee | Express: 50,000 VND \| Consolidation: 30,000 VND |
+| Tax & Duty | `10% × Σ DeclaredValue` |
+| **Total** | **FreightCharge + ServiceFee + TaxAndDuty** |
+
+Nếu không có bảng giá trong DB, hệ thống dùng giá mặc định: Express = 50,000 VND/kg, Consolidation = 30,000 VND/kg.
+
+### 9.2. Response thành công
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Tạo báo giá tạm tính thành công.",
+  "data": {
+    "quotationId": "a1b2c3d4-...",
+    "orderId": "e5f6g7h8-...",
+    "consignmentType": "Express",
+    "quoteType": "ESTIMATE",
+    "status": "DRAFT",
+    "totalWeight": 2.50,
+    "totalVolume": 15000.00,
+    "volumetricWeight": 3.00,
+    "chargeableWeight": 3.00,
+    "estimatedFreightCharge": 150000.00,
+    "serviceFee": 50000.00,
+    "taxAndDuty": 50000.00,
+    "totalEstimatedCost": 250000.00,
+    "createdAt": "2026-06-15T12:00:00Z",
+    "expiredAt": "2026-06-22T12:00:00Z",
+    "items": [
+      {
+        "id": "i1j2k3l4-...",
+        "productName": "iPhone 15",
+        "weight": 0.50,
+        "length": 15.00,
+        "width": 8.00,
+        "height": 5.00,
+        "declaredValue": 500000.00,
+        "itemVolume": 600.00
+      }
+    ]
+  }
+}
+```
+
+### 9.3. Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Order chưa có sản phẩm | `"Đơn hàng chưa có sản phẩm nào. Vui lòng thêm sản phẩm trước khi tạo báo giá."` |
+| `401` | Chưa đăng nhập | Tự động bởi middleware JWT |
+| `404` | Order không tồn tại | `"Không tìm thấy đơn hàng với ID: {orderId}"` |
+
+### 9.4. Lưu ý
+
+- Báo giá tạm tính có hiệu lực **7 ngày** (`expiredAt`).
+- `quoteType` luôn là `"ESTIMATE"`, `status` luôn là `"DRAFT"`.
+- `consignmentType` lấy từ Order: `"Express"` hoặc `"Consolidation"`.
+- Mỗi lần gọi API sẽ tạo mới một Quotation record (không cập nhật cái cũ).
+- API cũng cập nhật `totalWeight` và `totalVolume` trên Order.
+
+## 10. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -424,9 +512,42 @@ export interface ApiError {
   error?: string;
   status?: number;
 }
+export interface EstimateQuotationResponse {
+  quotationId: string;
+  orderId: string;
+  consignmentType: string;
+  quoteType: string;
+  status: string;
+  totalWeight: number;
+  totalVolume: number;
+  volumetricWeight: number;
+  chargeableWeight: number;
+  estimatedFreightCharge: number;
+  serviceFee: number;
+  taxAndDuty: number;
+  totalEstimatedCost: number;
+  createdAt: string;
+  expiredAt: string | null;
+  items: OrderItemDetail[];
+}
+
+export interface OrderItemDetail {
+  id: string;
+  productName: string;
+  weight: number | null;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  declaredValue: number | null;
+  itemVolume: number;
+}
+
+export interface QuotationDataResponse extends MessageResponse {
+  data: EstimateQuotationResponse;
+}
 ```
 
-## 10. Axios integration
+## 11. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -479,9 +600,12 @@ export async function forgotPassword(email: string) {
 export async function resetPassword(payload: ResetPasswordRequest) {
   return api.post<MessageResponse>('/api/Auth/reset-password', payload);
 }
+export async function createEstimateQuotation(orderId: string) {
+  return api.post<QuotationDataResponse>(`/api/orders/${orderId}/quotation/estimate`);
+}
 ```
 
-## 11. Lưu ý tích hợp FE
+## 12. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -505,3 +629,4 @@ export async function resetPassword(payload: ResetPasswordRequest) {
 | `/forgot-password` | `POST /api/Auth/forgot-password` |
 | `/reset-password` | `POST /api/Auth/reset-password` |
 | `/admin/users/create` | `POST /api/Auth/admin/register` |
+| `/orders/{id}/quotation` | `POST /api/orders/{orderId}/quotation/estimate` |
