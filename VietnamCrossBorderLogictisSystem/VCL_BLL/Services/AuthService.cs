@@ -32,34 +32,6 @@ namespace VCL_BLL.Services
             _emailService = emailService;
         }
 
-        public async Task<Guid> RegisterAsync(RegisterRequest request)
-        {
-            var userRepo = _unitOfWork.Repository<User>();
-
-            // Check if email already exists
-            var users = await userRepo.GetAllAsync();
-            if (users.Any(u => u.Email.Equals(request.Email, StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidOperationException("Email already in use");
-
-            var user = new User
-            {
-                Id = Guid.NewGuid(),
-                FullName = request.FullName,
-                Email = request.Email,
-                Phone = request.Phone,
-                Password = PasswordHelper.HashPassword(request.Password),
-                Role = request.Role,
-                UserType = "Employee",
-                Status = "Active",
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await userRepo.AddAsync(user);
-            await _unitOfWork.SaveChangesAsync();
-
-            return user.Id;
-        }
-
         public async Task RegisterCustomerAsync(CustomerRegisterRequest request)
         {
             const int otpExpiryMinutes = 5;

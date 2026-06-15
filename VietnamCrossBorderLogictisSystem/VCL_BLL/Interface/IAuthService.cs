@@ -6,7 +6,6 @@ namespace VCL_BLL.Interface
     public interface IAuthService
     {
         Task<AuthResponse> LoginAsync(LoginRequest request);
-        Task<Guid> RegisterAsync(RegisterRequest request);
         Task RegisterCustomerAsync(CustomerRegisterRequest request);
         Task<Guid> VerifyCustomerOtpAsync(VerifyCustomerOtpRequest request);
         Task ResendCustomerOtpAsync(ResendCustomerOtpRequest request);

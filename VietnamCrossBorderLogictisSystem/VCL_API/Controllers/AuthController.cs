@@ -21,24 +21,6 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Register a new employee account (Admin only)
-        /// </summary>
-        [HttpPost("admin/register")]
-        [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Register(RegisterRequest request)
-        {
-            try
-            {
-                var userId = await _authService.RegisterAsync(request);
-                return CreatedAtAction(nameof(Register), new { id = userId });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new { message = ex.Message });
-            }
-        }
-
-        /// <summary>
         /// Start customer registration and send a six-digit OTP by email.
         /// </summary>
         [HttpPost("customer/register")]

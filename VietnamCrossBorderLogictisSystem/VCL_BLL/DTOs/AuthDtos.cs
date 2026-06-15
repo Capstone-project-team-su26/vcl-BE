@@ -3,7 +3,6 @@ using System.ComponentModel.DataAnnotations;
 
 namespace VCL_BLL.DTOs
 {
-    public record RegisterRequest(string FullName, string Email, string Password, string Phone, string Role);
     public record LoginRequest(string Email, string Password);
 
     public class CustomerRegisterRequest
