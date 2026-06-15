@@ -2,7 +2,7 @@
 
 > Hệ thống: Vietnam Cross-Border Logistics System (VCL)
 >
-> Cập nhật: 15/06/2026 — Thêm API Báo Giá Tạm Tính (Quotation Estimate)
+> Cập nhật: 15/06/2026 — Thêm API Xác Nhận Báo Giá Tạm Tính (Accept Quotation)
 >
 > Module hiện có: Authentication, User Management, Quotation
 
@@ -68,6 +68,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/User/{id}/lock` | Admin | Khóa tài khoản |
 | `PUT` | `/api/User/{id}/unlock` | Admin | Mở khóa tài khoản |
 | `POST` | `/api/orders/{orderId}/quotation/estimate` | Authenticated | Tạo báo giá tạm tính cho đơn ký gửi |
+| `PUT` | `/api/quotations/{quotationId}/accept` | Authenticated | Khách hàng xác nhận báo giá tạm tính |
 
 ## 4. Đăng ký khách hàng
 
@@ -440,10 +441,56 @@ Response `200 OK`:
 - Báo giá tạm tính có hiệu lực **7 ngày** (`expiredAt`).
 - `quoteType` luôn là `"ESTIMATE"`, `status` luôn là `"DRAFT"`.
 - `consignmentType` lấy từ Order: `"Express"` hoặc `"Consolidation"`.
+- Cập nhật Quotation → `ACCEPTED`, Order → `WAITING_FOR_PARCEL`.
 - Mỗi lần gọi API sẽ tạo mới một Quotation record (không cập nhật cái cũ).
 - API cũng cập nhật `totalWeight` và `totalVolume` trên Order.
 
-## 10. TypeScript types
+## 10. Xác nhận báo giá tạm tính (Accept Quotation)
+
+Khách hàng xác nhận đồng ý với báo giá tạm tính. Sau khi xác nhận:
+- Trạng thái Quotation chuyển sang `ACCEPTED`.
+- Trạng thái Order chuyển sang `WAITING_FOR_PARCEL` (chờ kho nhận hàng).
+
+```http
+PUT /api/quotations/{quotationId}/accept
+Authorization: Bearer {token}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `quotationId` | `Guid` | ID của báo giá cần xác nhận |
+
+### 10.1. Response thành công
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Xác nhận báo giá thành công.",
+  "data": {
+    "quotationId": "a1b2c3d4-...",
+    "orderId": "e5f6g7h8-...",
+    "quotationStatus": "ACCEPTED",
+    "orderStatus": "WAITING_FOR_PARCEL",
+    "acceptedAt": "2026-06-15T12:00:00Z"
+  }
+}
+```
+
+### 10.2. Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Báo giá đã được xác nhận | `"Báo giá này đã được xác nhận trước đó."` |
+| `400` | Báo giá đã bị hủy | `"Báo giá này đã bị hủy, không thể xác nhận."` |
+| `400` | Trạng thái không hợp lệ | `"Không thể xác nhận báo giá ở trạng thái: {status}"` |
+| `400` | Báo giá đã hết hạn | `"Báo giá đã hết hạn. Vui lòng tạo báo giá mới."` |
+| `401` | Chưa đăng nhập hoặc sai user | Tự động, hoặc `"Bạn không có quyền xác nhận báo giá này."` |
+| `404` | Quotation không tồn tại | `"Không tìm thấy báo giá với ID: {quotationId}"` |
+
+## 11. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -545,9 +592,21 @@ export interface OrderItemDetail {
 export interface QuotationDataResponse extends MessageResponse {
   data: EstimateQuotationResponse;
 }
+
+export interface AcceptQuotationResponse {
+  quotationId: string;
+  orderId: string;
+  quotationStatus: string;
+  orderStatus: string;
+  acceptedAt: string;
+}
+
+export interface AcceptQuotationDataResponse extends MessageResponse {
+  data: AcceptQuotationResponse;
+}
 ```
 
-## 11. Axios integration
+## 12. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -603,9 +662,13 @@ export async function resetPassword(payload: ResetPasswordRequest) {
 export async function createEstimateQuotation(orderId: string) {
   return api.post<QuotationDataResponse>(`/api/orders/${orderId}/quotation/estimate`);
 }
+
+export async function acceptQuotation(quotationId: string) {
+  return api.put<AcceptQuotationDataResponse>(`/api/quotations/${quotationId}/accept`);
+}
 ```
 
-## 12. Lưu ý tích hợp FE
+## 13. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -630,3 +693,4 @@ export async function createEstimateQuotation(orderId: string) {
 | `/reset-password` | `POST /api/Auth/reset-password` |
 | `/admin/users/create` | `POST /api/Auth/admin/register` |
 | `/orders/{id}/quotation` | `POST /api/orders/{orderId}/quotation/estimate` |
+| `/quotations/{id}/accept` | `PUT /api/quotations/{quotationId}/accept` |

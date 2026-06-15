@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
@@ -8,7 +9,6 @@ using VCL_BLL.Interface;
 namespace VCL_API.Controllers
 {
     [ApiController]
-    [Route("api/orders")]
     [Authorize]
     public class QuotationController : ControllerBase
     {
@@ -29,7 +29,7 @@ namespace VCL_API.Controllers
         /// <response code="400">Đơn hàng chưa có sản phẩm</response>
         /// <response code="401">Chưa đăng nhập</response>
         /// <response code="404">Không tìm thấy đơn hàng</response>
-        [HttpPost("{orderId}/quotation/estimate")]
+        [HttpPost("api/orders/{orderId}/quotation/estimate")]
         [ProducesResponseType(typeof(object), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
@@ -48,6 +48,51 @@ namespace VCL_API.Controllers
             catch (NotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Khách hàng xác nhận báo giá tạm tính.
+        /// Cập nhật Quotation → ACCEPTED, Order → WAITING_FOR_PARCEL.
+        /// </summary>
+        /// <param name="quotationId">ID của báo giá cần xác nhận</param>
+        /// <returns>Thông tin sau khi xác nhận</returns>
+        /// <response code="200">Xác nhận báo giá thành công</response>
+        /// <response code="400">Báo giá đã hết hạn hoặc trạng thái không hợp lệ</response>
+        /// <response code="401">Chưa đăng nhập hoặc không phải chủ đơn hàng</response>
+        /// <response code="404">Không tìm thấy báo giá</response>
+        [HttpPut("api/quotations/{quotationId}/accept")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> AcceptQuotation(Guid quotationId)
+        {
+            try
+            {
+                // Lấy userId từ JWT claims
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                    return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+                var result = await _quotationService.AcceptQuotationAsync(quotationId, userId);
+                return Ok(new
+                {
+                    message = "Xác nhận báo giá thành công.",
+                    data = result
+                });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
             }
             catch (ArgumentException ex)
             {

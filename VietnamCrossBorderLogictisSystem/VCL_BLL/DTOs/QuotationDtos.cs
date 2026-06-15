@@ -61,4 +61,16 @@ namespace VCL_BLL.DTOs
         /// <summary>Thể tích item = Length × Width × Height (cm³)</summary>
         public decimal ItemVolume { get; set; }
     }
+
+    /// <summary>
+    /// Response trả về sau khi khách hàng xác nhận báo giá tạm tính.
+    /// </summary>
+    public class AcceptQuotationResponse
+    {
+        public Guid QuotationId { get; set; }
+        public Guid OrderId { get; set; }
+        public string QuotationStatus { get; set; } = string.Empty;
+        public string OrderStatus { get; set; } = string.Empty;
+        public DateTime AcceptedAt { get; set; }
+    }
 }
