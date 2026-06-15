@@ -26,7 +26,6 @@ namespace VCL_API.Injection
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<IUserService, UserService>();
-            services.AddScoped<IQuotationService, QuotationService>();
 
             // Add JWT Authentication
             var jwtSettings = configuration.GetSection("JWT");
