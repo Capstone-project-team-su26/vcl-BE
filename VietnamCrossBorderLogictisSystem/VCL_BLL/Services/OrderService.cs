@@ -19,7 +19,7 @@ namespace VCL_BLL.Services
             _unitOfWork = unitOfWork;
         }
 
-        public async Task UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request)
+        public async Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request)
         {
             var validStatuses = new[] { "PENDING_REVIEW", "APPROVED", "REJECTED" };
             if (string.IsNullOrWhiteSpace(request.Status) || !validStatuses.Contains(request.Status.ToUpper()))
@@ -49,6 +49,21 @@ namespace VCL_BLL.Services
                 throw new ArgumentException($"Không thể cập nhật trạng thái yêu cầu khi yêu cầu đang ở trạng thái {order.Status}");
             }
 
+            if (normalizedStatus == "APPROVED" && string.IsNullOrEmpty(order.ConsignmentCode))
+            {
+                var allOrders = await orderRepo.GetAllAsync();
+                var random = new Random();
+                string generatedCode;
+                do
+                {
+                    var now = DateTime.UtcNow;
+                    var randomSuffix = random.Next(100000, 999999).ToString();
+                    generatedCode = $"VCL-{now:yyyyMMddHHmmss}-{randomSuffix}";
+                } while (allOrders.Any(o => o.ConsignmentCode == generatedCode));
+
+                order.ConsignmentCode = generatedCode;
+            }
+
             order.Status = normalizedStatus;
             
             if (normalizedStatus == "REJECTED")
@@ -58,6 +73,12 @@ namespace VCL_BLL.Services
 
             orderRepo.Update(order);
             await _unitOfWork.SaveChangesAsync();
+
+            return new UpdateConsignmentStatusResponse
+            {
+                Status = order.Status,
+                ConsignmentCode = order.ConsignmentCode
+            };
         }
 
         public async Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode)

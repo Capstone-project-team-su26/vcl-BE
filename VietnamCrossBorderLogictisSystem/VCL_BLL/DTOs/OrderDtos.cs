@@ -9,6 +9,12 @@ namespace VCL_BLL.DTOs
         public string? RejectionReason { get; set; }
     }
 
+    public class UpdateConsignmentStatusResponse
+    {
+        public string Status { get; set; } = string.Empty;
+        public string? ConsignmentCode { get; set; }
+    }
+
     public class ConsignmentResponseDto
     {
         public Guid OrderId { get; set; }

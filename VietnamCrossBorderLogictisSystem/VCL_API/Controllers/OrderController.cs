@@ -38,8 +38,13 @@ namespace VCL_API.Controllers
         {
             try
             {
-                await _orderService.UpdateConsignmentStatusAsync(orderId, request);
-                return Ok(new { message = "Cập nhật trạng thái thành công." });
+                var result = await _orderService.UpdateConsignmentStatusAsync(orderId, request);
+                return Ok(new 
+                { 
+                    message = "Cập nhật trạng thái thành công.",
+                    status = result.Status,
+                    consignmentCode = result.ConsignmentCode
+                });
             }
             catch (NotFoundException ex)
             {

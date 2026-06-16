@@ -517,9 +517,37 @@ Authorization: Bearer {staffToken}
 ```
 
 | Field | Ràng buộc |
-|---|---|
 | `status` | Bắt buộc. Các giá trị hợp lệ: `PENDING_REVIEW`, `APPROVED`, `REJECTED` |
 | `rejectionReason` | Bắt buộc khi `status` là `REJECTED`. Lưu vào trường `Note` của yêu cầu. |
+
+### 11.1 Response thành công
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Cập nhật trạng thái thành công.",
+  "status": "APPROVED",
+  "consignmentCode": "VCL-20260616235959-123456"
+}
+```
+
+*Lưu ý:*
+- Khi duyệt thành công trạng thái là `APPROVED` và đơn ký gửi chưa có mã gửi hàng, hệ thống sẽ tự động phát sinh một mã gửi hàng duy nhất và trả về trong trường `consignmentCode`.
+- Nếu đơn ký gửi đã có mã gửi hàng từ trước, hệ thống giữ nguyên mã cũ.
+- Khi trạng thái là `PENDING_REVIEW` hoặc `REJECTED`, hệ thống không phát sinh mã gửi hàng mới.
+- Response trả về trạng thái mới cập nhật (`status`) và mã gửi hàng (`consignmentCode`).
+
+### 11.2 Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Trạng thái không hợp lệ | `"Trạng thái không hợp lệ. Các trạng thái hợp lệ: PENDING_REVIEW, APPROVED, REJECTED."` |
+| `400` | Thiếu lý do từ chối | `"Vui lòng cung cấp lý do từ chối (RejectionReason)."` |
+| `400` | Yêu cầu đã hủy hoặc nhập kho | `"Không thể cập nhật trạng thái yêu cầu khi yêu cầu đang ở trạng thái {status}"` |
+| `401` | Chưa đăng nhập hoặc token sai | Tự động bởi middleware JWT |
+| `403` | Không phải Staff | Tự động bởi middleware JWT |
+| `404` | Không tìm thấy yêu cầu ký gửi | `"Không tìm thấy yêu cầu ký gửi với ID {orderId}"` |
 
 ## 12. Lấy danh sách yêu cầu ký gửi
 
@@ -539,14 +567,13 @@ Authorization: Bearer {token}
 | `status` | `string` | Lọc theo trạng thái yêu cầu (tuỳ chọn) |
 | `searchCode` | `string` | Tìm kiếm theo mã yêu cầu ký gửi (tuỳ chọn) |
 
-### 11.1 Response thành công
+### 12.1 Response thành công
 
 Response `200 OK`:
 
 ```json
 {
-  "message": "Cập nhật trạng thái thành công." // (Hoặc 'Lấy danh sách yêu cầu ký gửi thành công.')
-  // "data" field applies to GET endpoint
+  "message": "Lấy danh sách yêu cầu ký gửi thành công.",
   "data": {
     "items": [
       {
@@ -568,16 +595,11 @@ Response `200 OK`:
 }
 ```
 
-### 11.2 Response lỗi
+### 12.2 Response lỗi
 
 | Status | Trường hợp | Message |
 |---|---|---|
-| `400` | Trạng thái không hợp lệ | `"Trạng thái không hợp lệ. Các trạng thái hợp lệ: PENDING_REVIEW, APPROVED, REJECTED."` |
-| `400` | Thiếu lý do từ chối | `"Vui lòng cung cấp lý do từ chối (RejectionReason)."` |
-| `400` | Yêu cầu đã hủy hoặc nhập kho | `"Không thể cập nhật trạng thái yêu cầu khi yêu cầu đang ở trạng thái {status}"` |
-| `401` | Chưa đăng nhập hoặc token sai | Tự động bởi middleware JWT |
-| `403` | Không phải Staff | Tự động bởi middleware JWT |
-| `404` | Không tìm thấy yêu cầu ký gửi | `"Không tìm thấy yêu cầu ký gửi với ID {orderId}"` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ / Người dùng không hợp lệ | Tự động bởi middleware JWT hoặc `"Người dùng không hợp lệ."` |
 
 ## 12. TypeScript types
 
@@ -699,6 +721,11 @@ export interface UpdateConsignmentStatusRequest {
   rejectionReason?: string;
 }
 
+export interface UpdateConsignmentStatusResponse extends MessageResponse {
+  status: string;
+  consignmentCode: string | null;
+}
+
 export interface ConsignmentResponseDto {
   orderId: string;
   consignmentCode: string;
@@ -785,7 +812,7 @@ export async function acceptQuotation(quotationId: string) {
 }
 
 export async function updateConsignmentStatus(orderId: string, payload: UpdateConsignmentStatusRequest) {
-  return api.put<MessageResponse>(`/api/orders/consignments/${orderId}/status`, payload);
+  return api.put<UpdateConsignmentStatusResponse>(`/api/orders/consignments/${orderId}/status`, payload);
 }
 
 export async function getConsignments(params?: { pageNumber?: number, pageSize?: number, status?: string, searchCode?: string }) {
