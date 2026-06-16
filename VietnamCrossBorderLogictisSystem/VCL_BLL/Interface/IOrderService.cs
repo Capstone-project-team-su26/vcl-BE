@@ -7,5 +7,6 @@ namespace VCL_BLL.Interface
     public interface IOrderService
     {
         Task UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request);
+        Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode);
     }
 }
