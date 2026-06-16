@@ -22,6 +22,46 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Khách hàng tạo yêu cầu ký gửi (A1 + A2).
+        /// Tạo Order + OrderItems, đối chiếu hàng cấm/hạn chế, và sinh báo giá tạm tính ngay.
+        /// </summary>
+        /// <param name="request">Thông tin mặt hàng và phương án vận chuyển TQ → VN</param>
+        /// <returns>Thông tin yêu cầu ký gửi kèm báo giá tạm tính và cảnh báo (nếu có)</returns>
+        /// <response code="201">Tạo yêu cầu ký gửi thành công</response>
+        /// <response code="400">Dữ liệu không hợp lệ hoặc chứa hàng cấm</response>
+        /// <response code="401">Chưa đăng nhập</response>
+        [HttpPost("consignments")]
+        [Authorize(Roles = "Customer")]
+        [ProducesResponseType(typeof(object), 201)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        public async Task<IActionResult> CreateConsignment([FromBody] CreateConsignmentRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            try
+            {
+                var result = await _orderService.CreateConsignmentAsync(request, userId);
+                return CreatedAtAction(nameof(GetConsignments), new { },
+                    new { message = "Tạo yêu cầu ký gửi thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Staff cập nhật trạng thái yêu cầu ký gửi
         /// </summary>
         /// <param name="orderId">ID của yêu cầu ký gửi</param>
