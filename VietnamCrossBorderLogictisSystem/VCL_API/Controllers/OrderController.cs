@@ -9,7 +9,7 @@ using VCL_BLL.Exceptions;
 namespace VCL_API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/orders")]
     [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager,Delivery")]
     public class OrderController : ControllerBase
     {
