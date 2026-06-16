@@ -2,9 +2,9 @@
 
 > Hệ thống: Vietnam Cross-Border Logistics System (VCL)
 >
-> Cập nhật: 15/06/2026 — Thêm API Xác Nhận Báo Giá Tạm Tính (Accept Quotation)
+> Cập nhật: 16/06/2026 — Thêm API Lấy danh sách yêu cầu ký gửi
 >
-> Module hiện có: Authentication, User Management, Quotation
+> Module hiện có: Authentication, User Management, Quotation, Order
 
 ## 1. Thông tin chung
 
@@ -69,6 +69,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/User/{id}/unlock` | Admin | Mở khóa tài khoản |
 | `POST` | `/api/orders/{orderId}/quotation/estimate` | Authenticated | Tạo báo giá tạm tính cho đơn ký gửi |
 | `PUT` | `/api/quotations/{quotationId}/accept` | Authenticated | Khách hàng xác nhận báo giá tạm tính |
+| `GET` | `/api/orders/consignments` | Authenticated | Lấy danh sách yêu cầu ký gửi |
 
 ## 4. Đăng ký khách hàng
 
@@ -490,7 +491,59 @@ Response `200 OK`:
 | `401` | Chưa đăng nhập hoặc sai user | Tự động, hoặc `"Bạn không có quyền xác nhận báo giá này."` |
 | `404` | Quotation không tồn tại | `"Không tìm thấy báo giá với ID: {quotationId}"` |
 
-## 11. TypeScript types
+## 11. Lấy danh sách yêu cầu ký gửi
+
+Hệ thống cung cấp API lấy danh sách yêu cầu ký gửi có phân trang. Customer chỉ thấy yêu cầu của chính mình, Admin có thể xem toàn bộ yêu cầu trong hệ thống.
+
+```http
+GET /api/orders/consignments
+Authorization: Bearer {token}
+```
+
+**Query Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `pageNumber` | `int` | Trang hiện tại (mặc định: 1) |
+| `pageSize` | `int` | Số lượng trên mỗi trang (mặc định: 10) |
+| `status` | `string` | Lọc theo trạng thái yêu cầu (tuỳ chọn) |
+| `searchCode` | `string` | Tìm kiếm theo mã yêu cầu ký gửi (tuỳ chọn) |
+
+### 11.1 Response thành công
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Lấy danh sách yêu cầu ký gửi thành công.",
+  "data": {
+    "items": [
+      {
+        "orderId": "e5f6g7h8-...",
+        "consignmentCode": "VCL-001",
+        "customerName": "Nguyễn Văn A",
+        "consignmentType": "Express",
+        "status": "WAITING_FOR_PARCEL",
+        "totalWeight": 2.50,
+        "totalVolume": 15000.00,
+        "createdAt": "2026-06-16T12:00:00Z"
+      }
+    ],
+    "totalCount": 1,
+    "pageNumber": 1,
+    "pageSize": 10,
+    "totalPages": 1
+  }
+}
+```
+
+### 11.2 Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `401` | Chưa đăng nhập hoặc token sai | Tự động bởi middleware JWT |
+
+## 12. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -604,9 +657,32 @@ export interface AcceptQuotationResponse {
 export interface AcceptQuotationDataResponse extends MessageResponse {
   data: AcceptQuotationResponse;
 }
+
+export interface ConsignmentResponseDto {
+  orderId: string;
+  consignmentCode: string;
+  customerName: string;
+  consignmentType: string;
+  status: string;
+  totalWeight: number | null;
+  totalVolume: number | null;
+  createdAt: string | null;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  totalCount: number;
+  pageNumber: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface ConsignmentPaginatedResponse extends MessageResponse {
+  data: PaginatedResponse<ConsignmentResponseDto>;
+}
 ```
 
-## 12. Axios integration
+## 13. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -666,9 +742,13 @@ export async function createEstimateQuotation(orderId: string) {
 export async function acceptQuotation(quotationId: string) {
   return api.put<AcceptQuotationDataResponse>(`/api/quotations/${quotationId}/accept`);
 }
+
+export async function getConsignments(params?: { pageNumber?: number, pageSize?: number, status?: string, searchCode?: string }) {
+  return api.get<ConsignmentPaginatedResponse>('/api/orders/consignments', { params });
+}
 ```
 
-## 13. Lưu ý tích hợp FE
+## 14. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -694,3 +774,4 @@ export async function acceptQuotation(quotationId: string) {
 | `/admin/users/create` | `POST /api/Auth/admin/register` |
 | `/orders/{id}/quotation` | `POST /api/orders/{orderId}/quotation/estimate` |
 | `/quotations/{id}/accept` | `PUT /api/quotations/{quotationId}/accept` |
+| `/orders/consignments` | `GET /api/orders/consignments` |
