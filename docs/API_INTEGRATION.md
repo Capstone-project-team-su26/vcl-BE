@@ -2,7 +2,7 @@
 
 > Hệ thống: Vietnam Cross-Border Logistics System (VCL)
 >
-> Cập nhật: 16/06/2026 — Thêm API Lấy danh sách yêu cầu ký gửi
+> Cập nhật: 16/06/2026 — Thêm API Staff Cập nhật trạng thái yêu cầu ký gửi & API Lấy danh sách yêu cầu ký gửi
 >
 > Module hiện có: Authentication, User Management, Quotation, Order
 
@@ -69,6 +69,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/User/{id}/unlock` | Admin | Mở khóa tài khoản |
 | `POST` | `/api/orders/{orderId}/quotation/estimate` | Authenticated | Tạo báo giá tạm tính cho đơn ký gửi |
 | `PUT` | `/api/quotations/{quotationId}/accept` | Authenticated | Khách hàng xác nhận báo giá tạm tính |
+| `PUT` | `/api/orders/consignments/{orderId}/status` | Staff | Staff cập nhật trạng thái yêu cầu ký gửi |
 | `GET` | `/api/orders/consignments` | Authenticated | Lấy danh sách yêu cầu ký gửi |
 
 ## 4. Đăng ký khách hàng
@@ -491,7 +492,36 @@ Response `200 OK`:
 | `401` | Chưa đăng nhập hoặc sai user | Tự động, hoặc `"Bạn không có quyền xác nhận báo giá này."` |
 | `404` | Quotation không tồn tại | `"Không tìm thấy báo giá với ID: {quotationId}"` |
 
-## 11. Lấy danh sách yêu cầu ký gửi
+## 11. Staff cập nhật trạng thái yêu cầu ký gửi
+
+Staff kiểm tra thông tin và cập nhật trạng thái cho yêu cầu ký gửi. Nếu từ chối, bắt buộc phải kèm theo lý do để khách hàng có thể xem lại.
+
+```http
+PUT /api/orders/consignments/{orderId}/status
+Authorization: Bearer {staffToken}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `orderId` | `Guid` | ID của yêu cầu ký gửi |
+
+**Request Body:**
+
+```json
+{
+  "status": "REJECTED",
+  "rejectionReason": "Hàng hóa chứa vật phẩm cấm bay"
+}
+```
+
+| Field | Ràng buộc |
+|---|---|
+| `status` | Bắt buộc. Các giá trị hợp lệ: `PENDING_REVIEW`, `APPROVED`, `REJECTED` |
+| `rejectionReason` | Bắt buộc khi `status` là `REJECTED`. Lưu vào trường `Note` của yêu cầu. |
+
+## 12. Lấy danh sách yêu cầu ký gửi
 
 Hệ thống cung cấp API lấy danh sách yêu cầu ký gửi có phân trang. Customer chỉ thấy yêu cầu của chính mình, Admin có thể xem toàn bộ yêu cầu trong hệ thống.
 
@@ -515,7 +545,8 @@ Response `200 OK`:
 
 ```json
 {
-  "message": "Lấy danh sách yêu cầu ký gửi thành công.",
+  "message": "Cập nhật trạng thái thành công." // (Hoặc 'Lấy danh sách yêu cầu ký gửi thành công.')
+  // "data" field applies to GET endpoint
   "data": {
     "items": [
       {
@@ -541,7 +572,12 @@ Response `200 OK`:
 
 | Status | Trường hợp | Message |
 |---|---|---|
+| `400` | Trạng thái không hợp lệ | `"Trạng thái không hợp lệ. Các trạng thái hợp lệ: PENDING_REVIEW, APPROVED, REJECTED."` |
+| `400` | Thiếu lý do từ chối | `"Vui lòng cung cấp lý do từ chối (RejectionReason)."` |
+| `400` | Yêu cầu đã hủy hoặc nhập kho | `"Không thể cập nhật trạng thái yêu cầu khi yêu cầu đang ở trạng thái {status}"` |
 | `401` | Chưa đăng nhập hoặc token sai | Tự động bởi middleware JWT |
+| `403` | Không phải Staff | Tự động bởi middleware JWT |
+| `404` | Không tìm thấy yêu cầu ký gửi | `"Không tìm thấy yêu cầu ký gửi với ID {orderId}"` |
 
 ## 12. TypeScript types
 
@@ -658,6 +694,11 @@ export interface AcceptQuotationDataResponse extends MessageResponse {
   data: AcceptQuotationResponse;
 }
 
+export interface UpdateConsignmentStatusRequest {
+  status: string;
+  rejectionReason?: string;
+}
+
 export interface ConsignmentResponseDto {
   orderId: string;
   consignmentCode: string;
@@ -743,6 +784,10 @@ export async function acceptQuotation(quotationId: string) {
   return api.put<AcceptQuotationDataResponse>(`/api/quotations/${quotationId}/accept`);
 }
 
+export async function updateConsignmentStatus(orderId: string, payload: UpdateConsignmentStatusRequest) {
+  return api.put<MessageResponse>(`/api/orders/consignments/${orderId}/status`, payload);
+}
+
 export async function getConsignments(params?: { pageNumber?: number, pageSize?: number, status?: string, searchCode?: string }) {
   return api.get<ConsignmentPaginatedResponse>('/api/orders/consignments', { params });
 }
@@ -774,4 +819,5 @@ export async function getConsignments(params?: { pageNumber?: number, pageSize?:
 | `/admin/users/create` | `POST /api/Auth/admin/register` |
 | `/orders/{id}/quotation` | `POST /api/orders/{orderId}/quotation/estimate` |
 | `/quotations/{id}/accept` | `PUT /api/quotations/{quotationId}/accept` |
+| `/orders/{id}/status` | `PUT /api/orders/consignments/{orderId}/status` |
 | `/orders/consignments` | `GET /api/orders/consignments` |

@@ -3,6 +3,12 @@ using System.Collections.Generic;
 
 namespace VCL_BLL.DTOs
 {
+    public class UpdateConsignmentStatusRequest
+    {
+        public string Status { get; set; } = string.Empty;
+        public string? RejectionReason { get; set; }
+    }
+
     public class ConsignmentResponseDto
     {
         public Guid OrderId { get; set; }
