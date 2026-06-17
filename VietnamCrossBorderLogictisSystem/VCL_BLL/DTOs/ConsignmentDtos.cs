@@ -51,24 +51,7 @@ namespace VCL_BLL.DTOs
         public string? DomesticTrackingCode { get; set; }
     }
 
-    /// <summary>
-    /// Yêu cầu hủy ký gửi của khách hàng. Lý do là tùy chọn.
-    /// </summary>
-    public class CancelConsignmentRequest
-    {
-        public string? Reason { get; set; }
-    }
 
-    /// <summary>
-    /// Kết quả sau khi hủy ký gửi.
-    /// </summary>
-    public class CancelConsignmentResponse
-    {
-        public Guid OrderId { get; set; }
-        public string Status { get; set; } = string.Empty;
-        public string? Reason { get; set; }
-        public int CancelledQuotations { get; set; }
-    }
 
     /// <summary>
     /// Cảnh báo hàng cấm/hạn chế phát hiện khi tạo ký gửi.
