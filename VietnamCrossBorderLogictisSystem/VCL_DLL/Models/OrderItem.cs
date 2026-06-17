@@ -33,6 +33,12 @@ public partial class OrderItem
 
     public decimal? DeclaredValue { get; set; }
 
+    public int? Quantity { get; set; }
+
+    public string ReferenceUrl { get; set; }
+
+    public string DomesticTrackingCode { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual ICollection<Bin> Bins { get; set; } = new List<Bin>();

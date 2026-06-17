@@ -13,10 +13,205 @@ namespace VCL_BLL.Services
     public class OrderService : IOrderService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IQuotationService _quotationService;
 
-        public OrderService(IUnitOfWork unitOfWork)
+        // Các giá trị RestrictionType bị coi là hàng cấm (chặn tạo).
+        private static readonly string[] BannedRestrictionTypes = { "BANNED", "PROHIBITED", "CẤM", "CAM" };
+
+        // Phương án vận chuyển hợp lệ (A2).
+        private static readonly string[] ValidShippingOptions = { "Express", "Consolidation" };
+
+        // Các trạng thái Order mà khách được phép tự hủy (hàng chưa vào kho VN).
+        private static readonly string[] CancellableStatuses = { "PENDING_REVIEW", "APPROVED", "WAITING_FOR_PARCEL" };
+
+        public OrderService(IUnitOfWork unitOfWork, IQuotationService quotationService)
         {
             _unitOfWork = unitOfWork;
+            _quotationService = quotationService;
+        }
+
+        public async Task<CreateConsignmentResponse> CreateConsignmentAsync(CreateConsignmentRequest request, Guid userId)
+        {
+            // 1. Validate phương án vận chuyển
+            var shippingOption = ValidShippingOptions.FirstOrDefault(
+                o => string.Equals(o, request.ShippingOption, StringComparison.OrdinalIgnoreCase));
+            if (shippingOption == null)
+                throw new ArgumentException("Phương án vận chuyển không hợp lệ. Chỉ chấp nhận: Express, Consolidation.");
+
+            if (request.Items == null || request.Items.Count == 0)
+                throw new ArgumentException("Yêu cầu ký gửi phải có ít nhất một mặt hàng.");
+
+            // 2. Map user → customer (cùng pattern với các service khác)
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var allCustomers = await customerRepo.GetAllAsync();
+            var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
+            if (customer == null)
+                throw new UnauthorizedAccessException("Không tìm thấy thông tin khách hàng tương ứng với tài khoản.");
+
+            // 3. Đối chiếu hàng cấm / hạn chế
+            var (warnings, bannedItems) = await CheckRestrictedItemsAsync(request.Items);
+            if (bannedItems.Count > 0)
+            {
+                var names = string.Join(", ", bannedItems.Select(b => b.ProductName));
+                throw new ArgumentException($"Không thể tạo ký gửi. Các mặt hàng sau thuộc danh mục cấm: {names}");
+            }
+
+            // 4. Tạo Order (chưa sinh ConsignmentCode — sinh khi APPROVED)
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var now = DateTime.UtcNow;
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerId = customer.Id,
+                CompanyId = customer.CompanyId,
+                ConsignmentCode = null,
+                ConsignmentType = shippingOption,
+                Status = "PENDING_REVIEW",
+                OrderType = "CONSIGNMENT",
+                Note = request.Note,
+                CreatedAt = now
+            };
+            await orderRepo.AddAsync(order);
+
+            // 5. Tạo OrderItems
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            foreach (var item in request.Items)
+            {
+                await orderItemRepo.AddAsync(new OrderItem
+                {
+                    Id = Guid.NewGuid(),
+                    OrderId = order.Id,
+                    CompanyId = customer.CompanyId,
+                    ProductName = item.ProductName,
+                    ProductType = item.ProductType,
+                    Quantity = item.Quantity,
+                    Weight = item.Weight,
+                    Width = item.Width,
+                    Height = item.Height,
+                    Length = item.Length,
+                    DeclaredValue = item.DeclaredValue,
+                    ReferenceUrl = item.ReferenceUrl,
+                    DomesticTrackingCode = item.DomesticTrackingCode,
+                    CreatedAt = now
+                });
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            // 6. Sinh báo giá tạm tính (tái sử dụng QuotationService)
+            var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id);
+
+            // 7. Trả về kết quả gộp
+            return new CreateConsignmentResponse
+            {
+                OrderId = order.Id,
+                Status = order.Status,
+                ConsignmentType = order.ConsignmentType,
+                ItemCount = request.Items.Count,
+                Quotation = quotation,
+                Warnings = warnings
+            };
+        }
+
+        public async Task<CancelConsignmentResponse> CancelConsignmentAsync(Guid orderId, Guid userId, CancelConsignmentRequest request)
+        {
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
+
+            // Kiểm tra quyền sở hữu: userId → Customer.UserId → Order.CustomerId
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var allCustomers = await customerRepo.GetAllAsync();
+            var customer = allCustomers.FirstOrDefault(c => c.Id == order.CustomerId);
+            if (customer == null || customer.UserId != userId)
+                throw new UnauthorizedAccessException("Bạn không có quyền hủy yêu cầu ký gửi này.");
+
+            var currentStatus = order.Status?.ToUpperInvariant() ?? string.Empty;
+
+            if (currentStatus == "CANCELLED")
+                throw new ArgumentException("Yêu cầu ký gửi này đã được hủy trước đó.");
+
+            if (!CancellableStatuses.Contains(currentStatus))
+                throw new ArgumentException($"Không thể hủy yêu cầu khi đang ở trạng thái {order.Status}. Chỉ được hủy khi hàng chưa vào kho VN.");
+
+            // Hủy Order
+            order.Status = "CANCELLED";
+            if (!string.IsNullOrWhiteSpace(request.Reason))
+                order.Note = request.Reason;
+            orderRepo.Update(order);
+
+            // Hủy các Quotation liên quan đang DRAFT/ACCEPTED để tránh accept lại sau khi đơn đã hủy
+            var quotationRepo = _unitOfWork.Repository<Quotation>();
+            var allQuotations = await quotationRepo.GetAllAsync();
+            var relatedQuotations = allQuotations
+                .Where(q => q.OrderId == orderId)
+                .Where(q => q.Status == null
+                    || q.Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase)
+                    || q.Status.Equals("ACCEPTED", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var quotation in relatedQuotations)
+            {
+                quotation.Status = "CANCELLED";
+                quotationRepo.Update(quotation);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return new CancelConsignmentResponse
+            {
+                OrderId = order.Id,
+                Status = order.Status,
+                Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason,
+                CancelledQuotations = relatedQuotations.Count
+            };
+        }
+
+        /// <summary>
+        /// Đối chiếu từng mặt hàng với bảng RestrictedItem.
+        /// Trả về (danh sách cảnh báo hạn chế, danh sách hàng cấm cần chặn).
+        /// </summary>
+        private async Task<(List<RestrictedItemWarning> warnings, List<RestrictedItemWarning> banned)> CheckRestrictedItemsAsync(List<ConsignmentItemRequest> items)
+        {
+            var restrictedRepo = _unitOfWork.Repository<RestrictedItem>();
+            var allRestricted = (await restrictedRepo.GetAllAsync()).ToList();
+
+            var warnings = new List<RestrictedItemWarning>();
+            var banned = new List<RestrictedItemWarning>();
+
+            foreach (var item in items)
+            {
+                foreach (var r in allRestricted)
+                {
+                    if (string.IsNullOrWhiteSpace(r.ItemName)) continue;
+
+                    var matchesName = !string.IsNullOrWhiteSpace(item.ProductName)
+                        && item.ProductName.Contains(r.ItemName, StringComparison.OrdinalIgnoreCase);
+                    var matchesType = !string.IsNullOrWhiteSpace(item.ProductType)
+                        && item.ProductType.Contains(r.ItemName, StringComparison.OrdinalIgnoreCase);
+
+                    if (!matchesName && !matchesType) continue;
+
+                    var warning = new RestrictedItemWarning
+                    {
+                        ProductName = item.ProductName,
+                        MatchedItem = r.ItemName,
+                        RestrictionType = r.RestrictionType ?? string.Empty,
+                        Note = r.Note
+                    };
+
+                    var isBanned = r.RestrictionType != null
+                        && BannedRestrictionTypes.Contains(r.RestrictionType.Trim().ToUpperInvariant());
+
+                    if (isBanned)
+                        banned.Add(warning);
+                    else
+                        warnings.Add(warning);
+                }
+            }
+
+            return (warnings, banned);
         }
 
         public async Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request)

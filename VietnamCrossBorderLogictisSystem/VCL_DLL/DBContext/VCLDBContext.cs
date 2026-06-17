@@ -496,6 +496,13 @@ public partial class VCLDBContext : DbContext
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("length");
             entity.Property(e => e.OrderId).HasColumnName("order_id");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.ReferenceUrl)
+                .HasMaxLength(500)
+                .HasColumnName("reference_url");
+            entity.Property(e => e.DomesticTrackingCode)
+                .HasMaxLength(100)
+                .HasColumnName("domestic_tracking_code");
             entity.Property(e => e.ProductName)
                 .HasMaxLength(255)
                 .HasColumnName("product_name");

@@ -639,6 +639,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("description");
 
+                    b.Property<string>("DomesticTrackingCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("domestic_tracking_code");
+
                     b.Property<decimal?>("Height")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("height");
@@ -660,6 +665,15 @@ namespace VCL_DLL.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("product_type");
+
+                    b.Property<int?>("Quantity")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("ReferenceUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reference_url");
 
                     b.Property<string>("Sku")
                         .HasMaxLength(100)
