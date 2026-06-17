@@ -124,6 +124,119 @@
       }
     },
     {
+      "name": "4b. Khach huy yeu cau ky gui (cancel)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "var data = json.data;",
+              "pm.test('Status = CANCELLED', function () { pm.expect(data.status).to.eql('CANCELLED'); });",
+              "console.log('So bao gia bi huy theo:', data ? data.cancelledQuotations : 'N/A');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Khach doi y, khong gui hang nua\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "{{orderId}}", "cancel"]
+        }
+      }
+    },
+    {
+      "name": "4c. (Negative) Huy lai don da huy -> 400",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "pm.test('Bao da huy truoc do', function () { pm.expect(pm.response.json().message).to.include('đã được hủy'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Huy lan 2\"\n}" },
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "{{orderId}}", "cancel"]
+        }
+      }
+    },
+    {
+      "name": "4d. (Negative) Huy don khong ton tai -> 404",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Test khong ton tai\"\n}" },
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/00000000-0000-0000-0000-000000000000/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "00000000-0000-0000-0000-000000000000", "cancel"]
+        }
+      }
+    },
+    {
+      "name": "4e. (Negative) Huy khong co token -> 401",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 401 Unauthorized', function () { pm.response.to.have.status(401); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"reason\": \"No token\"\n}" },
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}/cancel",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "{{orderId}}", "cancel"]
+        }
+      }
+    },
+    {
       "name": "5. (Negative) Tao ky gui khong co token -> 401",
       "event": [
         {

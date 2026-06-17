@@ -62,6 +62,49 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Khách hàng hủy yêu cầu ký gửi của chính mình.
+        /// Chỉ hủy được khi hàng chưa vào kho VN (PENDING_REVIEW, APPROVED, WAITING_FOR_PARCEL).
+        /// Tự động hủy các báo giá liên quan.
+        /// </summary>
+        /// <param name="orderId">ID của yêu cầu ký gửi</param>
+        /// <param name="request">Lý do hủy (tùy chọn)</param>
+        /// <returns>Kết quả hủy</returns>
+        /// <response code="200">Hủy thành công</response>
+        /// <response code="400">Trạng thái không cho phép hủy</response>
+        /// <response code="401">Chưa đăng nhập hoặc không phải chủ đơn</response>
+        /// <response code="404">Không tìm thấy yêu cầu ký gửi</response>
+        [HttpPut("consignments/{orderId}/cancel")]
+        [Authorize(Roles = "Customer")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> CancelConsignment(Guid orderId, [FromBody] CancelConsignmentRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            try
+            {
+                var result = await _orderService.CancelConsignmentAsync(orderId, userId, request ?? new CancelConsignmentRequest());
+                return Ok(new { message = "Hủy yêu cầu ký gửi thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Staff cập nhật trạng thái yêu cầu ký gửi
         /// </summary>
         /// <param name="orderId">ID của yêu cầu ký gửi</param>

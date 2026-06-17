@@ -21,6 +21,9 @@ namespace VCL_BLL.Services
         // Phương án vận chuyển hợp lệ (A2).
         private static readonly string[] ValidShippingOptions = { "Express", "Consolidation" };
 
+        // Các trạng thái Order mà khách được phép tự hủy (hàng chưa vào kho VN).
+        private static readonly string[] CancellableStatuses = { "PENDING_REVIEW", "APPROVED", "WAITING_FOR_PARCEL" };
+
         public OrderService(IUnitOfWork unitOfWork, IQuotationService quotationService)
         {
             _unitOfWork = unitOfWork;
@@ -107,6 +110,61 @@ namespace VCL_BLL.Services
                 ItemCount = request.Items.Count,
                 Quotation = quotation,
                 Warnings = warnings
+            };
+        }
+
+        public async Task<CancelConsignmentResponse> CancelConsignmentAsync(Guid orderId, Guid userId, CancelConsignmentRequest request)
+        {
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
+
+            // Kiểm tra quyền sở hữu: userId → Customer.UserId → Order.CustomerId
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var allCustomers = await customerRepo.GetAllAsync();
+            var customer = allCustomers.FirstOrDefault(c => c.Id == order.CustomerId);
+            if (customer == null || customer.UserId != userId)
+                throw new UnauthorizedAccessException("Bạn không có quyền hủy yêu cầu ký gửi này.");
+
+            var currentStatus = order.Status?.ToUpperInvariant() ?? string.Empty;
+
+            if (currentStatus == "CANCELLED")
+                throw new ArgumentException("Yêu cầu ký gửi này đã được hủy trước đó.");
+
+            if (!CancellableStatuses.Contains(currentStatus))
+                throw new ArgumentException($"Không thể hủy yêu cầu khi đang ở trạng thái {order.Status}. Chỉ được hủy khi hàng chưa vào kho VN.");
+
+            // Hủy Order
+            order.Status = "CANCELLED";
+            if (!string.IsNullOrWhiteSpace(request.Reason))
+                order.Note = request.Reason;
+            orderRepo.Update(order);
+
+            // Hủy các Quotation liên quan đang DRAFT/ACCEPTED để tránh accept lại sau khi đơn đã hủy
+            var quotationRepo = _unitOfWork.Repository<Quotation>();
+            var allQuotations = await quotationRepo.GetAllAsync();
+            var relatedQuotations = allQuotations
+                .Where(q => q.OrderId == orderId)
+                .Where(q => q.Status == null
+                    || q.Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase)
+                    || q.Status.Equals("ACCEPTED", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var quotation in relatedQuotations)
+            {
+                quotation.Status = "CANCELLED";
+                quotationRepo.Update(quotation);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return new CancelConsignmentResponse
+            {
+                OrderId = order.Id,
+                Status = order.Status,
+                Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason,
+                CancelledQuotations = relatedQuotations.Count
             };
         }
 
