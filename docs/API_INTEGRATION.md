@@ -71,6 +71,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/quotations/{quotationId}/accept` | Authenticated | Khách hàng xác nhận báo giá tạm tính |
 | `PUT` | `/api/orders/consignments/{orderId}/status` | Staff | Staff cập nhật trạng thái yêu cầu ký gửi |
 | `GET` | `/api/orders/consignments` | Authenticated | Lấy danh sách yêu cầu ký gửi |
+| `PUT` | `/api/orders/consignments/{orderId}/cancel` | Authenticated | Customer hủy yêu cầu ký gửi |
 
 ## 4. Đăng ký khách hàng
 
@@ -601,7 +602,55 @@ Response `200 OK`:
 |---|---|---|
 | `401` | Chưa đăng nhập hoặc token không hợp lệ / Người dùng không hợp lệ | Tự động bởi middleware JWT hoặc `"Người dùng không hợp lệ."` |
 
-## 12. TypeScript types
+## 13. Customer hủy yêu cầu ký gửi (Cancel Consignment)
+
+Customer hủy yêu cầu ký gửi của mình. Chỉ được phép hủy khi trạng thái đơn hàng khác `CANCELLED` hoặc `WAREHOUSE_RECEIVED`.
+
+```http
+PUT /api/orders/consignments/{orderId}/cancel
+Authorization: Bearer {customerToken}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `orderId` | `Guid` | ID của yêu cầu ký gửi cần hủy |
+
+**Request Body:**
+
+```json
+{
+  "cancelReason": "Thay đổi kế hoạch gửi hàng"
+}
+```
+
+| Field | Ràng buộc |
+|---|---|
+| `cancelReason` | Không bắt buộc. Lý do hủy đơn. |
+
+### 13.1 Response thành công
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Hủy yêu cầu ký gửi thành công.",
+  "status": "CANCELLED",
+  "consignmentCode": "VCL-20260616235959-123456"
+}
+```
+
+### 13.2 Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Trạng thái không hợp lệ (đã hủy hoặc đã nhận kho) | `"Không thể hủy yêu cầu ký gửi khi yêu cầu đang ở trạng thái {status}"` |
+| `401` | Chưa đăng nhập hoặc token sai | Tự động bởi middleware JWT |
+| `401` | Không có quyền hủy đơn hàng này (không phải chủ sở hữu) | `"Bạn không có quyền hủy yêu cầu ký gửi này."` |
+| `404` | Không tìm thấy yêu cầu ký gửi | `"Không tìm thấy yêu cầu ký gửi với ID {orderId}"` |
+
+## 14. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -748,9 +797,18 @@ export interface PaginatedResponse<T> {
 export interface ConsignmentPaginatedResponse extends MessageResponse {
   data: PaginatedResponse<ConsignmentResponseDto>;
 }
+
+export interface CancelConsignmentRequest {
+  cancelReason?: string;
+}
+
+export interface CancelConsignmentResponse extends MessageResponse {
+  status: string;
+  consignmentCode: string | null;
+}
 ```
 
-## 13. Axios integration
+## 15. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -818,9 +876,13 @@ export async function updateConsignmentStatus(orderId: string, payload: UpdateCo
 export async function getConsignments(params?: { pageNumber?: number, pageSize?: number, status?: string, searchCode?: string }) {
   return api.get<ConsignmentPaginatedResponse>('/api/orders/consignments', { params });
 }
+
+export async function cancelConsignment(orderId: string, payload: CancelConsignmentRequest) {
+  return api.put<CancelConsignmentResponse>(`/api/orders/consignments/${orderId}/cancel`, payload);
+}
 ```
 
-## 14. Lưu ý tích hợp FE
+## 16. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -848,3 +910,4 @@ export async function getConsignments(params?: { pageNumber?: number, pageSize?:
 | `/quotations/{id}/accept` | `PUT /api/quotations/{quotationId}/accept` |
 | `/orders/{id}/status` | `PUT /api/orders/consignments/{orderId}/status` |
 | `/orders/consignments` | `GET /api/orders/consignments` |
+| `/orders/{id}/cancel` | `PUT /api/orders/consignments/{orderId}/cancel` |

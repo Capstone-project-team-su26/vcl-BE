@@ -190,5 +190,52 @@ namespace VCL_API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Customer hủy yêu cầu ký gửi
+        /// </summary>
+        /// <param name="orderId">ID của yêu cầu ký gửi</param>
+        /// <param name="request">Thông tin lý do hủy (nếu có)</param>
+        /// <returns>Kết quả hủy yêu cầu</returns>
+        [HttpPut("consignments/{orderId}/cancel")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> CancelConsignment(Guid orderId, [FromBody] CancelConsignmentRequest request)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { message = "Không thể xác định người dùng." });
+                }
+
+                var result = await _orderService.CancelConsignmentAsync(orderId, userId, request);
+                return Ok(new
+                {
+                    message = "Hủy yêu cầu ký gửi thành công.",
+                    status = result.Status,
+                    consignmentCode = result.ConsignmentCode
+                });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }
