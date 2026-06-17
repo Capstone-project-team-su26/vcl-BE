@@ -64,11 +64,37 @@ namespace VCL_BLL.Services
                 order.ConsignmentCode = generatedCode;
             }
 
+            var oldStatus = order.Status;
             order.Status = normalizedStatus;
             
             if (normalizedStatus == "REJECTED")
             {
                 order.Note = request.RejectionReason;
+            }
+
+            if (oldStatus != normalizedStatus)
+            {
+                if (normalizedStatus == "APPROVED" || normalizedStatus == "REJECTED")
+                {
+                    var customerRepo = _unitOfWork.Repository<Customer>();
+                    var customer = await customerRepo.GetByIdAsync(order.CustomerId);
+                    if (customer != null)
+                    {
+                        var notification = new Notification
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = customer.UserId,
+                            Title = normalizedStatus == "APPROVED" ? "Yêu cầu ký gửi đã được duyệt" : "Yêu cầu ký gửi bị từ chối",
+                            Content = normalizedStatus == "APPROVED"
+                                ? $"Yêu cầu ký gửi (Mã: {order.ConsignmentCode ?? order.Id.ToString()}) của bạn đã được duyệt."
+                                : $"Yêu cầu ký gửi (Mã: {order.ConsignmentCode ?? order.Id.ToString()}) của bạn đã bị từ chối.{(string.IsNullOrWhiteSpace(request.RejectionReason) ? "" : $" Lý do: {request.RejectionReason}")}",
+                            IsRead = false,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        var notificationRepo = _unitOfWork.Repository<Notification>();
+                        await notificationRepo.AddAsync(notification);
+                    }
+                }
             }
 
             orderRepo.Update(order);
@@ -159,6 +185,63 @@ namespace VCL_BLL.Services
                 TotalCount = totalCount,
                 PageNumber = pageNumber,
                 PageSize = pageSize
+            };
+        }
+
+        public async Task<CancelConsignmentResponse> CancelConsignmentAsync(Guid orderId, Guid userId, CancelConsignmentRequest request)
+        {
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var allCustomers = await customerRepo.GetAllAsync();
+            var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
+            if (customer == null)
+            {
+                throw new UnauthorizedAccessException("Người dùng không phải là khách hàng hợp lệ.");
+            }
+
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
+            }
+
+            if (order.CustomerId != customer.Id)
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền hủy yêu cầu ký gửi này.");
+            }
+
+            var invalidCancelStatuses = new[] { "CANCELLED", "WAREHOUSE_RECEIVED" };
+            if (order.Status != null && invalidCancelStatuses.Contains(order.Status.ToUpper()))
+            {
+                throw new ArgumentException($"Không thể hủy yêu cầu ký gửi khi yêu cầu đang ở trạng thái {order.Status}");
+            }
+
+            order.Status = "CANCELLED";
+            if (!string.IsNullOrWhiteSpace(request.CancelReason))
+            {
+                order.Note = request.CancelReason;
+            }
+
+            var notification = new Notification
+            {
+                Id = Guid.NewGuid(),
+                UserId = customer.UserId,
+                Title = "Yêu cầu ký gửi đã bị hủy",
+                Content = $"Yêu cầu ký gửi (Mã: {order.ConsignmentCode ?? order.Id.ToString()}) của bạn đã bị hủy.{(string.IsNullOrWhiteSpace(request.CancelReason) ? "" : $" Lý do: {request.CancelReason}")}",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var notificationRepo = _unitOfWork.Repository<Notification>();
+            await notificationRepo.AddAsync(notification);
+
+            orderRepo.Update(order);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new CancelConsignmentResponse
+            {
+                Status = order.Status,
+                ConsignmentCode = order.ConsignmentCode
             };
         }
     }

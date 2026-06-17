@@ -26,4 +26,15 @@ namespace VCL_BLL.DTOs
         public decimal? TotalVolume { get; set; }
         public DateTime? CreatedAt { get; set; }
     }
+
+    public class CancelConsignmentRequest
+    {
+        public string? CancelReason { get; set; }
+    }
+
+    public class CancelConsignmentResponse
+    {
+        public string Status { get; set; } = string.Empty;
+        public string? ConsignmentCode { get; set; }
+    }
 }
