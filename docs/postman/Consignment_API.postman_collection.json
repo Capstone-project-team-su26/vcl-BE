@@ -148,7 +148,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"reason\": \"Khach doi y, khong gui hang nua\"\n}"
+          "raw": "{\n  \"cancelReason\": \"Khach doi y, khong gui hang nua\"\n}"
         },
         "url": {
           "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}/cancel",
@@ -177,7 +177,7 @@
           { "key": "Content-Type", "value": "application/json" },
           { "key": "Authorization", "value": "Bearer {{token}}" }
         ],
-        "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Huy lan 2\"\n}" },
+        "body": { "mode": "raw", "raw": "{\n  \"cancelReason\": \"Huy lan 2\"\n}" },
         "url": {
           "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}/cancel",
           "host": ["{{baseUrl}}"],
@@ -204,7 +204,7 @@
           { "key": "Content-Type", "value": "application/json" },
           { "key": "Authorization", "value": "Bearer {{token}}" }
         ],
-        "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Test khong ton tai\"\n}" },
+        "body": { "mode": "raw", "raw": "{\n  \"cancelReason\": \"Test khong ton tai\"\n}" },
         "url": {
           "raw": "{{baseUrl}}/api/orders/consignments/00000000-0000-0000-0000-000000000000/cancel",
           "host": ["{{baseUrl}}"],
@@ -228,7 +228,7 @@
       "request": {
         "method": "PUT",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"reason\": \"No token\"\n}" },
+        "body": { "mode": "raw", "raw": "{\n  \"cancelReason\": \"No token\"\n}" },
         "url": {
           "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}/cancel",
           "host": ["{{baseUrl}}"],

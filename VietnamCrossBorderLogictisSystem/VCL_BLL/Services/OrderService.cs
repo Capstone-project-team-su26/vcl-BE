@@ -140,7 +140,7 @@ namespace VCL_BLL.Services
             // Hủy Order
             order.Status = "CANCELLED";
             
-            var reason = !string.IsNullOrWhiteSpace(request.Reason) ? request.Reason : request.CancelReason;
+            var reason = request.CancelReason;
             if (!string.IsNullOrWhiteSpace(reason))
                 order.Note = reason;
 
@@ -181,7 +181,7 @@ namespace VCL_BLL.Services
             {
                 OrderId = order.Id,
                 Status = order.Status,
-                Reason = reason,
+                CancelReason = reason,
                 CancelledQuotations = relatedQuotations.Count,
                 ConsignmentCode = order.ConsignmentCode
             };
