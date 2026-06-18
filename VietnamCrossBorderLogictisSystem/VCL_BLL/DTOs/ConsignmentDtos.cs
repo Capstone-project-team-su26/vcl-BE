@@ -5,6 +5,65 @@ using System.ComponentModel.DataAnnotations;
 namespace VCL_BLL.DTOs
 {
     /// <summary>
+    /// Chi tiết đầy đủ một yêu cầu ký gửi: header + khách hàng + mặt hàng + báo giá mới nhất.
+    /// </summary>
+    public class ConsignmentDetailResponse
+    {
+        public Guid OrderId { get; set; }
+        public string? ConsignmentCode { get; set; }
+        public string ConsignmentType { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? OrderType { get; set; }
+        public decimal? TotalWeight { get; set; }
+        public decimal? TotalVolume { get; set; }
+        public string? Note { get; set; }
+        public DateTime? CreatedAt { get; set; }
+
+        public ConsignmentCustomerInfo Customer { get; set; } = new();
+        public List<ConsignmentItemDetail> Items { get; set; } = new();
+
+        /// <summary>Báo giá mới nhất của đơn (null nếu chưa có).</summary>
+        public ConsignmentQuotationSummary? Quotation { get; set; }
+    }
+
+    public class ConsignmentCustomerInfo
+    {
+        public Guid? CustomerId { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+    }
+
+    public class ConsignmentItemDetail
+    {
+        public Guid Id { get; set; }
+        public string? ProductName { get; set; }
+        public string? ProductType { get; set; }
+        public int? Quantity { get; set; }
+        public decimal? Weight { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? DeclaredValue { get; set; }
+        public string? ReferenceUrl { get; set; }
+        public string? DomesticTrackingCode { get; set; }
+    }
+
+    public class ConsignmentQuotationSummary
+    {
+        public Guid QuotationId { get; set; }
+        public string? QuoteType { get; set; }
+        public string? Status { get; set; }
+        public decimal? EstimatedFreightCharge { get; set; }
+        public decimal? ServiceFee { get; set; }
+        public decimal? TaxAndDuty { get; set; }
+        public decimal? TotalVolume { get; set; }
+        public decimal TotalEstimatedCost { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public DateTime? ExpiredAt { get; set; }
+    }
+
+    /// <summary>
     /// Yêu cầu tạo ký gửi (A1) — header + danh sách mặt hàng + phương án vận chuyển (A2).
     /// </summary>
     public class CreateConsignmentRequest

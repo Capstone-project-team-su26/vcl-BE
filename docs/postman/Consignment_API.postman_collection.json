@@ -99,6 +99,35 @@
       }
     },
     {
+      "name": "3b. Xem chi tiet yeu cau ky gui",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('Dung orderId', function () { pm.expect(data.orderId).to.eql(pm.collectionVariables.get('orderId')); });",
+              "pm.test('Co thong tin khach (email/phone)', function () { pm.expect(data.customer).to.have.property('email'); pm.expect(data.customer).to.have.property('phone'); });",
+              "pm.test('Co danh sach mat hang', function () { pm.expect(data.items).to.be.an('array').that.is.not.empty; });",
+              "pm.test('Item co quantity/referenceUrl/domesticTrackingCode', function () { var i = data.items[0]; pm.expect(i).to.have.property('quantity'); pm.expect(i).to.have.property('referenceUrl'); pm.expect(i).to.have.property('domesticTrackingCode'); });",
+              "console.log('Status don:', data.status, '| So mat hang:', data.items.length, '| Bao gia:', data.quotation ? data.quotation.totalEstimatedCost : 'chua co');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "{{orderId}}"]
+        }
+      }
+    },
+    {
       "name": "4. Khach xac nhan bao gia (accept)",
       "event": [
         {
@@ -283,6 +312,52 @@
           "raw": "{\n  \"shippingOption\": \"Airplane\",\n  \"items\": [ { \"productName\": \"Test\", \"productType\": \"Test\", \"quantity\": 1 } ]\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/orders/consignments", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments"] }
+      }
+    },
+    {
+      "name": "7. (Negative) Xem chi tiet don khong ton tai -> 404",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/00000000-0000-0000-0000-000000000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
+    },
+    {
+      "name": "8. (Negative) Xem chi tiet khong co token -> 401",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 401 Unauthorized', function () { pm.response.to.have.status(401); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "{{orderId}}"]
+        }
       }
     }
   ]

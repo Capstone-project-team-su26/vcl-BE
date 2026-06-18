@@ -24,6 +24,9 @@ namespace VCL_BLL.Services
         // Các trạng thái Order mà khách được phép tự hủy (hàng chưa vào kho VN).
         private static readonly string[] CancellableStatuses = { "PENDING_REVIEW", "APPROVED", "WAITING_FOR_PARCEL" };
 
+        // Các role nội bộ được xem mọi yêu cầu ký gửi (không cần là chủ đơn).
+        private static readonly string[] StaffRoles = { "ADMIN", "SALE", "WAREHOUSESTAFF", "OPERATIONSMANAGER", "DELIVERY" };
+
         public OrderService(IUnitOfWork unitOfWork, IQuotationService quotationService)
         {
             _unitOfWork = unitOfWork;
@@ -184,6 +187,100 @@ namespace VCL_BLL.Services
                 CancelReason = reason,
                 CancelledQuotations = relatedQuotations.Count,
                 ConsignmentCode = order.ConsignmentCode
+            };
+        }
+
+        public async Task<ConsignmentDetailResponse> GetConsignmentDetailAsync(Guid orderId, Guid? userId, string role)
+        {
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
+
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var allCustomers = await customerRepo.GetAllAsync();
+            var customer = allCustomers.FirstOrDefault(c => c.Id == order.CustomerId);
+
+            // Phân quyền: staff xem mọi đơn; customer chỉ xem đơn của mình.
+            var isStaff = !string.IsNullOrWhiteSpace(role)
+                && StaffRoles.Contains(role.Trim().ToUpperInvariant());
+            if (!isStaff)
+            {
+                if (userId == null || customer == null || customer.UserId != userId)
+                    throw new UnauthorizedAccessException("Bạn không có quyền xem yêu cầu ký gửi này.");
+            }
+
+            // Mặt hàng thuộc đơn
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            var allItems = await orderItemRepo.GetAllAsync();
+            var items = allItems
+                .Where(i => i.OrderId == orderId)
+                .Select(i => new ConsignmentItemDetail
+                {
+                    Id = i.Id,
+                    ProductName = i.ProductName,
+                    ProductType = i.ProductType,
+                    Quantity = i.Quantity,
+                    Weight = i.Weight,
+                    Width = i.Width,
+                    Height = i.Height,
+                    Length = i.Length,
+                    DeclaredValue = i.DeclaredValue,
+                    ReferenceUrl = i.ReferenceUrl,
+                    DomesticTrackingCode = i.DomesticTrackingCode
+                })
+                .ToList();
+
+            // Báo giá mới nhất
+            var quotationRepo = _unitOfWork.Repository<Quotation>();
+            var allQuotations = await quotationRepo.GetAllAsync();
+            var latestQuotation = allQuotations
+                .Where(q => q.OrderId == orderId)
+                .OrderByDescending(q => q.CreatedAt)
+                .FirstOrDefault();
+
+            ConsignmentQuotationSummary? quotationSummary = null;
+            if (latestQuotation != null)
+            {
+                var freight = latestQuotation.EstimatedFreightCharge ?? 0m;
+                var service = latestQuotation.ServiceFee ?? 0m;
+                var tax = latestQuotation.TaxAndDuty ?? 0m;
+
+                quotationSummary = new ConsignmentQuotationSummary
+                {
+                    QuotationId = latestQuotation.Id,
+                    QuoteType = latestQuotation.QuoteType,
+                    Status = latestQuotation.Status,
+                    EstimatedFreightCharge = latestQuotation.EstimatedFreightCharge,
+                    ServiceFee = latestQuotation.ServiceFee,
+                    TaxAndDuty = latestQuotation.TaxAndDuty,
+                    TotalVolume = latestQuotation.TotalVolume,
+                    TotalEstimatedCost = freight + service + tax,
+                    CreatedAt = latestQuotation.CreatedAt,
+                    ExpiredAt = latestQuotation.ExpiredAt
+                };
+            }
+
+            return new ConsignmentDetailResponse
+            {
+                OrderId = order.Id,
+                ConsignmentCode = order.ConsignmentCode,
+                ConsignmentType = order.ConsignmentType ?? string.Empty,
+                Status = order.Status ?? string.Empty,
+                OrderType = order.OrderType,
+                TotalWeight = order.TotalWeight,
+                TotalVolume = order.TotalVolume,
+                Note = order.Note,
+                CreatedAt = order.CreatedAt,
+                Customer = new ConsignmentCustomerInfo
+                {
+                    CustomerId = customer?.Id,
+                    FullName = customer?.FullName ?? string.Empty,
+                    Email = customer?.Email,
+                    Phone = customer?.Phone
+                },
+                Items = items,
+                Quotation = quotationSummary
             };
         }
 
