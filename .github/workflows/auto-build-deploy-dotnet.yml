@@ -1,0 +1,46 @@
+name: CI/CD for .NET Solution (Local Docker)
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted  # Chạy trên VPS Linux
+
+    env:
+      IMAGE_NAME: ${{ secrets.DOCKER_IMAGE_NAME }}
+      DOCKER_PORT: ${{ secrets.DOCKER_PORT }}
+      APP_PORT: ${{ secrets.APP_PORT }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up environment for .NET installation
+        run: |
+          echo "DOTNET_ROOT=$HOME/.dotnet" >> $GITHUB_ENV
+          echo "$HOME/.dotnet:$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Build Docker Image
+        run: |
+          docker build -t $IMAGE_NAME:v1 .
+
+      - name: Stop and Remove Old Container (if exists)
+        run: |
+          docker stop $IMAGE_NAME || true
+          docker rm $IMAGE_NAME || true
+
+      - name: Run Docker Container (Inject Connection string Config)
+        run: |
+          docker run -d --name $IMAGE_NAME \
+            --network apps_network \
+            --restart always \
+            -e ConnectionStrings__DefaultConnection="${{ secrets.CONNECTIONSTRING }}" \
+            -e JWT__SecretKey="${{ secrets.JWT_SECRET_KEY }}" \
+            -p $DOCKER_PORT:$APP_PORT $IMAGE_NAME:v1
