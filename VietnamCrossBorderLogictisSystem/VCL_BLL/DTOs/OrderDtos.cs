@@ -30,14 +30,13 @@ namespace VCL_BLL.DTOs
     public class CancelConsignmentRequest
     {
         public string? CancelReason { get; set; }
-        public string? Reason { get; set; }
     }
 
     public class CancelConsignmentResponse
     {
         public Guid OrderId { get; set; }
         public string Status { get; set; } = string.Empty;
-        public string? Reason { get; set; }
+        public string? CancelReason { get; set; }
         public int CancelledQuotations { get; set; }
         public string? ConsignmentCode { get; set; }
     }
