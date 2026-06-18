@@ -667,6 +667,9 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.RestrictionType)
                 .HasMaxLength(100)
                 .HasColumnName("restriction_type");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
         });
 
         modelBuilder.Entity<ServicePricing>(entity =>

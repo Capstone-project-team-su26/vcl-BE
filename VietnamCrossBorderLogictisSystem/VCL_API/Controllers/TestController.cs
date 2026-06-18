@@ -111,5 +111,41 @@ namespace VCL_API.Controllers
 
             return Ok(new { message = "Created Customer successfully.", email = email, password = "Customer123" });
         }
+
+        [HttpGet("seed-admin")]
+        public async Task<IActionResult> SeedAdmin()
+        {
+            var userRepo = _unitOfWork.Repository<User>();
+            var email = "admin@test.com";
+            
+            var allUsers = await userRepo.GetAllAsync();
+            var existingAdmin = allUsers.FirstOrDefault(u => u.Email == email);
+            if (existingAdmin != null)
+            {
+                existingAdmin.Password = PasswordHelper.HashPassword("Admin123");
+                userRepo.Update(existingAdmin);
+                await _unitOfWork.SaveChangesAsync();
+                return Ok(new { message = "Admin already exists, password reset.", email = email, password = "Admin123" });
+            }
+
+            var newAdmin = new User
+            {
+                Id = Guid.NewGuid(),
+                FullName = "Test Administrator",
+                Email = email,
+                Phone = "0111222333",
+                Password = PasswordHelper.HashPassword("Admin123"),
+                Role = "Admin",
+                UserType = "Employee",
+                Status = "Active",
+                CreatedAt = DateTime.UtcNow,
+                IsEmailVerified = true
+            };
+
+            await userRepo.AddAsync(newAdmin);
+            await _unitOfWork.SaveChangesAsync();
+
+            return Ok(new { message = "Created Admin successfully.", email = email, password = "Admin123" });
+        }
     }
 }

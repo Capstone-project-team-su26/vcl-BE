@@ -203,6 +203,8 @@ namespace VCL_BLL.Services
             {
                 foreach (var r in allRestricted)
                 {
+                    if (!r.IsActive) continue;
+
                     if (string.IsNullOrWhiteSpace(r.ItemName)) continue;
 
                     var matchesName = !string.IsNullOrWhiteSpace(item.ProductName)
