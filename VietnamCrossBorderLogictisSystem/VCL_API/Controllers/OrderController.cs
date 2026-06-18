@@ -150,6 +150,43 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Xem chi tiết một yêu cầu ký gửi.
+        /// Customer chỉ xem được đơn của chính mình; các role nội bộ xem được mọi đơn.
+        /// </summary>
+        /// <param name="orderId">ID của yêu cầu ký gửi</param>
+        /// <returns>Chi tiết đầy đủ: header + khách hàng + mặt hàng + báo giá mới nhất</returns>
+        /// <response code="200">Lấy chi tiết thành công</response>
+        /// <response code="401">Chưa đăng nhập hoặc không phải chủ đơn</response>
+        /// <response code="404">Không tìm thấy yêu cầu ký gửi</response>
+        [HttpGet("consignments/{orderId}")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetConsignmentDetail(Guid orderId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = null;
+            if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var parsedId))
+                userId = parsedId;
+
+            var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _orderService.GetConsignmentDetailAsync(orderId, userId, role);
+                return Ok(new { message = "Lấy chi tiết yêu cầu ký gửi thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Lấy danh sách yêu cầu ký gửi
         /// </summary>
         /// <param name="pageNumber">Số trang (mặc định 1)</param>
