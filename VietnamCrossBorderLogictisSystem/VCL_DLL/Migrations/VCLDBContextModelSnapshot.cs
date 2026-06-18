@@ -881,6 +881,12 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("country");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
                     b.Property<string>("ItemName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
