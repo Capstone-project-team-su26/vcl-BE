@@ -2,9 +2,9 @@
 
 > Hệ thống: Vietnam Cross-Border Logistics System (VCL)
 >
-> Cập nhật: 16/06/2026 — Thêm API Staff Cập nhật trạng thái yêu cầu ký gửi & API Lấy danh sách yêu cầu ký gửi
+> Cập nhật: 18/06/2026 — Thêm API Admin quản lý danh mục hàng cấm/hạn chế (Restricted Items)
 >
-> Module hiện có: Authentication, User Management, Quotation, Order
+> Module hiện có: Authentication, User Management, Quotation, Order, Restricted Items
 
 ## 1. Thông tin chung
 
@@ -72,6 +72,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/orders/consignments/{orderId}/status` | Staff | Staff cập nhật trạng thái yêu cầu ký gửi |
 | `GET` | `/api/orders/consignments` | Authenticated | Lấy danh sách yêu cầu ký gửi |
 | `PUT` | `/api/orders/consignments/{orderId}/cancel` | Authenticated | Customer hủy yêu cầu ký gửi |
+| `GET` | `/api/restricted-items` | Admin | Xem danh sách mặt hàng cấm/hạn chế |
+| `GET` | `/api/restricted-items/{id}` | Admin | Lấy chi tiết mặt hàng cấm/hạn chế |
+| `POST` | `/api/restricted-items` | Admin | Thêm mặt hàng cấm/hạn chế mới |
+| `PUT` | `/api/restricted-items/{id}` | Admin | Cập nhật thông tin/vô hiệu hóa mặt hàng |
+| `DELETE` | `/api/restricted-items/{id}` | Admin | Xóa mặt hàng cấm/hạn chế |
 
 ## 4. Đăng ký khách hàng
 
@@ -650,7 +655,115 @@ Response `200 OK`:
 | `401` | Không có quyền hủy đơn hàng này (không phải chủ sở hữu) | `"Bạn không có quyền hủy yêu cầu ký gửi này."` |
 | `404` | Không tìm thấy yêu cầu ký gửi | `"Không tìm thấy yêu cầu ký gửi với ID {orderId}"` |
 
-## 14. TypeScript types
+## 14. Quản lý danh mục hàng cấm/hạn chế (Restricted Items)
+
+Admin quản lý danh sách các mặt hàng bị cấm (BANNED), hạn chế (RESTRICTED), hoặc cảnh báo (WARNING). Dữ liệu này được đối chiếu tự động khi Khách hàng gửi yêu cầu ký gửi.
+
+### 14.1. Lấy danh sách hàng cấm/hạn chế
+
+```http
+GET /api/restricted-items
+Authorization: Bearer {adminToken}
+```
+
+Response `200 OK`:
+```json
+[
+  {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "itemName": "Pin Lithium Test",
+    "country": "Vietnam",
+    "restrictionType": "BANNED",
+    "note": "Nguy hiểm cháy nổ, cấm vận chuyển bay",
+    "isActive": true
+  }
+]
+```
+
+### 14.2. Lấy chi tiết theo ID
+
+```http
+GET /api/restricted-items/{id}
+Authorization: Bearer {adminToken}
+```
+
+Response `200 OK` (chi tiết mặt hàng). Trả về lỗi `404 Not Found` nếu không tìm thấy ID.
+
+### 14.3. Thêm mặt hàng mới
+
+```http
+POST /api/restricted-items
+Authorization: Bearer {adminToken}
+```
+
+Request Body:
+```json
+{
+  "itemName": "Pin Lithium Test",
+  "country": "Vietnam",
+  "restrictionType": "BANNED",
+  "note": "Nguy hiểm cháy nổ, cấm vận chuyển bay",
+  "isActive": true
+}
+```
+
+| Field | Ràng buộc |
+|---|---|
+| `itemName` | Bắt buộc, tối đa 255 ký tự |
+| `country` | Không bắt buộc, tối đa 100 ký tự |
+| `restrictionType` | Bắt buộc, chỉ nhận một trong ba giá trị: `BANNED`, `RESTRICTED`, `WARNING` |
+| `note` | Không bắt buộc |
+| `isActive` | Không bắt buộc, mặc định là `true` |
+
+Response `201 Created` trả về thông tin mặt hàng vừa tạo kèm ID.
+Response `400 Bad Request` khi dữ liệu lỗi hoặc bị trùng (cùng tên, cùng quốc gia áp dụng và cùng loại hạn chế).
+
+### 14.4. Cập nhật thông tin mặt hàng
+
+Sử dụng để chỉnh sửa chi tiết hoặc bật/tắt trạng thái hoạt động (`isActive: false` để vô hiệu hóa mặt hàng).
+
+```http
+PUT /api/restricted-items/{id}
+Authorization: Bearer {adminToken}
+```
+
+Request Body:
+```json
+{
+  "itemName": "Pin Lithium Test",
+  "country": "Vietnam",
+  "restrictionType": "BANNED",
+  "note": "Đã sửa đổi ghi chú",
+  "isActive": false
+}
+```
+
+Response `200 OK`:
+```json
+{
+  "message": "Cập nhật mặt hàng thành công."
+}
+```
+
+Response `400` nếu thông tin trùng lặp với mặt hàng khác hoặc không hợp lệ. Trả về `404` nếu ID không tồn tại.
+
+### 14.5. Xóa mặt hàng cấm/hạn chế
+
+```http
+DELETE /api/restricted-items/{id}
+Authorization: Bearer {adminToken}
+```
+
+Response `200 OK`:
+```json
+{
+  "message": "Xóa mặt hàng thành công."
+}
+```
+
+Trả về `404 Not Found` nếu không tìm thấy ID.
+
+## 15. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -806,9 +919,34 @@ export interface CancelConsignmentResponse extends MessageResponse {
   status: string;
   consignmentCode: string | null;
 }
+
+export interface RestrictedItemDto {
+  id: string;
+  itemName: string;
+  country: string | null;
+  restrictionType: 'BANNED' | 'RESTRICTED' | 'WARNING';
+  note: string | null;
+  isActive: boolean;
+}
+
+export interface CreateRestrictedItemRequest {
+  itemName: string;
+  country?: string;
+  restrictionType: 'BANNED' | 'RESTRICTED' | 'WARNING';
+  note?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateRestrictedItemRequest {
+  itemName: string;
+  country?: string;
+  restrictionType: 'BANNED' | 'RESTRICTED' | 'WARNING';
+  note?: string;
+  isActive: boolean;
+}
 ```
 
-## 15. Axios integration
+## 16. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -880,9 +1018,29 @@ export async function getConsignments(params?: { pageNumber?: number, pageSize?:
 export async function cancelConsignment(orderId: string, payload: CancelConsignmentRequest) {
   return api.put<CancelConsignmentResponse>(`/api/orders/consignments/${orderId}/cancel`, payload);
 }
+
+export async function getRestrictedItems() {
+  return api.get<RestrictedItemDto[]>('/api/restricted-items');
+}
+
+export async function getRestrictedItemById(id: string) {
+  return api.get<RestrictedItemDto>(`/api/restricted-items/${id}`);
+}
+
+export async function createRestrictedItem(payload: CreateRestrictedItemRequest) {
+  return api.post<RestrictedItemDto>('/api/restricted-items', payload);
+}
+
+export async function updateRestrictedItem(id: string, payload: UpdateRestrictedItemRequest) {
+  return api.put<MessageResponse>(`/api/restricted-items/${id}`, payload);
+}
+
+export async function deleteRestrictedItem(id: string) {
+  return api.delete<MessageResponse>(`/api/restricted-items/${id}`);
+}
 ```
 
-## 16. Lưu ý tích hợp FE
+## 17. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -911,3 +1069,6 @@ export async function cancelConsignment(orderId: string, payload: CancelConsignm
 | `/orders/{id}/status` | `PUT /api/orders/consignments/{orderId}/status` |
 | `/orders/consignments` | `GET /api/orders/consignments` |
 | `/orders/{id}/cancel` | `PUT /api/orders/consignments/{orderId}/cancel` |
+| `/admin/restricted-items` | `GET /api/restricted-items` |
+| `/admin/restricted-items/create` | `POST /api/restricted-items` |
+| `/admin/restricted-items/{id}/edit` | `PUT /api/restricted-items/{id}` |
