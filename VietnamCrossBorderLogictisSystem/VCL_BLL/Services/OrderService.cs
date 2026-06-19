@@ -15,8 +15,11 @@ namespace VCL_BLL.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IQuotationService _quotationService;
 
-        // Các giá trị RestrictionType bị coi là hàng cấm (chặn tạo).
+        // Các giá trị RestrictionType bị coi là hàng cấm (chặn tạo) → level BANNED.
         private static readonly string[] BannedRestrictionTypes = { "BANNED", "PROHIBITED", "CẤM", "CAM" };
+
+        // Các giá trị RestrictionType được coi là hàng hạn chế → level RESTRICTED.
+        private static readonly string[] RestrictedRestrictionTypes = { "RESTRICTED", "LIMITED", "HẠN CHẾ", "HAN CHE" };
 
         // Phương án vận chuyển hợp lệ (A2).
         private static readonly string[] ValidShippingOptions = { "Express", "Consolidation" };
@@ -51,13 +54,26 @@ namespace VCL_BLL.Services
             if (customer == null)
                 throw new UnauthorizedAccessException("Không tìm thấy thông tin khách hàng tương ứng với tài khoản.");
 
-            // 3. Đối chiếu hàng cấm / hạn chế
-            var (warnings, bannedItems) = await CheckRestrictedItemsAsync(request.Items);
+            // 3. Đối chiếu hàng cấm / hạn chế (dùng chung logic với endpoint validate-items)
+            var validationResults = await ValidateItemsAgainstRestrictedAsync(request.Items);
+            var bannedItems = validationResults.Where(r => r.Level == "BANNED").ToList();
             if (bannedItems.Count > 0)
             {
-                var names = string.Join(", ", bannedItems.Select(b => b.ProductName));
+                var names = string.Join(", ", bannedItems.Select(b => b.ProductName).Distinct());
                 throw new ArgumentException($"Không thể tạo ký gửi. Các mặt hàng sau thuộc danh mục cấm: {names}");
             }
+
+            // Các mặt hàng hạn chế/cảnh báo → đưa vào Warnings để trả về cho khách
+            var warnings = validationResults
+                .Where(r => r.Level != "BANNED")
+                .Select(r => new RestrictedItemWarning
+                {
+                    ProductName = r.ProductName,
+                    MatchedItem = r.MatchedItem,
+                    RestrictionType = r.Level,
+                    Note = r.Reason
+                })
+                .ToList();
 
             // 4. Tạo Order (chưa sinh ConsignmentCode — sinh khi APPROVED)
             var orderRepo = _unitOfWork.Repository<Order>();
@@ -285,23 +301,40 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Đối chiếu từng mặt hàng với bảng RestrictedItem.
-        /// Trả về (danh sách cảnh báo hạn chế, danh sách hàng cấm cần chặn).
+        /// Kiểm tra danh sách mặt hàng so với danh mục hàng cấm/hạn chế (chỉ kiểm tra, không tạo Order).
+        /// Dùng cho endpoint validate-items.
         /// </summary>
-        private async Task<(List<RestrictedItemWarning> warnings, List<RestrictedItemWarning> banned)> CheckRestrictedItemsAsync(List<ConsignmentItemRequest> items)
+        public async Task<ValidateItemsResponse> ValidateConsignmentItemsAsync(ValidateItemsRequest request)
+        {
+            if (request.Items == null || request.Items.Count == 0)
+                throw new ArgumentException("Phải có ít nhất một mặt hàng để kiểm tra.");
+
+            var results = await ValidateItemsAgainstRestrictedAsync(request.Items);
+
+            return new ValidateItemsResponse
+            {
+                // Có hàng BANNED → không cho tạo; hàng hạn chế/cảnh báo vẫn cho tạo.
+                CanCreate = !results.Any(r => r.Level == "BANNED"),
+                Results = results
+            };
+        }
+
+        /// <summary>
+        /// Đối chiếu từng mặt hàng với bảng RestrictedItem, phân loại 3 mức BANNED/RESTRICTED/WARNING.
+        /// Chỉ trả về các mặt hàng có khớp (có vấn đề). Logic dùng chung cho cả create lẫn validate.
+        /// </summary>
+        private async Task<List<ItemValidationResult>> ValidateItemsAgainstRestrictedAsync(List<ConsignmentItemRequest> items)
         {
             var restrictedRepo = _unitOfWork.Repository<RestrictedItem>();
             var allRestricted = (await restrictedRepo.GetAllAsync()).ToList();
 
-            var warnings = new List<RestrictedItemWarning>();
-            var banned = new List<RestrictedItemWarning>();
+            var results = new List<ItemValidationResult>();
 
             foreach (var item in items)
             {
                 foreach (var r in allRestricted)
                 {
                     if (!r.IsActive) continue;
-
                     if (string.IsNullOrWhiteSpace(r.ItemName)) continue;
 
                     var matchesName = !string.IsNullOrWhiteSpace(item.ProductName)
@@ -311,25 +344,36 @@ namespace VCL_BLL.Services
 
                     if (!matchesName && !matchesType) continue;
 
-                    var warning = new RestrictedItemWarning
+                    results.Add(new ItemValidationResult
                     {
                         ProductName = item.ProductName,
+                        Level = MapRestrictionLevel(r.RestrictionType),
                         MatchedItem = r.ItemName,
-                        RestrictionType = r.RestrictionType ?? string.Empty,
-                        Note = r.Note
-                    };
-
-                    var isBanned = r.RestrictionType != null
-                        && BannedRestrictionTypes.Contains(r.RestrictionType.Trim().ToUpperInvariant());
-
-                    if (isBanned)
-                        banned.Add(warning);
-                    else
-                        warnings.Add(warning);
+                        Country = r.Country,
+                        Reason = r.Note
+                    });
                 }
             }
 
-            return (warnings, banned);
+            return results;
+        }
+
+        /// <summary>
+        /// Quy đổi RestrictionType (free text trong DB) về 1 trong 3 mức chuẩn: BANNED / RESTRICTED / WARNING.
+        /// </summary>
+        private static string MapRestrictionLevel(string? restrictionType)
+        {
+            if (string.IsNullOrWhiteSpace(restrictionType))
+                return "WARNING";
+
+            var normalized = restrictionType.Trim().ToUpperInvariant();
+
+            if (BannedRestrictionTypes.Contains(normalized))
+                return "BANNED";
+            if (RestrictedRestrictionTypes.Contains(normalized))
+                return "RESTRICTED";
+
+            return "WARNING";
         }
 
         public async Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request)

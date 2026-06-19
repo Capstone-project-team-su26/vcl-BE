@@ -62,6 +62,33 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Kiểm tra danh sách hàng hóa với danh mục hàng cấm/hạn chế (chỉ kiểm tra, KHÔNG tạo Order).
+        /// Dùng để cảnh báo sớm khi khách đang nhập hàng. Hàng cấm → canCreate=false; hàng hạn chế → vẫn cho tạo nhưng cảnh báo.
+        /// </summary>
+        /// <param name="request">Danh sách mặt hàng cần kiểm tra</param>
+        /// <returns>canCreate + danh sách cảnh báo theo từng mặt hàng (BANNED/RESTRICTED/WARNING)</returns>
+        /// <response code="200">Kiểm tra thành công (kể cả khi có hàng cấm — xem canCreate)</response>
+        /// <response code="400">Danh sách mặt hàng rỗng</response>
+        /// <response code="401">Chưa đăng nhập</response>
+        [HttpPost("consignments/validate-items")]
+        [Authorize(Roles = "Customer,Admin,Sale,WarehouseStaff,OperationsManager,Delivery")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        public async Task<IActionResult> ValidateItems([FromBody] ValidateItemsRequest request)
+        {
+            try
+            {
+                var result = await _orderService.ValidateConsignmentItemsAsync(request);
+                return Ok(new { message = "Kiểm tra hàng hóa thành công.", data = result });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Khách hàng hủy yêu cầu ký gửi của chính mình.
         /// Chỉ hủy được khi hàng chưa vào kho VN (PENDING_REVIEW, APPROVED, WAITING_FOR_PARCEL).
         /// Tự động hủy các báo giá liên quan.

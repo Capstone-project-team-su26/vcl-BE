@@ -124,6 +124,48 @@ namespace VCL_BLL.DTOs
     }
 
     /// <summary>
+    /// Yêu cầu kiểm tra hàng cấm/hạn chế (chỉ kiểm tra, không tạo Order).
+    /// </summary>
+    public class ValidateItemsRequest
+    {
+        [Required]
+        [MinLength(1, ErrorMessage = "Phải có ít nhất một mặt hàng để kiểm tra.")]
+        public List<ConsignmentItemRequest> Items { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Kết quả kiểm tra một mặt hàng so với danh mục hàng cấm/hạn chế.
+    /// </summary>
+    public class ItemValidationResult
+    {
+        public string ProductName { get; set; } = string.Empty;
+
+        /// <summary>Mức độ: BANNED (cấm), RESTRICTED (hạn chế), WARNING (cảnh báo).</summary>
+        public string Level { get; set; } = string.Empty;
+
+        /// <summary>Tên mục trong danh mục đã khớp.</summary>
+        public string MatchedItem { get; set; } = string.Empty;
+
+        /// <summary>Quốc gia áp dụng của rule (nếu có).</summary>
+        public string? Country { get; set; }
+
+        /// <summary>Lý do hạn chế (lấy từ Note của rule).</summary>
+        public string? Reason { get; set; }
+    }
+
+    /// <summary>
+    /// Kết quả kiểm tra cả danh sách mặt hàng.
+    /// </summary>
+    public class ValidateItemsResponse
+    {
+        /// <summary>True nếu KHÔNG có mặt hàng nào bị cấm (BANNED). Hàng hạn chế vẫn cho tạo.</summary>
+        public bool CanCreate { get; set; }
+
+        /// <summary>Chỉ chứa các mặt hàng có vấn đề (cấm/hạn chế/cảnh báo).</summary>
+        public List<ItemValidationResult> Results { get; set; } = new();
+    }
+
+    /// <summary>
     /// Response sau khi tạo ký gửi: thông tin đơn + báo giá tạm tính + cảnh báo (nếu có).
     /// </summary>
     public class CreateConsignmentResponse
