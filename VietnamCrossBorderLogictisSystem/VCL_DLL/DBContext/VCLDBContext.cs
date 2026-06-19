@@ -49,6 +49,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<RestrictedItem> RestrictedItems { get; set; }
 
+    public virtual DbSet<PricingRule> PricingRules { get; set; }
+
     public virtual DbSet<ServicePricing> ServicePricings { get; set; }
 
     public virtual DbSet<Shelf> Shelves { get; set; }
@@ -670,6 +672,44 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.IsActive)
                 .HasDefaultValue(true)
                 .HasColumnName("is_active");
+        });
+
+        modelBuilder.Entity<PricingRule>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PRICING_RULES");
+
+            entity.ToTable("PRICING_RULES");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("(newid())")
+                .HasColumnName("id");
+            entity.Property(e => e.ShippingServiceType)
+                .HasMaxLength(100)
+                .HasColumnName("shipping_service_type");
+            entity.Property(e => e.ConsignmentType)
+                .HasMaxLength(100)
+                .HasColumnName("consignment_type");
+            entity.Property(e => e.Route)
+                .HasMaxLength(255)
+                .HasColumnName("route");
+            entity.Property(e => e.UnitType)
+                .HasMaxLength(50)
+                .HasColumnName("unit_type");
+            entity.Property(e => e.PricePerWeight)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("price_per_weight");
+            entity.Property(e => e.PricePerVolume)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("price_per_volume");
+            entity.Property(e => e.ServiceFee)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("service_fee");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("created_at");
         });
 
         modelBuilder.Entity<ServicePricing>(entity =>

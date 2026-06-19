@@ -90,13 +90,67 @@ namespace VCL_BLL.Services
             var volumetricWeight = totalVolume / VolumetricDivisor;
             var chargeableWeight = Math.Max(totalWeight, volumetricWeight);
 
-            // 5. Lấy đơn giá vận chuyển từ ServicePricing
-            var consignmentType = order.ConsignmentType ?? "Express";
-            var freightRate = await GetFreightRateAsync(consignmentType);
+            // 5. Tìm customer & route
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customer = order.CustomerId.HasValue
+                ? await customerRepo.GetByIdAsync(order.CustomerId.Value)
+                : null;
+            var customerCountry = customer?.Country;
 
-            // 6. Tính phí
-            var estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
-            var serviceFee = GetServiceFee(consignmentType);
+            // 6. Tìm cấu hình bảng giá phù hợp từ PricingRule
+            var consignmentType = order.ConsignmentType ?? "Express";
+            var pricingRepo = _unitOfWork.Repository<PricingRule>();
+            var allRules = await pricingRepo.GetAllAsync();
+
+            var activeRules = allRules
+                .Where(r => r.IsActive)
+                .Where(r => string.Equals(r.ConsignmentType, consignmentType, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            PricingRule matchedRule = null;
+            if (!string.IsNullOrWhiteSpace(customerCountry))
+            {
+                matchedRule = activeRules
+                    .FirstOrDefault(r => string.Equals(r.Route, customerCountry, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (matchedRule == null)
+            {
+                matchedRule = activeRules
+                    .FirstOrDefault(r => string.IsNullOrWhiteSpace(r.Route));
+            }
+
+            if (matchedRule == null)
+            {
+                matchedRule = activeRules.FirstOrDefault();
+            }
+
+            decimal estimatedFreightCharge;
+            decimal serviceFee;
+
+            if (matchedRule != null)
+            {
+                var weightCharge = chargeableWeight * matchedRule.PricePerWeight;
+                var volumeCharge = matchedRule.PricePerVolume.HasValue
+                    ? (totalVolume / 1000000m) * matchedRule.PricePerVolume.Value
+                    : 0m;
+
+                estimatedFreightCharge = Math.Round(Math.Max(weightCharge, volumeCharge), 2);
+                serviceFee = matchedRule.ServiceFee;
+            }
+            else
+            {
+                // Fallback: giá mặc định
+                var freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                    ? DefaultExpressRate
+                    : DefaultConsolidationRate;
+
+                estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
+                serviceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                    ? ExpressServiceFee
+                    : ConsolidationServiceFee;
+            }
+
             var taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
             var totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
 

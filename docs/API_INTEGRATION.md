@@ -763,7 +763,128 @@ Response `200 OK`:
 
 Trả về `404 Not Found` nếu không tìm thấy ID.
 
-## 15. TypeScript types
+## 15. Quản lý cấu hình bảng giá (Pricing Rules)
+
+Admin quản lý cấu hình bảng giá dùng để tính báo giá ký gửi. Bảng giá này được hệ thống sử dụng khi tạo báo giá tạm tính (estimate) và báo giá chốt cho yêu cầu ký gửi.
+
+### 15.1. Xem danh sách cấu hình bảng giá
+
+```http
+GET /api/pricing-rules
+Authorization: Bearer {adminToken}
+```
+
+Response `200 OK`:
+```json
+[
+  {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "shippingServiceType": "Air",
+    "consignmentType": "Express",
+    "route": "Vietnam",
+    "unitType": "kg",
+    "pricePerWeight": 50000.00,
+    "pricePerVolume": 100000.00,
+    "serviceFee": 50000.00,
+    "isActive": true,
+    "createdAt": "2026-06-19T12:00:00Z"
+  }
+]
+```
+
+### 15.2. Lấy chi tiết cấu hình giá theo ID
+
+```http
+GET /api/pricing-rules/{id}
+Authorization: Bearer {adminToken}
+```
+
+Response `200 OK` (chi tiết cấu hình giá). Trả về `404 Not Found` nếu không tìm thấy ID.
+
+### 15.3. Thêm cấu hình giá mới
+
+```http
+POST /api/pricing-rules
+Authorization: Bearer {adminToken}
+```
+
+Request Body:
+```json
+{
+  "shippingServiceType": "Air",
+  "consignmentType": "Express",
+  "route": "Vietnam",
+  "unitType": "kg",
+  "pricePerWeight": 50000.00,
+  "pricePerVolume": 100000.00,
+  "serviceFee": 50000.00,
+  "isActive": true
+}
+```
+
+| Field | Ràng buộc |
+|---|---|
+| `shippingServiceType` | Bắt buộc, tối đa 100 ký tự |
+| `consignmentType` | Bắt buộc, tối đa 100 ký tự (thường là `Express` hoặc `Consolidation`) |
+| `route` | Không bắt buộc, tối đa 255 ký tự (Tên quốc gia hoặc tuyến đường, ví dụ: `Vietnam`) |
+| `unitType` | Không bắt buộc, tối đa 50 ký tự |
+| `pricePerWeight` | Bắt buộc, >= 0 |
+| `pricePerVolume` | Không bắt buộc, >= 0 |
+| `serviceFee` | Bắt buộc, >= 0 |
+| `isActive` | Không bắt buộc, mặc định là `true` |
+
+Response `201 Created` trả về thông tin cấu hình giá vừa tạo kèm ID.
+Response `400 Bad Request` khi dữ liệu lỗi hoặc bị trùng (cùng loại dịch vụ vận chuyển, loại ký gửi, và tuyến vận chuyển).
+
+### 15.4. Cập nhật cấu hình giá
+
+Sử dụng để chỉnh sửa thông tin cấu hình giá hoặc bật/tắt trạng thái hoạt động (`isActive: false` để vô hiệu hóa cấu hình giá).
+
+```http
+PUT /api/pricing-rules/{id}
+Authorization: Bearer {adminToken}
+```
+
+Request Body:
+```json
+{
+  "shippingServiceType": "Air",
+  "consignmentType": "Express",
+  "route": "Vietnam",
+  "unitType": "kg",
+  "pricePerWeight": 55000.00,
+  "pricePerVolume": 120000.00,
+  "serviceFee": 50000.00,
+  "isActive": false
+}
+```
+
+Response `200 OK`:
+```json
+{
+  "message": "Cập nhật cấu hình giá thành công."
+}
+```
+
+Response `400` nếu thông tin bị trùng hoặc không hợp lệ. Trả về `404` nếu không tìm thấy ID.
+
+### 15.5. Xóa cấu hình giá
+
+```http
+DELETE /api/pricing-rules/{id}
+Authorization: Bearer {adminToken}
+```
+
+Response `200 OK`:
+```json
+{
+  "message": "Xóa cấu hình giá thành công."
+}
+```
+
+Trả về `404 Not Found` nếu không tìm thấy ID.
+
+## 16. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -944,9 +1065,44 @@ export interface UpdateRestrictedItemRequest {
   note?: string;
   isActive: boolean;
 }
+
+export interface PricingRuleDto {
+  id: string;
+  shippingServiceType: string;
+  consignmentType: string;
+  route: string | null;
+  unitType: string | null;
+  pricePerWeight: number;
+  pricePerVolume: number | null;
+  serviceFee: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreatePricingRuleRequest {
+  shippingServiceType: string;
+  consignmentType: string;
+  route?: string;
+  unitType?: string;
+  pricePerWeight: number;
+  pricePerVolume?: number;
+  serviceFee: number;
+  isActive?: boolean;
+}
+
+export interface UpdatePricingRuleRequest {
+  shippingServiceType: string;
+  consignmentType: string;
+  route?: string;
+  unitType?: string;
+  pricePerWeight: number;
+  pricePerVolume?: number;
+  serviceFee: number;
+  isActive: boolean;
+}
 ```
 
-## 16. Axios integration
+## 17. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -1038,9 +1194,29 @@ export async function updateRestrictedItem(id: string, payload: UpdateRestricted
 export async function deleteRestrictedItem(id: string) {
   return api.delete<MessageResponse>(`/api/restricted-items/${id}`);
 }
+
+export async function getPricingRules() {
+  return api.get<PricingRuleDto[]>('/api/pricing-rules');
+}
+
+export async function getPricingRuleById(id: string) {
+  return api.get<PricingRuleDto>(`/api/pricing-rules/${id}`);
+}
+
+export async function createPricingRule(payload: CreatePricingRuleRequest) {
+  return api.post<PricingRuleDto>('/api/pricing-rules', payload);
+}
+
+export async function updatePricingRule(id: string, payload: UpdatePricingRuleRequest) {
+  return api.put<MessageResponse>(`/api/pricing-rules/${id}`, payload);
+}
+
+export async function deletePricingRule(id: string) {
+  return api.delete<MessageResponse>(`/api/pricing-rules/${id}`);
+}
 ```
 
-## 17. Lưu ý tích hợp FE
+## 18. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -1072,3 +1248,6 @@ export async function deleteRestrictedItem(id: string) {
 | `/admin/restricted-items` | `GET /api/restricted-items` |
 | `/admin/restricted-items/create` | `POST /api/restricted-items` |
 | `/admin/restricted-items/{id}/edit` | `PUT /api/restricted-items/{id}` |
+| `/admin/pricing-rules` | `GET /api/pricing-rules` |
+| `/admin/pricing-rules/create` | `POST /api/pricing-rules` |
+| `/admin/pricing-rules/{id}/edit` | `PUT /api/pricing-rules/{id}` |
