@@ -806,6 +806,64 @@ namespace VCL_DLL.Migrations
                     b.ToTable("PAYMENTS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.PricingRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("ConsignmentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("consignment_type");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<decimal?>("PricePerVolume")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("price_per_volume");
+
+                    b.Property<decimal>("PricePerWeight")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("price_per_weight");
+
+                    b.Property<string>("Route")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("route");
+
+                    b.Property<decimal>("ServiceFee")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("service_fee");
+
+                    b.Property<string>("ShippingServiceType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("shipping_service_type");
+
+                    b.Property<string>("UnitType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("unit_type");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PRICING_RULES");
+
+                    b.ToTable("PRICING_RULES", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Quotation", b =>
                 {
                     b.Property<Guid>("Id")
