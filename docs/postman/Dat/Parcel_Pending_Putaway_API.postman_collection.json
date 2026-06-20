@@ -1,0 +1,206 @@
+{
+  "info": {
+    "name": "VCL - Pending Putaway Parcel API",
+    "description": "Bộ kiểm thử API lấy danh sách kiện hàng chờ nhập vị trí kho (Pending Putaway). Bao gồm đăng nhập Staff, lấy danh sách, tìm kiếm, lọc trạng thái, phân quyền và kiểm lỗi.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" },
+    { "key": "customerEmail", "value": "customer@test.com", "type": "string" },
+    { "key": "customerPassword", "value": "Customer123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Login (Staff) - lay token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) {",
+              "    pm.collectionVariables.set('staffToken', json.token);",
+              "    console.log('Staff token saved.');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. Login (Customer) - lay token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) {",
+              "    pm.collectionVariables.set('customerToken', json.token);",
+              "    console.log('Customer token saved.');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3. Lay danh sach kien cho nhap kho - Pending Putaway",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "pm.test('Tra ve danh sach pagination', function () { pm.expect(json.data.items).to.be.an('array'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/pending-putaway?pageNumber=1&pageSize=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "pending-putaway"],
+          "query": [
+            { "key": "pageNumber", "value": "1" },
+            { "key": "pageSize", "value": "10" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "4. Tim kiem kien hang cho nhap kho",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/pending-putaway?search=PCL",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "pending-putaway"],
+          "query": [
+            { "key": "search", "value": "PCL" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "5. Loc kien hang theo trang thai RECEIVED",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "pm.test('Tat ca items deu la RECEIVED', function () { ",
+              "    json.data.items.forEach(item => {",
+              "        pm.expect(item.packageStatus).to.eql('RECEIVED');",
+              "    });",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/pending-putaway?status=RECEIVED",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "pending-putaway"],
+          "query": [
+            { "key": "status", "value": "RECEIVED" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "6. (Negative) Truy cap khong co Token -> 401 Unauthorized",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 401 Unauthorized', function () { pm.response.to.have.status(401); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/parcels/pending-putaway", "host": ["{{baseUrl}}"], "path": ["api", "parcels", "pending-putaway"] }
+      }
+    },
+    {
+      "name": "7. (Negative) Khach hang truy cap -> 403 Forbidden",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/parcels/pending-putaway", "host": ["{{baseUrl}}"], "path": ["api", "parcels", "pending-putaway"] }
+      }
+    }
+  ]
+}
