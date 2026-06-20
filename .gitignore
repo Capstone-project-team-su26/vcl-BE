@@ -8,6 +8,8 @@ appsettings.Staging.json
 .env
 .env.*
 !.env.example
+.gemini/
+
 
 
 ## Ignore Visual Studio temporary files, build results, and
