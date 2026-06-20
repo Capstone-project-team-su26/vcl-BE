@@ -1,6 +1,8 @@
-# VCL System - Hướng dẫn sử dụng Postman kiểm thử Pricing Rules
+# VCL System - Hướng dẫn sử dụng Postman kiểm thử hệ thống
 
-Tài liệu này hướng dẫn cách sử dụng file Postman Collection [VCL_Consignment_PricingRules_Test.postman_collection.json](file:///c:/DO_AN/vcl-BE/VCL_Consignment_PricingRules_Test.postman_collection.json) để kiểm thử luồng quản lý cấu hình bảng giá và tính năng tính báo giá ký gửi.
+Tài liệu này hướng dẫn cách sử dụng hai file Postman Collection:
+1. [Consignment_API.postman_collection.json](file:///c:/DO_AN/vcl-BE/docs/postman/Trong/Consignment_API.postman_collection.json) để kiểm thử luồng quản lý cấu hình bảng giá và tính năng tính báo giá ký gửi.
+2. [Parcel_CheckIn_API.postman_collection.json](file:///c:/DO_AN/vcl-BE/docs/postman/Trong/Parcel_CheckIn_API.postman_collection.json) để kiểm thử quy trình check-in kiện hàng bằng mã gửi hàng.
 
 ---
 
@@ -13,7 +15,7 @@ Tài liệu này hướng dẫn cách sử dụng file Postman Collection [VCL_C
 ### Import Collection vào Postman
 1. Mở Postman.
 2. Nhấn nút **Import** ở góc trên cùng bên trái.
-3. Chọn file [VCL_Consignment_PricingRules_Test.postman_collection.json](file:///c:/DO_AN/vcl-BE/VCL_Consignment_PricingRules_Test.postman_collection.json) trong thư mục dự án và chọn **Open**.
+3. Chọn các file `.postman_collection.json` mong muốn ở trên và chọn **Open**.
 
 ### Cấu hình biến môi trường (Environment Variables)
 Tạo hoặc cấu hình một Environment trong Postman với các biến sau:
@@ -165,6 +167,84 @@ Tất cả các API dưới đây (ngoại trừ API phân quyền) đều yêu 
 * **Method**: `DELETE`
 * **URL**: `{{baseUrl}}/api/pricing-rules/{{pricingRuleId1}}`
 * **Mục đích**: Xóa cấu hình giá khỏi hệ thống.
+
+---
+
+### Phần 3: Check-in kiện hàng bằng mã gửi hàng (Parcel Check-in Flow)
+
+Các API này hỗ trợ quy trình nhân viên kho (Warehouse Staff) quét hoặc nhập mã gửi hàng (Consignment Code) của yêu cầu ký gửi đã được duyệt để tạo Parcel (kiện hàng thực tế), cập nhật cân nặng, kích thước thực tế và lưu vào hệ thống.
+
+#### 15. Seed Staff
+* **Method**: `GET`
+* **URL**: `{{baseUrl}}/api/Test/seed-staff`
+* **Mục đích**: Tạo sẵn tài khoản nhân viên kho thử nghiệm (`staff@employee.com` / `Employee123`) có vai trò `WarehouseStaff`.
+
+#### 16. Login Staff
+* **Method**: `POST`
+* **URL**: `{{baseUrl}}/api/auth/login`
+* **Body (JSON)**:
+  ```json
+  {
+      "email": "staff@employee.com",
+      "password": "Employee123"
+  }
+  ```
+* **Mục đích**: Lấy Token của Staff. Script Test của request này sẽ tự động lưu token vào biến môi trường `staffToken`.
+
+#### 17. Staff Check-in kiện hàng (Happy Path)
+* **Method**: `POST`
+* **URL**: `{{baseUrl}}/api/parcels/check-in`
+* **Auth**: Bearer `{{staffToken}}`
+* **Body (JSON)**:
+  ```json
+  {
+      "shippingCode": "{{consignmentCode}}",
+      "actualWeight": 5.4,
+      "length": 35.0,
+      "width": 25.0,
+      "height": 15.0
+  }
+  ```
+* **Mục đích**: Tạo một `Parcel` mới cho yêu cầu ký gửi, tự động tính volumetricWeight và chargeableWeight, cập nhật trạng thái Parcel thành `RECEIVED` và Order thành `WAREHOUSE_RECEIVED`.
+
+#### 18. Check-in lần 2 (Đã RECEIVED) - Dự kiến Lỗi 400
+* **Method**: `POST`
+* **URL**: `{{baseUrl}}/api/parcels/check-in`
+* **Auth**: Bearer `{{staffToken}}`
+* **Body (JSON)**: Gửi lại body của request Check-in trên.
+* **Kết quả mong đợi**: Trả về `400 Bad Request` cùng thông báo: *"Yêu cầu ký gửi không ở trạng thái APPROVED."* (do đơn đã chuyển sang `WAREHOUSE_RECEIVED`).
+
+#### 19. Check-in với mã sai định dạng - Dự kiến Lỗi 400
+* **Method**: `POST`
+* **URL**: `{{baseUrl}}/api/parcels/check-in`
+* **Auth**: Bearer `{{staffToken}}`
+* **Body (JSON)**:
+  ```json
+  {
+      "shippingCode": "INVALID-FORMAT-123",
+      "actualWeight": 5.4
+  }
+  ```
+* **Kết quả mong đợi**: Trả về `400 Bad Request` cùng thông báo: *"Mã gửi hàng không hợp lệ."*
+
+#### 20. Check-in với mã không tồn tại - Dự kiến Lỗi 404
+* **Method**: `POST`
+* **URL**: `{{baseUrl}}/api/parcels/check-in`
+* **Auth**: Bearer `{{staffToken}}`
+* **Body (JSON)**:
+  ```json
+  {
+      "shippingCode": "VCL-00000000000000-000000",
+      "actualWeight": 5.4
+  }
+  ```
+* **Kết quả mong đợi**: Trả về `404 Not Found` cùng thông báo: *"Không tìm thấy yêu cầu ký gửi."*
+
+#### 21. Khách hàng thực hiện Check-in - Dự kiến Lỗi 403
+* **Method**: `POST`
+* **URL**: `{{baseUrl}}/api/parcels/check-in`
+* **Auth**: Bearer `{{customerToken}}`
+* **Kết quả mong đợi**: Trả về `403 Forbidden` (Chỉ nhân viên được check-in).
 
 ---
 

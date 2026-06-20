@@ -77,6 +77,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/restricted-items` | Admin | Thêm mặt hàng cấm/hạn chế mới |
 | `PUT` | `/api/restricted-items/{id}` | Admin | Cập nhật thông tin/vô hiệu hóa mặt hàng |
 | `DELETE` | `/api/restricted-items/{id}` | Admin | Xóa mặt hàng cấm/hạn chế |
+| `POST` | `/api/parcels/check-in` | Staff/WarehouseStaff | Check-in kiện hàng thực tế bằng mã gửi hàng |
 
 ## 4. Đăng ký khách hàng
 
@@ -884,7 +885,93 @@ Response `200 OK`:
 
 Trả về `404 Not Found` nếu không tìm thấy ID.
 
-## 16. TypeScript types
+## 16. Check-in kiện hàng bằng mã gửi hàng
+
+Quy trình dành cho nhân viên kho (Warehouse Staff) quét hoặc nhập mã gửi hàng (Consignment Code) để đối chiếu, cân, đo kích thước thực tế của kiện hàng và tạo Parcel.
+
+```http
+POST /api/parcels/check-in
+Authorization: Bearer {staffToken}
+```
+
+**Request Body:**
+
+```json
+{
+  "shippingCode": "VCL-20260616235959-123456",
+  "actualWeight": 5.40,
+  "length": 35.00,
+  "width": 25.00,
+  "height": 15.00
+}
+```
+
+| Field | Ràng buộc | Mô tả |
+|---|---|---|
+| `shippingCode` | Bắt buộc. Định dạng bắt đầu bằng `VCL-` | Mã gửi hàng của yêu cầu ký gửi |
+| `actualWeight` | Bắt buộc. Phải lớn hơn 0 | Cân nặng thực tế (kg) |
+| `length` | Không bắt buộc | Chiều dài thực tế (cm) |
+| `width` | Không bắt buộc | Chiều rộng thực tế (cm) |
+| `height` | Không bắt buộc | Chiều cao thực tế (cm) |
+
+### 16.1. Logic tính toán và lưu trữ
+- **Volumetric Weight**: Nếu có đủ 3 kích thước `length`, `width`, `height` và đều lớn hơn 0, hệ thống tự động tính:
+  `volumetricWeight = (length * width * height) / 5000`
+- **Chargeable Weight**: Được tính bằng `MAX(actualWeight, volumetricWeight ?? 0)`.
+- **Order Status**: Trạng thái của Order (yêu cầu ký gửi) tương ứng sẽ tự động chuyển sang `"WAREHOUSE_RECEIVED"`.
+- **Parcel Status**: Trạng thái của Parcel mới tạo sẽ là `"RECEIVED"`.
+
+### 16.2. Response thành công
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Check-in kiện hàng thành công.",
+  "data": {
+    "shippingCode": "VCL-20260616235959-123456",
+    "consignmentId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "consignmentCode": "VCL-20260616235959-123456",
+    "customerName": "Nguyễn Văn A",
+    "customerCode": "CUS-20260616-A1B2C3",
+    "packageCode": "PCL-20260620170000-987654",
+    "actualWeight": 5.40,
+    "length": 35.00,
+    "width": 25.00,
+    "height": 15.00,
+    "volumetricWeight": 2.63,
+    "chargeableWeight": 5.40,
+    "packageStatus": "RECEIVED",
+    "declaredItems": [
+      {
+        "productName": "Sách tin học",
+        "productType": "Book",
+        "quantity": 2,
+        "weight": 1.20,
+        "length": 20.00,
+        "width": 15.00,
+        "height": 10.00,
+        "declaredValue": 200000.00
+      }
+    ]
+  }
+}
+```
+
+### 16.3. Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Mã gửi hàng sai định dạng | `"Mã gửi hàng không hợp lệ."` |
+| `400` | Cân nặng thực tế <= 0 | `"Cân nặng thực tế phải lớn hơn 0."` |
+| `400` | Yêu cầu ký gửi không ở trạng thái APPROVED | `"Yêu cầu ký gửi không ở trạng thái APPROVED."` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Không có quyền thao tác (không phải Staff/WarehouseStaff) | Tự động bởi middleware JWT |
+| `404` | Không tìm thấy yêu cầu ký gửi tương ứng | `"Không tìm thấy yêu cầu ký gửi."` |
+
+---
+
+## 17. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -1100,9 +1187,49 @@ export interface UpdatePricingRuleRequest {
   serviceFee: number;
   isActive: boolean;
 }
+
+export interface ParcelCheckInRequest {
+  shippingCode: string;
+  actualWeight: number;
+  length?: number;
+  width?: number;
+  height?: number;
+}
+
+export interface DeclaredItemDto {
+  productName: string;
+  productType: string;
+  quantity: number;
+  weight: number | null;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  declaredValue: number | null;
+}
+
+export interface ParcelCheckInResponse {
+  shippingCode: string;
+  consignmentId: string;
+  consignmentCode: string;
+  customerName: string;
+  customerCode: string;
+  packageCode: string;
+  actualWeight: number;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  volumetricWeight: number | null;
+  chargeableWeight: number;
+  packageStatus: string;
+  declaredItems: DeclaredItemDto[];
+}
+
+export interface ParcelCheckInDataResponse extends MessageResponse {
+  data: ParcelCheckInResponse;
+}
 ```
 
-## 17. Axios integration
+## 18. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -1214,9 +1341,13 @@ export async function updatePricingRule(id: string, payload: UpdatePricingRuleRe
 export async function deletePricingRule(id: string) {
   return api.delete<MessageResponse>(`/api/pricing-rules/${id}`);
 }
+
+export async function checkInParcel(payload: ParcelCheckInRequest) {
+  return api.post<ParcelCheckInDataResponse>('/api/parcels/check-in', payload);
+}
 ```
 
-## 18. Lưu ý tích hợp FE
+## 19. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -1251,3 +1382,4 @@ export async function deletePricingRule(id: string) {
 | `/admin/pricing-rules` | `GET /api/pricing-rules` |
 | `/admin/pricing-rules/create` | `POST /api/pricing-rules` |
 | `/admin/pricing-rules/{id}/edit` | `PUT /api/pricing-rules/{id}` |
+| `/warehouse/check-in` | `POST /api/parcels/check-in` |
