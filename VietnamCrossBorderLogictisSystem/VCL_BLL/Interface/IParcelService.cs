@@ -6,5 +6,6 @@ namespace VCL_BLL.Interface
     public interface IParcelService
     {
         Task<ParcelCheckInResponse> CheckInParcelAsync(ParcelCheckInRequest request);
+        Task<PaginatedResponse<PendingPutawayParcelDto>> GetPendingPutawayParcelsAsync(int pageNumber, int pageSize, string? search, string? status);
     }
 }

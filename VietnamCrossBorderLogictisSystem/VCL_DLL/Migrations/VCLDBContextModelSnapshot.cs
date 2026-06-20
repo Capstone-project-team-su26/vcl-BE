@@ -715,9 +715,17 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("actual_weight");
 
+                    b.Property<Guid?>("BinId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("bin_id");
+
                     b.Property<decimal?>("ChargeableWeight")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("chargeable_weight");
+
+                    b.Property<DateTime?>("CheckInTime")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("check_in_time");
 
                     b.Property<Guid?>("ConsignmentId")
                         .HasColumnType("uniqueidentifier")
@@ -755,6 +763,8 @@ namespace VCL_DLL.Migrations
 
                     b.HasKey("Id")
                         .HasName("PK__PARCELS__3213E83FD79A8B69");
+
+                    b.HasIndex("BinId");
 
                     b.HasIndex("ConsignmentId");
 
@@ -1641,6 +1651,11 @@ namespace VCL_DLL.Migrations
 
             modelBuilder.Entity("VCL_DLL.Models.Parcel", b =>
                 {
+                    b.HasOne("VCL_DLL.Models.Bin", "Bin")
+                        .WithMany("Parcels")
+                        .HasForeignKey("BinId")
+                        .HasConstraintName("FK_PARCEL_BIN");
+
                     b.HasOne("VCL_DLL.Models.Order", "Consignment")
                         .WithMany("Parcels")
                         .HasForeignKey("ConsignmentId")
@@ -1650,6 +1665,8 @@ namespace VCL_DLL.Migrations
                         .WithMany("Parcels")
                         .HasForeignKey("MasterBoxId")
                         .HasConstraintName("FK_PARCEL_MASTER");
+
+                    b.Navigation("Bin");
 
                     b.Navigation("Consignment");
 
@@ -1824,6 +1841,11 @@ namespace VCL_DLL.Migrations
                     b.Navigation("Customer");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.Bin", b =>
+                {
+                    b.Navigation("Parcels");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Carrier", b =>
