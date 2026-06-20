@@ -1,0 +1,365 @@
+{
+  "info": {
+    "name": "VCL - Check-in Parcel API",
+    "description": "Test luong check-in kien hang: Seed data -> Tao ky gui -> Duyet APPROVED -> Check-in kien hang thuc te -> Test phan quyen va validate.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "orderId", "value": "", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "consignmentCode", "value": "", "type": "string" },
+    { "key": "packageCode", "value": "", "type": "string" },
+    { "key": "customerEmail", "value": "customer@test.com", "type": "string" },
+    { "key": "customerPassword", "value": "Customer123", "type": "string" },
+    { "key": "adminEmail", "value": "admin@test.com", "type": "string" },
+    { "key": "adminPassword", "value": "Admin123", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Seed Customer - tao khach hang",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-customer", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-customer"] }
+      }
+    },
+    {
+      "name": "2. Login (Customer) - lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) {",
+              "    pm.collectionVariables.set('token', json.token);",
+              "    console.log('Customer token saved.');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3. Tao yeu cau ky gui",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', function () { pm.response.to.have.status(201); });",
+              "var json = pm.response.json();",
+              "var data = json.data;",
+              "if (data && data.orderId) {",
+              "    pm.collectionVariables.set('orderId', data.orderId);",
+              "    console.log('OrderId saved:', data.orderId);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shippingOption\": \"Express\",\n  \"note\": \"Hang kiem tra check-in\",\n  \"items\": [\n    {\n      \"productName\": \"Sach tin hoc\",\n      \"productType\": \"Book\",\n      \"quantity\": 2,\n      \"weight\": 1.2,\n      \"width\": 15,\n      \"height\": 10,\n      \"length\": 20,\n      \"declaredValue\": 200000,\n      \"referenceUrl\": null,\n      \"domesticTrackingCode\": \"SF888888\"\n    }\n  ]\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/orders/consignments", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments"] }
+      }
+    },
+    {
+      "name": "4. Seed Admin - tao admin",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-admin", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-admin"] }
+      }
+    },
+    {
+      "name": "5. Login (Admin) - lay adminToken",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) {",
+              "    pm.collectionVariables.set('adminToken', json.token);",
+              "    console.log('Admin Token saved');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "6. Admin duyet yeu cau ky gui - APPROVED",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.consignmentCode) {",
+              "    pm.collectionVariables.set('consignmentCode', json.consignmentCode);",
+              "    console.log('Consignment Code saved:', json.consignmentCode);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"APPROVED\",\n  \"rejectionReason\": null\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments", "{{orderId}}", "status"] }
+      }
+    },
+    {
+      "name": "7. Seed Staff - tao staff",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-staff", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-staff"] }
+      }
+    },
+    {
+      "name": "8. Login (Staff) - lay staffToken",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) {",
+              "    pm.collectionVariables.set('staffToken', json.token);",
+              "    console.log('Staff Token saved');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "9. Staff check-in parcel - RECEIVED",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "pm.test('Check-in thanh cong', function () { pm.expect(json.message).to.include('thành công'); });",
+              "pm.test('Status Parcel la RECEIVED', function () { pm.expect(json.data.packageStatus).to.eql('RECEIVED'); });",
+              "if (json.data && json.data.packageCode) {",
+              "    pm.collectionVariables.set('packageCode', json.data.packageCode);",
+              "    console.log('Package Code generated:', json.data.packageCode);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shippingCode\": \"{{consignmentCode}}\",\n  \"actualWeight\": 5.4,\n  \"length\": 35.0,\n  \"width\": 25.0,\n  \"height\": 15.0\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/parcels/check-in", "host": ["{{baseUrl}}"], "path": ["api", "parcels", "check-in"] }
+      }
+    },
+    {
+      "name": "10. (Negative) Staff check-in lai lan nua -> 400",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "pm.test('Bao loi trang thai', function () { pm.expect(pm.response.json().message).to.include('không ở trạng thái APPROVED'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shippingCode\": \"{{consignmentCode}}\",\n  \"actualWeight\": 5.4,\n  \"length\": 35.0,\n  \"width\": 25.0,\n  \"height\": 15.0\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/parcels/check-in", "host": ["{{baseUrl}}"], "path": ["api", "parcels", "check-in"] }
+      }
+    },
+    {
+      "name": "11. (Negative) Staff check-in ma gui hang sai format -> 400",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "pm.test('Bao loi format', function () { pm.expect(pm.response.json().message).to.include('không hợp lệ'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shippingCode\": \"INVALID-CODE-123\",\n  \"actualWeight\": 5.4,\n  \"length\": 35.0,\n  \"width\": 25.0,\n  \"height\": 15.0\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/parcels/check-in", "host": ["{{baseUrl}}"], "path": ["api", "parcels", "check-in"] }
+      }
+    },
+    {
+      "name": "12. (Negative) Staff check-in ma gui hang khong ton tai -> 404",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });",
+              "pm.test('Bao loi khong tim thay', function () { pm.expect(pm.response.json().message).to.include('Không tìm thấy'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shippingCode\": \"VCL-99999999999999-999999\",\n  \"actualWeight\": 5.4,\n  \"length\": 35.0,\n  \"width\": 25.0,\n  \"height\": 15.0\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/parcels/check-in", "host": ["{{baseUrl}}"], "path": ["api", "parcels", "check-in"] }
+      }
+    },
+    {
+      "name": "13. (Negative) Khach check-in parcel -> 403 Forbidden",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shippingCode\": \"{{consignmentCode}}\",\n  \"actualWeight\": 5.4,\n  \"length\": 35.0,\n  \"width\": 25.0,\n  \"height\": 15.0\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/parcels/check-in", "host": ["{{baseUrl}}"], "path": ["api", "parcels", "check-in"] }
+      }
+    }
+  ]
+}
