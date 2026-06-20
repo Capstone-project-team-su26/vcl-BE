@@ -61,5 +61,44 @@ namespace VCL_API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Lấy danh sách kiện chờ nhập vị trí kho
+        /// </summary>
+        /// <param name="pageNumber">Số trang (mặc định 1)</param>
+        /// <param name="pageSize">Số lượng kiện mỗi trang (mặc định 10)</param>
+        /// <param name="search">Từ khóa tìm kiếm theo mã kiện hoặc mã gửi hàng (tùy chọn)</param>
+        /// <param name="status">Lọc theo trạng thái kiện (tùy chọn)</param>
+        /// <returns>Danh sách kiện chờ nhập vị trí kho phân trang</returns>
+        /// <response code="200">Lấy danh sách thành công</response>
+        /// <response code="401">Chưa đăng nhập</response>
+        /// <response code="403">Không có quyền truy cập (yêu cầu role Staff hoặc WarehouseStaff)</response>
+        [HttpGet("pending-putaway")]
+        [ProducesResponseType(typeof(PaginatedResponse<PendingPutawayParcelDto>), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        public async Task<IActionResult> GetPendingPutawayParcels(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? search = null,
+            [FromQuery] string? status = null)
+        {
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 10;
+
+            try
+            {
+                var result = await _parcelService.GetPendingPutawayParcelsAsync(pageNumber, pageSize, search, status);
+                return Ok(new
+                {
+                    message = "Lấy danh sách kiện chờ nhập vị trí kho thành công.",
+                    data = result
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

@@ -41,4 +41,20 @@ namespace VCL_BLL.DTOs
         public decimal? Height { get; set; }
         public decimal? DeclaredValue { get; set; }
     }
+
+    public class PendingPutawayParcelDto
+    {
+        public Guid Id { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public string ConsignmentCode { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public decimal? ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+        public decimal? VolumetricWeight { get; set; }
+        public decimal? ChargeableWeight { get; set; }
+        public string PackageStatus { get; set; } = string.Empty;
+        public DateTime? CheckInTime { get; set; }
+    }
 }

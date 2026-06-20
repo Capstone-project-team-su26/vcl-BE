@@ -568,6 +568,9 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Width)
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("width");
+            entity.Property(e => e.CheckInTime)
+                .HasColumnName("check_in_time");
+            entity.Property(e => e.BinId).HasColumnName("bin_id");
 
             entity.HasOne(d => d.Consignment).WithMany(p => p.Parcels)
                 .HasForeignKey(d => d.ConsignmentId)
@@ -576,6 +579,10 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.MasterBox).WithMany(p => p.Parcels)
                 .HasForeignKey(d => d.MasterBoxId)
                 .HasConstraintName("FK_PARCEL_MASTER");
+
+            entity.HasOne(d => d.Bin).WithMany(p => p.Parcels)
+                .HasForeignKey(d => d.BinId)
+                .HasConstraintName("FK_PARCEL_BIN");
         });
 
         modelBuilder.Entity<Payment>(entity =>

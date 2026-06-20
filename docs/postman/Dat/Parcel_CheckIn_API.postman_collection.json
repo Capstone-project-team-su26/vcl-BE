@@ -360,6 +360,130 @@
         },
         "url": { "raw": "{{baseUrl}}/api/parcels/check-in", "host": ["{{baseUrl}}"], "path": ["api", "parcels", "check-in"] }
       }
+    },
+    {
+      "name": "14. Staff lay danh sach kien cho nhap vi tri kho - pending putaway",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "pm.test('Tra ve danh sach kien cho', function () { pm.expect(json.data.items).to.be.an('array'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/pending-putaway?pageNumber=1&pageSize=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "pending-putaway"],
+          "query": [
+            { "key": "pageNumber", "value": "1" },
+            { "key": "pageSize", "value": "10" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "15. Staff tim kiem kien hang cho nhap kho theo ma kien hang",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "pm.test('Tim thay kien hang dung ma', function () { ",
+              "    if(json.data.items.length > 0) {",
+              "        pm.expect(json.data.items[0].packageCode).to.eql(pm.collectionVariables.get('packageCode'));",
+              "    }",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/pending-putaway?search={{packageCode}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "pending-putaway"],
+          "query": [
+            { "key": "search", "value": "{{packageCode}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "16. Staff loc kien hang cho nhap kho theo trang thai RECEIVED",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "pm.test('Tat ca items deu la RECEIVED', function () { ",
+              "    json.data.items.forEach(item => {",
+              "        pm.expect(item.packageStatus).to.eql('RECEIVED');",
+              "    });",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/pending-putaway?status=RECEIVED",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "pending-putaway"],
+          "query": [
+            { "key": "status", "value": "RECEIVED" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "17. (Negative) Khach hang lay danh sach kien cho -> 403 Forbidden",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/pending-putaway",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "pending-putaway"]
+        }
+      }
     }
   ]
 }

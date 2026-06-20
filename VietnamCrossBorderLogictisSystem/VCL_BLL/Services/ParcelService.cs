@@ -93,7 +93,8 @@ namespace VCL_BLL.Services
                 Height = request.Height,
                 VolumetricWeight = volumetricWeight,
                 ChargeableWeight = chargeableWeight,
-                PackageStatus = "RECEIVED"
+                PackageStatus = "RECEIVED",
+                CheckInTime = DateTime.UtcNow
             };
 
             await parcelRepo.AddAsync(parcel);
@@ -143,6 +144,81 @@ namespace VCL_BLL.Services
             };
 
             return response;
+        }
+
+        public async Task<PaginatedResponse<PendingPutawayParcelDto>> GetPendingPutawayParcelsAsync(
+            int pageNumber, 
+            int pageSize, 
+            string? search, 
+            string? status)
+        {
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var customerRepo = _unitOfWork.Repository<Customer>();
+
+            // Get all data into memory - suitable for GenericRepository pattern
+            var allParcels = await parcelRepo.GetAllAsync();
+            var allOrders = await orderRepo.GetAllAsync();
+            var allCustomers = await customerRepo.GetAllAsync();
+
+            var query = allParcels.Where(p => p.BinId == null).AsQueryable();
+
+            // Filter by status if provided
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(p => string.Equals(p.PackageStatus, status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Search by package code or consignment code
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                query = query.Where(p => 
+                    (p.PackageCode != null && p.PackageCode.Contains(search, StringComparison.OrdinalIgnoreCase)) ||
+                    (p.ConsignmentId.HasValue && 
+                     allOrders.Any(o => o.Id == p.ConsignmentId.Value && 
+                                       o.ConsignmentCode != null && 
+                                       o.ConsignmentCode.Contains(search, StringComparison.OrdinalIgnoreCase))));
+            }
+
+            var totalCount = query.Count();
+
+            // Pagination - order by CheckInTime descending
+            var paginatedParcels = query
+                .OrderByDescending(p => p.CheckInTime)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            // Map to DTO
+            var resultItems = paginatedParcels.Select(p =>
+            {
+                var order = allOrders.FirstOrDefault(o => o.Id == p.ConsignmentId);
+                var customer = order != null ? allCustomers.FirstOrDefault(c => c.Id == order.CustomerId) : null;
+
+                return new PendingPutawayParcelDto
+                {
+                    Id = p.Id,
+                    PackageCode = p.PackageCode ?? string.Empty,
+                    ConsignmentCode = order?.ConsignmentCode ?? string.Empty,
+                    CustomerName = customer?.FullName ?? string.Empty,
+                    ActualWeight = p.ActualWeight,
+                    Length = p.Length,
+                    Width = p.Width,
+                    Height = p.Height,
+                    VolumetricWeight = p.VolumetricWeight.HasValue ? Math.Round(p.VolumetricWeight.Value, 2) : null,
+                    ChargeableWeight = p.ChargeableWeight.HasValue ? Math.Round(p.ChargeableWeight.Value, 2) : null,
+                    PackageStatus = p.PackageStatus ?? string.Empty,
+                    CheckInTime = p.CheckInTime
+                };
+            }).ToList();
+
+            return new PaginatedResponse<PendingPutawayParcelDto>
+            {
+                Items = resultItems,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
         }
     }
 }

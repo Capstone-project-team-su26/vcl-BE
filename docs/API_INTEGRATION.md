@@ -78,6 +78,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/restricted-items/{id}` | Admin | Cập nhật thông tin/vô hiệu hóa mặt hàng |
 | `DELETE` | `/api/restricted-items/{id}` | Admin | Xóa mặt hàng cấm/hạn chế |
 | `POST` | `/api/parcels/check-in` | Staff/WarehouseStaff | Check-in kiện hàng thực tế bằng mã gửi hàng |
+| `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
 
 ## 4. Đăng ký khách hàng
 
@@ -971,7 +972,66 @@ Response `200 OK`:
 
 ---
 
-## 17. TypeScript types
+## 17. Lấy danh sách kiện chờ nhập vị trí kho (Pending Putaway)
+
+Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xem danh sách các kiện hàng đã được check-in vào hệ thống thành công (PackageStatus = "RECEIVED") nhưng chưa được sắp xếp/gán vào ô kệ (Bin) cụ thể trong kho (BinId = null) để tiến hành put-away.
+
+```http
+GET /api/parcels/pending-putaway?pageNumber=1&pageSize=10
+Authorization: Bearer {staffToken}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `pageNumber` | `number` | No | 1 | Số thứ tự trang cần lấy |
+| `pageSize` | `number` | No | 10 | Số lượng kiện hàng tối đa hiển thị trên mỗi trang |
+| `search` | `string` | No | - | Từ khóa tìm kiếm theo mã kiện hàng (`PCL-...`) hoặc mã yêu cầu ký gửi (`VCL-...`) |
+| `status` | `string` | No | - | Lọc theo trạng thái kiện hàng (ví dụ: `RECEIVED`) |
+
+### 17.1. Response thành công
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Lấy danh sách kiện chờ nhập vị trí kho thành công.",
+  "data": {
+    "items": [
+      {
+        "id": "7fa85f64-5717-4562-b3fc-2c963f66afa7",
+        "packageCode": "PCL-20260620170000-987654",
+        "consignmentCode": "VCL-20260616235959-123456",
+        "customerName": "Nguyễn Văn A",
+        "actualWeight": 5.40,
+        "length": 35.00,
+        "width": 25.00,
+        "height": 15.00,
+        "volumetricWeight": 2.63,
+        "chargeableWeight": 5.40,
+        "packageStatus": "RECEIVED",
+        "checkInTime": "2026-06-20T17:00:00Z"
+      }
+    ],
+    "totalCount": 1,
+    "pageNumber": 1,
+    "pageSize": 10,
+    "totalPages": 1
+  }
+}
+```
+
+### 17.2. Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Không có quyền thao tác (không phải Staff/WarehouseStaff) | Tự động bởi middleware JWT |
+
+---
+
+## 18. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -1227,9 +1287,36 @@ export interface ParcelCheckInResponse {
 export interface ParcelCheckInDataResponse extends MessageResponse {
   data: ParcelCheckInResponse;
 }
+
+export interface PendingPutawayParcelDto {
+  id: string;
+  packageCode: string;
+  consignmentCode: string;
+  customerName: string;
+  actualWeight: number | null;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  volumetricWeight: number | null;
+  chargeableWeight: number | null;
+  packageStatus: string;
+  checkInTime: string | null;
+}
+
+export interface PendingPutawayParcelsResponse {
+  items: PendingPutawayParcelDto[];
+  totalCount: number;
+  pageNumber: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface PendingPutawayParcelsDataResponse extends MessageResponse {
+  data: PendingPutawayParcelsResponse;
+}
 ```
 
-## 18. Axios integration
+## 19. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -1345,9 +1432,20 @@ export async function deletePricingRule(id: string) {
 export async function checkInParcel(payload: ParcelCheckInRequest) {
   return api.post<ParcelCheckInDataResponse>('/api/parcels/check-in', payload);
 }
+
+export async function getPendingPutawayParcels(
+  pageNumber: number = 1,
+  pageSize: number = 10,
+  search?: string,
+  status?: string
+) {
+  return api.get<PendingPutawayParcelsDataResponse>('/api/parcels/pending-putaway', {
+    params: { pageNumber, pageSize, search, status }
+  });
+}
 ```
 
-## 19. Lưu ý tích hợp FE
+## 20. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -1383,3 +1481,5 @@ export async function checkInParcel(payload: ParcelCheckInRequest) {
 | `/admin/pricing-rules/create` | `POST /api/pricing-rules` |
 | `/admin/pricing-rules/{id}/edit` | `PUT /api/pricing-rules/{id}` |
 | `/warehouse/check-in` | `POST /api/parcels/check-in` |
+| `/warehouse/pending-putaway` | `GET /api/parcels/pending-putaway` |
+
