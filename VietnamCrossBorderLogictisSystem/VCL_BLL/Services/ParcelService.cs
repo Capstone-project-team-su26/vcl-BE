@@ -220,5 +220,133 @@ namespace VCL_BLL.Services
                 PageSize = pageSize
             };
         }
+
+        public async Task<ParcelPutAwayResponse> PutAwayParcelAsync(Guid parcelId, ParcelPutAwayRequest request)
+        {
+            if (request == null)
+                throw new ArgumentException("Yêu cầu nhập vị trí kho không được để trống.");
+
+            // 1. Tìm Parcel theo parcelId
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var parcel = await parcelRepo.GetByIdAsync(parcelId);
+            if (parcel == null)
+            {
+                throw new NotFoundException("Không tìm thấy kiện hàng.");
+            }
+
+            // 2. Không cho nhập vị trí lại nếu Parcel đã STORED
+            if (string.Equals(parcel.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Kiện hàng đã được nhập vị trí kho (STORED).");
+            }
+
+            // 3. Chỉ cho nhập vị trí kho với Parcel đã check-in (RECEIVED)
+            if (!string.Equals(parcel.PackageStatus, "RECEIVED", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Chỉ cho phép nhập vị trí kho với kiện hàng đã check-in.");
+            }
+
+            // 4. Tìm Warehouse, Zone, Shelf, Bin
+            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
+            var warehouse = await warehouseRepo.GetByIdAsync(request.WarehouseId);
+            if (warehouse == null)
+            {
+                throw new NotFoundException("Không tìm thấy kho hàng.");
+            }
+
+            var zoneRepo = _unitOfWork.Repository<WarehouseZone>();
+            var zone = await zoneRepo.GetByIdAsync(request.ZoneId);
+            if (zone == null)
+            {
+                throw new NotFoundException("Không tìm thấy khu vực kho (Zone).");
+            }
+
+            var shelfRepo = _unitOfWork.Repository<Shelf>();
+            var shelf = await shelfRepo.GetByIdAsync(request.ShelfId);
+            if (shelf == null)
+            {
+                throw new NotFoundException("Không tìm thấy kệ kho (Shelf).");
+            }
+
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var bin = await binRepo.GetByIdAsync(request.BinId);
+            if (bin == null)
+            {
+                throw new NotFoundException("Không tìm thấy ô kệ (Bin).");
+            }
+
+            // 5. Kiểm tra tính hợp lệ của mối quan hệ vị trí kho (hierarchy validation)
+            if (zone.WarehouseId != warehouse.Id)
+            {
+                throw new ArgumentException("Khu vực kho không thuộc kho hàng đã chọn.");
+            }
+
+            if (shelf.ZoneId != zone.Id)
+            {
+                throw new ArgumentException("Kệ kho không thuộc khu vực kho đã chọn.");
+            }
+
+            if (bin.ShelfId != shelf.Id)
+            {
+                throw new ArgumentException("Ô kệ không thuộc kệ kho đã chọn.");
+            }
+
+            if (bin.WarehouseId != warehouse.Id)
+            {
+                throw new ArgumentException("Ô kệ không thuộc kho hàng đã chọn.");
+            }
+
+            // 6. Kiểm tra sức chứa của Bin trước khi gán
+            // Tính thể tích của parcel: Length * Width * Height
+            decimal parcelVolume = (parcel.Length ?? 0) * (parcel.Width ?? 0) * (parcel.Height ?? 0);
+            if (bin.MaxVolume.HasValue)
+            {
+                decimal availableVolume = bin.MaxVolume.Value - (bin.CurrentVolume ?? 0);
+                if (parcelVolume > availableVolume)
+                {
+                    throw new ArgumentException($"Ô kệ không đủ sức chứa thể tích. Thể tích kiện hàng: {parcelVolume}, thể tích khả dụng: {availableVolume}.");
+                }
+            }
+
+            // Tính cân nặng của parcel: ActualWeight
+            if (bin.MaxWeight.HasValue)
+            {
+                var allParcels = await parcelRepo.GetAllAsync();
+                var currentWeightInBin = allParcels
+                    .Where(p => p.BinId == bin.Id && string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
+                    .Sum(p => p.ActualWeight ?? 0);
+
+                decimal availableWeight = bin.MaxWeight.Value - currentWeightInBin;
+                decimal parcelWeight = parcel.ActualWeight ?? 0;
+                if (parcelWeight > availableWeight)
+                {
+                    throw new ArgumentException($"Ô kệ không đủ sức chứa tải trọng. Khối lượng kiện hàng: {parcelWeight}, tải trọng khả dụng: {availableWeight}.");
+                }
+            }
+
+            // 7. Cập nhật thông tin vị trí lưu trữ và trạng thái của Parcel
+            parcel.BinId = bin.Id;
+            parcel.PackageStatus = "STORED";
+
+            // Cập nhật thể tích hiện tại của Bin
+            bin.CurrentVolume = (bin.CurrentVolume ?? 0) + parcelVolume;
+
+            parcelRepo.Update(parcel);
+            binRepo.Update(bin);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            // 8. Trả về thông tin kết quả
+            return new ParcelPutAwayResponse
+            {
+                PackageCode = parcel.PackageCode ?? string.Empty,
+                WarehouseName = warehouse.WarehouseName ?? string.Empty,
+                ZoneName = zone.ZoneName ?? string.Empty,
+                ShelfCode = shelf.ShelfCode ?? string.Empty,
+                BinCode = bin.BinCode ?? string.Empty,
+                PackageStatus = parcel.PackageStatus,
+                PutAwayTime = DateTime.UtcNow
+            };
+        }
     }
 }

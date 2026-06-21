@@ -79,6 +79,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `DELETE` | `/api/restricted-items/{id}` | Admin | Xóa mặt hàng cấm/hạn chế |
 | `POST` | `/api/parcels/check-in` | Staff/WarehouseStaff | Check-in kiện hàng thực tế bằng mã gửi hàng |
 | `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
+| `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
+
 
 ## 4. Đăng ký khách hàng
 
@@ -1031,7 +1033,57 @@ Response `200 OK`:
 
 ---
 
-## 18. TypeScript types
+## 18. Nhập vị trí kho cho kiện hàng (Put-away)
+
+Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xếp kiện hàng (đang ở trạng thái `RECEIVED`) vào một ô kệ (`Bin`) cụ thể trong kho. Trạng thái kiện hàng sau khi nhập vị trí thành công sẽ cập nhật thành `STORED`.
+
+```http
+PUT /api/parcels/{parcelId}/put-away
+Authorization: Bearer {staffToken}
+```
+
+**Request Body:**
+
+```json
+{
+  "warehouseId": "a987c88b-1111-2222-3333-444455556666",
+  "zoneId": "b987c88b-1111-2222-3333-444455556666",
+  "shelfId": "c987c88b-1111-2222-3333-444455556666",
+  "binId": "d987c88b-1111-2222-3333-444455556666"
+}
+```
+
+### 18.1. Response thành công
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Nhập vị trí kho cho kiện hàng thành công.",
+  "data": {
+    "packageCode": "PCL-20260620170000-987654",
+    "warehouseName": "Kho Sài Gòn",
+    "zoneName": "Khu A",
+    "shelfCode": "SHF-A1",
+    "binCode": "BIN-A1-01",
+    "packageStatus": "STORED",
+    "putAwayTime": "2026-06-21T01:38:49Z"
+  }
+}
+```
+
+### 18.2. Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Thiếu thông tin hoặc ô kệ không hợp lệ/không đủ sức chứa | `"Ô kệ không đủ sức chứa thể tích."` hoặc `"Ô kệ không đủ sức chứa tải trọng."` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Không có quyền thao tác (không phải Staff/WarehouseStaff) | Tự động bởi middleware JWT |
+| `404` | Không tìm thấy kiện hàng hoặc vị trí kho tương ứng | `"Không tìm thấy kiện hàng."` hoặc `"Không tìm thấy ô kệ (Bin)."` |
+
+---
+
+## 19. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -1443,6 +1495,32 @@ export async function getPendingPutawayParcels(
     params: { pageNumber, pageSize, search, status }
   });
 }
+
+export interface ParcelPutAwayRequest {
+  warehouseId: string;
+  zoneId: string;
+  shelfId: string;
+  binId: string;
+}
+
+export interface ParcelPutAwayResponse {
+  packageCode: string;
+  warehouseName: string;
+  zoneName: string;
+  shelfCode: string;
+  binCode: string;
+  packageStatus: string;
+  putAwayTime: string;
+}
+
+export interface ParcelPutAwayDataResponse {
+  message: string;
+  data: ParcelPutAwayResponse;
+}
+
+export async function putAwayParcel(parcelId: string, payload: ParcelPutAwayRequest) {
+  return api.put<ParcelPutAwayDataResponse>(`/api/parcels/${parcelId}/put-away`, payload);
+}
 ```
 
 ## 20. Lưu ý tích hợp FE
@@ -1482,4 +1560,6 @@ export async function getPendingPutawayParcels(
 | `/admin/pricing-rules/{id}/edit` | `PUT /api/pricing-rules/{id}` |
 | `/warehouse/check-in` | `POST /api/parcels/check-in` |
 | `/warehouse/pending-putaway` | `GET /api/parcels/pending-putaway` |
+| `/warehouse/put-away` | `PUT /api/parcels/{parcelId}/put-away` |
+
 
