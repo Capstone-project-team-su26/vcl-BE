@@ -57,4 +57,23 @@ namespace VCL_BLL.DTOs
         public string PackageStatus { get; set; } = string.Empty;
         public DateTime? CheckInTime { get; set; }
     }
+
+    public class ParcelPutAwayRequest
+    {
+        public Guid WarehouseId { get; set; }
+        public Guid ZoneId { get; set; }
+        public Guid ShelfId { get; set; }
+        public Guid BinId { get; set; }
+    }
+
+    public class ParcelPutAwayResponse
+    {
+        public string PackageCode { get; set; } = string.Empty;
+        public string WarehouseName { get; set; } = string.Empty;
+        public string ZoneName { get; set; } = string.Empty;
+        public string ShelfCode { get; set; } = string.Empty;
+        public string BinCode { get; set; } = string.Empty;
+        public string PackageStatus { get; set; } = string.Empty;
+        public DateTime PutAwayTime { get; set; }
+    }
 }

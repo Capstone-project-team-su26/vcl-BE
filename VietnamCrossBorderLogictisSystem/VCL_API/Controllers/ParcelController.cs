@@ -100,5 +100,48 @@ namespace VCL_API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Nhập kiện vào vị trí kho (Put-Away)
+        /// </summary>
+        /// <param name="parcelId">ID của kiện hàng</param>
+        /// <param name="request">Thông tin vị trí kho (Warehouse, Zone, Shelf, Bin)</param>
+        /// <returns>Thông tin vị trí lưu trữ của Parcel sau khi nhập vị trí thành công</returns>
+        /// <response code="200">Nhập vị trí kho thành công</response>
+        /// <response code="400">Yêu cầu không hợp lệ, vị trí không hợp lệ hoặc không đủ sức chứa</response>
+        /// <response code="401">Chưa đăng nhập</response>
+        /// <response code="403">Không có quyền thao tác (yêu cầu role Staff hoặc WarehouseStaff)</response>
+        /// <response code="404">Không tìm thấy kiện hàng hoặc vị trí kho</response>
+        [HttpPut("{parcelId}/put-away")]
+        [ProducesResponseType(typeof(ParcelPutAwayResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> PutAway([FromRoute] Guid parcelId, [FromBody] ParcelPutAwayRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var result = await _parcelService.PutAwayParcelAsync(parcelId, request);
+                return Ok(new { message = "Nhập vị trí kho cho kiện hàng thành công.", data = result });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }
