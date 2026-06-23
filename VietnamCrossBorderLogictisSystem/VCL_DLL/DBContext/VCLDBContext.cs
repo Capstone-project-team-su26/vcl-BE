@@ -570,6 +570,8 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("width");
             entity.Property(e => e.CheckInTime)
                 .HasColumnName("check_in_time");
+            entity.Property(e => e.PutAwayTime)
+                .HasColumnName("put_away_time");
             entity.Property(e => e.BinId).HasColumnName("bin_id");
 
             entity.HasOne(d => d.Consignment).WithMany(p => p.Parcels)

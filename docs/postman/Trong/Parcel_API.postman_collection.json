@@ -1,0 +1,173 @@
+{
+  "info": {
+    "name": "VCL - Kien hang trong kho (Parcel)",
+    "description": "Test API kho/warehouse lien quan Parcel. Trong tam: GET /api/parcels/{parcelId} - lay chi tiet kien hang (VCL-88). Endpoint yeu cau role Staff/WarehouseStaff. Luu y: can co it nhat 1 kien da check-in de test happy path (lay tu pending-putaway).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5209", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "parcelId", "value": "", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0. Seed WarehouseStaff (tao tai khoan test)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "console.log('Seed staff:', json.email, '/', json.password);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-staff", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-staff"] }
+      }
+    },
+    {
+      "name": "1. Login (WarehouseStaff) - lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('token', json.token); console.log('Token saved'); }",
+              "else { console.log('Khong tim thay token:', JSON.stringify(json)); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. Lay danh sach kien cho put-away (de lay 1 parcelId)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "if (data && data.items && data.items.length > 0) {",
+              "    pm.collectionVariables.set('parcelId', data.items[0].id);",
+              "    console.log('Da luu parcelId:', data.items[0].id);",
+              "} else {",
+              "    console.log('Khong co kien nao trong pending-putaway. Can check-in 1 kien truoc khi test request 3.');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/pending-putaway?pageNumber=1&pageSize=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "pending-putaway"],
+          "query": [
+            { "key": "pageNumber", "value": "1" },
+            { "key": "pageSize", "value": "10" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "3. Lay chi tiet kien hang (happy path)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var d = pm.response.json().data;",
+              "pm.test('Co packageCode', function () { pm.expect(d).to.have.property('packageCode'); });",
+              "pm.test('Co consignmentCode', function () { pm.expect(d).to.have.property('consignmentCode'); });",
+              "pm.test('Co thong tin khach', function () { pm.expect(d).to.have.property('customerName'); });",
+              "pm.test('Co can do thuc te', function () { pm.expect(d).to.have.property('actualWeight'); pm.expect(d).to.have.property('volumetricWeight'); });",
+              "pm.test('Co thoi gian check-in', function () { pm.expect(d).to.have.property('checkInTime'); });",
+              "console.log('Parcel:', d.packageCode, '| status:', d.packageStatus, '| vi tri kho:', d.storageLocation ? JSON.stringify(d.storageLocation) : 'chua put-away', '| putAwayTime:', d.putAwayTime);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/{{parcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "{{parcelId}}"]
+        }
+      }
+    },
+    {
+      "name": "4. (Negative) Chi tiet kien khong ton tai -> 404",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/00000000-0000-0000-0000-000000000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
+    },
+    {
+      "name": "5. (Negative) Khong co token -> 401",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 401 Unauthorized', function () { pm.response.to.have.status(401); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/parcels/{{parcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parcels", "{{parcelId}}"]
+        }
+      }
+    }
+  ]
+}

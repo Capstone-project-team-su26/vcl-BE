@@ -753,6 +753,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("package_status");
 
+                    b.Property<DateTime?>("PutAwayTime")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("put_away_time");
+
                     b.Property<decimal?>("VolumetricWeight")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("volumetric_weight");
