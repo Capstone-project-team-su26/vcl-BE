@@ -63,6 +63,34 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Lấy chi tiết một kiện hàng trong kho theo parcelId.
+        /// Trả về thông tin kiện, yêu cầu ký gửi & khách hàng liên quan, cân đo thực tế, và vị trí kho nếu đã put-away.
+        /// </summary>
+        /// <param name="parcelId">ID của kiện hàng</param>
+        /// <returns>Chi tiết kiện hàng</returns>
+        /// <response code="200">Lấy chi tiết thành công</response>
+        /// <response code="401">Chưa đăng nhập</response>
+        /// <response code="403">Không có quyền truy cập (yêu cầu role Staff hoặc WarehouseStaff)</response>
+        /// <response code="404">Không tìm thấy kiện hàng</response>
+        [HttpGet("{parcelId:guid}")]
+        [ProducesResponseType(typeof(ParcelDetailResponse), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetParcelDetail([FromRoute] Guid parcelId)
+        {
+            try
+            {
+                var result = await _parcelService.GetParcelDetailAsync(parcelId);
+                return Ok(new { message = "Lấy chi tiết kiện hàng thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Lấy danh sách kiện chờ nhập vị trí kho
         /// </summary>
         /// <param name="pageNumber">Số trang (mặc định 1)</param>

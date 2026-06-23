@@ -146,6 +146,71 @@ namespace VCL_BLL.Services
             return response;
         }
 
+        public async Task<ParcelDetailResponse> GetParcelDetailAsync(Guid parcelId)
+        {
+            // 1. Tìm Parcel
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var parcel = await parcelRepo.GetByIdAsync(parcelId);
+            if (parcel == null)
+                throw new NotFoundException("Không tìm thấy kiện hàng.");
+
+            // 2. Yêu cầu ký gửi + khách hàng liên quan
+            Order? order = null;
+            if (parcel.ConsignmentId.HasValue)
+                order = await _unitOfWork.Repository<Order>().GetByIdAsync(parcel.ConsignmentId.Value);
+
+            Customer? customer = null;
+            if (order?.CustomerId != null)
+                customer = await _unitOfWork.Repository<Customer>().GetByIdAsync(order.CustomerId.Value);
+
+            // 3. Vị trí kho (chỉ khi đã put-away — BinId != null)
+            ParcelStorageLocation? location = null;
+            if (parcel.BinId.HasValue)
+            {
+                var bin = await _unitOfWork.Repository<Bin>().GetByIdAsync(parcel.BinId.Value);
+                if (bin != null)
+                {
+                    Shelf? shelf = bin.ShelfId.HasValue
+                        ? await _unitOfWork.Repository<Shelf>().GetByIdAsync(bin.ShelfId.Value) : null;
+                    Warehouse? warehouse = bin.WarehouseId.HasValue
+                        ? await _unitOfWork.Repository<Warehouse>().GetByIdAsync(bin.WarehouseId.Value) : null;
+                    WarehouseZone? zone = shelf?.ZoneId != null
+                        ? await _unitOfWork.Repository<WarehouseZone>().GetByIdAsync(shelf.ZoneId.Value) : null;
+
+                    location = new ParcelStorageLocation
+                    {
+                        WarehouseName = warehouse?.WarehouseName ?? string.Empty,
+                        ZoneName = zone?.ZoneName ?? string.Empty,
+                        ShelfCode = shelf?.ShelfCode ?? string.Empty,
+                        BinCode = bin.BinCode ?? string.Empty
+                    };
+                }
+            }
+
+            // 4. Map response
+            return new ParcelDetailResponse
+            {
+                ParcelId = parcel.Id,
+                PackageCode = parcel.PackageCode ?? string.Empty,
+                PackageStatus = parcel.PackageStatus ?? string.Empty,
+                ConsignmentId = parcel.ConsignmentId,
+                ConsignmentCode = order?.ConsignmentCode ?? string.Empty,
+                CustomerName = customer?.FullName ?? string.Empty,
+                CustomerCode = customer?.CustomerCode ?? string.Empty,
+                CustomerEmail = customer?.Email,
+                CustomerPhone = customer?.Phone,
+                ActualWeight = parcel.ActualWeight,
+                Length = parcel.Length,
+                Width = parcel.Width,
+                Height = parcel.Height,
+                VolumetricWeight = parcel.VolumetricWeight.HasValue ? Math.Round(parcel.VolumetricWeight.Value, 2) : null,
+                ChargeableWeight = parcel.ChargeableWeight.HasValue ? Math.Round(parcel.ChargeableWeight.Value, 2) : null,
+                CheckInTime = parcel.CheckInTime,
+                PutAwayTime = parcel.PutAwayTime,
+                StorageLocation = location
+            };
+        }
+
         public async Task<PaginatedResponse<PendingPutawayParcelDto>> GetPendingPutawayParcelsAsync(
             int pageNumber, 
             int pageSize, 
@@ -325,8 +390,10 @@ namespace VCL_BLL.Services
             }
 
             // 7. Cập nhật thông tin vị trí lưu trữ và trạng thái của Parcel
+            var putAwayTime = DateTime.UtcNow;
             parcel.BinId = bin.Id;
             parcel.PackageStatus = "STORED";
+            parcel.PutAwayTime = putAwayTime;
 
             // Cập nhật thể tích hiện tại của Bin
             bin.CurrentVolume = (bin.CurrentVolume ?? 0) + parcelVolume;
@@ -345,7 +412,7 @@ namespace VCL_BLL.Services
                 ShelfCode = shelf.ShelfCode ?? string.Empty,
                 BinCode = bin.BinCode ?? string.Empty,
                 PackageStatus = parcel.PackageStatus,
-                PutAwayTime = DateTime.UtcNow
+                PutAwayTime = putAwayTime
             };
         }
     }

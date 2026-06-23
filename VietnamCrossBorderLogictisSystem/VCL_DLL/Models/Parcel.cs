@@ -31,6 +31,8 @@ public partial class Parcel
 
     public DateTime? CheckInTime { get; set; }
 
+    public DateTime? PutAwayTime { get; set; }
+
     public Guid? BinId { get; set; }
 
     public virtual Order Consignment { get; set; }

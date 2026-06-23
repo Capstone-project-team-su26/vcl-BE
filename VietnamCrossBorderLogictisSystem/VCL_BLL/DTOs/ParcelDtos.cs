@@ -66,6 +66,52 @@ namespace VCL_BLL.DTOs
         public Guid BinId { get; set; }
     }
 
+    /// <summary>
+    /// Chi tiết một kiện hàng trong kho (VCL-88).
+    /// </summary>
+    public class ParcelDetailResponse
+    {
+        public Guid ParcelId { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public string PackageStatus { get; set; } = string.Empty;
+
+        // Yêu cầu ký gửi liên quan
+        public Guid? ConsignmentId { get; set; }
+        public string ConsignmentCode { get; set; } = string.Empty;
+
+        // Khách hàng liên quan
+        public string CustomerName { get; set; } = string.Empty;
+        public string CustomerCode { get; set; } = string.Empty;
+        public string? CustomerEmail { get; set; }
+        public string? CustomerPhone { get; set; }
+
+        // Cân đo thực tế
+        public decimal? ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+        public decimal? VolumetricWeight { get; set; }
+        public decimal? ChargeableWeight { get; set; }
+
+        // Thời điểm
+        public DateTime? CheckInTime { get; set; }
+        public DateTime? PutAwayTime { get; set; }
+
+        // Vị trí kho (chỉ có khi đã put-away)
+        public ParcelStorageLocation? StorageLocation { get; set; }
+    }
+
+    /// <summary>
+    /// Vị trí lưu trữ của kiện trong kho.
+    /// </summary>
+    public class ParcelStorageLocation
+    {
+        public string WarehouseName { get; set; } = string.Empty;
+        public string ZoneName { get; set; } = string.Empty;
+        public string ShelfCode { get; set; } = string.Empty;
+        public string BinCode { get; set; } = string.Empty;
+    }
+
     public class ParcelPutAwayResponse
     {
         public string PackageCode { get; set; } = string.Empty;
