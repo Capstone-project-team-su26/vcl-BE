@@ -590,6 +590,31 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("order_type");
 
+                    b.Property<string>("ReceiverAddress")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("receiver_address");
+
+                    b.Property<string>("ReceiverName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("receiver_name");
+
+                    b.Property<string>("ReceiverPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("receiver_phone");
+
+                    b.Property<bool>("RequiresInspection")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("requires_inspection");
+
+                    b.Property<string>("Route")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("route");
+
                     b.Property<string>("Status")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")

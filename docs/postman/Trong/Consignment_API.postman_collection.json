@@ -7,12 +7,81 @@
   "variable": [
     { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
     { "key": "token", "value": "", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
     { "key": "orderId", "value": "", "type": "string" },
     { "key": "quotationId", "value": "", "type": "string" },
     { "key": "customerEmail", "value": "buidinhtrong09122002@gmail.com", "type": "string" },
     { "key": "customerPassword", "value": "trong123", "type": "string" }
   ],
   "item": [
+    {
+      "name": "0a. Setup - Seed Admin",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-admin", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-admin"] }
+      }
+    },
+    {
+      "name": "0b. Setup - Login Admin (lay adminToken)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('adminToken', json.token); console.log('adminToken saved'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"Admin123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "0c. Setup - Tao PricingRule (TQ-VN/Express)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Tao moi (201) hoac da ton tai (400)', function () { pm.expect([201, 400]).to.include(pm.response.code); });",
+              "console.log('PricingRule TQ-VN/Express:', pm.response.code === 201 ? 'da tao' : 'da ton tai tu truoc');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shippingServiceType\": \"Air\",\n  \"consignmentType\": \"Express\",\n  \"route\": \"TQ-VN\",\n  \"unitType\": \"kg\",\n  \"pricePerWeight\": 55000,\n  \"pricePerVolume\": 120000,\n  \"serviceFee\": 50000,\n  \"isActive\": true\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/pricing-rules", "host": ["{{baseUrl}}"], "path": ["api", "pricing-rules"] }
+      }
+    },
     {
       "name": "1. Login (Customer) - lay JWT token",
       "event": [
@@ -177,6 +246,8 @@
               "pm.test('Co orderId', function () { pm.expect(data).to.have.property('orderId'); });",
               "pm.test('Status = PENDING_REVIEW', function () { pm.expect(data.status).to.eql('PENDING_REVIEW'); });",
               "pm.test('Co bao gia tam tinh', function () { pm.expect(data.quotation).to.have.property('totalEstimatedCost'); });",
+              "pm.test('Co customerId va userId', function () { pm.expect(data).to.have.property('customerId'); pm.expect(data).to.have.property('userId'); });",
+              "pm.test('Co route va requiresInspection', function () { pm.expect(data.route).to.eql('TQ-VN'); pm.expect(data.requiresInspection).to.eql(true); });",
               "if (data && data.orderId) { pm.collectionVariables.set('orderId', data.orderId); }",
               "if (data && data.quotation && data.quotation.quotationId) { pm.collectionVariables.set('quotationId', data.quotation.quotationId); }",
               "console.log('orderId:', pm.collectionVariables.get('orderId'));",
@@ -196,7 +267,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"shippingOption\": \"Express\",\n  \"note\": \"Hang de vo, xu ly can than\",\n  \"items\": [\n    {\n      \"productName\": \"Den LED trang tri\",\n      \"productType\": \"Electronics\",\n      \"quantity\": 10,\n      \"weight\": 2.5,\n      \"width\": 20,\n      \"height\": 15,\n      \"length\": 30,\n      \"declaredValue\": 1500000,\n      \"referenceUrl\": \"https://item.taobao.com/item.htm?id=123456\",\n      \"domesticTrackingCode\": \"SF1234567890\"\n    },\n    {\n      \"productName\": \"Vo dien thoai silicon\",\n      \"productType\": \"Accessories\",\n      \"quantity\": 50,\n      \"weight\": 0.05,\n      \"width\": 8,\n      \"height\": 2,\n      \"length\": 16,\n      \"declaredValue\": 500000,\n      \"referenceUrl\": \"https://detail.1688.com/offer/987654.html\",\n      \"domesticTrackingCode\": null\n    }\n  ]\n}"
+          "raw": "{\n  \"route\": \"TQ-VN\",\n  \"shippingOption\": \"Express\",\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0901234567\",\n  \"receiverAddress\": \"123 Le Loi, Quan 1, TP.HCM\",\n  \"requiresInspection\": true,\n  \"note\": \"Hang de vo, xu ly can than\",\n  \"items\": [\n    {\n      \"productName\": \"Den LED trang tri\",\n      \"productType\": \"Electronics\",\n      \"quantity\": 10,\n      \"weight\": 2.5,\n      \"width\": 20,\n      \"height\": 15,\n      \"length\": 30,\n      \"declaredValue\": 1500000,\n      \"referenceUrl\": \"https://item.taobao.com/item.htm?id=123456\",\n      \"domesticTrackingCode\": \"SF1234567890\"\n    },\n    {\n      \"productName\": \"Vo dien thoai silicon\",\n      \"productType\": \"Accessories\",\n      \"quantity\": 50,\n      \"weight\": 0.05,\n      \"width\": 8,\n      \"height\": 2,\n      \"length\": 16,\n      \"declaredValue\": 500000,\n      \"referenceUrl\": \"https://detail.1688.com/offer/987654.html\",\n      \"domesticTrackingCode\": null\n    }\n  ]\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/orders/consignments", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments"] }
       }
@@ -410,7 +481,7 @@
       }
     },
     {
-      "name": "6. (Negative) ShippingOption sai -> 400",
+      "name": "6. (Negative) Route/ShippingOption khong khop PricingRule -> 400",
       "event": [
         {
           "listen": "test",
@@ -430,7 +501,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"shippingOption\": \"Airplane\",\n  \"items\": [ { \"productName\": \"Test\", \"productType\": \"Test\", \"quantity\": 1 } ]\n}"
+          "raw": "{\n  \"route\": \"TQ-VN\",\n  \"shippingOption\": \"Airplane\",\n  \"items\": [ { \"productName\": \"Test\", \"productType\": \"Test\", \"quantity\": 1 } ]\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/orders/consignments", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments"] }
       }
