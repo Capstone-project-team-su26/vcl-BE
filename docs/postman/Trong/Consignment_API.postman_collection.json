@@ -56,14 +56,14 @@
       }
     },
     {
-      "name": "0c. Setup - Tao PricingRule (Vietnam/Express)",
+      "name": "0c. Setup - Tao PricingRule (TQ-VN/Express)",
       "event": [
         {
           "listen": "test",
           "script": {
             "exec": [
               "pm.test('Tao moi (201) hoac da ton tai (400)', function () { pm.expect([201, 400]).to.include(pm.response.code); });",
-              "console.log('PricingRule Vietnam/Express:', pm.response.code === 201 ? 'da tao' : 'da ton tai tu truoc');"
+              "console.log('PricingRule TQ-VN/Express:', pm.response.code === 201 ? 'da tao' : 'da ton tai tu truoc');"
             ],
             "type": "text/javascript"
           }
@@ -77,7 +77,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"shippingServiceType\": \"Air\",\n  \"consignmentType\": \"Express\",\n  \"route\": \"Vietnam\",\n  \"unitType\": \"kg\",\n  \"pricePerWeight\": 55000,\n  \"pricePerVolume\": 120000,\n  \"serviceFee\": 50000,\n  \"isActive\": true\n}"
+          "raw": "{\n  \"shippingServiceType\": \"Air\",\n  \"consignmentType\": \"Express\",\n  \"route\": \"TQ-VN\",\n  \"unitType\": \"kg\",\n  \"pricePerWeight\": 55000,\n  \"pricePerVolume\": 120000,\n  \"serviceFee\": 50000,\n  \"isActive\": true\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/pricing-rules", "host": ["{{baseUrl}}"], "path": ["api", "pricing-rules"] }
       }
@@ -247,7 +247,7 @@
               "pm.test('Status = PENDING_REVIEW', function () { pm.expect(data.status).to.eql('PENDING_REVIEW'); });",
               "pm.test('Co bao gia tam tinh', function () { pm.expect(data.quotation).to.have.property('totalEstimatedCost'); });",
               "pm.test('Co customerId va userId', function () { pm.expect(data).to.have.property('customerId'); pm.expect(data).to.have.property('userId'); });",
-              "pm.test('Co route va requiresInspection', function () { pm.expect(data.route).to.eql('Vietnam'); pm.expect(data.requiresInspection).to.eql(true); });",
+              "pm.test('Co route va requiresInspection', function () { pm.expect(data.route).to.eql('TQ-VN'); pm.expect(data.requiresInspection).to.eql(true); });",
               "if (data && data.orderId) { pm.collectionVariables.set('orderId', data.orderId); }",
               "if (data && data.quotation && data.quotation.quotationId) { pm.collectionVariables.set('quotationId', data.quotation.quotationId); }",
               "console.log('orderId:', pm.collectionVariables.get('orderId'));",
@@ -267,7 +267,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"route\": \"Vietnam\",\n  \"shippingOption\": \"Express\",\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0901234567\",\n  \"receiverAddress\": \"123 Le Loi, Quan 1, TP.HCM\",\n  \"requiresInspection\": true,\n  \"note\": \"Hang de vo, xu ly can than\",\n  \"items\": [\n    {\n      \"productName\": \"Den LED trang tri\",\n      \"productType\": \"Electronics\",\n      \"quantity\": 10,\n      \"weight\": 2.5,\n      \"width\": 20,\n      \"height\": 15,\n      \"length\": 30,\n      \"declaredValue\": 1500000,\n      \"referenceUrl\": \"https://item.taobao.com/item.htm?id=123456\",\n      \"domesticTrackingCode\": \"SF1234567890\"\n    },\n    {\n      \"productName\": \"Vo dien thoai silicon\",\n      \"productType\": \"Accessories\",\n      \"quantity\": 50,\n      \"weight\": 0.05,\n      \"width\": 8,\n      \"height\": 2,\n      \"length\": 16,\n      \"declaredValue\": 500000,\n      \"referenceUrl\": \"https://detail.1688.com/offer/987654.html\",\n      \"domesticTrackingCode\": null\n    }\n  ]\n}"
+          "raw": "{\n  \"route\": \"TQ-VN\",\n  \"shippingOption\": \"Express\",\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0901234567\",\n  \"receiverAddress\": \"123 Le Loi, Quan 1, TP.HCM\",\n  \"requiresInspection\": true,\n  \"note\": \"Hang de vo, xu ly can than\",\n  \"items\": [\n    {\n      \"productName\": \"Den LED trang tri\",\n      \"productType\": \"Electronics\",\n      \"quantity\": 10,\n      \"weight\": 2.5,\n      \"width\": 20,\n      \"height\": 15,\n      \"length\": 30,\n      \"declaredValue\": 1500000,\n      \"referenceUrl\": \"https://item.taobao.com/item.htm?id=123456\",\n      \"domesticTrackingCode\": \"SF1234567890\"\n    },\n    {\n      \"productName\": \"Vo dien thoai silicon\",\n      \"productType\": \"Accessories\",\n      \"quantity\": 50,\n      \"weight\": 0.05,\n      \"width\": 8,\n      \"height\": 2,\n      \"length\": 16,\n      \"declaredValue\": 500000,\n      \"referenceUrl\": \"https://detail.1688.com/offer/987654.html\",\n      \"domesticTrackingCode\": null\n    }\n  ]\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/orders/consignments", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments"] }
       }
@@ -501,7 +501,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"route\": \"Vietnam\",\n  \"shippingOption\": \"Airplane\",\n  \"items\": [ { \"productName\": \"Test\", \"productType\": \"Test\", \"quantity\": 1 } ]\n}"
+          "raw": "{\n  \"route\": \"TQ-VN\",\n  \"shippingOption\": \"Airplane\",\n  \"items\": [ { \"productName\": \"Test\", \"productType\": \"Test\", \"quantity\": 1 } ]\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/orders/consignments", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments"] }
       }
