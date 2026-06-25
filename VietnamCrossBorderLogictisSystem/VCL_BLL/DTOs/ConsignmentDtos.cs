@@ -68,9 +68,25 @@ namespace VCL_BLL.DTOs
     /// </summary>
     public class CreateConsignmentRequest
     {
-        /// <summary>Phương án vận chuyển TQ → VN: "Express" hoặc "Consolidation".</summary>
+        /// <summary>Tuyến hàng (VD: "China-Vietnam"). Khớp với PricingRule.Route đang active.</summary>
+        [Required]
+        public string Route { get; set; } = string.Empty;
+
+        /// <summary>Phương án vận chuyển. Phải khớp một PricingRule active theo Route đã chọn (FE lấy danh sách từ API pricing-rules).</summary>
         [Required]
         public string ShippingOption { get; set; } = string.Empty;
+
+        /// <summary>Tên người nhận hàng.</summary>
+        public string? ReceiverName { get; set; }
+
+        /// <summary>Số điện thoại người nhận.</summary>
+        public string? ReceiverPhone { get; set; }
+
+        /// <summary>Địa chỉ giao hàng (người nhận cuối tại VN).</summary>
+        public string? ReceiverAddress { get; set; }
+
+        /// <summary>Khách yêu cầu kiểm hàng — sale/kho mở kiện kiểm tra số lượng & tình trạng.</summary>
+        public bool RequiresInspection { get; set; }
 
         /// <summary>Ghi chú xử lý chung cho cả yêu cầu.</summary>
         public string? Note { get; set; }
@@ -171,8 +187,17 @@ namespace VCL_BLL.DTOs
     public class CreateConsignmentResponse
     {
         public Guid OrderId { get; set; }
+
+        /// <summary>ID khách hàng (Customer) sở hữu đơn.</summary>
+        public Guid? CustomerId { get; set; }
+
+        /// <summary>ID user (tài khoản) của khách — FE cần để xử lý.</summary>
+        public Guid? UserId { get; set; }
+
         public string Status { get; set; } = string.Empty;
         public string ConsignmentType { get; set; } = string.Empty;
+        public string Route { get; set; } = string.Empty;
+        public bool RequiresInspection { get; set; }
         public int ItemCount { get; set; }
 
         /// <summary>Báo giá tạm tính sinh tự động sau khi tạo.</summary>

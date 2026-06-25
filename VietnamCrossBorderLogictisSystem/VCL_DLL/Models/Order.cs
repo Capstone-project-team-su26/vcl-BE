@@ -27,6 +27,16 @@ public partial class Order
 
     public string OrderType { get; set; }
 
+    public string Route { get; set; }
+
+    public string ReceiverName { get; set; }
+
+    public string ReceiverPhone { get; set; }
+
+    public string ReceiverAddress { get; set; }
+
+    public bool RequiresInspection { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual Company Company { get; set; }

@@ -21,9 +21,6 @@ namespace VCL_BLL.Services
         // Các giá trị RestrictionType được coi là hàng hạn chế → level RESTRICTED.
         private static readonly string[] RestrictedRestrictionTypes = { "RESTRICTED", "LIMITED", "HẠN CHẾ", "HAN CHE" };
 
-        // Phương án vận chuyển hợp lệ (A2).
-        private static readonly string[] ValidShippingOptions = { "Express", "Consolidation" };
-
         // Các trạng thái Order mà khách được phép tự hủy (hàng chưa vào kho VN).
         private static readonly string[] CancellableStatuses = { "PENDING_REVIEW", "APPROVED", "WAITING_FOR_PARCEL" };
 
@@ -38,11 +35,24 @@ namespace VCL_BLL.Services
 
         public async Task<CreateConsignmentResponse> CreateConsignmentAsync(CreateConsignmentRequest request, Guid userId)
         {
-            // 1. Validate phương án vận chuyển
-            var shippingOption = ValidShippingOptions.FirstOrDefault(
-                o => string.Equals(o, request.ShippingOption, StringComparison.OrdinalIgnoreCase));
-            if (shippingOption == null)
-                throw new ArgumentException("Phương án vận chuyển không hợp lệ. Chỉ chấp nhận: Express, Consolidation.");
+            // 1. Validate tuyến hàng + phương án vận chuyển theo bảng cấu hình giá (PricingRule)
+            if (string.IsNullOrWhiteSpace(request.Route))
+                throw new ArgumentException("Vui lòng chọn tuyến hàng (route).");
+            if (string.IsNullOrWhiteSpace(request.ShippingOption))
+                throw new ArgumentException("Vui lòng chọn phương án vận chuyển (shippingOption).");
+
+            var pricingRules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
+            var matchedRule = pricingRules.FirstOrDefault(p =>
+                p.IsActive
+                && p.Route != null && p.Route.Equals(request.Route, StringComparison.OrdinalIgnoreCase)
+                && p.ConsignmentType != null && p.ConsignmentType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase));
+
+            if (matchedRule == null)
+                throw new ArgumentException($"Không có cấu hình giá hợp lệ cho tuyến '{request.Route}' với phương án '{request.ShippingOption}'. Vui lòng chọn lại.");
+
+            // Dùng đúng giá trị chuẩn hóa từ cấu hình
+            var route = matchedRule.Route!;
+            var shippingOption = matchedRule.ConsignmentType!;
 
             if (request.Items == null || request.Items.Count == 0)
                 throw new ArgumentException("Yêu cầu ký gửi phải có ít nhất một mặt hàng.");
@@ -85,6 +95,11 @@ namespace VCL_BLL.Services
                 CompanyId = customer.CompanyId,
                 ConsignmentCode = null,
                 ConsignmentType = shippingOption,
+                Route = route,
+                ReceiverName = request.ReceiverName,
+                ReceiverPhone = request.ReceiverPhone,
+                ReceiverAddress = request.ReceiverAddress,
+                RequiresInspection = request.RequiresInspection,
                 Status = "PENDING_REVIEW",
                 OrderType = "CONSIGNMENT",
                 Note = request.Note,
@@ -124,8 +139,12 @@ namespace VCL_BLL.Services
             return new CreateConsignmentResponse
             {
                 OrderId = order.Id,
+                CustomerId = customer.Id,
+                UserId = customer.UserId,
                 Status = order.Status,
                 ConsignmentType = order.ConsignmentType,
+                Route = order.Route,
+                RequiresInspection = order.RequiresInspection,
                 ItemCount = request.Items.Count,
                 Quotation = quotation,
                 Warnings = warnings

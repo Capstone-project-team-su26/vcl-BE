@@ -455,6 +455,20 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.OrderType)
                 .HasMaxLength(50)
                 .HasColumnName("order_type");
+            entity.Property(e => e.Route)
+                .HasMaxLength(100)
+                .HasColumnName("route");
+            entity.Property(e => e.ReceiverName)
+                .HasMaxLength(255)
+                .HasColumnName("receiver_name");
+            entity.Property(e => e.ReceiverPhone)
+                .HasMaxLength(50)
+                .HasColumnName("receiver_phone");
+            entity.Property(e => e.ReceiverAddress)
+                .HasColumnName("receiver_address");
+            entity.Property(e => e.RequiresInspection)
+                .HasDefaultValue(false)
+                .HasColumnName("requires_inspection");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
