@@ -475,8 +475,11 @@ namespace VCL_BLL.Services
 
             var query = allOrders.AsQueryable();
 
-            // Customer only sees their own requests
-            if (!string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+            var isStaff = !string.IsNullOrWhiteSpace(role)
+                && StaffRoles.Contains(role.Trim().ToUpperInvariant());
+
+            // Customer only sees their own requests, staff can see all requests
+            if (!isStaff)
             {
                 if (userId == null)
                 {

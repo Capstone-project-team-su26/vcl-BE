@@ -561,7 +561,7 @@ Response `200 OK`:
 
 ## 12. Lấy danh sách yêu cầu ký gửi
 
-Hệ thống cung cấp API lấy danh sách yêu cầu ký gửi có phân trang. Customer chỉ thấy yêu cầu của chính mình, Admin có thể xem toàn bộ yêu cầu trong hệ thống.
+Hệ thống cung cấp API lấy danh sách yêu cầu ký gửi có phân trang. Customer chỉ thấy yêu cầu của chính mình, Admin và các tài khoản thuộc nhóm Staff (Sale, WarehouseStaff, OperationsManager, Delivery) có thể xem toàn bộ yêu cầu trong hệ thống.
 
 ```http
 GET /api/orders/consignments
