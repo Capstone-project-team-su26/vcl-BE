@@ -32,6 +32,10 @@ namespace VCL_API.Controllers
                 var userId = await _userService.CreateEmployeeAsync(request);
                 return CreatedAtAction(nameof(GetUserById), new { id = userId }, new { id = userId });
             }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
             catch (InvalidOperationException ex)
             {
                 return Conflict(new { message = ex.Message });
@@ -78,6 +82,10 @@ namespace VCL_API.Controllers
             {
                 await _userService.UpdateUserRoleAsync(id, request.Role);
                 return Ok(new { message = "Cập nhật role thành công." });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
