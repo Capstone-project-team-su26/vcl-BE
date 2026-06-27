@@ -40,6 +40,10 @@ namespace VCL_BLL.Services
             var userRepo = _unitOfWork.Repository<User>();
             var users = await userRepo.GetAllAsync();
 
+            // Không cho phép tạo tài khoản role Admin
+            if (string.Equals(request.Role?.Trim(), "Admin", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Không được phép tạo tài khoản với quyền Admin.");
+
             if (users.Any(u => u.Email.Equals(request.Email, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("Email đã được sử dụng.");
 
@@ -75,6 +79,10 @@ namespace VCL_BLL.Services
 
         public async Task UpdateUserRoleAsync(Guid userId, string role)
         {
+            // Không cho phép nâng quyền lên Admin
+            if (string.Equals(role?.Trim(), "Admin", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Không được phép gán quyền Admin cho tài khoản.");
+
             var user = await GetUserOrThrowAsync(userId);
             user.Role = role;
             _unitOfWork.Repository<User>().Update(user);
