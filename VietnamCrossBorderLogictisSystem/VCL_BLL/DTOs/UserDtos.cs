@@ -22,4 +22,35 @@ namespace VCL_BLL.DTOs
         [Required]
         public string Role { get; set; }
     }
+
+    public class UserProfileResponse
+    {
+        public Guid Id { get; set; }
+        public string FullName { get; set; }
+        public string Email { get; set; }
+        public string Phone { get; set; }
+        public string Role { get; set; }
+        public string UserType { get; set; }
+        public string Status { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        
+        // Customer-specific fields (null for employees)
+        public string CustomerCode { get; set; }
+        public string CustomerType { get; set; }
+        public string Country { get; set; }
+        public string Address { get; set; }
+    }
+
+    public class UpdateProfileRequest
+    {
+        [Required(ErrorMessage = "Họ tên không được để trống.")]
+        public string FullName { get; set; }
+
+        [Required(ErrorMessage = "Số điện thoại không được để trống.")]
+        public string Phone { get; set; }
+
+        // Optional, only used for Customers
+        public string Country { get; set; }
+        public string Address { get; set; }
+    }
 }

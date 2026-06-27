@@ -81,6 +81,65 @@ namespace VCL_BLL.Services
             await _unitOfWork.SaveChangesAsync();
         }
 
+        public async Task<UserProfileResponse> GetProfileAsync(Guid userId)
+        {
+            var user = await GetUserOrThrowAsync(userId);
+            
+            var response = new UserProfileResponse
+            {
+                Id = user.Id,
+                FullName = user.FullName,
+                Email = user.Email,
+                Phone = user.Phone,
+                Role = user.Role,
+                UserType = user.UserType,
+                Status = user.Status,
+                CreatedAt = user.CreatedAt
+            };
+
+            if (string.Equals(user.UserType, "Customer", StringComparison.OrdinalIgnoreCase))
+            {
+                var customerRepo = _unitOfWork.Repository<Customer>();
+                var customers = await customerRepo.GetAllAsync();
+                var customer = customers.FirstOrDefault(c => c.UserId == user.Id);
+                if (customer != null)
+                {
+                    response.CustomerCode = customer.CustomerCode;
+                    response.CustomerType = customer.CustomerType;
+                    response.Country = customer.Country;
+                    response.Address = customer.Address;
+                }
+            }
+
+            return response;
+        }
+
+        public async Task UpdateProfileAsync(Guid userId, UpdateProfileRequest request)
+        {
+            var user = await GetUserOrThrowAsync(userId);
+            
+            user.FullName = request.FullName;
+            user.Phone = request.Phone;
+            _unitOfWork.Repository<User>().Update(user);
+
+            if (string.Equals(user.UserType, "Customer", StringComparison.OrdinalIgnoreCase))
+            {
+                var customerRepo = _unitOfWork.Repository<Customer>();
+                var customers = await customerRepo.GetAllAsync();
+                var customer = customers.FirstOrDefault(c => c.UserId == user.Id);
+                if (customer != null)
+                {
+                    customer.FullName = request.FullName;
+                    customer.Phone = request.Phone;
+                    customer.Country = request.Country;
+                    customer.Address = request.Address;
+                    customerRepo.Update(customer);
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+        }
+
         private async Task<User> GetUserOrThrowAsync(Guid userId)
         {
             var user = await _unitOfWork.Repository<User>().GetByIdAsync(userId);

@@ -13,5 +13,7 @@ namespace VCL_BLL.Interface
         Task<IEnumerable<UserResponse>> GetAllUsersAsync();
         Task<UserResponse> GetUserByIdAsync(Guid userId);
         Task UpdateUserRoleAsync(Guid userId, string role);
+        Task<UserProfileResponse> GetProfileAsync(Guid userId);
+        Task UpdateProfileAsync(Guid userId, UpdateProfileRequest request);
     }
 }

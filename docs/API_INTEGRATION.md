@@ -67,6 +67,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/Auth/admin/register` | Admin | Admin tạo tài khoản nhân viên |
 | `PUT` | `/api/User/{id}/lock` | Admin | Khóa tài khoản |
 | `PUT` | `/api/User/{id}/unlock` | Admin | Mở khóa tài khoản |
+| `GET` | `/api/User/profile` | Authenticated | Lấy thông tin cá nhân của người dùng đang đăng nhập |
+| `PUT` | `/api/User/profile` | Authenticated | Cập nhật thông tin cá nhân của người dùng đang đăng nhập |
 | `POST` | `/api/orders/{orderId}/quotation/estimate` | Authenticated | Tạo báo giá tạm tính cho đơn ký gửi |
 | `PUT` | `/api/quotations/{quotationId}/accept` | Authenticated | Khách hàng xác nhận báo giá tạm tính |
 | `PUT` | `/api/orders/consignments/{orderId}/status` | Staff | Staff cập nhật trạng thái yêu cầu ký gửi |
@@ -373,6 +375,62 @@ Response `200 OK`:
 ```
 
 Hai endpoint yêu cầu role `Admin`. Response `400` nếu thao tác thất bại hoặc user không tồn tại.
+
+### 8.3. Xem và cập nhật thông tin cá nhân (Profile)
+
+#### 8.3.1. Xem thông tin cá nhân
+
+```http
+GET /api/User/profile
+Authorization: Bearer {accessToken}
+```
+
+Response `200 OK`:
+
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "fullName": "Nguyễn Văn A",
+  "email": "customer@example.com",
+  "phone": "0901234567",
+  "role": "Customer",
+  "userType": "Customer",
+  "status": "Active",
+  "createdAt": "2026-06-25T09:00:00Z",
+  "customerCode": "CUS-20260625-ABCDEF",
+  "customerType": "Individual",
+  "country": "Vietnam",
+  "address": "Ho Chi Minh City"
+}
+```
+
+*Lưu ý:* Các trường `customerCode`, `customerType`, `country`, `address` chỉ trả về khi `userType` là `Customer` (các vai trò nhân viên/admin sẽ có giá trị `null` hoặc không có).
+
+#### 8.3.2. Cập nhật thông tin cá nhân
+
+```http
+PUT /api/User/profile
+Authorization: Bearer {accessToken}
+```
+
+Request Body:
+
+```json
+{
+  "fullName": "Nguyễn Văn A",
+  "phone": "0901234567",
+  "country": "Vietnam",
+  "address": "123 Đường ABC, Quận 1, TP.HCM"
+}
+```
+
+Response `200 OK`:
+
+```json
+{
+  "message": "Cập nhật thông tin cá nhân thành công."
+}
+```
 
 ## 9. Báo giá tạm tính (Quotation Estimate)
 
