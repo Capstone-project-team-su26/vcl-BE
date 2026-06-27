@@ -77,6 +77,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/restricted-items` | Admin | Thêm mặt hàng cấm/hạn chế mới |
 | `PUT` | `/api/restricted-items/{id}` | Admin | Cập nhật thông tin/vô hiệu hóa mặt hàng |
 | `DELETE` | `/api/restricted-items/{id}` | Admin | Xóa mặt hàng cấm/hạn chế |
+| `GET` | `/api/pricing-rules` | Public | Xem danh sách cấu hình bảng giá |
+| `GET` | `/api/pricing-rules/{id}` | Public | Lấy chi tiết cấu hình giá theo ID |
+| `POST` | `/api/pricing-rules` | Admin | Thêm cấu hình giá mới |
+| `PUT` | `/api/pricing-rules/{id}` | Admin | Cập nhật cấu hình giá |
+| `DELETE` | `/api/pricing-rules/{id}` | Admin | Xóa cấu hình giá |
 | `POST` | `/api/parcels/check-in` | Staff/WarehouseStaff | Check-in kiện hàng thực tế bằng mã gửi hàng |
 | `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
@@ -775,7 +780,6 @@ Admin quản lý cấu hình bảng giá dùng để tính báo giá ký gửi. 
 
 ```http
 GET /api/pricing-rules
-Authorization: Bearer {adminToken}
 ```
 
 Response `200 OK`:
@@ -800,7 +804,6 @@ Response `200 OK`:
 
 ```http
 GET /api/pricing-rules/{id}
-Authorization: Bearer {adminToken}
 ```
 
 Response `200 OK` (chi tiết cấu hình giá). Trả về `404 Not Found` nếu không tìm thấy ID.

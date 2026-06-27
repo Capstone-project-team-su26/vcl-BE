@@ -24,6 +24,7 @@ namespace VCL_API.Controllers
         /// Xem danh sách cấu hình bảng giá
         /// </summary>
         [HttpGet]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAll()
         {
             var rules = await _pricingRuleService.GetAllAsync();
@@ -34,6 +35,7 @@ namespace VCL_API.Controllers
         /// Lấy chi tiết cấu hình giá theo ID
         /// </summary>
         [HttpGet("{id}")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetById(Guid id)
         {
             try
