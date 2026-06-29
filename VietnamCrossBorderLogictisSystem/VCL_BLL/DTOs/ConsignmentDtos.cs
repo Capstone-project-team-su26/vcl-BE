@@ -206,4 +206,46 @@ namespace VCL_BLL.DTOs
         /// <summary>Danh sách cảnh báo hàng hạn chế (Restricted). Hàng cấm (Banned) sẽ bị chặn tạo.</summary>
         public List<RestrictedItemWarning> Warnings { get; set; } = new();
     }
+
+    /// <summary>
+    /// Yêu cầu tạo ký gửi bởi nhân viên (Sales) thay cho khách hàng.
+    /// </summary>
+    public class CreateConsignmentByStaffRequest
+    {
+        /// <summary>ID khách hàng (nếu chọn từ danh sách có sẵn)</summary>
+        public Guid? CustomerId { get; set; }
+
+        /// <summary>Số điện thoại khách hàng (để tìm kiếm khách hàng)</summary>
+        public string? CustomerPhone { get; set; }
+
+        /// <summary>Email khách hàng (để tìm kiếm khách hàng)</summary>
+        public string? CustomerEmail { get; set; }
+
+        /// <summary>Tuyến hàng (VD: "China-Vietnam" hoặc "TQ-VN"). Khớp với PricingRule.Route đang active.</summary>
+        [Required(ErrorMessage = "Vui lòng chọn tuyến hàng.")]
+        public string Route { get; set; } = string.Empty;
+
+        /// <summary>Phương án vận chuyển. Phải khớp một PricingRule active theo Route đã chọn.</summary>
+        [Required(ErrorMessage = "Vui lòng chọn phương thức vận chuyển.")]
+        public string ShippingOption { get; set; } = string.Empty;
+
+        /// <summary>Tên người nhận hàng.</summary>
+        public string? ReceiverName { get; set; }
+
+        /// <summary>Số điện thoại người nhận.</summary>
+        public string? ReceiverPhone { get; set; }
+
+        /// <summary>Địa chỉ giao hàng (người nhận cuối tại VN).</summary>
+        public string? ReceiverAddress { get; set; }
+
+        /// <summary>Khách yêu cầu kiểm hàng — sale/kho mở kiện kiểm tra số lượng & tình trạng.</summary>
+        public bool RequiresInspection { get; set; }
+
+        /// <summary>Ghi chú từ Sales/Khách hàng.</summary>
+        public string? Note { get; set; }
+
+        [Required(ErrorMessage = "Yêu cầu ký gửi phải có ít nhất một mặt hàng.")]
+        [MinLength(1, ErrorMessage = "Yêu cầu ký gửi phải có ít nhất một mặt hàng.")]
+        public List<ConsignmentItemRequest> Items { get; set; } = new();
+    }
 }

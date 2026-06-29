@@ -62,6 +62,47 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Sales tạo yêu cầu ký gửi thay cho Customer.
+        /// </summary>
+        /// <param name="request">Thông tin mặt hàng, khách hàng và phương án vận chuyển</param>
+        /// <returns>Thông tin yêu cầu ký gửi kèm báo giá tạm tính và cảnh báo (nếu có)</returns>
+        /// <response code="201">Tạo yêu cầu ký gửi thành công</response>
+        /// <response code="400">Dữ liệu không hợp lệ hoặc chứa hàng cấm</response>
+        /// <response code="401">Chưa đăng nhập hoặc không phải nhân viên Sales</response>
+        /// <response code="404">Không tìm thấy Customer</response>
+        [HttpPost("~/api/staff/consignments")]
+        [Authorize(Roles = "Sale")]
+        [ProducesResponseType(typeof(CreateConsignmentResponse), 201)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> CreateConsignmentByStaff([FromBody] CreateConsignmentByStaffRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var staffUserId))
+                return Unauthorized(new { message = "Không thể xác định người dùng nhân viên." });
+
+            try
+            {
+                var result = await _orderService.CreateConsignmentByStaffAsync(request, staffUserId);
+                return CreatedAtAction(nameof(GetConsignmentDetail), new { orderId = result.OrderId },
+                    new { message = "Tạo yêu cầu ký gửi thay khách hàng thành công.", data = result });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Kiểm tra danh sách hàng hóa với danh mục hàng cấm/hạn chế (chỉ kiểm tra, KHÔNG tạo Order).
         /// Dùng để cảnh báo sớm khi khách đang nhập hàng. Hàng cấm → canCreate=false; hàng hạn chế → vẫn cho tạo nhưng cảnh báo.
         /// </summary>

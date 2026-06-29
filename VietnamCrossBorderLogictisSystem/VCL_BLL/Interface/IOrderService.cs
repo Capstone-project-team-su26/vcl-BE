@@ -7,6 +7,7 @@ namespace VCL_BLL.Interface
     public interface IOrderService
     {
         Task<CreateConsignmentResponse> CreateConsignmentAsync(CreateConsignmentRequest request, Guid userId);
+        Task<CreateConsignmentResponse> CreateConsignmentByStaffAsync(CreateConsignmentByStaffRequest request, Guid staffUserId);
         Task<CancelConsignmentResponse> CancelConsignmentAsync(Guid orderId, Guid userId, CancelConsignmentRequest request);
         Task<ConsignmentDetailResponse> GetConsignmentDetailAsync(Guid orderId, Guid? userId, string role);
         Task<ValidateItemsResponse> ValidateConsignmentItemsAsync(ValidateItemsRequest request);
