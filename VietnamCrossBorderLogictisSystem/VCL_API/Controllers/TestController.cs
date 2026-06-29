@@ -60,56 +60,105 @@ namespace VCL_API.Controllers
         {
             var userRepo = _unitOfWork.Repository<User>();
             var customerRepo = _unitOfWork.Repository<Customer>();
-            var email = "customer@test.com";
             
+            // Seed Customer A
+            var emailA = "customer@test.com";
             var allUsers = await userRepo.GetAllAsync();
-            var existingCustomer = allUsers.FirstOrDefault(u => u.Email == email);
-            if (existingCustomer != null)
+            var existingCustomerA = allUsers.FirstOrDefault(u => u.Email == emailA);
+            if (existingCustomerA == null)
             {
-                existingCustomer.Password = PasswordHelper.HashPassword("Customer123");
-                userRepo.Update(existingCustomer);
-                await _unitOfWork.SaveChangesAsync();
-                return Ok(new { message = "Customer already exists, password reset.", email = email, password = "Customer123" });
+                var userId = Guid.NewGuid();
+                var customerId = Guid.NewGuid();
+                var now = DateTime.UtcNow;
+
+                var newUser = new User
+                {
+                    Id = userId,
+                    FullName = "Test Customer A",
+                    Email = emailA,
+                    Phone = "0987654321",
+                    Password = PasswordHelper.HashPassword("Customer123"),
+                    Role = "Customer",
+                    UserType = "Customer",
+                    Status = "Active",
+                    CreatedAt = now,
+                    IsEmailVerified = true
+                };
+
+                var newCustomer = new Customer
+                {
+                    Id = customerId,
+                    UserId = userId,
+                    CustomerCode = $"CUS-{now:yyyyMMddHHmmss}-{customerId.ToString("N")[..6].ToUpperInvariant()}",
+                    CustomerType = "Individual",
+                    Status = "Active",
+                    CreatedAt = now,
+                    FullName = "Test Customer A",
+                    Email = emailA,
+                    Phone = "0987654321",
+                    Country = "Vietnam",
+                    Address = "Ho Chi Minh City"
+                };
+
+                await userRepo.AddAsync(newUser);
+                await customerRepo.AddAsync(newCustomer);
+            }
+            else
+            {
+                existingCustomerA.Password = PasswordHelper.HashPassword("Customer123");
+                userRepo.Update(existingCustomerA);
             }
 
-            var userId = Guid.NewGuid();
-            var customerId = Guid.NewGuid();
-            var now = DateTime.UtcNow;
-
-            var newUser = new User
+            // Seed Customer B
+            var emailB = "customer_b@test.com";
+            var existingCustomerB = allUsers.FirstOrDefault(u => u.Email == emailB);
+            if (existingCustomerB == null)
             {
-                Id = userId,
-                FullName = "Test Customer",
-                Email = email,
-                Phone = "0987654321",
-                Password = PasswordHelper.HashPassword("Customer123"),
-                Role = "Customer",
-                UserType = "Customer",
-                Status = "Active",
-                CreatedAt = now,
-                IsEmailVerified = true
-            };
+                var userId = Guid.NewGuid();
+                var customerId = Guid.NewGuid();
+                var now = DateTime.UtcNow;
 
-            var newCustomer = new Customer
+                var newUser = new User
+                {
+                    Id = userId,
+                    FullName = "Test Customer B",
+                    Email = emailB,
+                    Phone = "0966666666",
+                    Password = PasswordHelper.HashPassword("Customer123"),
+                    Role = "Customer",
+                    UserType = "Customer",
+                    Status = "Active",
+                    CreatedAt = now,
+                    IsEmailVerified = true
+                };
+
+                var newCustomer = new Customer
+                {
+                    Id = customerId,
+                    UserId = userId,
+                    CustomerCode = $"CUS-{now:yyyyMMddHHmmss}-{customerId.ToString("N")[..6].ToUpperInvariant()}",
+                    CustomerType = "Individual",
+                    Status = "Active",
+                    CreatedAt = now,
+                    FullName = "Test Customer B",
+                    Email = emailB,
+                    Phone = "0966666666",
+                    Country = "Vietnam",
+                    Address = "Ho Chi Minh City"
+                };
+
+                await userRepo.AddAsync(newUser);
+                await customerRepo.AddAsync(newCustomer);
+            }
+            else
             {
-                Id = customerId,
-                UserId = userId,
-                CustomerCode = $"CUS-{now:yyyyMMddHHmmss}-{customerId.ToString("N")[..6].ToUpperInvariant()}",
-                CustomerType = "Individual",
-                Status = "Active",
-                CreatedAt = now,
-                FullName = "Test Customer",
-                Email = email,
-                Phone = "0987654321",
-                Country = "Vietnam",
-                Address = "Ho Chi Minh City"
-            };
+                existingCustomerB.Password = PasswordHelper.HashPassword("Customer123");
+                userRepo.Update(existingCustomerB);
+            }
 
-            await userRepo.AddAsync(newUser);
-            await customerRepo.AddAsync(newCustomer);
             await _unitOfWork.SaveChangesAsync();
 
-            return Ok(new { message = "Created Customer successfully.", email = email, password = "Customer123" });
+            return Ok(new { message = "Created Customers A & B successfully.", emailA = emailA, emailB = emailB, password = "Customer123" });
         }
 
         [HttpGet("seed-admin")]
