@@ -29,6 +29,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<DomesticWaybill> DomesticWaybills { get; set; }
 
+    public virtual DbSet<Inventory> Inventories { get; set; }
+
     public virtual DbSet<Invoice> Invoices { get; set; }
 
     public virtual DbSet<InvoiceItem> InvoiceItems { get; set; }
@@ -429,6 +431,47 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Notifications)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("FK_NOTIF_USER");
+        });
+
+        modelBuilder.Entity<Inventory>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_INVENTORIES");
+            entity.ToTable("INVENTORIES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.CustomerId).HasColumnName("customer_id");
+            entity.Property(e => e.OrderId).HasColumnName("order_id");
+            entity.Property(e => e.OrderItemId).HasColumnName("order_item_id");
+            entity.Property(e => e.ParcelId).HasColumnName("parcel_id");
+            entity.Property(e => e.BinId).HasColumnName("bin_id");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+
+            entity.HasOne(d => d.Customer).WithMany()
+                .HasForeignKey(d => d.CustomerId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_CUSTOMER");
+
+            entity.HasOne(d => d.Order).WithMany()
+                .HasForeignKey(d => d.OrderId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_ORDER");
+
+            entity.HasOne(d => d.OrderItem).WithMany()
+                .HasForeignKey(d => d.OrderItemId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_ORDER_ITEM");
+
+            entity.HasOne(d => d.Parcel).WithMany()
+                .HasForeignKey(d => d.ParcelId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_PARCEL");
+
+            entity.HasOne(d => d.Bin).WithMany()
+                .HasForeignKey(d => d.BinId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_BIN");
         });
 
         modelBuilder.Entity<Order>(entity =>

@@ -31,6 +31,7 @@ namespace VCL_API.Injection
             services.AddScoped<IRestrictedItemService, RestrictedItemService>();
             services.AddScoped<IPricingRuleService, PricingRuleService>();
             services.AddScoped<IParcelService, ParcelService>();
+            services.AddScoped<IInventoryService, InventoryService>();
 
             // Add JWT Authentication
             var jwtSettings = configuration.GetSection("JWT");

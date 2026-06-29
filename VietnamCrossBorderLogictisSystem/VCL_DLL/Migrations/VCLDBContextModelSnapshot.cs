@@ -380,6 +380,65 @@ namespace VCL_DLL.Migrations
                     b.ToTable("DOMESTIC_WAYBILLS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.Inventory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid>("BinId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("bin_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("customer_id");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_id");
+
+                    b.Property<Guid?>("OrderItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_item_id");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("PK_INVENTORIES");
+
+                    b.HasIndex("BinId");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("OrderItemId");
+
+                    b.HasIndex("ParcelId");
+
+                    b.ToTable("INVENTORIES", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Invoice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1645,6 +1704,48 @@ namespace VCL_DLL.Migrations
                         .WithMany("DomesticWaybills")
                         .HasForeignKey("ParcelId")
                         .HasConstraintName("FK_WAYBILL_PARCEL");
+
+                    b.Navigation("Parcel");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.Inventory", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Bin", "Bin")
+                        .WithMany()
+                        .HasForeignKey("BinId")
+                        .IsRequired()
+                        .HasConstraintName("FK_INVENTORY_BIN");
+
+                    b.HasOne("VCL_DLL.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .IsRequired()
+                        .HasConstraintName("FK_INVENTORY_CUSTOMER");
+
+                    b.HasOne("VCL_DLL.Models.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .IsRequired()
+                        .HasConstraintName("FK_INVENTORY_ORDER");
+
+                    b.HasOne("VCL_DLL.Models.OrderItem", "OrderItem")
+                        .WithMany()
+                        .HasForeignKey("OrderItemId")
+                        .HasConstraintName("FK_INVENTORY_ORDER_ITEM");
+
+                    b.HasOne("VCL_DLL.Models.Parcel", "Parcel")
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .IsRequired()
+                        .HasConstraintName("FK_INVENTORY_PARCEL");
+
+                    b.Navigation("Bin");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Order");
+
+                    b.Navigation("OrderItem");
 
                     b.Navigation("Parcel");
                 });
