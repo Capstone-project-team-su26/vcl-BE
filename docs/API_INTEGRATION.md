@@ -89,6 +89,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
 | `POST` | `/api/inventories/from-parcel/{parcelId}` | Staff/WarehouseStaff | Ghi nhận tồn kho khả dụng sau khi put-away |
+| `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
 
 
 ## 4. Đăng ký khách hàng
@@ -1612,6 +1613,44 @@ export interface InventoryDataResponse {
   message: string;
   data: InventoryResponse;
 }
+
+export interface CreateWroRequestItem {
+  inventoryId: string;
+  quantity: number;
+}
+
+export interface CreateWroRequest {
+  receiverName: string;
+  receiverPhone: string;
+  deliveryAddress: string;
+  shelfCode?: string;
+  items: CreateWroRequestItem[];
+}
+
+export interface WroItemResponse {
+  itemId: string;
+  inventoryId: string;
+  quantity: number;
+  packageCode: string;
+}
+
+export interface WroResponse {
+  wroId: string;
+  wroCode: string;
+  customerId: string | null;
+  receiverName: string;
+  receiverPhone: string;
+  deliveryAddress: string;
+  status: string;
+  shelfCode: string | null;
+  createdAt: string;
+  items: WroItemResponse[];
+}
+
+export interface WroDataResponse {
+  message: string;
+  data: WroResponse;
+}
 ```
 
 ## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
@@ -1821,9 +1860,81 @@ export async function createConsignmentByStaff(payload: CreateConsignmentByStaff
 export async function recordInventoryFromParcel(parcelId: string) {
   return api.post<InventoryDataResponse>(`/api/inventories/from-parcel/${parcelId}`);
 }
+
+export async function createWroRequest(payload: CreateWroRequest) {
+  return api.post<WroDataResponse>('/api/warehouse-release-requests', payload);
+}
 ```
 
-## 24. Lưu ý tích hợp FE
+## 24. Tạo yêu cầu xuất kho từ tồn kho (Warehouse Release Request - WRO)
+
+Người dùng (Customer/Staff) tạo yêu cầu xuất kho từ hàng đã có tồn kho khả dụng (`AVAILABLE`).
+
+```http
+POST /api/warehouse-release-requests
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "receiverName": "Nguyen Van A",
+  "receiverPhone": "0987654321",
+  "deliveryAddress": "123 Duong Le Loi, Q1, HCM",
+  "shelfCode": "SHELF-01",
+  "items": [
+    {
+      "inventoryId": "9b1deb4d-3b7d-4bad-9bdd-2b152d12ebcd",
+      "quantity": 2
+    }
+  ]
+}
+```
+
+**Response thành công (201 Created):**
+
+```json
+{
+  "message": "Tạo yêu cầu xuất kho thành công.",
+  "data": {
+    "wroId": "e14b21a7-...",
+    "wroCode": "WRO-20260629-8439",
+    "customerId": "81a7b4c9-...",
+    "receiverName": "Nguyen Van A",
+    "receiverPhone": "0987654321",
+    "deliveryAddress": "123 Duong Le Loi, Q1, HCM",
+    "status": "PENDING_REVIEW",
+    "shelfCode": "SHELF-01",
+    "createdAt": "2026-06-29T09:21:00Z",
+    "items": [
+      {
+        "itemId": "a1b2c3d4-...",
+        "inventoryId": "d5e243d7-...", 
+        "quantity": 2,
+        "packageCode": "PCL-20260620103028-258201"
+      }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Trạng thái yêu cầu ban đầu là `"PENDING_REVIEW"`.
+- Số lượng hàng được xuất của tồn kho gốc bị trừ đi, và tạo ra bản ghi tồn kho mới có trạng thái `"RESERVED"` để giữ hàng cho yêu cầu này.
+- **Customer** chỉ được xuất tồn kho thuộc sở hữu của mình tại **kho đích (Vietnam)**. Nếu cố xuất hàng kho quốc tế hoặc của khách khác, hệ thống trả `403 Forbidden`.
+- **Staff/WarehouseStaff/Operations** có quyền xuất kho bất kỳ (kể cả kho quốc tế để điều phối hàng).
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Số lượng xuất kho không hợp lệ | `"Số lượng xuất kho phải lớn hơn 0."` hoặc `"Số lượng xuất ({quantity}) vượt quá số lượng tồn kho khả dụng ({available})."` |
+| `400` | Tồn kho không ở trạng thái AVAILABLE | `"Hàng tồn kho với ID {id} không khả dụng để xuất (Trạng thái hiện tại: RESERVED)."` |
+| `403` | Khách hàng xuất hàng ở kho quốc tế | `"Khách hàng chỉ được phép tạo yêu cầu xuất kho tại kho đích (Vietnam). Kho hiện tại: {name}."` |
+| `403` | Xuất hàng không thuộc sở hữu của mình | `"Bạn không có quyền tạo yêu cầu xuất kho cho tồn kho {id} do không thuộc sở hữu của bạn."` |
+| `404` | Không tìm thấy Inventory ID | `"Không tìm thấy tồn kho với ID: {id}"` |
+
+---
+
+## 25. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -1863,5 +1974,6 @@ export async function recordInventoryFromParcel(parcelId: string) {
 | `/warehouse/pending-putaway` | `GET /api/parcels/pending-putaway` |
 | `/warehouse/put-away` | `PUT /api/parcels/{parcelId}/put-away` |
 | `/warehouse/inventory/record` | `POST /api/inventories/from-parcel/{parcelId}` |
+| `/warehouse/release-requests/create` | `POST /api/warehouse-release-requests` |
 
 

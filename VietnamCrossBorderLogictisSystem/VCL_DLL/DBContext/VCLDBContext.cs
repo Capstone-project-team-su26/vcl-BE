@@ -71,6 +71,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<WarehouseZone> WarehouseZones { get; set; }
 
+    public virtual DbSet<WroItem> WroItems { get; set; }
+
     public virtual DbSet<WroRequest> WroRequests { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -1102,6 +1104,27 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.Warehouse).WithMany(p => p.WarehouseZones)
                 .HasForeignKey(d => d.WarehouseId)
                 .HasConstraintName("FK_ZONE_WH");
+        });
+
+        modelBuilder.Entity<WroItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_WRO_ITEMS");
+            entity.ToTable("WRO_ITEMS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.WroRequestId).HasColumnName("wro_request_id");
+            entity.Property(e => e.InventoryId).HasColumnName("inventory_id");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+
+            entity.HasOne(d => d.WroRequest).WithMany(p => p.WroItems)
+                .HasForeignKey(d => d.WroRequestId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_WRO_ITEM_REQUEST");
+
+            entity.HasOne(d => d.Inventory).WithMany()
+                .HasForeignKey(d => d.InventoryId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WRO_ITEM_INVENTORY");
         });
 
         modelBuilder.Entity<WroRequest>(entity =>

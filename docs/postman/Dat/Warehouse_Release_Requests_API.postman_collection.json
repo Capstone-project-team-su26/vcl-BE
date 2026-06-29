@@ -1,0 +1,337 @@
+{
+  "info": {
+    "name": "VCL - Warehouse Release Requests API (Dat)",
+    "description": "Bộ API test tính năng tạo yêu cầu xuất kho từ tồn kho khả dụng (VCL-WRO).\nEndpoint: POST /api/warehouse-release-requests.\nVai trò: Customer (chỉ được xuất hàng của mình tại kho Việt Nam) hoặc Staff (được xuất từ kho quốc tế).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5209", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "customerBToken", "value": "", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" },
+    { "key": "customerEmail", "value": "customer@test.com", "type": "string" },
+    { "key": "customerPassword", "value": "Customer123", "type": "string" },
+    { "key": "storedParcelId", "value": "3f00f601-be63-4a50-9524-88355ce84280", "type": "string" },
+    { "key": "inventoryId", "value": "", "type": "string" },
+    { "key": "wroId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0a. Seed Staff",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "console.log('Seeded staff account.');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-staff", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-staff"] }
+      }
+    },
+    {
+      "name": "0b. Seed Customers",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "console.log('Seeded Customer accounts.');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-customer", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-customer"] }
+      }
+    },
+    {
+      "name": "0c. Reset Test Data (Inventories & WRO)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "console.log('Reset test data successfully.');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/reset-wro-test", "host": ["{{baseUrl}}"], "path": ["api", "Test", "reset-wro-test"] }
+      }
+    },
+    {
+      "name": "1. Login (Admin/Staff) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('staffToken', json.token); console.log('Saved staffToken'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. Login Customer A (Owner) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('customerToken', json.token); console.log('Saved customerToken (Owner)'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3. Chuan bi ton kho AVAILABLE tu Parcel STORED",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "pm.sendRequest({",
+              "    url: pm.collectionVariables.get('baseUrl') + '/api/Test/reset-wro-test',",
+              "    method: 'GET'",
+              "}, function (err, res) {",
+              "    if (err) {",
+              "        console.log('Error resetting test data:', err);",
+              "    } else {",
+              "        console.log('Pre-request reset done:', res.json().message);",
+              "    }",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var res = pm.response.json();",
+              "if (pm.response.code === 201 || pm.response.code === 200) {",
+              "    pm.collectionVariables.set('inventoryId', res.data.inventoryId);",
+              "    console.log('Khoi tao ton kho thanh cong. ID:', res.data.inventoryId);",
+              "} else {",
+              "    console.log('Ton kho co the da ton tai, can tu dien thu cong bien inventoryId.');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/inventories/from-parcel/{{storedParcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "inventories", "from-parcel", "{{storedParcelId}}"]
+        }
+      }
+    },
+    {
+      "name": "4. Login Customer B (Non-Owner) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('customerBToken', json.token); console.log('Saved customerBToken (Non-Owner)'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer_b@test.com\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "5. Release Request - Quyen so huu (expect 403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });",
+              "var res = pm.response.json();",
+              "pm.test('Message error', function () { pm.expect(res.message).to.contain('không thuộc sở hữu của bạn'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerBToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Nguyen Van B\",\n  \"receiverPhone\": \"0966666666\",\n  \"deliveryAddress\": \"789 Le Duan, DN\",\n  \"items\": [\n    {\n      \"inventoryId\": \"{{inventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests"]
+        }
+      }
+    },
+    {
+      "name": "6. Release Request - Vuot qua so luong ton (expect 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "var res = pm.response.json();",
+              "pm.test('Message error qty', function () { pm.expect(res.message).to.contain('vượt quá số lượng tồn kho khả dụng'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0987654321\",\n  \"deliveryAddress\": \"123 Le Loi, HCM\",\n  \"items\": [\n    {\n      \"inventoryId\": \"{{inventoryId}}\",\n      \"quantity\": 9999\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests"]
+        }
+      }
+    },
+    {
+      "name": "7. Release Request - Happy Path (expect 201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+              "var res = pm.response.json();",
+              "pm.test('Check status is PENDING_REVIEW', function () { pm.expect(res.data.status).to.eql('PENDING_REVIEW'); });",
+              "pm.collectionVariables.set('wroId', res.data.wroId);",
+              "console.log('Tao WRO thanh cong. Code:', res.data.wroCode);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0987654321\",\n  \"deliveryAddress\": \"123 Le Loi, HCM\",\n  \"items\": [\n    {\n      \"inventoryId\": \"{{inventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests"]
+        }
+      }
+    },
+    {
+      "name": "8. Release Request - Hang da RESERVED khong the xuat tiep (expect 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "var res = pm.response.json();",
+              "console.log('Block success:', res.message);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0987654321\",\n  \"deliveryAddress\": \"123 Le Loi, HCM\",\n  \"items\": [\n    {\n      \"inventoryId\": \"{{inventoryId}}\",\n      \"quantity\": 2\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests"]
+        }
+      }
+    }
+  ]
+}

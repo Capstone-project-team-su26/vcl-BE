@@ -1556,6 +1556,36 @@ namespace VCL_DLL.Migrations
                     b.ToTable("WAREHOUSE_ZONES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.WroItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid>("InventoryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("inventory_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity");
+
+                    b.Property<Guid>("WroRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("wro_request_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_WRO_ITEMS");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("WroRequestId");
+
+                    b.ToTable("WRO_ITEMS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.WroRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2012,6 +2042,26 @@ namespace VCL_DLL.Migrations
                     b.Navigation("Warehouse");
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.WroItem", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Inventory", "Inventory")
+                        .WithMany()
+                        .HasForeignKey("InventoryId")
+                        .IsRequired()
+                        .HasConstraintName("FK_WRO_ITEM_INVENTORY");
+
+                    b.HasOne("VCL_DLL.Models.WroRequest", "WroRequest")
+                        .WithMany("WroItems")
+                        .HasForeignKey("WroRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_WRO_ITEM_REQUEST");
+
+                    b.Navigation("Inventory");
+
+                    b.Navigation("WroRequest");
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.WroRequest", b =>
                 {
                     b.HasOne("VCL_DLL.Models.Customer", "Customer")
@@ -2160,6 +2210,8 @@ namespace VCL_DLL.Migrations
             modelBuilder.Entity("VCL_DLL.Models.WroRequest", b =>
                 {
                     b.Navigation("Quotations");
+
+                    b.Navigation("WroItems");
                 });
 #pragma warning restore 612, 618
         }
