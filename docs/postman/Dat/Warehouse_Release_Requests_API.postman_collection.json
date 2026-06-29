@@ -19,7 +19,7 @@
   ],
   "item": [
     {
-      "name": "0. Seed Test Data (Staff)",
+      "name": "0a. Seed Staff",
       "event": [
         {
           "listen": "test",
@@ -39,7 +39,27 @@
       }
     },
     {
-      "name": "0b. Reset Test Data (Inventories & WRO)",
+      "name": "0b. Seed Customers",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "console.log('Seeded Customer accounts.');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-customer", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-customer"] }
+      }
+    },
+    {
+      "name": "0c. Reset Test Data (Inventories & WRO)",
       "event": [
         {
           "listen": "test",
