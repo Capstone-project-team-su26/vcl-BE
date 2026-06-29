@@ -112,6 +112,24 @@
       "name": "3. Chuan bi ton kho AVAILABLE tu Parcel STORED",
       "event": [
         {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "pm.sendRequest({",
+              "    url: pm.collectionVariables.get('baseUrl') + '/api/Test/reset-wro-test',",
+              "    method: 'GET'",
+              "}, function (err, res) {",
+              "    if (err) {",
+              "        console.log('Error resetting test data:', err);",
+              "    } else {",
+              "        console.log('Pre-request reset done:', res.json().message);",
+              "    }",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
           "listen": "test",
           "script": {
             "exec": [
