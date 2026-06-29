@@ -853,10 +853,21 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("(newid())");
 
-                    b.Property<string>("ConsignmentType")
+                    b.Property<string>("CalculationType")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
-                        .HasColumnName("consignment_type");
+                        .HasColumnName("calculation_type");
+
+                    b.Property<string>("ConditionType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("condition_type");
+
+                    b.Property<string>("ConditionValue")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("condition_value");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -864,41 +875,71 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("(getutcdate())");
 
-                    b.Property<bool>("IsActive")
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsRequired")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
-                        .HasDefaultValue(true)
-                        .HasColumnName("is_active");
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_required");
 
-                    b.Property<decimal?>("PricePerVolume")
+                    b.Property<decimal?>("MaxAmount")
                         .HasColumnType("decimal(18, 2)")
-                        .HasColumnName("price_per_volume");
+                        .HasColumnName("max_amount");
 
-                    b.Property<decimal>("PricePerWeight")
+                    b.Property<decimal?>("MinAmount")
                         .HasColumnType("decimal(18, 2)")
-                        .HasColumnName("price_per_weight");
+                        .HasColumnName("min_amount");
 
-                    b.Property<string>("Route")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
-                        .HasColumnName("route");
-
-                    b.Property<decimal>("ServiceFee")
-                        .HasColumnType("decimal(18, 2)")
-                        .HasColumnName("service_fee");
-
-                    b.Property<string>("ShippingServiceType")
+                    b.Property<string>("RuleCode")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
-                        .HasColumnName("shipping_service_type");
+                        .HasColumnName("rule_code");
 
-                    b.Property<string>("UnitType")
+                    b.Property<string>("RuleName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("rule_name");
+
+                    b.Property<string>("RuleType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("rule_type");
+
+                    b.Property<Guid?>("ServicePricingId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("service_pricing_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
-                        .HasColumnName("unit_type");
+                        .HasDefaultValue("ACTIVE")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("value");
 
                     b.HasKey("Id")
                         .HasName("PK_PRICING_RULES");
+
+                    b.HasIndex("RuleCode")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_PRICING_RULES_RULE_CODE");
+
+                    b.HasIndex("ServicePricingId");
 
                     b.ToTable("PRICING_RULES", (string)null);
                 });
@@ -1710,6 +1751,17 @@ namespace VCL_DLL.Migrations
                         .HasConstraintName("FK_PAY_INV");
 
                     b.Navigation("Invoice");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PricingRule", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.ServicePricing", "ServicePricing")
+                        .WithMany()
+                        .HasForeignKey("ServicePricingId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_PRICING_RULES_SERVICE_PRICING");
+
+                    b.Navigation("ServicePricing");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Quotation", b =>

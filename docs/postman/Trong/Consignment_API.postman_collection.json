@@ -77,7 +77,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"shippingServiceType\": \"Air\",\n  \"consignmentType\": \"Express\",\n  \"route\": \"TQ-VN\",\n  \"unitType\": \"kg\",\n  \"pricePerWeight\": 55000,\n  \"pricePerVolume\": 120000,\n  \"serviceFee\": 50000,\n  \"isActive\": true\n}"
+          "raw": "{\n  \"ruleName\": \"Phụ phí kiểm hàng\",\n  \"ruleCode\": \"SUR_INSPECTION\",\n  \"ruleType\": \"INSPECTION\",\n  \"conditionType\": \"REQUIRES_INSPECTION\",\n  \"calculationType\": \"FIXED\",\n  \"value\": 50000,\n  \"isRequired\": false,\n  \"status\": \"ACTIVE\",\n  \"description\": \"Phụ phí kiểm hàng 50k cố định\"\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/pricing-rules", "host": ["{{baseUrl}}"], "path": ["api", "pricing-rules"] }
       }

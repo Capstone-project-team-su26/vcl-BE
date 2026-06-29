@@ -7,21 +7,35 @@ public partial class PricingRule
 {
     public Guid Id { get; set; }
 
-    public string ShippingServiceType { get; set; }
+    public Guid? ServicePricingId { get; set; }
 
-    public string ConsignmentType { get; set; }
+    public string RuleName { get; set; }
 
-    public string Route { get; set; }
+    public string RuleCode { get; set; }
 
-    public string UnitType { get; set; }
+    public string RuleType { get; set; }
 
-    public decimal PricePerWeight { get; set; }
+    public string ConditionType { get; set; }
 
-    public decimal? PricePerVolume { get; set; }
+    public string ConditionValue { get; set; }
 
-    public decimal ServiceFee { get; set; }
+    public string CalculationType { get; set; }
 
-    public bool IsActive { get; set; }
+    public decimal Value { get; set; }
+
+    public decimal? MinAmount { get; set; }
+
+    public decimal? MaxAmount { get; set; }
+
+    public bool IsRequired { get; set; }
+
+    public string Status { get; set; }
+
+    public string Description { get; set; }
 
     public DateTime CreatedAt { get; set; }
+
+    public DateTime? UpdatedAt { get; set; }
+
+    public virtual ServicePricing ServicePricing { get; set; }
 }

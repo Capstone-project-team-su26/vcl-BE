@@ -1328,37 +1328,53 @@ export interface UpdateRestrictedItemRequest {
 
 export interface PricingRuleDto {
   id: string;
-  shippingServiceType: string;
-  consignmentType: string;
-  route: string | null;
-  unitType: string | null;
-  pricePerWeight: number;
-  pricePerVolume: number | null;
-  serviceFee: number;
-  isActive: boolean;
+  servicePricingId: string | null;
+  ruleName: string;
+  ruleCode: string;
+  ruleType: string;
+  conditionType: string | null;
+  conditionValue: string | null;
+  calculationType: string;
+  value: number;
+  minAmount: number | null;
+  maxAmount: number | null;
+  isRequired: boolean;
+  status: string;
+  description: string | null;
   createdAt: string;
+  updatedAt: string | null;
 }
 
 export interface CreatePricingRuleRequest {
-  shippingServiceType: string;
-  consignmentType: string;
-  route?: string;
-  unitType?: string;
-  pricePerWeight: number;
-  pricePerVolume?: number;
-  serviceFee: number;
-  isActive?: boolean;
+  servicePricingId?: string;
+  ruleName: string;
+  ruleCode: string;
+  ruleType: string;
+  conditionType?: string;
+  conditionValue?: string;
+  calculationType: string;
+  value: number;
+  minAmount?: number;
+  maxAmount?: number;
+  isRequired?: boolean;
+  status?: string;
+  description?: string;
 }
 
 export interface UpdatePricingRuleRequest {
-  shippingServiceType: string;
-  consignmentType: string;
-  route?: string;
-  unitType?: string;
-  pricePerWeight: number;
-  pricePerVolume?: number;
-  serviceFee: number;
-  isActive: boolean;
+  servicePricingId?: string;
+  ruleName: string;
+  ruleCode: string;
+  ruleType: string;
+  conditionType?: string;
+  conditionValue?: string;
+  calculationType: string;
+  value: number;
+  minAmount?: number;
+  maxAmount?: number;
+  isRequired: boolean;
+  status: string;
+  description?: string;
 }
 
 export interface ParcelCheckInRequest {

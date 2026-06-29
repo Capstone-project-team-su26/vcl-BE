@@ -27,15 +27,21 @@ namespace VCL_BLL.Services
             return rules.Select(r => new PricingRuleDto
             {
                 Id = r.Id,
-                ShippingServiceType = r.ShippingServiceType,
-                ConsignmentType = r.ConsignmentType,
-                Route = r.Route,
-                UnitType = r.UnitType,
-                PricePerWeight = r.PricePerWeight,
-                PricePerVolume = r.PricePerVolume,
-                ServiceFee = r.ServiceFee,
-                IsActive = r.IsActive,
-                CreatedAt = r.CreatedAt
+                ServicePricingId = r.ServicePricingId,
+                RuleName = r.RuleName,
+                RuleCode = r.RuleCode,
+                RuleType = r.RuleType,
+                ConditionType = r.ConditionType,
+                ConditionValue = r.ConditionValue,
+                CalculationType = r.CalculationType,
+                Value = r.Value,
+                MinAmount = r.MinAmount,
+                MaxAmount = r.MaxAmount,
+                IsRequired = r.IsRequired,
+                Status = r.Status,
+                Description = r.Description,
+                CreatedAt = r.CreatedAt,
+                UpdatedAt = r.UpdatedAt
             });
         }
 
@@ -46,21 +52,27 @@ namespace VCL_BLL.Services
 
             if (r == null)
             {
-                throw new NotFoundException($"Không tìm thấy cấu hình giá với ID: {id}");
+                throw new NotFoundException($"Không tìm thấy rule phụ phí với ID: {id}");
             }
 
             return new PricingRuleDto
             {
                 Id = r.Id,
-                ShippingServiceType = r.ShippingServiceType,
-                ConsignmentType = r.ConsignmentType,
-                Route = r.Route,
-                UnitType = r.UnitType,
-                PricePerWeight = r.PricePerWeight,
-                PricePerVolume = r.PricePerVolume,
-                ServiceFee = r.ServiceFee,
-                IsActive = r.IsActive,
-                CreatedAt = r.CreatedAt
+                ServicePricingId = r.ServicePricingId,
+                RuleName = r.RuleName,
+                RuleCode = r.RuleCode,
+                RuleType = r.RuleType,
+                ConditionType = r.ConditionType,
+                ConditionValue = r.ConditionValue,
+                CalculationType = r.CalculationType,
+                Value = r.Value,
+                MinAmount = r.MinAmount,
+                MaxAmount = r.MaxAmount,
+                IsRequired = r.IsRequired,
+                Status = r.Status,
+                Description = r.Description,
+                CreatedAt = r.CreatedAt,
+                UpdatedAt = r.UpdatedAt
             };
         }
 
@@ -69,28 +81,31 @@ namespace VCL_BLL.Services
             var pricingRepo = _unitOfWork.Repository<PricingRule>();
             var allRules = await pricingRepo.GetAllAsync();
 
-            // Check duplicate pricing rule
+            // Validate ruleCode uniqueness
             var isDuplicate = allRules.Any(r =>
-                string.Equals(r.ShippingServiceType?.Trim(), request.ShippingServiceType.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(r.ConsignmentType?.Trim(), request.ConsignmentType.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(r.Route?.Trim() ?? string.Empty, request.Route?.Trim() ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+                string.Equals(r.RuleCode?.Trim(), request.RuleCode.Trim(), StringComparison.OrdinalIgnoreCase));
 
             if (isDuplicate)
             {
-                throw new ArgumentException("Không cho tạo trùng cấu hình giá cùng loại dịch vụ, loại ký gửi và tuyến vận chuyển.");
+                throw new ArgumentException($"Mã ruleCode '{request.RuleCode.Trim()}' đã tồn tại trong hệ thống. Vui lòng nhập mã khác.");
             }
 
             var newRule = new PricingRule
             {
                 Id = Guid.NewGuid(),
-                ShippingServiceType = request.ShippingServiceType.Trim(),
-                ConsignmentType = request.ConsignmentType.Trim(),
-                Route = request.Route?.Trim(),
-                UnitType = request.UnitType?.Trim(),
-                PricePerWeight = request.PricePerWeight,
-                PricePerVolume = request.PricePerVolume,
-                ServiceFee = request.ServiceFee,
-                IsActive = request.IsActive,
+                ServicePricingId = request.ServicePricingId,
+                RuleName = request.RuleName.Trim(),
+                RuleCode = request.RuleCode.Trim(),
+                RuleType = request.RuleType.Trim(),
+                ConditionType = request.ConditionType?.Trim(),
+                ConditionValue = request.ConditionValue?.Trim(),
+                CalculationType = request.CalculationType.Trim(),
+                Value = request.Value,
+                MinAmount = request.MinAmount,
+                MaxAmount = request.MaxAmount,
+                IsRequired = request.IsRequired,
+                Status = request.Status?.Trim() ?? "ACTIVE",
+                Description = request.Description?.Trim(),
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -100,15 +115,21 @@ namespace VCL_BLL.Services
             return new PricingRuleDto
             {
                 Id = newRule.Id,
-                ShippingServiceType = newRule.ShippingServiceType,
-                ConsignmentType = newRule.ConsignmentType,
-                Route = newRule.Route,
-                UnitType = newRule.UnitType,
-                PricePerWeight = newRule.PricePerWeight,
-                PricePerVolume = newRule.PricePerVolume,
-                ServiceFee = newRule.ServiceFee,
-                IsActive = newRule.IsActive,
-                CreatedAt = newRule.CreatedAt
+                ServicePricingId = newRule.ServicePricingId,
+                RuleName = newRule.RuleName,
+                RuleCode = newRule.RuleCode,
+                RuleType = newRule.RuleType,
+                ConditionType = newRule.ConditionType,
+                ConditionValue = newRule.ConditionValue,
+                CalculationType = newRule.CalculationType,
+                Value = newRule.Value,
+                MinAmount = newRule.MinAmount,
+                MaxAmount = newRule.MaxAmount,
+                IsRequired = newRule.IsRequired,
+                Status = newRule.Status,
+                Description = newRule.Description,
+                CreatedAt = newRule.CreatedAt,
+                UpdatedAt = newRule.UpdatedAt
             };
         }
 
@@ -119,31 +140,35 @@ namespace VCL_BLL.Services
 
             if (r == null)
             {
-                throw new NotFoundException($"Không tìm thấy cấu hình giá với ID: {id}");
+                throw new NotFoundException($"Không tìm thấy rule phụ phí với ID: {id}");
             }
 
             var allRules = await pricingRepo.GetAllAsync();
 
-            // Check duplicate
+            // Validate ruleCode uniqueness excluding current rule
             var isDuplicate = allRules.Any(x =>
                 x.Id != id &&
-                string.Equals(x.ShippingServiceType?.Trim(), request.ShippingServiceType.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(x.ConsignmentType?.Trim(), request.ConsignmentType.Trim(), StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(x.Route?.Trim() ?? string.Empty, request.Route?.Trim() ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+                string.Equals(x.RuleCode?.Trim(), request.RuleCode.Trim(), StringComparison.OrdinalIgnoreCase));
 
             if (isDuplicate)
             {
-                throw new ArgumentException("Cấu hình giá đã tồn tại cùng loại dịch vụ, loại ký gửi và tuyến vận chuyển.");
+                throw new ArgumentException($"Mã ruleCode '{request.RuleCode.Trim()}' đã tồn tại trong hệ thống. Vui lòng nhập mã khác.");
             }
 
-            r.ShippingServiceType = request.ShippingServiceType.Trim();
-            r.ConsignmentType = request.ConsignmentType.Trim();
-            r.Route = request.Route?.Trim();
-            r.UnitType = request.UnitType?.Trim();
-            r.PricePerWeight = request.PricePerWeight;
-            r.PricePerVolume = request.PricePerVolume;
-            r.ServiceFee = request.ServiceFee;
-            r.IsActive = request.IsActive;
+            r.ServicePricingId = request.ServicePricingId;
+            r.RuleName = request.RuleName.Trim();
+            r.RuleCode = request.RuleCode.Trim();
+            r.RuleType = request.RuleType.Trim();
+            r.ConditionType = request.ConditionType?.Trim();
+            r.ConditionValue = request.ConditionValue?.Trim();
+            r.CalculationType = request.CalculationType.Trim();
+            r.Value = request.Value;
+            r.MinAmount = request.MinAmount;
+            r.MaxAmount = request.MaxAmount;
+            r.IsRequired = request.IsRequired;
+            r.Status = request.Status?.Trim() ?? "ACTIVE";
+            r.Description = request.Description?.Trim();
+            r.UpdatedAt = DateTime.UtcNow;
 
             pricingRepo.Update(r);
             await _unitOfWork.SaveChangesAsync();
@@ -156,7 +181,7 @@ namespace VCL_BLL.Services
 
             if (r == null)
             {
-                throw new NotFoundException($"Không tìm thấy cấu hình giá với ID: {id}");
+                throw new NotFoundException($"Không tìm thấy rule phụ phí với ID: {id}");
             }
 
             pricingRepo.Delete(r);
