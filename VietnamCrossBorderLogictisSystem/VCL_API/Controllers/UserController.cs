@@ -46,7 +46,7 @@ namespace VCL_API.Controllers
         /// Lấy danh sách tất cả người dùng (Admin only)
         /// </summary>
         [HttpGet]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,Sale")]
         public async Task<IActionResult> GetAllUsers()
         {
             var users = await _userService.GetAllUsersAsync();
@@ -57,7 +57,7 @@ namespace VCL_API.Controllers
         /// Lấy thông tin người dùng theo ID (Admin only)
         /// </summary>
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,Sale")]
         public async Task<IActionResult> GetUserById(Guid id)
         {
             try

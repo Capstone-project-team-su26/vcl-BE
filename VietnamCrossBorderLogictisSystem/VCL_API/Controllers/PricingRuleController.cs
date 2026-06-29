@@ -10,7 +10,7 @@ namespace VCL_API.Controllers
 {
     [Route("api/pricing-rules")]
     [ApiController]
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     public class PricingRuleController : ControllerBase
     {
         private readonly IPricingRuleService _pricingRuleService;
@@ -53,6 +53,7 @@ namespace VCL_API.Controllers
         /// Thêm cấu hình giá mới
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromBody] CreatePricingRuleRequest request)
         {
             if (!ModelState.IsValid)
@@ -75,6 +76,7 @@ namespace VCL_API.Controllers
         /// Cập nhật cấu hình giá
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdatePricingRuleRequest request)
         {
             if (!ModelState.IsValid)
@@ -101,6 +103,7 @@ namespace VCL_API.Controllers
         /// Xóa cấu hình giá
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             try
