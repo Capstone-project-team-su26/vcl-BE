@@ -196,5 +196,49 @@ namespace VCL_API.Controllers
 
             return Ok(new { message = "Created Admin successfully.", email = email, password = "Admin123" });
         }
+
+        [HttpGet("reset-wro-test")]
+        public async Task<IActionResult> ResetWroTest()
+        {
+            var parcelId = Guid.Parse("3f00f601-be63-4a50-9524-88355ce84280");
+            
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
+            var wroItemRepo = _unitOfWork.Repository<WroItem>();
+
+            // Get inventories for this parcel
+            var allInventories = await inventoryRepo.GetAllAsync();
+            var targetInventories = allInventories.Where(i => i.ParcelId == parcelId).ToList();
+            var targetInventoryIds = targetInventories.Select(i => i.Id).ToList();
+
+            // Delete WRO items associated with these inventories
+            var allWroItems = await wroItemRepo.GetAllAsync();
+            var wroItemsToDelete = allWroItems.Where(wi => targetInventoryIds.Contains(wi.InventoryId)).ToList();
+            foreach (var item in wroItemsToDelete)
+            {
+                wroItemRepo.Delete(item);
+            }
+
+            // Get release requests to delete
+            var wroRequestIdsToDelete = wroItemsToDelete.Select(wi => wi.WroRequestId).Distinct().ToList();
+            foreach (var reqId in wroRequestIdsToDelete)
+            {
+                var req = await wroRequestRepo.GetByIdAsync(reqId);
+                if (req != null)
+                {
+                    wroRequestRepo.Delete(req);
+                }
+            }
+
+            // Delete inventories
+            foreach (var inv in targetInventories)
+            {
+                inventoryRepo.Delete(inv);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return Ok(new { message = "Reset WRO test data successfully." });
+        }
     }
 }
