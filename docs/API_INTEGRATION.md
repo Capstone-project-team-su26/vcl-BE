@@ -88,6 +88,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/parcels/check-in` | Staff/WarehouseStaff | Check-in kiện hàng thực tế bằng mã gửi hàng |
 | `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
+| `POST` | `/api/inventories/from-parcel/{parcelId}` | Staff/WarehouseStaff | Ghi nhận tồn kho khả dụng sau khi put-away |
 
 
 ## 4. Đăng ký khách hàng
@@ -1594,9 +1595,72 @@ export interface CreateConsignmentResponse {
 export interface CreateConsignmentDataResponse extends MessageResponse {
   data: CreateConsignmentResponse;
 }
+
+export interface InventoryResponse {
+  inventoryId: string;
+  customerId: string;
+  orderId: string;
+  orderItemId: string | null;
+  parcelId: string;
+  binId: string;
+  quantity: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface InventoryDataResponse {
+  message: string;
+  data: InventoryResponse;
+}
 ```
 
-## 21. Axios integration
+## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
+
+Staff/WarehouseStaff ghi nhận tồn kho khả dụng sau khi Parcel đã được nhập vào vị trí kho thành công để chuẩn bị cho quy trình xuất kho.
+
+```http
+POST /api/inventories/from-parcel/{parcelId}
+Authorization: Bearer {staffToken}
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|---|---|---|
+| `parcelId` | `string (Guid)` | ID của kiện hàng đã được nhập vị trí kho (status `STORED`) |
+
+**Response thành công (201 Created):**
+
+```json
+{
+  "message": "Ghi nhận tồn kho khả dụng thành công.",
+  "data": {
+    "inventoryId": "9b1deb4d-3b7d-4bad-9bdd-2b152d12ebcd",
+    "customerId": "81a7b4c9-...",
+    "orderId": "64b734c1-...",
+    "orderItemId": "24b784a0-...",
+    "parcelId": "517ac767-...",
+    "binId": "e14b21a7-...",
+    "quantity": 5,
+    "status": "AVAILABLE",
+    "createdAt": "2026-06-29T08:45:00Z"
+  }
+}
+```
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Kiện hàng chưa được put-away | `"Kiện hàng chưa được nhập vị trí kho (chưa put-away)."` |
+| `400` | Ghi nhận trùng cho cùng một Parcel | `"Kiện hàng đã được ghi nhận tồn kho trước đó."` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Không có quyền thao tác (không phải Staff/WarehouseStaff) | Tự động bởi middleware JWT |
+| `404` | Không tìm thấy Parcel | `"Không tìm thấy kiện hàng với ID: {parcelId}"` |
+
+---
+
+## 23. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -1753,9 +1817,13 @@ export async function putAwayParcel(parcelId: string, payload: ParcelPutAwayRequ
 export async function createConsignmentByStaff(payload: CreateConsignmentByStaffRequest) {
   return api.post<CreateConsignmentDataResponse>('/api/staff/consignments', payload);
 }
+
+export async function recordInventoryFromParcel(parcelId: string) {
+  return api.post<InventoryDataResponse>(`/api/inventories/from-parcel/${parcelId}`);
+}
 ```
 
-## 22. Lưu ý tích hợp FE
+## 24. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -1794,5 +1862,6 @@ export async function createConsignmentByStaff(payload: CreateConsignmentByStaff
 | `/warehouse/check-in` | `POST /api/parcels/check-in` |
 | `/warehouse/pending-putaway` | `GET /api/parcels/pending-putaway` |
 | `/warehouse/put-away` | `PUT /api/parcels/{parcelId}/put-away` |
+| `/warehouse/inventory/record` | `POST /api/inventories/from-parcel/{parcelId}` |
 
 

@@ -1,0 +1,229 @@
+{
+  "info": {
+    "name": "VCL - Warehouse Inventory API (Dat)",
+    "description": "Bộ API test tính năng ghi nhận tồn kho khả dụng từ kiện hàng đã được put-away (VCL-INVENTORY).\nEndpoint: POST /api/inventories/from-parcel/{parcelId}.\nVai trò được thao tác: Admin, WarehouseStaff.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5209", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" },
+    { "key": "customerEmail", "value": "customer@test.com", "type": "string" },
+    { "key": "customerPassword", "value": "Customer123", "type": "string" },
+    { "key": "storedParcelId", "value": "3f00f601-be63-4a50-9524-88355ce84280", "type": "string" },
+    { "key": "receivedParcelId", "value": "baac2b4a-380d-4427-bf2c-aa0def8127a3", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0. Seed Test Data (Staff & Customer)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "console.log('Seeded test data (Staff and Customer).');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-staff", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-staff"] }
+      }
+    },
+    {
+      "name": "1. Login (WarehouseStaff) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('staffToken', json.token); console.log('Saved staffToken'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. Login (Customer) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('customerToken', json.token); console.log('Saved customerToken'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3. Record Inventory - Happy Path (expect 201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+              "var res = pm.response.json();",
+              "pm.test('Check status AVAILABLE', function () { pm.expect(res.data.status).to.eql('AVAILABLE'); });",
+              "console.log('Record inventory success:', res.message, '| id:', res.data.inventoryId);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/inventories/from-parcel/{{storedParcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "inventories", "from-parcel", "{{storedParcelId}}"]
+        }
+      }
+    },
+    {
+      "name": "4. Record Duplicate Inventory (expect 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "var res = pm.response.json();",
+              "pm.test('Error message duplicate', function () { pm.expect(res.message).to.contain('đã được ghi nhận tồn kho'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/inventories/from-parcel/{{storedParcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "inventories", "from-parcel", "{{storedParcelId}}"]
+        }
+      }
+    },
+    {
+      "name": "5. Record from RECEIVED (not put-away) Parcel (expect 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "var res = pm.response.json();",
+              "pm.test('Error message put-away', function () { pm.expect(res.message).to.contain('chưa được nhập vị trí kho'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/inventories/from-parcel/{{receivedParcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "inventories", "from-parcel", "{{receivedParcelId}}"]
+        }
+      }
+    },
+    {
+      "name": "6. Record from Non-existent Parcel (expect 404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });",
+              "var res = pm.response.json();",
+              "pm.test('Error message missing', function () { pm.expect(res.message).to.contain('Không tìm thấy kiện hàng'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/inventories/from-parcel/00000000-0000-0000-0000-000000000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "inventories", "from-parcel", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
+    },
+    {
+      "name": "7. Record as Customer (expect 403 Forbidden)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/inventories/from-parcel/{{storedParcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "inventories", "from-parcel", "{{storedParcelId}}"]
+        }
+      }
+    }
+  ]
+}
