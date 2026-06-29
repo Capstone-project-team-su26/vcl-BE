@@ -8,12 +8,15 @@ using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
 
+using Microsoft.Extensions.Configuration;
+
 namespace VCL_BLL.Services
 {
     public class OrderService : IOrderService
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IQuotationService _quotationService;
+        private readonly IConfiguration _configuration;
 
         // Các giá trị RestrictionType bị coi là hàng cấm (chặn tạo) → level BANNED.
         private static readonly string[] BannedRestrictionTypes = { "BANNED", "PROHIBITED", "CẤM", "CAM" };
@@ -27,10 +30,11 @@ namespace VCL_BLL.Services
         // Các role nội bộ được xem mọi yêu cầu ký gửi (không cần là chủ đơn).
         private static readonly string[] StaffRoles = { "ADMIN", "SALE", "WAREHOUSESTAFF", "OPERATIONSMANAGER", "DELIVERY" };
 
-        public OrderService(IUnitOfWork unitOfWork, IQuotationService quotationService)
+        public OrderService(IUnitOfWork unitOfWork, IQuotationService quotationService, IConfiguration configuration)
         {
             _unitOfWork = unitOfWork;
             _quotationService = quotationService;
+            _configuration = configuration;
         }
 
         public async Task<CreateConsignmentResponse> CreateConsignmentAsync(CreateConsignmentRequest request, Guid userId)
@@ -146,6 +150,176 @@ namespace VCL_BLL.Services
             var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id);
 
             // 7. Trả về kết quả gộp
+            return new CreateConsignmentResponse
+            {
+                OrderId = order.Id,
+                CustomerId = customer.Id,
+                UserId = customer.UserId,
+                Status = order.Status,
+                ConsignmentType = order.ConsignmentType,
+                Route = order.Route,
+                RequiresInspection = order.RequiresInspection,
+                ItemCount = request.Items.Count,
+                Quotation = quotation,
+                Warnings = warnings
+            };
+        }
+
+        public async Task<CreateConsignmentResponse> CreateConsignmentByStaffAsync(CreateConsignmentByStaffRequest request, Guid staffUserId)
+        {
+            // 1. Validate tuyến hàng + phương án vận chuyển theo bảng cấu hình giá (PricingRule)
+            if (string.IsNullOrWhiteSpace(request.Route))
+                throw new ArgumentException("Vui lòng chọn tuyến hàng (route).");
+            if (string.IsNullOrWhiteSpace(request.ShippingOption))
+                throw new ArgumentException("Vui lòng chọn phương án vận chuyển (shippingOption).");
+
+            var servicePricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            var matchedPricing = servicePricings.FirstOrDefault(p =>
+                p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase)
+                && (
+                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", request.Route, StringComparison.OrdinalIgnoreCase) ||
+                    (string.Equals(p.OriginCountry, "CN", StringComparison.OrdinalIgnoreCase) && string.Equals(p.DestinationCountry, "VN", StringComparison.OrdinalIgnoreCase) && string.Equals(request.Route, "TQ-VN", StringComparison.OrdinalIgnoreCase)) ||
+                    (string.Equals(p.OriginCountry, "China", StringComparison.OrdinalIgnoreCase) && string.Equals(p.DestinationCountry, "Vietnam", StringComparison.OrdinalIgnoreCase) && string.Equals(request.Route, "TQ-VN", StringComparison.OrdinalIgnoreCase)) ||
+                    string.Equals(p.OriginCountry, request.Route, StringComparison.OrdinalIgnoreCase)
+                ));
+
+            if (matchedPricing == null)
+            {
+                var serviceTypeExists = servicePricings.Any(p => p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase));
+                if (!serviceTypeExists)
+                {
+                    throw new ArgumentException($"Không có cấu hình giá hợp lệ cho phương án '{request.ShippingOption}'. Vui lòng chọn lại.");
+                }
+            }
+
+            var route = request.Route;
+            var shippingOption = request.ShippingOption;
+
+            if (request.Items == null || request.Items.Count == 0)
+                throw new ArgumentException("Yêu cầu ký gửi phải có ít nhất một mặt hàng.");
+
+            // 2. Resolve Customer được chọn hoặc tìm theo thông tin nhập vào
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var allCustomers = await customerRepo.GetAllAsync();
+            Customer? customer = null;
+
+            if (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty)
+            {
+                customer = allCustomers.FirstOrDefault(c => c.Id == request.CustomerId.Value);
+                if (customer == null)
+                    throw new NotFoundException($"Không tìm thấy khách hàng với ID {request.CustomerId.Value}");
+            }
+            else if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
+            {
+                customer = allCustomers.FirstOrDefault(c => string.Equals(c.Phone, request.CustomerPhone.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (customer == null)
+                    throw new NotFoundException($"Không tìm thấy khách hàng với số điện thoại {request.CustomerPhone}");
+            }
+            else if (!string.IsNullOrWhiteSpace(request.CustomerEmail))
+            {
+                customer = allCustomers.FirstOrDefault(c => string.Equals(c.Email, request.CustomerEmail.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (customer == null)
+                    throw new NotFoundException($"Không tìm thấy khách hàng với email {request.CustomerEmail}");
+            }
+            else
+            {
+                throw new ArgumentException("Vui lòng chọn khách hàng có sẵn hoặc nhập email/số điện thoại để tìm kiếm.");
+            }
+
+            // 3. Đối chiếu hàng cấm / hạn chế
+            var validationResults = await ValidateItemsAgainstRestrictedAsync(request.Items);
+            var bannedItems = validationResults.Where(r => r.Level == "BANNED").ToList();
+            if (bannedItems.Count > 0)
+            {
+                var names = string.Join(", ", bannedItems.Select(b => b.ProductName).Distinct());
+                throw new ArgumentException($"Không thể tạo ký gửi. Các mặt hàng sau thuộc danh mục cấm: {names}");
+            }
+
+            var warnings = validationResults
+                .Where(r => r.Level != "BANNED")
+                .Select(r => new RestrictedItemWarning
+                {
+                    ProductName = r.ProductName,
+                    MatchedItem = r.MatchedItem,
+                    RestrictionType = r.Level,
+                    Note = r.Reason
+                })
+                .ToList();
+
+            // 4. Lấy cấu hình trạng thái ban đầu của nhân viên tạo, mặc định APPROVED
+            var initialStatus = _configuration["ConsignmentSettings:InitialStatusByStaff"] ?? "APPROVED";
+            initialStatus = initialStatus.Trim().ToUpperInvariant();
+            if (initialStatus != "PENDING_REVIEW" && initialStatus != "APPROVED")
+            {
+                initialStatus = "APPROVED";
+            }
+
+            string? consignmentCode = null;
+            if (initialStatus == "APPROVED")
+            {
+                var orderRepoForCode = _unitOfWork.Repository<Order>();
+                var allOrders = await orderRepoForCode.GetAllAsync();
+                var random = new Random();
+                do
+                {
+                    var now = DateTime.UtcNow;
+                    var randomSuffix = random.Next(100000, 999999).ToString();
+                    consignmentCode = $"VCL-{now:yyyyMMddHHmmss}-{randomSuffix}";
+                } while (allOrders.Any(o => o.ConsignmentCode == consignmentCode));
+            }
+
+            // 5. Tạo Order
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var nowTime = DateTime.UtcNow;
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerId = customer.Id,
+                CompanyId = customer.CompanyId,
+                ConsignmentCode = consignmentCode,
+                ConsignmentType = shippingOption,
+                Route = route,
+                ReceiverName = request.ReceiverName,
+                ReceiverPhone = request.ReceiverPhone,
+                ReceiverAddress = request.ReceiverAddress,
+                RequiresInspection = request.RequiresInspection,
+                Status = initialStatus,
+                OrderType = "CONSIGNMENT",
+                Note = request.Note,
+                CreatedById = staffUserId,
+                CreatedAt = nowTime
+            };
+            await orderRepo.AddAsync(order);
+
+            // 6. Tạo OrderItems
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            foreach (var item in request.Items)
+            {
+                await orderItemRepo.AddAsync(new OrderItem
+                {
+                    Id = Guid.NewGuid(),
+                    OrderId = order.Id,
+                    CompanyId = customer.CompanyId,
+                    ProductName = item.ProductName,
+                    ProductType = item.ProductType,
+                    Quantity = item.Quantity,
+                    Weight = item.Weight,
+                    Width = item.Width,
+                    Height = item.Height,
+                    Length = item.Length,
+                    DeclaredValue = item.DeclaredValue,
+                    ReferenceUrl = item.ReferenceUrl,
+                    DomesticTrackingCode = item.DomesticTrackingCode,
+                    CreatedAt = nowTime
+                });
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            // 7. Sinh báo giá tạm tính
+            var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id);
+
+            // 8. Trả kết quả
             return new CreateConsignmentResponse
             {
                 OrderId = order.Id,

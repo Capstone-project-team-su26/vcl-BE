@@ -577,6 +577,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("(getutcdate())");
 
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("created_by_id");
+
                     b.Property<Guid?>("CustomerId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_id");

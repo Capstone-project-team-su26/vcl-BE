@@ -74,6 +74,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/orders/consignments/{orderId}/status` | Staff | Staff cập nhật trạng thái yêu cầu ký gửi |
 | `GET` | `/api/orders/consignments` | Authenticated | Lấy danh sách yêu cầu ký gửi |
 | `PUT` | `/api/orders/consignments/{orderId}/cancel` | Authenticated | Customer hủy yêu cầu ký gửi |
+| `POST` | `/api/staff/consignments` | Sales | Sales tạo yêu cầu ký gửi thay cho Customer |
 | `GET` | `/api/restricted-items` | Admin | Xem danh sách mặt hàng cấm/hạn chế |
 | `GET` | `/api/restricted-items/{id}` | Admin | Lấy chi tiết mặt hàng cấm/hạn chế |
 | `POST` | `/api/restricted-items` | Admin | Thêm mặt hàng cấm/hạn chế mới |
@@ -1142,9 +1143,108 @@ Response `200 OK`:
 | `403` | Không có quyền thao tác (không phải Staff/WarehouseStaff) | Tự động bởi middleware JWT |
 | `404` | Không tìm thấy kiện hàng hoặc vị trí kho tương ứng | `"Không tìm thấy kiện hàng."` hoặc `"Không tìm thấy ô kệ (Bin)."` |
 
+## 19. Sales tạo yêu cầu ký gửi thay cho khách hàng (Sales Create Consignment)
+
+Sales tạo yêu cầu ký gửi thay cho Customer khi khách hàng liên hệ trực tiếp qua điện thoại, chat hoặc tại quầy.
+
+```http
+POST /api/staff/consignments
+Authorization: Bearer {salesToken}
+```
+
+**Request Body:**
+
+```json
+{
+  "customerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "customerPhone": "0901234567",
+  "customerEmail": "customer@example.com",
+  "route": "TQ-VN",
+  "shippingOption": "Sea - Consolidation",
+  "receiverName": "Nguyen Van B",
+  "receiverPhone": "0987654321",
+  "receiverAddress": "123 Nguyen Trai, Q5, HCMC",
+  "requiresInspection": true,
+  "note": "Khách ký gửi tại quầy",
+  "items": [
+    {
+      "productName": "Áo khoác nam",
+      "productType": "Quần áo",
+      "quantity": 10,
+      "weight": 0.5,
+      "width": 30,
+      "height": 20,
+      "length": 10,
+      "declaredValue": 1000000,
+      "referenceUrl": "http://taobao.com/item/123",
+      "domesticTrackingCode": "SF123456789"
+    }
+  ]
+}
+```
+
+| Field | Ràng buộc | Mô tả |
+|---|---|---|
+| `customerId` | Chọn 1 trong 3: `customerId` / `customerPhone` / `customerEmail`. | ID của khách hàng có sẵn trong hệ thống |
+| `customerPhone` | Chọn 1 trong 3: `customerId` / `customerPhone` / `customerEmail`. | Số điện thoại khách hàng để tìm kiếm |
+| `customerEmail` | Chọn 1 trong 3: `customerId` / `customerPhone` / `customerEmail`. | Email khách hàng để tìm kiếm |
+| `route` | Bắt buộc. | Tuyến đường vận chuyển (ví dụ: `TQ-VN`) |
+| `shippingOption` | Bắt buộc. | Phương thức vận chuyển (khớp với ServicePricing, ví dụ: `Air - Express`, `Sea - Consolidation`) |
+| `items` | Bắt buộc. Tối thiểu 1 phần tử. | Danh sách hàng hóa ký gửi |
+| `items[].productName` | Bắt buộc. | Tên mặt hàng ký gửi |
+| `items[].productType` | Bắt buộc. | Loại mặt hàng (ví dụ: `Quần áo`, `Điện tử`) |
+| `items[].quantity` | Bắt buộc. Phải > 0. | Số lượng mặt hàng |
+
+### 19.1 Response thành công
+
+Response `201 Created`:
+
+```json
+{
+  "message": "Tạo yêu cầu ký gửi thay khách hàng thành công.",
+  "data": {
+    "orderId": "e5f6g7h8-...",
+    "customerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "userId": "a1b2c3d4-...",
+    "status": "APPROVED",
+    "consignmentType": "Sea - Consolidation",
+    "route": "TQ-VN",
+    "requiresInspection": true,
+    "itemCount": 1,
+    "quotation": {
+      "quotationId": "9f8e7d6c-...",
+      "quoteType": "ESTIMATE",
+      "status": "DRAFT",
+      "estimatedFreightCharge": 150000,
+      "serviceFee": 50000,
+      "taxAndDuty": 20000,
+      "totalVolume": 6000,
+      "totalEstimatedCost": 220000,
+      "createdAt": "2026-06-29T08:00:00Z",
+      "expiredAt": "2026-07-04T08:00:00Z"
+    },
+    "warnings": []
+  }
+}
+```
+
+*Lưu ý:*
+- Trạng thái ban đầu của yêu cầu được cấu hình thông qua `ConsignmentSettings:InitialStatusByStaff` (mặc định là `APPROVED`).
+- Nếu trạng thái là `APPROVED`, hệ thống tự sinh mã gửi hàng (`consignmentCode`) giống luồng duyệt của Staff.
+- Trả về báo giá tạm tính tương tự như khi khách hàng tự tạo yêu cầu.
+
+### 19.2 Response lỗi
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Thiếu thông tin bắt buộc | `"Vui lòng chọn tuyến hàng."` hoặc `"Vui lòng chọn phương thức vận chuyển."` |
+| `400` | Mặt hàng chứa hàng cấm | `"Không thể tạo ký gửi. Các mặt hàng sau thuộc danh mục cấm: {bannedItemNames}"` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ / không phải Sales | Tự động bởi middleware JWT |
+| `404` | Không tìm thấy Customer | `"Không tìm thấy khách hàng với ID {customerId}"` |
+
 ---
 
-## 19. TypeScript types
+## 20. TypeScript types
 
 ```typescript
 export interface CustomerRegisterRequest {
@@ -1443,9 +1543,60 @@ export interface PendingPutawayParcelsResponse {
 export interface PendingPutawayParcelsDataResponse extends MessageResponse {
   data: PendingPutawayParcelsResponse;
 }
+
+export interface ConsignmentItemRequest {
+  productName: string;
+  productType: string;
+  quantity: number;
+  weight?: number;
+  width?: number;
+  height?: number;
+  length?: number;
+  declaredValue?: number;
+  referenceUrl?: string;
+  domesticTrackingCode?: string;
+}
+
+export interface CreateConsignmentByStaffRequest {
+  customerId?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  route: string;
+  shippingOption: string;
+  receiverName?: string;
+  receiverPhone?: string;
+  receiverAddress?: string;
+  requiresInspection: boolean;
+  note?: string;
+  items: ConsignmentItemRequest[];
+}
+
+export interface RestrictedItemWarning {
+  productName: string;
+  matchedItem: string;
+  restrictionType: string;
+  note: string | null;
+}
+
+export interface CreateConsignmentResponse {
+  orderId: string;
+  customerId: string | null;
+  userId: string | null;
+  status: string;
+  consignmentType: string;
+  route: string;
+  requiresInspection: boolean;
+  itemCount: number;
+  quotation: EstimateQuotationResponse;
+  warnings: RestrictedItemWarning[];
+}
+
+export interface CreateConsignmentDataResponse extends MessageResponse {
+  data: CreateConsignmentResponse;
+}
 ```
 
-## 19. Axios integration
+## 21. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -1598,9 +1749,13 @@ export interface ParcelPutAwayDataResponse {
 export async function putAwayParcel(parcelId: string, payload: ParcelPutAwayRequest) {
   return api.put<ParcelPutAwayDataResponse>(`/api/parcels/${parcelId}/put-away`, payload);
 }
+
+export async function createConsignmentByStaff(payload: CreateConsignmentByStaffRequest) {
+  return api.post<CreateConsignmentDataResponse>('/api/staff/consignments', payload);
+}
 ```
 
-## 20. Lưu ý tích hợp FE
+## 22. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -1629,6 +1784,7 @@ export async function putAwayParcel(parcelId: string, payload: ParcelPutAwayRequ
 | `/orders/{id}/status` | `PUT /api/orders/consignments/{orderId}/status` |
 | `/orders/consignments` | `GET /api/orders/consignments` |
 | `/orders/{id}/cancel` | `PUT /api/orders/consignments/{orderId}/cancel` |
+| `/staff/consignments/create` | `POST /api/staff/consignments` |
 | `/admin/restricted-items` | `GET /api/restricted-items` |
 | `/admin/restricted-items/create` | `POST /api/restricted-items` |
 | `/admin/restricted-items/{id}/edit` | `PUT /api/restricted-items/{id}` |

@@ -469,6 +469,8 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.RequiresInspection)
                 .HasDefaultValue(false)
                 .HasColumnName("requires_inspection");
+            entity.Property(e => e.CreatedById)
+                .HasColumnName("created_by_id");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
