@@ -706,33 +706,65 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Id)
                 .HasDefaultValueSql("(newid())")
                 .HasColumnName("id");
-            entity.Property(e => e.ShippingServiceType)
-                .HasMaxLength(100)
-                .HasColumnName("shipping_service_type");
-            entity.Property(e => e.ConsignmentType)
-                .HasMaxLength(100)
-                .HasColumnName("consignment_type");
-            entity.Property(e => e.Route)
+            entity.Property(e => e.ServicePricingId)
+                .HasColumnName("service_pricing_id");
+            entity.Property(e => e.RuleName)
+                .IsRequired()
                 .HasMaxLength(255)
-                .HasColumnName("route");
-            entity.Property(e => e.UnitType)
+                .HasColumnName("rule_name");
+            entity.Property(e => e.RuleCode)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasColumnName("rule_code");
+            entity.Property(e => e.RuleType)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasColumnName("rule_type");
+            entity.Property(e => e.ConditionType)
+                .HasMaxLength(100)
+                .HasColumnName("condition_type");
+            entity.Property(e => e.ConditionValue)
+                .HasMaxLength(255)
+                .HasColumnName("condition_value");
+            entity.Property(e => e.CalculationType)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasColumnName("calculation_type");
+            entity.Property(e => e.Value)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("value");
+            entity.Property(e => e.MinAmount)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("min_amount");
+            entity.Property(e => e.MaxAmount)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("max_amount");
+            entity.Property(e => e.IsRequired)
+                .HasDefaultValue(false)
+                .HasColumnName("is_required");
+            entity.Property(e => e.Status)
+                .IsRequired()
                 .HasMaxLength(50)
-                .HasColumnName("unit_type");
-            entity.Property(e => e.PricePerWeight)
-                .HasColumnType("decimal(18, 2)")
-                .HasColumnName("price_per_weight");
-            entity.Property(e => e.PricePerVolume)
-                .HasColumnType("decimal(18, 2)")
-                .HasColumnName("price_per_volume");
-            entity.Property(e => e.ServiceFee)
-                .HasColumnType("decimal(18, 2)")
-                .HasColumnName("service_fee");
-            entity.Property(e => e.IsActive)
-                .HasDefaultValue(true)
-                .HasColumnName("is_active");
+                .HasDefaultValue("ACTIVE")
+                .HasColumnName("status");
+            entity.Property(e => e.Description)
+                .HasMaxLength(500)
+                .HasColumnName("description");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(getutcdate())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.RuleCode)
+                .IsUnique()
+                .HasDatabaseName("UQ_PRICING_RULES_RULE_CODE");
+
+            entity.HasOne(d => d.ServicePricing)
+                .WithMany()
+                .HasForeignKey(d => d.ServicePricingId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_PRICING_RULES_SERVICE_PRICING");
         });
 
         modelBuilder.Entity<ServicePricing>(entity =>

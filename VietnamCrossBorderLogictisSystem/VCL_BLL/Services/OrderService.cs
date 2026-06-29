@@ -41,18 +41,28 @@ namespace VCL_BLL.Services
             if (string.IsNullOrWhiteSpace(request.ShippingOption))
                 throw new ArgumentException("Vui lòng chọn phương án vận chuyển (shippingOption).");
 
-            var pricingRules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
-            var matchedRule = pricingRules.FirstOrDefault(p =>
-                p.IsActive
-                && p.Route != null && p.Route.Equals(request.Route, StringComparison.OrdinalIgnoreCase)
-                && p.ConsignmentType != null && p.ConsignmentType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase));
+            var servicePricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            var matchedPricing = servicePricings.FirstOrDefault(p =>
+                p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase)
+                && (
+                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", request.Route, StringComparison.OrdinalIgnoreCase) ||
+                    (string.Equals(p.OriginCountry, "CN", StringComparison.OrdinalIgnoreCase) && string.Equals(p.DestinationCountry, "VN", StringComparison.OrdinalIgnoreCase) && string.Equals(request.Route, "TQ-VN", StringComparison.OrdinalIgnoreCase)) ||
+                    (string.Equals(p.OriginCountry, "China", StringComparison.OrdinalIgnoreCase) && string.Equals(p.DestinationCountry, "Vietnam", StringComparison.OrdinalIgnoreCase) && string.Equals(request.Route, "TQ-VN", StringComparison.OrdinalIgnoreCase)) ||
+                    string.Equals(p.OriginCountry, request.Route, StringComparison.OrdinalIgnoreCase)
+                ));
 
-            if (matchedRule == null)
-                throw new ArgumentException($"Không có cấu hình giá hợp lệ cho tuyến '{request.Route}' với phương án '{request.ShippingOption}'. Vui lòng chọn lại.");
+            if (matchedPricing == null)
+            {
+                var serviceTypeExists = servicePricings.Any(p => p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase));
+                if (!serviceTypeExists)
+                {
+                    throw new ArgumentException($"Không có cấu hình giá hợp lệ cho phương án '{request.ShippingOption}'. Vui lòng chọn lại.");
+                }
+            }
 
             // Dùng đúng giá trị chuẩn hóa từ cấu hình
-            var route = matchedRule.Route!;
-            var shippingOption = matchedRule.ConsignmentType!;
+            var route = request.Route;
+            var shippingOption = request.ShippingOption;
 
             if (request.Items == null || request.Items.Count == 0)
                 throw new ArgumentException("Yêu cầu ký gửi phải có ít nhất một mặt hàng.");
