@@ -413,5 +413,175 @@ namespace VCL_BLL.Services
                 Status = wroRequest.Status
             };
         }
+
+        public async Task<PickingListResponseDto> CreatePickingListAsync(Guid requestId, Guid userId, string role)
+        {
+            // 1. Phân quyền: Chỉ Staff hoặc Operations được phép tạo phiếu picking
+            bool isCustomer = string.Equals(role, "Customer", StringComparison.OrdinalIgnoreCase);
+            if (isCustomer)
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền tạo phiếu picking.");
+            }
+
+            var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
+            var wroRequest = await wroRequestRepo.GetByIdAsync(requestId);
+            if (wroRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
+            }
+
+            // 2. Kiểm tra trạng thái yêu cầu xuất kho (Phải là APPROVED)
+            if (!string.Equals(wroRequest.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Chỉ có thể tạo phiếu picking cho yêu cầu xuất kho đã được duyệt (APPROVED).");
+            }
+
+            // 3. Kiểm tra xem phiếu picking cho yêu cầu này đã tồn tại chưa
+            var pickingListRepo = _unitOfWork.Repository<PickingList>();
+            var allPickingLists = await pickingListRepo.GetAllAsync();
+            var existingPickingList = allPickingLists.FirstOrDefault(p => p.WroRequestId == requestId);
+            if (existingPickingList != null)
+            {
+                throw new ArgumentException("Phiếu picking cho yêu cầu xuất kho này đã tồn tại.");
+            }
+
+            // 4. Tạo phiếu PickingList mới
+            var pickingList = new PickingList
+            {
+                Id = Guid.NewGuid(),
+                WroRequestId = requestId,
+                Status = "PENDING",
+                CreatedBy = userId,
+                CreatedAt = DateTime.UtcNow
+            };
+            await pickingListRepo.AddAsync(pickingList);
+
+            // 5. Lấy danh sách WroItems của yêu cầu xuất kho
+            var wroItemRepo = _unitOfWork.Repository<WroItem>();
+            var allWroItems = await wroItemRepo.GetAllAsync();
+            var relatedWroItems = allWroItems.Where(i => i.WroRequestId == requestId).ToList();
+
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var pickingItemRepo = _unitOfWork.Repository<PickingItem>();
+
+            foreach (var item in relatedWroItems)
+            {
+                var inventory = await inventoryRepo.GetByIdAsync(item.InventoryId);
+                if (inventory == null || !string.Equals(inventory.Status, "RESERVED", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ArgumentException($"Tồn kho liên kết {item.InventoryId} không ở trạng thái RESERVED.");
+                }
+
+                // Tạo từng PickingItem liên kết
+                var pickingItem = new PickingItem
+                {
+                    Id = Guid.NewGuid(),
+                    PickingListId = pickingList.Id,
+                    InventoryId = item.InventoryId,
+                    Quantity = item.Quantity
+                };
+                await pickingItemRepo.AddAsync(pickingItem);
+            }
+
+            // 6. Cập nhật trạng thái yêu cầu xuất kho sang PICKING
+            wroRequest.Status = "PICKING";
+            wroRequestRepo.Update(wroRequest);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            // 7. Truy vấn tên người tạo và khách hàng sở hữu hàng
+            var userRepo = _unitOfWork.Repository<User>();
+            var user = await userRepo.GetByIdAsync(userId);
+            var createdByName = user?.FullName ?? string.Empty;
+
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            string customerName = string.Empty;
+            if (wroRequest.CustomerId.HasValue)
+            {
+                var customer = await customerRepo.GetByIdAsync(wroRequest.CustomerId.Value);
+                customerName = customer?.FullName ?? string.Empty;
+            }
+
+            // 8. Lấy chi tiết vị trí kho, mã kiện hàng, tên sản phẩm để trả về DTO
+            var itemsResponse = new List<PickingItemResponseDto>();
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var shelfRepo = _unitOfWork.Repository<Shelf>();
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+
+            var allBins = await binRepo.GetAllAsync();
+            var allShelves = await shelfRepo.GetAllAsync();
+            var allParcels = await parcelRepo.GetAllAsync();
+            var allOrderItems = await orderItemRepo.GetAllAsync();
+
+            foreach (var item in relatedWroItems)
+            {
+                var inventory = await inventoryRepo.GetByIdAsync(item.InventoryId);
+                string binCode = string.Empty;
+                string shelfCode = string.Empty;
+                string packageCode = string.Empty;
+                string productName = string.Empty;
+
+                if (inventory != null)
+                {
+                    if (inventory.BinId != Guid.Empty)
+                    {
+                        var bin = allBins.FirstOrDefault(b => b.Id == inventory.BinId);
+                        if (bin != null)
+                        {
+                            binCode = bin.BinCode ?? string.Empty;
+                            if (bin.ShelfId.HasValue)
+                            {
+                                var shelf = allShelves.FirstOrDefault(s => s.Id == bin.ShelfId.Value);
+                                shelfCode = shelf?.ShelfCode ?? string.Empty;
+                            }
+                        }
+                    }
+
+                    if (inventory.ParcelId != Guid.Empty)
+                    {
+                        var parcel = allParcels.FirstOrDefault(p => p.Id == inventory.ParcelId);
+                        if (parcel != null)
+                        {
+                            packageCode = parcel.PackageCode ?? string.Empty;
+                        }
+                    }
+
+                    if (inventory.OrderItemId.HasValue)
+                    {
+                        var orderItem = allOrderItems.FirstOrDefault(oi => oi.Id == inventory.OrderItemId.Value);
+                        if (orderItem != null)
+                        {
+                            productName = orderItem.ProductName ?? string.Empty;
+                        }
+                    }
+                }
+
+                itemsResponse.Add(new PickingItemResponseDto
+                {
+                    ItemId = item.Id,
+                    InventoryId = item.InventoryId,
+                    PackageCode = packageCode,
+                    ProductName = productName,
+                    BinCode = binCode,
+                    ShelfCode = shelfCode,
+                    Quantity = item.Quantity
+                });
+            }
+
+            return new PickingListResponseDto
+            {
+                PickingListId = pickingList.Id,
+                WroRequestId = wroRequest.Id,
+                WroCode = wroRequest.WroCode,
+                CustomerId = wroRequest.CustomerId,
+                CustomerName = customerName,
+                Status = pickingList.Status,
+                CreatedBy = pickingList.CreatedBy,
+                CreatedByName = createdByName,
+                CreatedAt = pickingList.CreatedAt,
+                Items = itemsResponse
+            };
+        }
     }
 }

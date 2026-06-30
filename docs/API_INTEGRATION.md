@@ -93,6 +93,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
 | `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
 | `PUT` | `/api/warehouse-release-requests/{requestId}/status` | Staff | Staff cập nhật trạng thái yêu cầu xuất kho (duyệt/từ chối) |
+| `POST` | `/api/warehouse-release-requests/{requestId}/picking-list` | Staff | Tạo phiếu picking cho yêu cầu xuất kho |
 
 
 ## 4. Đăng ký khách hàng
@@ -1844,6 +1845,33 @@ export interface UpdateWroStatusResponse {
 export interface UpdateWroStatusDataResponse extends MessageResponse {
   data: UpdateWroStatusResponse;
 }
+
+export interface PickingItemResponse {
+  itemId: string;
+  inventoryId: string;
+  packageCode: string;
+  productName: string;
+  binCode: string;
+  shelfCode: string;
+  quantity: number;
+}
+
+export interface PickingListResponse {
+  pickingListId: string;
+  wroRequestId: string;
+  wroCode: string;
+  customerId: string | null;
+  customerName: string;
+  status: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  items: PickingItemResponse[];
+}
+
+export interface PickingListDataResponse extends MessageResponse {
+  data: PickingListResponse;
+}
 ```
 
 ## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
@@ -2069,6 +2097,10 @@ export async function getWroRequestDetail(requestId: string) {
 export async function updateWroStatus(requestId: string, payload: UpdateWroStatusRequest) {
   return api.put<UpdateWroStatusDataResponse>(`/api/warehouse-release-requests/${requestId}/status`, payload);
 }
+
+export async function createPickingList(requestId: string) {
+  return api.post<PickingListDataResponse>(`/api/warehouse-release-requests/${requestId}/picking-list`);
+}
 ```
 
 ## 24. Tạo yêu cầu xuất kho từ tồn kho (Warehouse Release Request - WRO)
@@ -2248,6 +2280,61 @@ Content-Type: application/json
 | `403` | Khách hàng thực hiện thao tác (chỉ Staff/Ops được thao tác) | `"Bạn không có quyền cập nhật trạng thái yêu cầu xuất kho."` |
 | `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
 
+### 24.3. Tạo phiếu picking cho yêu cầu xuất kho
+
+Nhân viên (Staff/Operations) tạo phiếu picking từ yêu cầu xuất kho đã được duyệt (`APPROVED`). Trạng thái của yêu cầu xuất kho sẽ chuyển sang `PICKING`, và trạng thái ban đầu của phiếu picking là `PENDING`.
+
+```http
+POST /api/warehouse-release-requests/{requestId}/picking-list
+Authorization: Bearer {accessToken}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `requestId` | `Guid` | ID của yêu cầu xuất kho cần tạo phiếu picking |
+
+**Response thành công (201 Created):**
+
+```json
+{
+  "message": "Tạo phiếu picking thành công.",
+  "data": {
+    "pickingListId": "b1a7d6c5-...",
+    "wroRequestId": "e14b21a7-...",
+    "wroCode": "WRO-20260629-8439",
+    "customerId": "81a7b4c9-...",
+    "customerName": "Nguyen Van Customer",
+    "status": "PENDING",
+    "createdBy": "d5e243d7-...",
+    "createdByName": "Nguyen Van Staff",
+    "createdAt": "2026-06-30T09:30:00Z",
+    "items": [
+      {
+        "itemId": "c2b3a4d5-...",
+        "inventoryId": "d5e243d7-...",
+        "packageCode": "PCL-20260620103028-258201",
+        "productName": "Giày thể thao Nam",
+        "binCode": "BIN-A-01",
+        "shelfCode": "SHELF-01",
+        "quantity": 2
+      }
+    ]
+  }
+}
+```
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Yêu cầu xuất kho chưa được duyệt (không ở trạng thái `APPROVED`) | `"Chỉ có thể tạo phiếu picking cho yêu cầu xuất kho đã được duyệt (APPROVED)."` |
+| `400` | Đã tồn tại phiếu picking cho yêu cầu này | `"Phiếu picking cho yêu cầu xuất kho này đã tồn tại."` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Khách hàng thực hiện thao tác (chỉ Staff/Ops được thao tác) | `"Bạn không có quyền tạo phiếu picking."` |
+| `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
+
 ---
 
 ## 25. Lưu ý tích hợp FE
@@ -2293,5 +2380,6 @@ Content-Type: application/json
 | `/warehouse/release-requests/create` | `POST /api/warehouse-release-requests` |
 | `/warehouse/release-requests/{id}` | `GET /api/warehouse-release-requests/{requestId}` |
 | `/warehouse/release-requests/{id}/status` | `PUT /api/warehouse-release-requests/{requestId}/status` |
+| `/warehouse/release-requests/{id}/picking-list` | `POST /api/warehouse-release-requests/{requestId}/picking-list` |
 
 

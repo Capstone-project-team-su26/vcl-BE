@@ -908,6 +908,76 @@ namespace VCL_DLL.Migrations
                     b.ToTable("PAYMENTS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.PickingItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid>("InventoryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("inventory_id");
+
+                    b.Property<Guid>("PickingListId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("picking_list_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PICKING_ITEMS");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("PickingListId");
+
+                    b.ToTable("PICKING_ITEMS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PickingList", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("status")
+                        .HasDefaultValueSql("('PENDING')");
+
+                    b.Property<Guid>("WroRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("wro_request_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PICKING_LISTS");
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("WroRequestId")
+                        .IsUnique();
+
+                    b.ToTable("PICKING_LISTS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.PricingRule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1893,6 +1963,46 @@ namespace VCL_DLL.Migrations
                     b.Navigation("Invoice");
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.PickingItem", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Inventory", "Inventory")
+                        .WithMany()
+                        .HasForeignKey("InventoryId")
+                        .IsRequired()
+                        .HasConstraintName("FK_PICKING_ITEM_INVENTORY");
+
+                    b.HasOne("VCL_DLL.Models.PickingList", "PickingList")
+                        .WithMany("PickingItems")
+                        .HasForeignKey("PickingListId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_PICKING_ITEM_LIST");
+
+                    b.Navigation("Inventory");
+
+                    b.Navigation("PickingList");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PickingList", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .IsRequired()
+                        .HasConstraintName("FK_PICKING_LIST_USER");
+
+                    b.HasOne("VCL_DLL.Models.WroRequest", "WroRequest")
+                        .WithOne()
+                        .HasForeignKey("VCL_DLL.Models.PickingList", "WroRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_PICKING_LIST_WRO_REQUEST");
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("WroRequest");
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.PricingRule", b =>
                 {
                     b.HasOne("VCL_DLL.Models.ServicePricing", "ServicePricing")
@@ -2160,6 +2270,11 @@ namespace VCL_DLL.Migrations
             modelBuilder.Entity("VCL_DLL.Models.Parcel", b =>
                 {
                     b.Navigation("DomesticWaybills");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PickingList", b =>
+                {
+                    b.Navigation("PickingItems");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Quotation", b =>

@@ -97,4 +97,29 @@ namespace VCL_BLL.DTOs
         public string WroCode { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
     }
+
+    public class PickingItemResponseDto
+    {
+        public Guid ItemId { get; set; }
+        public Guid InventoryId { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public string BinCode { get; set; } = string.Empty;
+        public string ShelfCode { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+    }
+
+    public class PickingListResponseDto
+    {
+        public Guid PickingListId { get; set; }
+        public Guid WroRequestId { get; set; }
+        public string WroCode { get; set; } = string.Empty;
+        public Guid? CustomerId { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public Guid CreatedBy { get; set; }
+        public string CreatedByName { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public List<PickingItemResponseDto> Items { get; set; } = new();
+    }
 }
