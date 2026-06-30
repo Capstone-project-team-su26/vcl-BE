@@ -17,6 +17,11 @@ namespace VCL_BLL.DTOs
         public decimal? TotalWeight { get; set; }
         public decimal? TotalVolume { get; set; }
         public string? Note { get; set; }
+        public string? Route { get; set; }
+        public string? ReceiverName { get; set; }
+        public string? ReceiverPhone { get; set; }
+        public string? ReceiverAddress { get; set; }
+        public bool RequiresInspection { get; set; }
         public DateTime? CreatedAt { get; set; }
 
         public ConsignmentCustomerInfo Customer { get; set; } = new();

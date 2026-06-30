@@ -490,6 +490,11 @@ namespace VCL_BLL.Services
                 TotalWeight = order.TotalWeight,
                 TotalVolume = order.TotalVolume,
                 Note = order.Note,
+                Route = order.Route,
+                ReceiverName = order.ReceiverName,
+                ReceiverPhone = order.ReceiverPhone,
+                ReceiverAddress = order.ReceiverAddress,
+                RequiresInspection = order.RequiresInspection,
                 CreatedAt = order.CreatedAt,
                 Customer = new ConsignmentCustomerInfo
                 {
@@ -738,6 +743,11 @@ namespace VCL_BLL.Services
                     Status = o.Status ?? string.Empty,
                     TotalWeight = o.TotalWeight,
                     TotalVolume = o.TotalVolume,
+                    Route = o.Route,
+                    ReceiverName = o.ReceiverName,
+                    ReceiverPhone = o.ReceiverPhone,
+                    ReceiverAddress = o.ReceiverAddress,
+                    RequiresInspection = o.RequiresInspection,
                     CreatedAt = o.CreatedAt
                 };
             }).ToList();

@@ -73,6 +73,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/quotations/{quotationId}/accept` | Authenticated | Khách hàng xác nhận báo giá tạm tính |
 | `PUT` | `/api/orders/consignments/{orderId}/status` | Staff | Staff cập nhật trạng thái yêu cầu ký gửi |
 | `GET` | `/api/orders/consignments` | Authenticated | Lấy danh sách yêu cầu ký gửi |
+| `GET` | `/api/orders/consignments/{orderId}` | Authenticated | Xem chi tiết một yêu cầu ký gửi |
 | `PUT` | `/api/orders/consignments/{orderId}/cancel` | Authenticated | Customer hủy yêu cầu ký gửi |
 | `POST` | `/api/staff/consignments` | Sales | Sales tạo yêu cầu ký gửi thay cho Customer |
 | `GET` | `/api/restricted-items` | Admin | Xem danh sách mặt hàng cấm/hạn chế |
@@ -676,6 +677,85 @@ Response `200 OK`:
 | Status | Trường hợp | Message |
 |---|---|---|
 | `401` | Chưa đăng nhập hoặc token không hợp lệ / Người dùng không hợp lệ | Tự động bởi middleware JWT hoặc `"Người dùng không hợp lệ."` |
+
+### 12.3 Xem chi tiết một yêu cầu ký gửi
+
+Xem thông tin chi tiết của một yêu cầu ký gửi cụ thể bằng ID. Customer chỉ được xem đơn hàng của mình; các tài khoản thuộc nhóm Staff được xem mọi đơn hàng.
+
+```http
+GET /api/orders/consignments/{orderId}
+Authorization: Bearer {token}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `orderId` | `Guid` | ID của yêu cầu ký gửi |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Lấy chi tiết yêu cầu ký gửi thành công.",
+  "data": {
+    "orderId": "e5f6g7h8-...",
+    "consignmentCode": "VCL-20260616120000-123456",
+    "consignmentType": "Express",
+    "status": "WAITING_FOR_PARCEL",
+    "orderType": "CONSIGNMENT",
+    "totalWeight": 2.50,
+    "totalVolume": 15000.00,
+    "note": "Hàng dễ vỡ, xin nhẹ tay",
+    "route": "TQ-VN",
+    "receiverName": "Nguyễn Văn B",
+    "receiverPhone": "0987654321",
+    "receiverAddress": "123 Đường Lê Lợi, Quận 1, TP. HCM",
+    "requiresInspection": true,
+    "createdAt": "2026-06-16T12:00:00Z",
+    "customer": {
+      "customerId": "81a7b4c9-...",
+      "fullName": "Nguyễn Văn A",
+      "email": "customer@example.com",
+      "phone": "0901234567"
+    },
+    "items": [
+      {
+        "id": "item-guid-...",
+        "productName": "Điện thoại di động",
+        "productType": "Electronics",
+        "quantity": 2,
+        "weight": 1.20,
+        "width": 10.00,
+        "height": 5.00,
+        "length": 15.00,
+        "declaredValue": 500.00,
+        "referenceUrl": "http://example.com/item",
+        "domesticTrackingCode": "TRACK123456"
+      }
+    ],
+    "quotation": {
+      "quotationId": "quote-guid-...",
+      "quoteType": "ESTIMATE",
+      "status": "APPROVED",
+      "estimatedFreightCharge": 15.00,
+      "serviceFee": 5.00,
+      "taxAndDuty": 2.00,
+      "totalVolume": 15000.00,
+      "totalEstimatedCost": 22.00,
+      "createdAt": "2026-06-16T12:05:00Z",
+      "expiredAt": "2026-06-23T12:05:00Z"
+    }
+  }
+}
+```
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `401` | Chưa đăng nhập hoặc không phải chủ đơn (nếu là Customer) | `"Bạn không có quyền xem yêu cầu ký gửi này."` |
+| `404` | Không tìm thấy yêu cầu ký gửi | `"Không tìm thấy yêu cầu ký gửi với ID {orderId}"` |
 
 ## 13. Customer hủy yêu cầu ký gửi (Cancel Consignment)
 
@@ -1379,7 +1459,70 @@ export interface ConsignmentResponseDto {
   status: string;
   totalWeight: number | null;
   totalVolume: number | null;
+  route: string | null;
+  receiverName: string | null;
+  receiverPhone: string | null;
+  receiverAddress: string | null;
+  requiresInspection: boolean;
   createdAt: string | null;
+}
+
+export interface ConsignmentCustomerInfo {
+  customerId: string | null;
+  fullName: string;
+  email: string | null;
+  phone: string | null;
+}
+
+export interface ConsignmentItemDetail {
+  id: string;
+  productName: string | null;
+  productType: string | null;
+  quantity: number | null;
+  weight: number | null;
+  width: number | null;
+  height: number | null;
+  length: number | null;
+  declaredValue: number | null;
+  referenceUrl: string | null;
+  domesticTrackingCode: string | null;
+}
+
+export interface ConsignmentQuotationSummary {
+  quotationId: string;
+  quoteType: string | null;
+  status: string | null;
+  estimatedFreightCharge: number | null;
+  serviceFee: number | null;
+  taxAndDuty: number | null;
+  totalVolume: number | null;
+  totalEstimatedCost: number;
+  createdAt: string | null;
+  expiredAt: string | null;
+}
+
+export interface ConsignmentDetailResponse {
+  orderId: string;
+  consignmentCode: string | null;
+  consignmentType: string;
+  status: string;
+  orderType: string | null;
+  totalWeight: number | null;
+  totalVolume: number | null;
+  note: string | null;
+  route: string | null;
+  receiverName: string | null;
+  receiverPhone: string | null;
+  receiverAddress: string | null;
+  requiresInspection: boolean;
+  createdAt: string | null;
+  customer: ConsignmentCustomerInfo;
+  items: ConsignmentItemDetail[];
+  quotation: ConsignmentQuotationSummary | null;
+}
+
+export interface ConsignmentDetailDataResponse extends MessageResponse {
+  data: ConsignmentDetailResponse;
 }
 
 export interface PaginatedResponse<T> {
@@ -1766,6 +1909,10 @@ export async function updateConsignmentStatus(orderId: string, payload: UpdateCo
 
 export async function getConsignments(params?: { pageNumber?: number, pageSize?: number, status?: string, searchCode?: string }) {
   return api.get<ConsignmentPaginatedResponse>('/api/orders/consignments', { params });
+}
+
+export async function getConsignmentDetail(orderId: string) {
+  return api.get<ConsignmentDetailDataResponse>(`/api/orders/consignments/${orderId}`);
 }
 
 export async function cancelConsignment(orderId: string, payload: CancelConsignmentRequest) {
