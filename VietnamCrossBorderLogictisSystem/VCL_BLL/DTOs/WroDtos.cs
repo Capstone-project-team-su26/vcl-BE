@@ -82,4 +82,19 @@ namespace VCL_BLL.DTOs
         public int TotalQuantity { get; set; }
         public List<WroDetailItemDto> Items { get; set; } = new();
     }
+
+    public class UpdateWroStatusRequestDto
+    {
+        [Required(ErrorMessage = "Trạng thái không được để trống.")]
+        public string Status { get; set; } = string.Empty;
+
+        public string? RejectionReason { get; set; }
+    }
+
+    public class UpdateWroStatusResponseDto
+    {
+        public Guid WroId { get; set; }
+        public string WroCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+    }
 }

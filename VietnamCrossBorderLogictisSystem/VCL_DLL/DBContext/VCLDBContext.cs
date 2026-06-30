@@ -1157,6 +1157,9 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.WroCode)
                 .HasMaxLength(100)
                 .HasColumnName("wro_code");
+            entity.Property(e => e.RejectionReason)
+                .HasMaxLength(500)
+                .HasColumnName("rejection_reason");
 
             entity.HasOne(d => d.Customer).WithMany(p => p.WroRequests)
                 .HasForeignKey(d => d.CustomerId)

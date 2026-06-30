@@ -99,5 +99,47 @@ namespace VCL_API.Controllers
                 return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Cập nhật trạng thái yêu cầu xuất kho (Staff duyệt/từ chối WRO)
+        /// </summary>
+        [HttpPut("{requestId}/status")]
+        public async Task<IActionResult> UpdateWroStatus(Guid requestId, [FromBody] UpdateWroStatusRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _wroService.UpdateWroStatusAsync(requestId, userId, userRole, request);
+                return Ok(new { message = "Cập nhật trạng thái yêu cầu xuất kho thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
     }
 }

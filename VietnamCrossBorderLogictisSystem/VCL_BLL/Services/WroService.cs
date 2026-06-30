@@ -310,10 +310,107 @@ namespace VCL_BLL.Services
                 DeliveryAddress = wroRequest.DeliveryAddress ?? string.Empty,
                 Status = wroRequest.Status ?? string.Empty,
                 ShelfCode = wroRequest.ShelfCode,
-                Note = null, // Cột ghi chú xử lý chưa có trong DB, trả về null theo spec
+                Note = wroRequest.RejectionReason,
                 CreatedAt = wroRequest.CreatedAt ?? DateTime.UtcNow,
                 TotalQuantity = totalQuantity,
                 Items = itemsDetail
+            };
+        }
+
+        public async Task<UpdateWroStatusResponseDto> UpdateWroStatusAsync(Guid requestId, Guid userId, string role, UpdateWroStatusRequestDto request)
+        {
+            // 1. Phân quyền: Chỉ Staff hoặc Operations được phép duyệt/từ chối
+            bool isCustomer = string.Equals(role, "Customer", StringComparison.OrdinalIgnoreCase);
+            if (isCustomer)
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền cập nhật trạng thái yêu cầu xuất kho.");
+            }
+
+            var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
+            var wroRequest = await wroRequestRepo.GetByIdAsync(requestId);
+            if (wroRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
+            }
+
+            // 2. Validate trạng thái mới
+            var targetStatus = request.Status.Trim().ToUpperInvariant();
+            var validStatuses = new[] { "APPROVED", "REJECTED" };
+            if (!validStatuses.Contains(targetStatus))
+            {
+                throw new ArgumentException("Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: APPROVED, REJECTED.");
+            }
+
+            // 3. Kiểm tra trạng thái hiện tại (Không cho cập nhật nếu không ở trạng thái PENDING_REVIEW)
+            if (!string.Equals(wroRequest.Status, "PENDING_REVIEW", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"Không thể cập nhật trạng thái yêu cầu xuất kho do yêu cầu đã ở trạng thái {wroRequest.Status}");
+            }
+
+            // 4. Xử lý lưu lý do từ chối nếu REJECTED
+            if (targetStatus == "REJECTED")
+            {
+                if (string.IsNullOrWhiteSpace(request.RejectionReason))
+                {
+                    throw new ArgumentException("Vui lòng cung cấp lý do từ chối (RejectionReason).");
+                }
+                wroRequest.RejectionReason = request.RejectionReason;
+            }
+
+            wroRequest.Status = targetStatus;
+            wroRequestRepo.Update(wroRequest);
+
+            // 5. Nếu REJECTED -> Hoàn lại số lượng tồn kho khả dụng từ RESERVED về AVAILABLE
+            if (targetStatus == "REJECTED")
+            {
+                var wroItemRepo = _unitOfWork.Repository<WroItem>();
+                var allWroItems = await wroItemRepo.GetAllAsync();
+                var relatedWroItems = allWroItems.Where(i => i.WroRequestId == requestId).ToList();
+
+                var inventoryRepo = _unitOfWork.Repository<Inventory>();
+                var allInventories = await inventoryRepo.GetAllAsync();
+
+                foreach (var item in relatedWroItems)
+                {
+                    var reservedInventory = await inventoryRepo.GetByIdAsync(item.InventoryId);
+                    if (reservedInventory != null)
+                    {
+                        // Tìm tồn kho gốc dạng AVAILABLE để cộng gộp lại số lượng
+                        var originalInventory = allInventories.FirstOrDefault(inv =>
+                            inv.CustomerId == reservedInventory.CustomerId &&
+                            inv.OrderId == reservedInventory.OrderId &&
+                            inv.OrderItemId == reservedInventory.OrderItemId &&
+                            inv.ParcelId == reservedInventory.ParcelId &&
+                            inv.BinId == reservedInventory.BinId &&
+                            string.Equals(inv.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase)
+                        );
+
+                        if (originalInventory != null)
+                        {
+                            originalInventory.Quantity += item.Quantity;
+                            inventoryRepo.Update(originalInventory);
+
+                            // Xóa WroItem liên kết trước để tránh vi phạm FK, sau đó xóa reserved inventory
+                            wroItemRepo.Delete(item);
+                            inventoryRepo.Delete(reservedInventory);
+                        }
+                        else
+                        {
+                            // Nếu không tìm thấy record AVAILABLE cũ (có thể đã bị xóa khi qty về 0), đổi trạng thái reserved thành AVAILABLE
+                            reservedInventory.Status = "AVAILABLE";
+                            inventoryRepo.Update(reservedInventory);
+                        }
+                    }
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return new UpdateWroStatusResponseDto
+            {
+                WroId = wroRequest.Id,
+                WroCode = wroRequest.WroCode,
+                Status = wroRequest.Status
             };
         }
     }
