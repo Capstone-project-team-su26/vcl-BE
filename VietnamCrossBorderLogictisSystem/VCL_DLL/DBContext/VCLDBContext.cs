@@ -21,6 +21,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<Customer> Customers { get; set; }
 
+    public virtual DbSet<DeliveryAddress> DeliveryAddresses { get; set; }
+
     public virtual DbSet<CustomsDeclaration> CustomsDeclarations { get; set; }
 
     public virtual DbSet<CustomsDocument> CustomsDocuments { get; set; }
@@ -83,6 +85,35 @@ public partial class VCLDBContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<DeliveryAddress>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.ToTable("DELIVERY_ADDRESSES");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("(newid())")
+                .HasColumnName("id");
+            entity.Property(e => e.CustomerId).HasColumnName("customer_id");
+            entity.Property(e => e.ReceiverName)
+                .HasMaxLength(255)
+                .HasColumnName("receiver_name");
+            entity.Property(e => e.ReceiverPhone)
+                .HasMaxLength(50)
+                .HasColumnName("receiver_phone");
+            entity.Property(e => e.Address).HasColumnName("address");
+            entity.Property(e => e.IsDefault)
+                .HasDefaultValue(false)
+                .HasColumnName("is_default");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Customer).WithMany()
+                .HasForeignKey(d => d.CustomerId)
+                .HasConstraintName("FK_DELIVERY_ADDR_CUSTOMER");
+        });
+
         modelBuilder.Entity<Bin>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("PK__BINS__3213E83F5D6097FF");

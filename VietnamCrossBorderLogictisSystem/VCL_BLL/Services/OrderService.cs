@@ -682,6 +682,7 @@ namespace VCL_BLL.Services
             // Get all data into memory - suitable for GenericRepository pattern
             var allOrders = await orderRepo.GetAllAsync();
             var allCustomers = await customerRepo.GetAllAsync();
+            var allItems = await _unitOfWork.Repository<OrderItem>().GetAllAsync();
 
             var query = allOrders.AsQueryable();
 
@@ -750,7 +751,11 @@ namespace VCL_BLL.Services
                     ReceiverPhone = o.ReceiverPhone,
                     ReceiverAddress = o.ReceiverAddress,
                     RequiresInspection = o.RequiresInspection,
-                    CreatedAt = o.CreatedAt
+                    CreatedAt = o.CreatedAt,
+                    ItemNames = allItems
+                        .Where(i => i.OrderId == o.Id && !string.IsNullOrWhiteSpace(i.ProductName))
+                        .Select(i => i.ProductName!)
+                        .ToList()
                 };
             }).ToList();
 

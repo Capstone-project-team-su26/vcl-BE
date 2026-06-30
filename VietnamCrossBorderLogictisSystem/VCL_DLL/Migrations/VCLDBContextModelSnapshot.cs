@@ -336,6 +336,51 @@ namespace VCL_DLL.Migrations
                     b.ToTable("CUSTOMS_TAXES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.DeliveryAddress", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("Address")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("address");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("customer_id");
+
+                    b.Property<bool>("IsDefault")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_default");
+
+                    b.Property<string>("ReceiverName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("receiver_name");
+
+                    b.Property<string>("ReceiverPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("receiver_phone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.ToTable("DELIVERY_ADDRESSES", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.DomesticWaybill", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1863,6 +1908,18 @@ namespace VCL_DLL.Migrations
                         .HasConstraintName("FK_TAX_CUST");
 
                     b.Navigation("CustomsDeclaration");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.DeliveryAddress", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_DELIVERY_ADDR_CUSTOMER");
+
+                    b.Navigation("Customer");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.DomesticWaybill", b =>
