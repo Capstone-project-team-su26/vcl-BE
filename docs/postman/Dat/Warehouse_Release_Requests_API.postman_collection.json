@@ -332,6 +332,123 @@
           "path": ["api", "warehouse-release-requests"]
         }
       }
+    },
+    {
+      "name": "9. Get WRO Detail - Customer Owner (expect 200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify WroId matches', function () { pm.expect(res.data.wroId).to.eql(pm.collectionVariables.get('wroId')); });",
+              "pm.test('Verify details present', function () {",
+              "    pm.expect(res.data.wroCode).to.not.be.empty;",
+              "    pm.expect(res.data.receiverName).to.eql('Nguyen Van A');",
+              "    pm.expect(res.data.receiverPhone).to.eql('0987654321');",
+              "    pm.expect(res.data.deliveryAddress).to.eql('123 Le Loi, HCM');",
+              "    pm.expect(res.data.items).to.be.an('array').that.is.not.empty;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}"]
+        }
+      }
+    },
+    {
+      "name": "10. Get WRO Detail - Customer Non-Owner (expect 403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify error message', function () { pm.expect(res.message).to.contain('Bạn không có quyền xem'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerBToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}"]
+        }
+      }
+    },
+    {
+      "name": "11. Get WRO Detail - Staff (expect 200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify creator info exists', function () {",
+              "    pm.expect(res.data.createdByName).to.not.be.empty;",
+              "    pm.expect(res.data.createdByUserRole).to.not.be.empty;",
+              "    pm.expect(res.data.customerName).to.not.be.empty;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}"]
+        }
+      }
+    },
+    {
+      "name": "12. Get WRO Detail - Not Found (expect 404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/00000000-0000-0000-0000-000000000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
     }
   ]
 }
