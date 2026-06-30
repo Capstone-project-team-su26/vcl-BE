@@ -1618,6 +1618,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("receiver_phone");
 
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("rejection_reason");
+
                     b.Property<string>("ShelfCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")

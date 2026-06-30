@@ -27,6 +27,8 @@ public partial class WroRequest
 
     public DateTime? CreatedAt { get; set; }
 
+    public string RejectionReason { get; set; }
+
     public virtual Customer Customer { get; set; }
 
     public virtual ICollection<Quotation> Quotations { get; set; } = new List<Quotation>();

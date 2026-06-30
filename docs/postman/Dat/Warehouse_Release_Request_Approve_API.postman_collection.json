@@ -1,0 +1,378 @@
+{
+  "info": {
+    "name": "VCL - Warehouse Release Request Approve API (Dat)",
+    "description": "Bộ API test tính năng duyệt và từ chối yêu cầu xuất kho.\nEndpoint: PUT /api/warehouse-release-requests/{requestId}/status\nQuy trình tự động: Login -> Seed data -> Tạo đơn WRO -> Test duyệt & từ chối đơn -> Kiểm tra khôi phục tồn kho.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5209", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" },
+    { "key": "customerEmail", "value": "customer@test.com", "type": "string" },
+    { "key": "customerPassword", "value": "Customer123", "type": "string" },
+    { "key": "storedParcelId", "value": "3f00f601-be63-4a50-9524-88355ce84280", "type": "string" },
+    { "key": "inventoryId", "value": "", "type": "string" },
+    { "key": "wroId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0a. Seed Staff",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-staff", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-staff"] }
+      }
+    },
+    {
+      "name": "0b. Seed Customers",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-customer", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-customer"] }
+      }
+    },
+    {
+      "name": "0c. Reset Test Data",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/reset-wro-test", "host": ["{{baseUrl}}"], "path": ["api", "Test", "reset-wro-test"] }
+      }
+    },
+    {
+      "name": "1. Login (Staff) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('staffToken', json.token); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. Login Customer (Owner) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('customerToken', json.token); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3. Khoi tao ton kho AVAILABLE",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 or 201', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+              "var res = pm.response.json();",
+              "pm.collectionVariables.set('inventoryId', res.data.inventoryId);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/inventories/from-parcel/{{storedParcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "inventories", "from-parcel", "{{storedParcelId}}"]
+        }
+      }
+    },
+    {
+      "name": "4. Tao don WRO 1 (expect 201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+              "var res = pm.response.json();",
+              "pm.collectionVariables.set('wroId', res.data.wroId);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0987654321\",\n  \"deliveryAddress\": \"123 Le Loi, HCM\",\n  \"items\": [\n    {\n      \"inventoryId\": \"{{inventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests"]
+        }
+      }
+    },
+    {
+      "name": "5. Update Status - Customer (expect 403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify msg', function () { pm.expect(res.message).to.contain('Bạn không có quyền'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"APPROVED\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "6. Update Status - Thieu reason khi REJECTED (expect 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify reason check', function () { pm.expect(res.message).to.contain('lý do từ chối'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"REJECTED\",\n  \"rejectionReason\": \"\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "7. Update Status - APPROVED boi Staff (expect 200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify status is APPROVED', function () { pm.expect(res.data.status).to.eql('APPROVED'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"APPROVED\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "8. Update Status - Khong duoc sua don da APPROVED (expect 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"REJECTED\",\n  \"rejectionReason\": \"Huy don\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "9. Tao don WRO 2 de test REJECTED",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+              "var res = pm.response.json();",
+              "pm.collectionVariables.set('wroId', res.data.wroId);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0987654321\",\n  \"deliveryAddress\": \"123 Le Loi, HCM\",\n  \"items\": [\n    {\n      \"inventoryId\": \"{{inventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests"]
+        }
+      }
+    },
+    {
+      "name": "10. Update Status - REJECTED boi Staff (expect 200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify status is REJECTED', function () { pm.expect(res.data.status).to.eql('REJECTED'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"REJECTED\",\n  \"rejectionReason\": \"Hàng hóa bị hư hỏng không đủ xuất kho\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}", "status"]
+        }
+      }
+    }
+  ]
+}

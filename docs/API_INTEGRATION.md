@@ -91,6 +91,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
 | `POST` | `/api/inventories/from-parcel/{parcelId}` | Staff/WarehouseStaff | Ghi nhận tồn kho khả dụng sau khi put-away |
 | `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
+| `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
+| `PUT` | `/api/warehouse-release-requests/{requestId}/status` | Staff | Staff cập nhật trạng thái yêu cầu xuất kho (duyệt/từ chối) |
 
 
 ## 4. Đăng ký khách hàng
@@ -1827,6 +1829,21 @@ export interface WroDetailDataResponse {
   message: string;
   data: WroDetailResponse;
 }
+
+export interface UpdateWroStatusRequest {
+  status: string;
+  rejectionReason?: string;
+}
+
+export interface UpdateWroStatusResponse {
+  wroId: string;
+  wroCode: string;
+  status: string;
+}
+
+export interface UpdateWroStatusDataResponse extends MessageResponse {
+  data: UpdateWroStatusResponse;
+}
 ```
 
 ## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
@@ -2048,6 +2065,10 @@ export async function createWroRequest(payload: CreateWroRequest) {
 export async function getWroRequestDetail(requestId: string) {
   return api.get<WroDetailDataResponse>(`/api/warehouse-release-requests/${requestId}`);
 }
+
+export async function updateWroStatus(requestId: string, payload: UpdateWroStatusRequest) {
+  return api.put<UpdateWroStatusDataResponse>(`/api/warehouse-release-requests/${requestId}/status`, payload);
+}
 ```
 
 ## 24. Tạo yêu cầu xuất kho từ tồn kho (Warehouse Release Request - WRO)
@@ -2174,6 +2195,59 @@ Authorization: Bearer {accessToken}
 | `403` | Không có quyền xem yêu cầu xuất kho này (Customer xem của người khác) | `"Bạn không có quyền xem yêu cầu xuất kho này."` |
 | `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
 
+### 24.2. Staff duyệt hoặc từ chối yêu cầu xuất kho
+
+Nhân viên (Staff/Operations) duyệt (`APPROVED`) hoặc từ chối (`REJECTED`) yêu cầu xuất kho. Khi từ chối, bắt buộc phải cung cấp lý do từ chối.
+
+```http
+PUT /api/warehouse-release-requests/{requestId}/status
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `requestId` | `Guid` | ID của yêu cầu xuất kho cần duyệt |
+
+**Request Body:**
+
+```json
+{
+  "status": "REJECTED",
+  "rejectionReason": "Hàng hóa bị hư hỏng không đủ xuất kho"
+}
+```
+
+| Field | Ràng buộc | Mô tả |
+|---|---|---|
+| `status` | Bắt buộc. Phải là `APPROVED` hoặc `REJECTED`. | Trạng thái mới của yêu cầu xuất kho |
+| `rejectionReason` | Bắt buộc nếu trạng thái là `REJECTED`. | Lý do từ chối yêu cầu |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Cập nhật trạng thái yêu cầu xuất kho thành công.",
+  "data": {
+    "wroId": "e14b21a7-...",
+    "wroCode": "WRO-20260629-8439",
+    "status": "REJECTED"
+  }
+}
+```
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Trạng thái mới không hợp lệ hoặc thiếu lý do từ chối | `"Trạng thái mới không hợp lệ..."` hoặc `"Vui lòng cung cấp lý do từ chối (RejectionReason)."` |
+| `400` | Yêu cầu đã duyệt/từ chối trước đó (không ở trạng thái PENDING_REVIEW) | `"Không thể cập nhật trạng thái yêu cầu xuất kho do yêu cầu đã ở trạng thái {status}"` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Khách hàng thực hiện thao tác (chỉ Staff/Ops được thao tác) | `"Bạn không có quyền cập nhật trạng thái yêu cầu xuất kho."` |
+| `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
+
 ---
 
 ## 25. Lưu ý tích hợp FE
@@ -2218,5 +2292,6 @@ Authorization: Bearer {accessToken}
 | `/warehouse/inventory/record` | `POST /api/inventories/from-parcel/{parcelId}` |
 | `/warehouse/release-requests/create` | `POST /api/warehouse-release-requests` |
 | `/warehouse/release-requests/{id}` | `GET /api/warehouse-release-requests/{requestId}` |
+| `/warehouse/release-requests/{id}/status` | `PUT /api/warehouse-release-requests/{requestId}/status` |
 
 
