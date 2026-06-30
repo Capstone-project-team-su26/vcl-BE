@@ -24,8 +24,9 @@ namespace VCL_BLL.Services
         // Các giá trị RestrictionType được coi là hàng hạn chế → level RESTRICTED.
         private static readonly string[] RestrictedRestrictionTypes = { "RESTRICTED", "LIMITED", "HẠN CHẾ", "HAN CHE" };
 
-        // Các trạng thái Order mà khách được phép tự hủy (hàng chưa vào kho VN).
-        private static readonly string[] CancellableStatuses = { "PENDING_REVIEW", "APPROVED", "WAITING_FOR_PARCEL" };
+        // Các trạng thái Order mà khách được phép tự hủy.
+        // Đạt xác nhận (PR#48): khách CHƯA được hủy ở QUOTATION_SENT/QUOTATION_CONFIRMED → chỉ cho hủy lúc PENDING_REVIEW/APPROVED.
+        private static readonly string[] CancellableStatuses = { "PENDING_REVIEW", "APPROVED" };
 
         // Các role nội bộ được xem mọi yêu cầu ký gửi (không cần là chủ đơn).
         private static readonly string[] StaffRoles = { "ADMIN", "SALE", "WAREHOUSESTAFF", "OPERATIONSMANAGER", "DELIVERY" };
@@ -607,8 +608,9 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
             }
 
-            // Cannot update if CANCELLED or WAITING_FOR_PARCEL
-            var invalidCurrentStatuses = new[] { "CANCELLED", "WAITING_FOR_PARCEL", "WAREHOUSE_RECEIVED" };
+            // Đạt xác nhận (PR#48): staff VẪN được đổi duyệt/từ chối khi đơn ở QUOTATION_SENT/CONFIRMED/REJECTED.
+            // Chỉ chặn khi đơn đã hủy hoặc đã nhập kho.
+            var invalidCurrentStatuses = new[] { "CANCELLED", "WAREHOUSE_RECEIVED" };
             if (order.Status != null && invalidCurrentStatuses.Contains(order.Status.ToUpper()))
             {
                 throw new ArgumentException($"Không thể cập nhật trạng thái yêu cầu khi yêu cầu đang ở trạng thái {order.Status}");
@@ -680,6 +682,7 @@ namespace VCL_BLL.Services
             // Get all data into memory - suitable for GenericRepository pattern
             var allOrders = await orderRepo.GetAllAsync();
             var allCustomers = await customerRepo.GetAllAsync();
+            var allItems = await _unitOfWork.Repository<OrderItem>().GetAllAsync();
 
             var query = allOrders.AsQueryable();
 
@@ -748,7 +751,11 @@ namespace VCL_BLL.Services
                     ReceiverPhone = o.ReceiverPhone,
                     ReceiverAddress = o.ReceiverAddress,
                     RequiresInspection = o.RequiresInspection,
-                    CreatedAt = o.CreatedAt
+                    CreatedAt = o.CreatedAt,
+                    ItemNames = allItems
+                        .Where(i => i.OrderId == o.Id && !string.IsNullOrWhiteSpace(i.ProductName))
+                        .Select(i => i.ProductName!)
+                        .ToList()
                 };
             }).ToList();
 

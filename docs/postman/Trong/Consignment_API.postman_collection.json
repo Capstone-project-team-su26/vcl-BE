@@ -10,6 +10,8 @@
     { "key": "adminToken", "value": "", "type": "string" },
     { "key": "orderId", "value": "", "type": "string" },
     { "key": "quotationId", "value": "", "type": "string" },
+    { "key": "deliveryAddressId", "value": "", "type": "string" },
+    { "key": "uploadedImageUrl", "value": "", "type": "string" },
     { "key": "customerEmail", "value": "buidinhtrong09122002@gmail.com", "type": "string" },
     { "key": "customerPassword", "value": "trong123", "type": "string" }
   ],
@@ -274,6 +276,20 @@
     },
     {
       "name": "3. Xem danh sach yeu cau ky gui",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var items = pm.response.json().data.items;",
+              "pm.test('Moi don co itemNames', function () { if (items.length) pm.expect(items[0]).to.have.property('itemNames'); });",
+              "if (items.length) console.log('itemNames don dau:', JSON.stringify(items[0].itemNames));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
       "request": {
         "method": "GET",
         "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
@@ -550,6 +566,136 @@
           "host": ["{{baseUrl}}"],
           "path": ["api", "orders", "consignments", "{{orderId}}"]
         }
+      }
+    },
+    {
+      "name": "9. So dia chi - Tao dia chi nhan hang",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "if (data && data.id) { pm.collectionVariables.set('deliveryAddressId', data.id); }",
+              "console.log('deliveryAddressId:', pm.collectionVariables.get('deliveryAddressId'));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Dinh Trong\",\n  \"receiverPhone\": \"0901234567\",\n  \"address\": \"45 Le Loi, Quan 1, TP.HCM\",\n  \"isDefault\": true\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/delivery-addresses", "host": ["{{baseUrl}}"], "path": ["api", "delivery-addresses"] }
+      }
+    },
+    {
+      "name": "10. So dia chi - Lay danh sach",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('Tra ve mang', function () { pm.expect(pm.response.json()).to.be.an('array'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{baseUrl}}/api/delivery-addresses", "host": ["{{baseUrl}}"], "path": ["api", "delivery-addresses"] }
+      }
+    },
+    {
+      "name": "11. So dia chi - Cap nhat",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Dinh Trong (cap nhat)\",\n  \"receiverPhone\": \"0909999999\",\n  \"address\": \"99 Nguyen Hue, Quan 1, TP.HCM\",\n  \"isDefault\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/delivery-addresses/{{deliveryAddressId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "delivery-addresses", "{{deliveryAddressId}}"]
+        }
+      }
+    },
+    {
+      "name": "12. So dia chi - Xoa",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/delivery-addresses/{{deliveryAddressId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "delivery-addresses", "{{deliveryAddressId}}"]
+        }
+      }
+    },
+    {
+      "name": "13. Upload anh san pham (chon file thu cong)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.url) { pm.collectionVariables.set('uploadedImageUrl', json.url); }",
+              "console.log('URL anh:', json.url);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": [] }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/uploads/image", "host": ["{{baseUrl}}"], "path": ["api", "uploads", "image"] }
       }
     }
   ]

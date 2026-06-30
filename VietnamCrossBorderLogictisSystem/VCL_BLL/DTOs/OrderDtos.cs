@@ -30,6 +30,9 @@ namespace VCL_BLL.DTOs
         public string? ReceiverAddress { get; set; }
         public bool RequiresInspection { get; set; }
         public DateTime? CreatedAt { get; set; }
+
+        /// <summary>Tên các mặt hàng trong đơn (để FE hiển thị ở danh sách).</summary>
+        public List<string> ItemNames { get; set; } = new();
     }
 
     public class CancelConsignmentRequest
