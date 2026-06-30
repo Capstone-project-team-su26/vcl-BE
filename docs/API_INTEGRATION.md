@@ -1794,6 +1794,39 @@ export interface WroDataResponse {
   message: string;
   data: WroResponse;
 }
+
+export interface WroDetailItem {
+  itemId: string;
+  inventoryId: string;
+  quantity: number;
+  packageCode: string;
+  productName: string;
+  binCode: string;
+}
+
+export interface WroDetailResponse {
+  wroId: string;
+  wroCode: string;
+  createdByName: string;
+  createdByUserRole: string;
+  warehouseName: string;
+  customerId: string | null;
+  customerName: string;
+  receiverName: string;
+  receiverPhone: string;
+  deliveryAddress: string;
+  status: string;
+  shelfCode: string | null;
+  note: string | null;
+  createdAt: string;
+  totalQuantity: number;
+  items: WroDetailItem[];
+}
+
+export interface WroDetailDataResponse {
+  message: string;
+  data: WroDetailResponse;
+}
 ```
 
 ## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
@@ -2011,6 +2044,10 @@ export async function recordInventoryFromParcel(parcelId: string) {
 export async function createWroRequest(payload: CreateWroRequest) {
   return api.post<WroDataResponse>('/api/warehouse-release-requests', payload);
 }
+
+export async function getWroRequestDetail(requestId: string) {
+  return api.get<WroDetailDataResponse>(`/api/warehouse-release-requests/${requestId}`);
+}
 ```
 
 ## 24. Tạo yêu cầu xuất kho từ tồn kho (Warehouse Release Request - WRO)
@@ -2079,6 +2116,64 @@ Content-Type: application/json
 | `403` | Xuất hàng không thuộc sở hữu của mình | `"Bạn không có quyền tạo yêu cầu xuất kho cho tồn kho {id} do không thuộc sở hữu của bạn."` |
 | `404` | Không tìm thấy Inventory ID | `"Không tìm thấy tồn kho với ID: {id}"` |
 
+### 24.1. Xem chi tiết yêu cầu xuất kho
+
+Backend cung cấp API để lấy chi tiết của một yêu cầu xuất kho (WRO). Staff/Operations xem được mọi yêu cầu, Customer chỉ xem được yêu cầu của chính mình.
+
+```http
+GET /api/warehouse-release-requests/{requestId}
+Authorization: Bearer {accessToken}
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|---|---|---|
+| `requestId` | `string (Guid)` | ID của yêu cầu xuất kho |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Lấy chi tiết yêu cầu xuất kho thành công.",
+  "data": {
+    "wroId": "e14b21a7-...",
+    "wroCode": "WRO-20260629-8439",
+    "createdByName": "Nguyen Van A",
+    "createdByUserRole": "Customer",
+    "warehouseName": "Kho Việt Nam HCMC",
+    "customerId": "81a7b4c9-...",
+    "customerName": "Nguyen Van A",
+    "receiverName": "Nguyen Van A",
+    "receiverPhone": "0987654321",
+    "deliveryAddress": "123 Duong Le Loi, Q1, HCM",
+    "status": "PENDING_REVIEW",
+    "shelfCode": "SHELF-01",
+    "note": null,
+    "createdAt": "2026-06-29T09:21:00Z",
+    "totalQuantity": 2,
+    "items": [
+      {
+        "itemId": "a1b2c3d4-...",
+        "inventoryId": "d5e243d7-...", 
+        "quantity": 2,
+        "packageCode": "PCL-20260620103028-258201",
+        "productName": "Giày thể thao Nam",
+        "binCode": "BIN-A-01"
+      }
+    ]
+  }
+}
+```
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Không có quyền xem yêu cầu xuất kho này (Customer xem của người khác) | `"Bạn không có quyền xem yêu cầu xuất kho này."` |
+| `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
+
 ---
 
 ## 25. Lưu ý tích hợp FE
@@ -2122,5 +2217,6 @@ Content-Type: application/json
 | `/warehouse/put-away` | `PUT /api/parcels/{parcelId}/put-away` |
 | `/warehouse/inventory/record` | `POST /api/inventories/from-parcel/{parcelId}` |
 | `/warehouse/release-requests/create` | `POST /api/warehouse-release-requests` |
+| `/warehouse/release-requests/{id}` | `GET /api/warehouse-release-requests/{requestId}` |
 
 

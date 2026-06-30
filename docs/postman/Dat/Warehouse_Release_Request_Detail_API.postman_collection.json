@@ -1,0 +1,212 @@
+{
+  "info": {
+    "name": "VCL - Warehouse Release Request Detail API (Dat)",
+    "description": "Bộ API test tính năng lấy chi tiết yêu cầu xuất kho.\nEndpoint: GET /api/warehouse-release-requests/{requestId}.\nVai trò: Customer (chỉ xem được đơn của mình) hoặc Staff/Operations (xem được mọi đơn).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5209", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "customerBToken", "value": "", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" },
+    { "key": "customerEmail", "value": "customer@test.com", "type": "string" },
+    { "key": "customerPassword", "value": "Customer123", "type": "string" },
+    { "key": "wroId", "value": "", "type": "string", "description": "Nhập ID của một yêu cầu xuất kho (WRO Request ID) hợp lệ để thực hiện test" }
+  ],
+  "item": [
+    {
+      "name": "1. Login (Admin/Staff) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('staffToken', json.token); console.log('Saved staffToken'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. Login Customer A (Owner) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('customerToken', json.token); console.log('Saved customerToken (Owner)'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3. Login Customer B (Non-Owner) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('customerBToken', json.token); console.log('Saved customerBToken (Non-Owner)'); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer_b@test.com\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "4. Get WRO Detail - Customer Owner (expect 200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify WroId matches', function () { pm.expect(res.data.wroId).to.eql(pm.collectionVariables.get('wroId')); });",
+              "pm.test('Verify details present', function () {",
+              "    pm.expect(res.data.wroCode).to.not.be.empty;",
+              "    pm.expect(res.data.receiverName).to.not.be.empty;",
+              "    pm.expect(res.data.receiverPhone).to.not.be.empty;",
+              "    pm.expect(res.data.deliveryAddress).to.not.be.empty;",
+              "    pm.expect(res.data.items).to.be.an('array').that.is.not.empty;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}"]
+        }
+      }
+    },
+    {
+      "name": "5. Get WRO Detail - Customer Non-Owner (expect 403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify error message', function () { pm.expect(res.message).to.contain('Bạn không có quyền xem'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerBToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}"]
+        }
+      }
+    },
+    {
+      "name": "6. Get WRO Detail - Staff (expect 200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify creator info exists', function () {",
+              "    pm.expect(res.data.createdByName).to.not.be.empty;",
+              "    pm.expect(res.data.createdByUserRole).to.not.be.empty;",
+              "    pm.expect(res.data.customerName).to.not.be.empty;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}"]
+        }
+      }
+    },
+    {
+      "name": "7. Get WRO Detail - Not Found (expect 404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/00000000-0000-0000-0000-000000000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
+    }
+  ]
+}
