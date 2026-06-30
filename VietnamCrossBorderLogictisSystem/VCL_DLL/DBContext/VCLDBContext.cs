@@ -75,6 +75,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<WroRequest> WroRequests { get; set; }
 
+    public virtual DbSet<PickingList> PickingLists { get; set; }
+
+    public virtual DbSet<PickingItem> PickingItems { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Bin>(entity =>
@@ -1168,6 +1172,51 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.WroRequests)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("FK_WRO_USER");
+        });
+
+        modelBuilder.Entity<PickingList>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PICKING_LISTS");
+            entity.ToTable("PICKING_LISTS");
+            entity.Property(e => e.Id).HasColumnName("id").HasDefaultValueSql("(newid())");
+            entity.Property(e => e.WroRequestId).HasColumnName("wro_request_id");
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50).HasDefaultValueSql("('PENDING')");
+            entity.Property(e => e.CreatedBy).HasColumnName("created_by");
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("(getutcdate())");
+
+            entity.HasOne(d => d.WroRequest)
+                .WithOne()
+                .HasForeignKey<PickingList>(d => d.WroRequestId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PICKING_LIST_WRO_REQUEST");
+
+            entity.HasOne(d => d.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(d => d.CreatedBy)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKING_LIST_USER");
+        });
+
+        modelBuilder.Entity<PickingItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PICKING_ITEMS");
+            entity.ToTable("PICKING_ITEMS");
+            entity.Property(e => e.Id).HasColumnName("id").HasDefaultValueSql("(newid())");
+            entity.Property(e => e.PickingListId).HasColumnName("picking_list_id");
+            entity.Property(e => e.InventoryId).HasColumnName("inventory_id");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+
+            entity.HasOne(d => d.PickingList)
+                .WithMany(p => p.PickingItems)
+                .HasForeignKey(d => d.PickingListId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PICKING_ITEM_LIST");
+
+            entity.HasOne(d => d.Inventory)
+                .WithMany()
+                .HasForeignKey(d => d.InventoryId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKING_ITEM_INVENTORY");
         });
 
         OnModelCreatingPartial(modelBuilder);
