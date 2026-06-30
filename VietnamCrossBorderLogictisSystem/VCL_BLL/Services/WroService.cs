@@ -183,5 +183,138 @@ namespace VCL_BLL.Services
                 Items = resultItems
             };
         }
+
+        public async Task<WroDetailResponseDto> GetWroRequestDetailAsync(Guid requestId, Guid userId, string role)
+        {
+            var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
+            var wroRequest = await wroRequestRepo.GetByIdAsync(requestId);
+            if (wroRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
+            }
+
+            // 1. Phân quyền: Customer chỉ được xem yêu cầu xuất kho của chính mình
+            bool isCustomer = string.Equals(role, "Customer", StringComparison.OrdinalIgnoreCase);
+            if (isCustomer)
+            {
+                var customerRepo = _unitOfWork.Repository<Customer>();
+                var allCustomers = await customerRepo.GetAllAsync();
+                var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
+                if (customer == null || wroRequest.CustomerId != customer.Id)
+                {
+                    throw new UnauthorizedAccessException("Bạn không có quyền xem yêu cầu xuất kho này.");
+                }
+            }
+
+            // 2. Lấy thông tin người tạo (User)
+            var userRepo = _unitOfWork.Repository<User>();
+            var creator = wroRequest.UserId.HasValue ? await userRepo.GetByIdAsync(wroRequest.UserId.Value) : null;
+            string createdByName = creator?.FullName ?? "Hệ thống";
+            string createdByUserRole = creator?.Role ?? "System";
+
+            // 3. Lấy thông tin Customer sở hữu
+            string customerName = "";
+            if (wroRequest.CustomerId.HasValue)
+            {
+                var customerRepo = _unitOfWork.Repository<Customer>();
+                var wroOwner = await customerRepo.GetByIdAsync(wroRequest.CustomerId.Value);
+                customerName = wroOwner?.FullName ?? string.Empty;
+            }
+
+            // 4. Lấy chi tiết các mặt hàng cần xuất và thông tin kho hàng liên quan
+            var wroItemRepo = _unitOfWork.Repository<WroItem>();
+            var allWroItems = await wroItemRepo.GetAllAsync();
+            var relatedWroItems = allWroItems.Where(i => i.WroRequestId == requestId).ToList();
+
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var allParcels = await parcelRepo.GetAllAsync();
+
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var allBins = await binRepo.GetAllAsync();
+
+            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
+            var allWarehouses = await warehouseRepo.GetAllAsync();
+
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            var allOrderItems = await orderItemRepo.GetAllAsync();
+
+            var itemsDetail = new List<WroDetailItemDto>();
+            string warehouseName = "";
+            int totalQuantity = 0;
+
+            foreach (var item in relatedWroItems)
+            {
+                var inventory = allInventories.FirstOrDefault(inv => inv.Id == item.InventoryId);
+                string productName = "";
+                string packageCode = "";
+                string binCode = "";
+
+                if (inventory != null)
+                {
+                    // Lấy tên mặt hàng từ OrderItem tương ứng của Inventory
+                    if (inventory.OrderItemId.HasValue)
+                    {
+                        var orderItem = allOrderItems.FirstOrDefault(oi => oi.Id == inventory.OrderItemId.Value);
+                        productName = orderItem?.ProductName ?? string.Empty;
+                    }
+
+                    // Lấy mã kiện hàng Parcel tương ứng
+                    var parcel = allParcels.FirstOrDefault(p => p.Id == inventory.ParcelId);
+                    packageCode = parcel?.PackageCode ?? string.Empty;
+
+                    // Lấy mã vị trí Bin và tên kho hàng Warehouse
+                    var bin = allBins.FirstOrDefault(b => b.Id == inventory.BinId);
+                    if (bin != null)
+                    {
+                        binCode = bin.BinCode ?? string.Empty;
+
+                        if (string.IsNullOrEmpty(warehouseName))
+                        {
+                            var whId = bin.WarehouseId;
+                            if (whId.HasValue)
+                            {
+                                var warehouse = allWarehouses.FirstOrDefault(w => w.Id == whId.Value);
+                                warehouseName = warehouse?.WarehouseName ?? string.Empty;
+                            }
+                        }
+                    }
+                }
+
+                itemsDetail.Add(new WroDetailItemDto
+                {
+                    ItemId = item.Id,
+                    InventoryId = item.InventoryId,
+                    Quantity = item.Quantity,
+                    PackageCode = packageCode,
+                    ProductName = productName,
+                    BinCode = binCode
+                });
+
+                totalQuantity += item.Quantity;
+            }
+
+            return new WroDetailResponseDto
+            {
+                WroId = wroRequest.Id,
+                WroCode = wroRequest.WroCode,
+                CreatedByName = createdByName,
+                CreatedByUserRole = createdByUserRole,
+                WarehouseName = warehouseName,
+                CustomerId = wroRequest.CustomerId,
+                CustomerName = customerName,
+                ReceiverName = wroRequest.ReceiverName ?? string.Empty,
+                ReceiverPhone = wroRequest.ReceiverPhone ?? string.Empty,
+                DeliveryAddress = wroRequest.DeliveryAddress ?? string.Empty,
+                Status = wroRequest.Status ?? string.Empty,
+                ShelfCode = wroRequest.ShelfCode,
+                Note = null, // Cột ghi chú xử lý chưa có trong DB, trả về null theo spec
+                CreatedAt = wroRequest.CreatedAt ?? DateTime.UtcNow,
+                TotalQuantity = totalQuantity,
+                Items = itemsDetail
+            };
+        }
     }
 }

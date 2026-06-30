@@ -52,4 +52,34 @@ namespace VCL_BLL.DTOs
         public DateTime CreatedAt { get; set; }
         public List<WroItemResponseDto> Items { get; set; } = new();
     }
+
+    public class WroDetailItemDto
+    {
+        public Guid ItemId { get; set; }
+        public Guid InventoryId { get; set; }
+        public int Quantity { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public string BinCode { get; set; } = string.Empty;
+    }
+
+    public class WroDetailResponseDto
+    {
+        public Guid WroId { get; set; }
+        public string WroCode { get; set; } = string.Empty;
+        public string CreatedByName { get; set; } = string.Empty;
+        public string CreatedByUserRole { get; set; } = string.Empty;
+        public string WarehouseName { get; set; } = string.Empty;
+        public Guid? CustomerId { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string ReceiverName { get; set; } = string.Empty;
+        public string ReceiverPhone { get; set; } = string.Empty;
+        public string DeliveryAddress { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? ShelfCode { get; set; }
+        public string? Note { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public int TotalQuantity { get; set; }
+        public List<WroDetailItemDto> Items { get; set; } = new();
+    }
 }
