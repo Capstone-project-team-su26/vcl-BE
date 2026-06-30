@@ -73,4 +73,64 @@ namespace VCL_BLL.DTOs
         public string OrderStatus { get; set; } = string.Empty;
         public DateTime AcceptedAt { get; set; }
     }
+
+    public class CreateQuotationRequest
+    {
+        public Guid? WarehouseId { get; set; }
+        public Guid? ServicePricingId { get; set; }
+        public string ServiceType { get; set; }
+        public decimal? WeightKg { get; set; }
+        public decimal? VolumeM3 { get; set; }
+        public int? PackageCount { get; set; }
+        public decimal? DeclaredValue { get; set; }
+        public string SalesNote { get; set; }
+        public QuotationDetailsDto Quotation { get; set; }
+    }
+
+    public class QuotationDetailsDto
+    {
+        public Guid? ServicePricingId { get; set; }
+        public string ServiceType { get; set; }
+        public string OriginCountry { get; set; }
+        public string DestinationCountry { get; set; }
+        public string UnitType { get; set; }
+        public decimal? UnitPrice { get; set; }
+        public string Currency { get; set; }
+        public decimal? TotalWeight { get; set; }
+        public decimal? TotalVolume { get; set; }
+        public decimal? VolumetricWeight { get; set; }
+        public decimal? ChargeableWeight { get; set; }
+        public decimal? MainServiceAmount { get; set; }
+        public List<AdditionalFeeDto> AdditionalFees { get; set; } = new();
+        public decimal? DiscountPercent { get; set; }
+        public decimal? Subtotal { get; set; }
+        public decimal? Discount { get; set; }
+        public decimal? Total { get; set; }
+        public decimal? EstimatedFreightCharge { get; set; }
+        public decimal? ServiceFee { get; set; }
+        public decimal? TotalEstimatedCost { get; set; }
+        public string SalesNote { get; set; }
+    }
+
+    public class AdditionalFeeDto
+    {
+        public Guid? FeeId { get; set; }
+        public string Code { get; set; }
+        public string Label { get; set; }
+        public decimal Amount { get; set; }
+        public bool Enabled { get; set; }
+    }
+
+    public class QuotationActionResponse
+    {
+        public string Message { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? RejectionReason { get; set; }
+        public ConsignmentResponseDto Consignment { get; set; }
+    }
+
+    public class RejectQuotationRequest
+    {
+        public string RejectionReason { get; set; } = string.Empty;
+    }
 }

@@ -1585,6 +1585,17 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("(getutcdate())");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("WarehouseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("warehouse_code");
+
                     b.Property<string>("WarehouseName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
@@ -1599,6 +1610,57 @@ namespace VCL_DLL.Migrations
                         .HasName("PK__WAREHOUS__3213E83F27FFA333");
 
                     b.ToTable("WAREHOUSES", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseReceivingNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid>("ConsignmentOrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("consignment_order_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("ReceivingNoteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("receiving_note_code");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("ACTIVE")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_id");
+
+                    b.Property<string>("WarehouseNote")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("warehouse_note");
+
+                    b.HasKey("Id")
+                        .HasName("PK_WAREHOUSE_RECEIVING_NOTES");
+
+                    b.HasIndex("ConsignmentOrderId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("WAREHOUSE_RECEIVING_NOTES", (string)null);
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.WarehouseZone", b =>
@@ -2145,6 +2207,27 @@ namespace VCL_DLL.Migrations
                         .HasConstraintName("FK_TRACK_SHIP");
 
                     b.Navigation("Shipment");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseReceivingNote", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Order", "ConsignmentOrder")
+                        .WithMany()
+                        .HasForeignKey("ConsignmentOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_WRN_ORDER");
+
+                    b.HasOne("VCL_DLL.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_WRN_WAREHOUSE");
+
+                    b.Navigation("ConsignmentOrder");
+
+                    b.Navigation("Warehouse");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.WarehouseZone", b =>

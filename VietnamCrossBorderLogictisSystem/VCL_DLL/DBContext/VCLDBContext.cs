@@ -79,6 +79,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<PickingItem> PickingItems { get; set; }
 
+    public virtual DbSet<WarehouseReceivingNote> WarehouseReceivingNotes { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Bin>(entity =>
@@ -1086,9 +1088,51 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.WarehouseName)
                 .HasMaxLength(255)
                 .HasColumnName("warehouse_name");
+            entity.Property(e => e.WarehouseCode)
+                .HasMaxLength(100)
+                .HasColumnName("warehouse_code");
             entity.Property(e => e.WarehouseType)
                 .HasMaxLength(100)
                 .HasColumnName("warehouse_type");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+        });
+
+        modelBuilder.Entity<WarehouseReceivingNote>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_WAREHOUSE_RECEIVING_NOTES");
+
+            entity.ToTable("WAREHOUSE_RECEIVING_NOTES");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("(newid())")
+                .HasColumnName("id");
+            entity.Property(e => e.ReceivingNoteCode)
+                .HasMaxLength(100)
+                .HasColumnName("receiving_note_code");
+            entity.Property(e => e.ConsignmentOrderId).HasColumnName("consignment_order_id");
+            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.WarehouseNote).HasColumnName("warehouse_note");
+            entity.Property(e => e.Status)
+                .HasMaxLength(50)
+                .HasDefaultValue("ACTIVE")
+                .HasColumnName("status");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.ConsignmentOrder)
+                .WithMany()
+                .HasForeignKey(d => d.ConsignmentOrderId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_WRN_ORDER");
+
+            entity.HasOne(d => d.Warehouse)
+                .WithMany()
+                .HasForeignKey(d => d.WarehouseId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_WRN_WAREHOUSE");
         });
 
         modelBuilder.Entity<WarehouseZone>(entity =>
