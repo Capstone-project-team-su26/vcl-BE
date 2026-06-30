@@ -14,8 +14,28 @@ namespace VCL_BLL.Interface
         Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId);
 
         /// <summary>
+        /// Tạo báo giá tạm tính bằng cách truyền thông tin từ FE (không lưu DB, không đổi trạng thái đơn).
+        /// </summary>
+        Task<EstimateQuotationResponse> CreateEstimateQuotationWithBodyAsync(Guid orderId, CreateQuotationRequest request);
+
+        /// <summary>
+        /// Lưu báo giá chính thức gửi khách hàng, cập nhật Order → QUOTATION_SENT, Quotation → SENT/PENDING.
+        /// </summary>
+        Task<QuotationActionResponse> SendQuotationAsync(Guid orderId, CreateQuotationRequest request);
+
+        /// <summary>
+        /// Từ chối báo giá theo OrderId. Cập nhật Order → QUOTATION_REJECTED.
+        /// </summary>
+        Task<QuotationActionResponse> RejectQuotationByOrderIdAsync(Guid orderId, string reason);
+
+        /// <summary>
+        /// Từ chối báo giá theo QuotationId. Cập nhật Order → QUOTATION_REJECTED.
+        /// </summary>
+        Task<QuotationActionResponse> RejectQuotationByIdAsync(Guid quotationId, string reason);
+
+        /// <summary>
         /// Khách hàng xác nhận báo giá tạm tính.
-        /// Cập nhật Quotation → ACCEPTED, Order → WAITING_FOR_PARCEL.
+        /// Cập nhật Quotation → ACCEPTED, Order → QUOTATION_CONFIRMED.
         /// </summary>
         /// <param name="quotationId">ID của báo giá cần xác nhận</param>
         /// <param name="userId">ID của user đang đăng nhập (từ JWT)</param>
