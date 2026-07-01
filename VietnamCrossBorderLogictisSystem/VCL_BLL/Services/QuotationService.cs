@@ -978,5 +978,57 @@ namespace VCL_BLL.Services
                 } : null
             };
         }
+
+        /// <inheritdoc/>
+        public async Task<QuotationDetailResponse> GetQuotationByOrderIdAsync(Guid orderId)
+        {
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
+
+            var quotationRepo = _unitOfWork.Repository<Quotation>();
+            var allQuotations = await quotationRepo.GetAllAsync();
+
+            // Lấy báo giá mới nhất của đơn hàng (ưu tiên SENT/PENDING, sau đó DRAFT/ACCEPTED)
+            var quotation = allQuotations
+                .Where(q => q.OrderId == orderId)
+                .OrderByDescending(q => q.CreatedAt)
+                .FirstOrDefault(q =>
+                    string.Equals(q.Status, "SENT", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(q.Status, "PENDING", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(q.Status, "DRAFT", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(q.Status, "ACCEPTED", StringComparison.OrdinalIgnoreCase));
+
+            if (quotation == null)
+                throw new NotFoundException("Đơn hàng chưa có báo giá nào. Vui lòng liên hệ nhân viên hỗ trợ.");
+
+            // Tính VolumetricWeight từ tổng thể tích đơn hàng (TotalVolume lưu theo m³)
+            var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) * 1_000_000m / VolumetricDivisor, 2);
+            var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m)
+                                   + (quotation.ServiceFee ?? 0m)
+                                   + (quotation.TaxAndDuty ?? 0m);
+
+            return new QuotationDetailResponse
+            {
+                QuotationId = quotation.Id,
+                OrderId = orderId,
+                QuoteType = quotation.QuoteType ?? string.Empty,
+                Status = quotation.Status ?? string.Empty,
+                ConsignmentType = order.ConsignmentType ?? string.Empty,
+                TotalWeight = order.TotalWeight ?? 0m,
+                TotalVolume = order.TotalVolume ?? 0m,
+                VolumetricWeight = volumetricWeight,
+                ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, volumetricWeight),
+                EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,
+                ServiceFee = quotation.ServiceFee ?? 0m,
+                TaxAndDuty = quotation.TaxAndDuty ?? 0m,
+                TotalEstimatedCost = totalEstimatedCost,
+                CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
+                ExpiredAt = quotation.ExpiredAt,
+                SalesNote = null
+            };
+        }
+
     }
 }
