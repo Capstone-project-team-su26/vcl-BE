@@ -83,8 +83,8 @@ namespace VCL_BLL.DTOs
         public decimal? VolumeM3 { get; set; }
         public int? PackageCount { get; set; }
         public decimal? DeclaredValue { get; set; }
-        public string SalesNote { get; set; }
-        public QuotationDetailsDto Quotation { get; set; }
+        public string? SalesNote { get; set; }
+        public QuotationDetailsDto? Quotation { get; set; }
     }
 
     public class QuotationDetailsDto
@@ -109,7 +109,7 @@ namespace VCL_BLL.DTOs
         public decimal? EstimatedFreightCharge { get; set; }
         public decimal? ServiceFee { get; set; }
         public decimal? TotalEstimatedCost { get; set; }
-        public string SalesNote { get; set; }
+        public string? SalesNote { get; set; }
     }
 
     public class AdditionalFeeDto
