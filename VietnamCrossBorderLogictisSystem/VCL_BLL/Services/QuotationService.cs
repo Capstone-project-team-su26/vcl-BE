@@ -16,11 +16,11 @@ namespace VCL_BLL.Services
 
         // Giá mặc định khi không tìm thấy ServicePricing trong DB (VND/kg)
         private const decimal DefaultExpressRate = 50000m;
-        private const decimal DefaultConsolidationRate = 30000m;
+        private const decimal DefaultStandardRate = 30000m;
 
         // Phí dịch vụ cố định (VND)
         private const decimal ExpressServiceFee = 50000m;
-        private const decimal ConsolidationServiceFee = 30000m;
+        private const decimal StandardServiceFee = 30000m;
 
         // Tỷ lệ thuế tạm tính trên tổng declared value
         private const decimal TaxRate = 0.10m;
@@ -198,7 +198,7 @@ namespace VCL_BLL.Services
             {
                 var freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
                     ? DefaultExpressRate
-                    : DefaultConsolidationRate;
+                    : DefaultStandardRate;
                 estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
             }
 
@@ -220,7 +220,7 @@ namespace VCL_BLL.Services
             {
                 decimal baseServiceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
                     ? ExpressServiceFee
-                    : ConsolidationServiceFee;
+                    : StandardServiceFee;
 
                 decimal totalSurcharges = 0m;
                 foreach (var rule in activeRules)
@@ -418,7 +418,7 @@ namespace VCL_BLL.Services
             // Fallback: giá mặc định
             return string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
                 ? DefaultExpressRate
-                : DefaultConsolidationRate;
+                : DefaultStandardRate;
         }
 
         /// <summary>
@@ -428,7 +428,7 @@ namespace VCL_BLL.Services
         {
             return string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
                 ? ExpressServiceFee
-                : ConsolidationServiceFee;
+                : StandardServiceFee;
         }
 
         /// <inheritdoc/>
@@ -614,7 +614,7 @@ namespace VCL_BLL.Services
             {
                 var freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
                     ? DefaultExpressRate
-                    : DefaultConsolidationRate;
+                    : DefaultStandardRate;
                 estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
             }
 
@@ -636,7 +636,7 @@ namespace VCL_BLL.Services
             {
                 decimal baseServiceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
                     ? ExpressServiceFee
-                    : ConsolidationServiceFee;
+                    : StandardServiceFee;
 
                 decimal totalSurcharges = 0m;
                 foreach (var rule in activeRules)
@@ -820,7 +820,7 @@ namespace VCL_BLL.Services
             {
                 freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
                     ? DefaultExpressRate
-                    : DefaultConsolidationRate;
+                    : DefaultStandardRate;
             }
 
             decimal estimatedFreightCharge;
