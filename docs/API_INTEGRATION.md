@@ -86,6 +86,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/pricing-rules` | Admin | Thêm cấu hình giá mới |
 | `PUT` | `/api/pricing-rules/{id}` | Admin | Cập nhật cấu hình giá |
 | `DELETE` | `/api/pricing-rules/{id}` | Admin | Xóa cấu hình giá |
+| `GET` | `/api/service-pricings` | Public | Xem danh sách cấu hình bảng giá dịch vụ chính |
+| `GET` | `/api/service-pricings/{id}` | Public | Lấy chi tiết bảng giá dịch vụ theo ID |
+| `POST` | `/api/service-pricings` | Admin | Thêm cấu hình bảng giá dịch vụ mới |
+| `PUT` | `/api/service-pricings/{id}` | Admin | Cập nhật cấu hình bảng giá dịch vụ |
+| `DELETE` | `/api/service-pricings/{id}` | Admin | Xóa cấu hình bảng giá dịch vụ |
 | `POST` | `/api/parcels/check-in` | Staff/WarehouseStaff | Check-in kiện hàng thực tế bằng mã gửi hàng |
 | `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
@@ -2337,7 +2342,128 @@ Authorization: Bearer {accessToken}
 
 ---
 
-## 25. Lưu ý tích hợp FE
+## 25. Quản lý bảng giá dịch vụ chính (Service Pricing)
+
+Admin hệ thống quản lý bảng giá cước vận chuyển chính chặng quốc tế cho các tuyến đường (route).
+
+### 25.1. Xem danh sách bảng giá dịch vụ chính
+
+```http
+GET /api/service-pricings
+```
+
+**Response thành công (200 OK):**
+
+```json
+[
+  {
+    "id": "e3b0c442-...",
+    "carrierId": "f4c1d2e3-...",
+    "serviceType": "Consolidation",
+    "originCountry": "INDO",
+    "destinationCountry": "VN",
+    "unitType": "KG",
+    "price": 45000.0,
+    "currency": "VND",
+    "effectiveDate": "2026-06-01T00:00:00Z"
+  }
+]
+```
+
+### 25.2. Lấy chi tiết bảng giá dịch vụ theo ID
+
+```http
+GET /api/service-pricings/{id}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "id": "e3b0c442-...",
+  "carrierId": "f4c1d2e3-...",
+  "serviceType": "Consolidation",
+  "originCountry": "INDO",
+  "destinationCountry": "VN",
+  "unitType": "KG",
+  "price": 45000.0,
+  "currency": "VND",
+  "effectiveDate": "2026-06-01T00:00:00Z"
+}
+```
+
+### 25.3. Thêm cấu hình bảng giá dịch vụ mới (Admin)
+
+```http
+POST /api/service-pricings
+Authorization: Bearer {accessToken}
+```
+
+**Body Request:**
+
+```json
+{
+  "carrierId": "f4c1d2e3-...",
+  "serviceType": "Consolidation",
+  "originCountry": "INDO",
+  "destinationCountry": "VN",
+  "unitType": "KG",
+  "price": 45000.0,
+  "currency": "VND",
+  "effectiveDate": "2026-06-01T00:00:00Z"
+}
+```
+
+**Response thành công (201 Created):** Trả về đối tượng vừa tạo kèm header `Location`.
+
+### 25.4. Cập nhật cấu hình bảng giá dịch vụ (Admin)
+
+```http
+PUT /api/service-pricings/{id}
+Authorization: Bearer {accessToken}
+```
+
+**Body Request:**
+
+```json
+{
+  "carrierId": "f4c1d2e3-...",
+  "serviceType": "Consolidation",
+  "originCountry": "INDO",
+  "destinationCountry": "VN",
+  "unitType": "KG",
+  "price": 48000.0,
+  "currency": "VND",
+  "effectiveDate": "2026-07-01T00:00:00Z"
+}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Cập nhật bảng giá dịch vụ thành công."
+}
+```
+
+### 25.5. Xóa cấu hình bảng giá dịch vụ (Admin)
+
+```http
+DELETE /api/service-pricings/{id}
+Authorization: Bearer {accessToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Xóa bảng giá dịch vụ thành công."
+}
+```
+
+---
+
+## 26. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -2373,6 +2499,9 @@ Authorization: Bearer {accessToken}
 | `/admin/pricing-rules` | `GET /api/pricing-rules` |
 | `/admin/pricing-rules/create` | `POST /api/pricing-rules` |
 | `/admin/pricing-rules/{id}/edit` | `PUT /api/pricing-rules/{id}` |
+| `/admin/service-pricings` | `GET /api/service-pricings` |
+| `/admin/service-pricings/create` | `POST /api/service-pricings` |
+| `/admin/service-pricings/{id}/edit` | `PUT /api/service-pricings/{id}` |
 | `/warehouse/check-in` | `POST /api/parcels/check-in` |
 | `/warehouse/pending-putaway` | `GET /api/parcels/pending-putaway` |
 | `/warehouse/put-away` | `PUT /api/parcels/{parcelId}/put-away` |
