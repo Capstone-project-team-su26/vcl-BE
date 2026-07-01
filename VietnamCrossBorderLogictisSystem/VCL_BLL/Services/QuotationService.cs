@@ -36,6 +36,58 @@ namespace VCL_BLL.Services
             _unitOfWork = unitOfWork;
         }
 
+        /// <summary>
+        /// Lấy cân nhỏ nhất (minimum weight) cấu hình trong PricingRules cho matched pricing, mặc định là 1.0kg.
+        /// </summary>
+        private decimal GetMinimumWeight(IEnumerable<PricingRule> activeRules, ServicePricing matchedPricing)
+        {
+            decimal minimumWeight = 1.0m;
+            if (matchedPricing == null) return minimumWeight;
+
+            var minWeightRule = activeRules.FirstOrDefault(r => 
+                (r.ServicePricingId == matchedPricing.Id || r.ServicePricingId == null) &&
+                (string.Equals(r.ConditionType, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(r.RuleType, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(r.RuleCode, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase))
+            );
+
+            if (minWeightRule != null)
+            {
+                if (minWeightRule.Value > 0)
+                {
+                    minimumWeight = minWeightRule.Value;
+                }
+                else if (decimal.TryParse(minWeightRule.ConditionValue, out var val))
+                {
+                    minimumWeight = val;
+                }
+            }
+            return minimumWeight;
+        }
+
+        /// <summary>
+        /// Ước tính phí vận chuyển nội địa từ PricingRules.
+        /// </summary>
+        private decimal GetDomesticShippingFeeEstimate(IEnumerable<PricingRule> activeRules, ServicePricing matchedPricing)
+        {
+            decimal domesticFee = 0m;
+            if (matchedPricing == null) return domesticFee;
+
+            var domesticRule = activeRules.FirstOrDefault(r =>
+                (r.ServicePricingId == matchedPricing.Id || r.ServicePricingId == null) &&
+                (string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(r.ConditionType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                 r.RuleName.Contains("nội địa", StringComparison.OrdinalIgnoreCase))
+            );
+
+            if (domesticRule != null)
+            {
+                domesticFee = domesticRule.Value;
+            }
+            return domesticFee;
+        }
+
         /// <inheritdoc/>
         public async Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId)
         {
@@ -86,10 +138,6 @@ namespace VCL_BLL.Services
                 });
             }
 
-            // 4. Tính Volumetric Weight & Chargeable Weight
-            var volumetricWeight = totalVolume / VolumetricDivisor;
-            var chargeableWeight = Math.Max(totalWeight, volumetricWeight);
-
             // 5. Tìm customer & route
             var customerRepo = _unitOfWork.Repository<Customer>();
             var customer = order.CustomerId.HasValue
@@ -127,10 +175,19 @@ namespace VCL_BLL.Services
                     .FirstOrDefault();
             }
 
+            // Fetch pricing rules
+            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
+            var allRules = await pricingRuleRepo.GetAllAsync();
+            var activeRules = allRules
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
+            var volumetricWeight = totalVolume / VolumetricDivisor;
+            var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
+            var chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
+
             decimal estimatedFreightCharge;
-            decimal baseServiceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
-                ? ExpressServiceFee
-                : ConsolidationServiceFee;
 
             if (matchedPricing != null && matchedPricing.Price.HasValue)
             {
@@ -144,137 +201,151 @@ namespace VCL_BLL.Services
                 estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
             }
 
-            // 6b. Tìm và áp dụng các rule phụ phí từ PricingRule
-            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
-            var allRules = await pricingRuleRepo.GetAllAsync();
-            var activeRules = allRules
-                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            decimal serviceFee;
+            decimal taxAndDuty;
+            decimal totalEstimatedCost;
 
-            decimal totalSurcharges = 0m;
-            foreach (var rule in activeRules)
+            bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
+                                 string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
+
+            if (isConsignment)
             {
-                // Nếu rule liên kết với một ServicePricing cụ thể, kiểm tra xem có khớp không
-                if (rule.ServicePricingId.HasValue)
-                {
-                    if (matchedPricing == null || matchedPricing.Id != rule.ServicePricingId.Value)
-                    {
-                        continue; // Không khớp dịch vụ cụ thể
-                    }
-                }
+                var domesticShippingFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
+                serviceFee = domesticShippingFee;
+                taxAndDuty = 0m;
+                totalEstimatedCost = estimatedFreightCharge + serviceFee;
+            }
+            else
+            {
+                decimal baseServiceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                    ? ExpressServiceFee
+                    : ConsolidationServiceFee;
 
-                // Kiểm tra điều kiện áp dụng
-                bool isConditionMet = false;
-                if (string.IsNullOrWhiteSpace(rule.ConditionType) || string.Equals(rule.ConditionType, "ALWAYS", StringComparison.OrdinalIgnoreCase))
+                decimal totalSurcharges = 0m;
+                foreach (var rule in activeRules)
                 {
-                    isConditionMet = true;
-                }
-                else if (string.Equals(rule.ConditionType, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (decimal.TryParse(rule.ConditionValue, out var minWeight))
+                    // Nếu rule liên kết với một ServicePricing cụ thể, kiểm tra xem có khớp không
+                    if (rule.ServicePricingId.HasValue)
                     {
-                        isConditionMet = chargeableWeight >= minWeight;
+                        if (matchedPricing == null || matchedPricing.Id != rule.ServicePricingId.Value)
+                        {
+                            continue; // Không khớp dịch vụ cụ thể
+                        }
                     }
-                }
-                else if (string.Equals(rule.ConditionType, "MIN_VOLUME", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (decimal.TryParse(rule.ConditionValue, out var minVolume))
-                    {
-                        var totalCbm = totalVolume / 1000000m;
-                        isConditionMet = totalCbm >= minVolume;
-                    }
-                }
-                else if (string.Equals(rule.ConditionType, "MIN_DECLARED_VALUE", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (decimal.TryParse(rule.ConditionValue, out var minVal))
-                    {
-                        isConditionMet = totalDeclaredValue >= minVal;
-                    }
-                }
-                else if (string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
-                {
-                    isConditionMet = order.RequiresInspection;
-                }
-                else if (string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
-                {
-                    var note = order.Note?.ToLower() ?? string.Empty;
-                    isConditionMet = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
-                }
 
-                // Xác định xem rule có được áp dụng hay không
-                bool isApplicable = false;
-                if (rule.IsRequired)
-                {
-                    isApplicable = isConditionMet;
-                }
-                else
-                {
-                    // Phụ phí tùy chọn - áp dụng nếu được yêu cầu rõ ràng hoặc note khớp
-                    if (string.Equals(rule.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
+                    // Kiểm tra điều kiện áp dụng
+                    bool isConditionMet = false;
+                    if (string.IsNullOrWhiteSpace(rule.ConditionType) || string.Equals(rule.ConditionType, "ALWAYS", StringComparison.OrdinalIgnoreCase))
                     {
-                        isApplicable = order.RequiresInspection;
+                        isConditionMet = true;
                     }
-                    else if (string.Equals(rule.RuleType, "WOODEN_BOX", StringComparison.OrdinalIgnoreCase) ||
-                             string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
+                    else if (string.Equals(rule.ConditionType, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (decimal.TryParse(rule.ConditionValue, out var minWeight))
+                        {
+                            isConditionMet = chargeableWeight >= minWeight;
+                        }
+                    }
+                    else if (string.Equals(rule.ConditionType, "MIN_VOLUME", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (decimal.TryParse(rule.ConditionValue, out var minVolume))
+                        {
+                            var totalCbm = totalVolume / 1000000m;
+                            isConditionMet = totalCbm >= minVolume;
+                        }
+                    }
+                    else if (string.Equals(rule.ConditionType, "MIN_DECLARED_VALUE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (decimal.TryParse(rule.ConditionValue, out var minVal))
+                        {
+                            isConditionMet = totalDeclaredValue >= minVal;
+                        }
+                    }
+                    else if (string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isConditionMet = order.RequiresInspection;
+                    }
+                    else if (string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
                     {
                         var note = order.Note?.ToLower() ?? string.Empty;
-                        isApplicable = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
+                        isConditionMet = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
                     }
-                    else if (string.Equals(rule.RuleType, "INSURANCE", StringComparison.OrdinalIgnoreCase))
+
+                    // Xác định xem rule có được áp dụng hay không
+                    bool isApplicable = false;
+                    if (rule.IsRequired)
                     {
-                        var note = order.Note?.ToLower() ?? string.Empty;
-                        isApplicable = note.Contains("insurance") || note.Contains("bảo hiểm") || isConditionMet;
+                        isApplicable = isConditionMet;
                     }
                     else
                     {
-                        var note = order.Note?.ToLower() ?? string.Empty;
-                        isApplicable = !string.IsNullOrWhiteSpace(rule.RuleCode) && note.Contains(rule.RuleCode.ToLower());
+                        // Phụ phí tùy chọn - áp dụng nếu được yêu cầu rõ ràng hoặc note khớp
+                        if (string.Equals(rule.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isApplicable = order.RequiresInspection;
+                        }
+                        else if (string.Equals(rule.RuleType, "WOODEN_BOX", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var note = order.Note?.ToLower() ?? string.Empty;
+                            isApplicable = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
+                        }
+                        else if (string.Equals(rule.RuleType, "INSURANCE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var note = order.Note?.ToLower() ?? string.Empty;
+                            isApplicable = note.Contains("insurance") || note.Contains("bảo hiểm") || isConditionMet;
+                        }
+                        else
+                        {
+                            var note = order.Note?.ToLower() ?? string.Empty;
+                            isApplicable = !string.IsNullOrWhiteSpace(rule.RuleCode) && note.Contains(rule.RuleCode.ToLower());
+                        }
+                    }
+
+                    if (isApplicable)
+                    {
+                        decimal surchargeAmount = 0m;
+                        if (string.Equals(rule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
+                        {
+                            surchargeAmount = rule.Value;
+                        }
+                        else if (string.Equals(rule.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            surchargeAmount = totalDeclaredValue * (rule.Value / 100m);
+                        }
+                        else if (string.Equals(rule.CalculationType, "PER_KG", StringComparison.OrdinalIgnoreCase))
+                        {
+                            surchargeAmount = chargeableWeight * rule.Value;
+                        }
+                        else if (string.Equals(rule.CalculationType, "PER_CBM", StringComparison.OrdinalIgnoreCase))
+                        {
+                            surchargeAmount = (totalVolume / 1000000m) * rule.Value;
+                        }
+                        else if (string.Equals(rule.CalculationType, "PER_PRODUCT", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var totalQty = orderItems.Sum(item => item.Quantity ?? 1);
+                            surchargeAmount = totalQty * rule.Value;
+                        }
+
+                        // Áp dụng giới hạn Min/Max nếu có cấu hình
+                        if (rule.MinAmount.HasValue && surchargeAmount < rule.MinAmount.Value)
+                        {
+                            surchargeAmount = rule.MinAmount.Value;
+                        }
+                        if (rule.MaxAmount.HasValue && surchargeAmount > rule.MaxAmount.Value)
+                        {
+                            surchargeAmount = rule.MaxAmount.Value;
+                        }
+
+                        totalSurcharges += surchargeAmount;
                     }
                 }
 
-                if (isApplicable)
-                {
-                    decimal surchargeAmount = 0m;
-                    if (string.Equals(rule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
-                    {
-                        surchargeAmount = rule.Value;
-                    }
-                    else if (string.Equals(rule.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
-                    {
-                        surchargeAmount = totalDeclaredValue * (rule.Value / 100m);
-                    }
-                    else if (string.Equals(rule.CalculationType, "PER_KG", StringComparison.OrdinalIgnoreCase))
-                    {
-                        surchargeAmount = chargeableWeight * rule.Value;
-                    }
-                    else if (string.Equals(rule.CalculationType, "PER_CBM", StringComparison.OrdinalIgnoreCase))
-                    {
-                        surchargeAmount = (totalVolume / 1000000m) * rule.Value;
-                    }
-                    else if (string.Equals(rule.CalculationType, "PER_PRODUCT", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var totalQty = orderItems.Sum(item => item.Quantity ?? 1);
-                        surchargeAmount = totalQty * rule.Value;
-                    }
-
-                    // Áp dụng giới hạn Min/Max nếu có cấu hình
-                    if (rule.MinAmount.HasValue && surchargeAmount < rule.MinAmount.Value)
-                    {
-                        surchargeAmount = rule.MinAmount.Value;
-                    }
-                    if (rule.MaxAmount.HasValue && surchargeAmount > rule.MaxAmount.Value)
-                    {
-                        surchargeAmount = rule.MaxAmount.Value;
-                    }
-
-                    totalSurcharges += surchargeAmount;
-                }
+                serviceFee = baseServiceFee + totalSurcharges;
+                taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
+                totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
             }
-
-            decimal serviceFee = baseServiceFee + totalSurcharges;
-            var taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
-            var totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
 
             // 7. Tạo Quotation record trong DB
             var now = DateTime.UtcNow;
@@ -287,7 +358,7 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = estimatedFreightCharge,
                 ServiceFee = serviceFee,
                 TaxAndDuty = taxAndDuty,
-                TotalVolume = totalVolume,
+                TotalVolume = totalVolume / 1000000m,
                 CreatedAt = now,
                 ExpiredAt = now.AddDays(QuotationValidDays)
             };
@@ -297,7 +368,7 @@ namespace VCL_BLL.Services
 
             // Cập nhật tổng cân nặng & thể tích trên Order
             order.TotalWeight = totalWeight;
-            order.TotalVolume = totalVolume;
+            order.TotalVolume = totalVolume / 1000000m;
             orderRepo.Update(order);
 
             await _unitOfWork.SaveChangesAsync();
@@ -311,7 +382,7 @@ namespace VCL_BLL.Services
                 QuoteType = quotation.QuoteType,
                 Status = quotation.Status,
                 TotalWeight = totalWeight,
-                TotalVolume = totalVolume,
+                TotalVolume = totalVolume / 1000000m,
                 VolumetricWeight = Math.Round(volumetricWeight, 2),
                 ChargeableWeight = Math.Round(chargeableWeight, 2),
                 EstimatedFreightCharge = estimatedFreightCharge,
@@ -430,7 +501,11 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
 
             decimal totalWeight = request.WeightKg ?? 0m;
-            decimal totalVolume = request.VolumeM3 ?? 0m;
+            decimal totalVolume = 0m;
+            if (request.VolumeM3.HasValue)
+            {
+                totalVolume = request.VolumeM3.Value * 1000000m; // Convert m³ to cm³
+            }
             decimal totalDeclaredValue = request.DeclaredValue ?? 0m;
 
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
@@ -484,8 +559,163 @@ namespace VCL_BLL.Services
                 }
             }
 
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customer = order.CustomerId.HasValue
+                ? await customerRepo.GetByIdAsync(order.CustomerId.Value)
+                : null;
+            var customerCountry = customer?.Country;
+
+            var consignmentType = request.ServiceType ?? order.ConsignmentType ?? "Express";
+            var route = order.Route ?? customerCountry;
+
+            var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
+            var allPricings = await servicePricingRepo.GetAllAsync();
+
+            var matchedPricing = allPricings
+                .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
+                .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                .OrderByDescending(p => p.EffectiveDate)
+                .FirstOrDefault(p =>
+                    string.IsNullOrWhiteSpace(route) ||
+                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route, StringComparison.OrdinalIgnoreCase) ||
+                    (p.OriginCountry != null && route.Contains(p.OriginCountry, StringComparison.OrdinalIgnoreCase)) ||
+                    (p.DestinationCountry != null && route.Contains(p.DestinationCountry, StringComparison.OrdinalIgnoreCase))
+                );
+
+            if (matchedPricing == null)
+            {
+                matchedPricing = allPricings
+                    .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
+                    .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                    .OrderByDescending(p => p.EffectiveDate)
+                    .FirstOrDefault();
+            }
+
+            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
+            var allRules = await pricingRuleRepo.GetAllAsync();
+            var activeRules = allRules
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
             var volumetricWeight = totalVolume / VolumetricDivisor;
-            var chargeableWeight = Math.Max(totalWeight, volumetricWeight);
+            var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
+            var chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
+
+            decimal estimatedFreightCharge;
+
+            if (matchedPricing != null && matchedPricing.Price.HasValue)
+            {
+                estimatedFreightCharge = Math.Round(chargeableWeight * matchedPricing.Price.Value, 2);
+            }
+            else
+            {
+                var freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                    ? DefaultExpressRate
+                    : DefaultConsolidationRate;
+                estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
+            }
+
+            decimal serviceFee;
+            decimal taxAndDuty;
+            decimal totalEstimatedCost;
+
+            bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
+                                 string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
+
+            if (isConsignment)
+            {
+                var domesticShippingFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
+                serviceFee = domesticShippingFee;
+                taxAndDuty = 0m;
+                totalEstimatedCost = estimatedFreightCharge + serviceFee;
+            }
+            else
+            {
+                decimal baseServiceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                    ? ExpressServiceFee
+                    : ConsolidationServiceFee;
+
+                decimal totalSurcharges = 0m;
+                foreach (var rule in activeRules)
+                {
+                    if (rule.ServicePricingId.HasValue && (matchedPricing == null || matchedPricing.Id != rule.ServicePricingId.Value))
+                        continue;
+
+                    bool isConditionMet = false;
+                    if (string.IsNullOrWhiteSpace(rule.ConditionType) || string.Equals(rule.ConditionType, "ALWAYS", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isConditionMet = true;
+                    }
+                    else if (string.Equals(rule.ConditionType, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (decimal.TryParse(rule.ConditionValue, out var minWeight))
+                            isConditionMet = chargeableWeight >= minWeight;
+                    }
+                    else if (string.Equals(rule.ConditionType, "MIN_VOLUME", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (decimal.TryParse(rule.ConditionValue, out var minVolume))
+                            isConditionMet = (totalVolume / 1000000m) >= minVolume;
+                    }
+                    else if (string.Equals(rule.ConditionType, "MIN_DECLARED_VALUE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (decimal.TryParse(rule.ConditionValue, out var minVal))
+                            isConditionMet = totalDeclaredValue >= minVal;
+                    }
+                    else if (string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isConditionMet = order.RequiresInspection;
+                    }
+
+                    bool isApplicable = rule.IsRequired ? isConditionMet : false;
+
+                    if (isApplicable)
+                    {
+                        decimal surchargeAmount = 0m;
+                        if (string.Equals(rule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
+                            surchargeAmount = rule.Value;
+                        else if (string.Equals(rule.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
+                            surchargeAmount = totalDeclaredValue * (rule.Value / 100m);
+                        else if (string.Equals(rule.CalculationType, "PER_KG", StringComparison.OrdinalIgnoreCase))
+                            surchargeAmount = chargeableWeight * rule.Value;
+
+                        totalSurcharges += surchargeAmount;
+                    }
+                }
+
+                serviceFee = baseServiceFee + totalSurcharges;
+                taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
+                totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
+            }
+
+            return new EstimateQuotationResponse
+            {
+                QuotationId = Guid.Empty,
+                OrderId = orderId,
+                ConsignmentType = consignmentType,
+                QuoteType = "ESTIMATE",
+                Status = "DRAFT",
+                TotalWeight = totalWeight,
+                TotalVolume = totalVolume / 1000000m,
+                VolumetricWeight = Math.Round(volumetricWeight, 2),
+                ChargeableWeight = Math.Round(chargeableWeight, 2),
+                EstimatedFreightCharge = estimatedFreightCharge,
+                ServiceFee = serviceFee,
+                TaxAndDuty = taxAndDuty,
+                TotalEstimatedCost = totalEstimatedCost,
+                CreatedAt = DateTime.UtcNow,
+                ExpiredAt = DateTime.UtcNow.AddDays(QuotationValidDays),
+                Items = itemDetails
+            };
+        }
+
+        /// <inheritdoc/>
+        public async Task<QuotationActionResponse> SendQuotationAsync(Guid orderId, CreateQuotationRequest request)
+        {
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
 
             var customerRepo = _unitOfWork.Repository<Customer>();
             var customer = order.CustomerId.HasValue
@@ -519,124 +749,115 @@ namespace VCL_BLL.Services
                     .FirstOrDefault();
             }
 
-            decimal estimatedFreightCharge;
-            decimal baseServiceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
-                ? ExpressServiceFee
-                : ConsolidationServiceFee;
-
-            if (matchedPricing != null && matchedPricing.Price.HasValue)
-            {
-                estimatedFreightCharge = Math.Round(chargeableWeight * matchedPricing.Price.Value, 2);
-            }
-            else
-            {
-                var freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
-                    ? DefaultExpressRate
-                    : DefaultConsolidationRate;
-                estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
-            }
-
             var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
             var allRules = await pricingRuleRepo.GetAllAsync();
             var activeRules = allRules
                 .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            decimal totalSurcharges = 0m;
-            foreach (var rule in activeRules)
+            // Calculate actual measured data from warehouse parcels
+            decimal totalActualWeight = 0m;
+            decimal totalVolumetricWeight = 0m;
+            decimal totalVolumeCm3 = 0m;
+            decimal domesticShippingFee = 0m;
+
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var parcels = (await parcelRepo.GetAllAsync())
+                .Where(p => p.ConsignmentId == orderId)
+                .ToList();
+
+            if (parcels.Any())
             {
-                if (rule.ServicePricingId.HasValue && (matchedPricing == null || matchedPricing.Id != rule.ServicePricingId.Value))
-                    continue;
+                totalActualWeight = parcels.Sum(p => p.ActualWeight ?? 0m);
+                totalVolumetricWeight = parcels.Sum(p => p.VolumetricWeight ?? 
+                    (((p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m)) / VolumetricDivisor));
+                totalVolumeCm3 = parcels.Sum(p => (p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m));
 
-                bool isConditionMet = false;
-                if (string.IsNullOrWhiteSpace(rule.ConditionType) || string.Equals(rule.ConditionType, "ALWAYS", StringComparison.OrdinalIgnoreCase))
-                {
-                    isConditionMet = true;
-                }
-                else if (string.Equals(rule.ConditionType, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (decimal.TryParse(rule.ConditionValue, out var minWeight))
-                        isConditionMet = chargeableWeight >= minWeight;
-                }
-                else if (string.Equals(rule.ConditionType, "MIN_VOLUME", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (decimal.TryParse(rule.ConditionValue, out var minVolume))
-                        isConditionMet = (totalVolume / 1000000m) >= minVolume;
-                }
-                else if (string.Equals(rule.ConditionType, "MIN_DECLARED_VALUE", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (decimal.TryParse(rule.ConditionValue, out var minVal))
-                        isConditionMet = totalDeclaredValue >= minVal;
-                }
-                else if (string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
-                {
-                    isConditionMet = order.RequiresInspection;
-                }
+                var parcelIds = parcels.Select(p => p.Id).ToList();
+                var waybillRepo = _unitOfWork.Repository<DomesticWaybill>();
+                var allWaybills = await waybillRepo.GetAllAsync();
+                domesticShippingFee = allWaybills
+                    .Where(w => w.ParcelId.HasValue && parcelIds.Contains(w.ParcelId.Value))
+                    .Sum(w => w.DeliveryFee ?? 0m);
+            }
+            else
+            {
+                // Fallback to request details or items
+                totalActualWeight = request.WeightKg ?? order.TotalWeight ?? 0m;
 
-                bool isApplicable = rule.IsRequired ? isConditionMet : false;
+                var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+                var allItems = await orderItemRepo.GetAllAsync();
+                var orderItems = allItems.Where(i => i.OrderId == orderId).ToList();
 
-                if (isApplicable)
+                if (request.VolumeM3.HasValue)
                 {
-                    decimal surchargeAmount = 0m;
-                    if (string.Equals(rule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
-                        surchargeAmount = rule.Value;
-                    else if (string.Equals(rule.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
-                        surchargeAmount = totalDeclaredValue * (rule.Value / 100m);
-                    else if (string.Equals(rule.CalculationType, "PER_KG", StringComparison.OrdinalIgnoreCase))
-                        surchargeAmount = chargeableWeight * rule.Value;
-
-                    totalSurcharges += surchargeAmount;
+                    totalVolumeCm3 = request.VolumeM3.Value * 1000000m;
                 }
+                else if (order.TotalVolume.HasValue)
+                {
+                    totalVolumeCm3 = order.TotalVolume.Value * 1000000m;
+                }
+                else
+                {
+                    totalVolumeCm3 = orderItems.Sum(item => (item.Length ?? 0m) * (item.Width ?? 0m) * (item.Height ?? 0m));
+                }
+                totalVolumetricWeight = totalVolumeCm3 / VolumetricDivisor;
+
+                domesticShippingFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
             }
 
-            decimal serviceFee = baseServiceFee + totalSurcharges;
-            var taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
-            var totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
+            var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
+            var netWeight = Math.Max(totalActualWeight, Math.Max(totalVolumetricWeight, minimumWeight));
 
-            return new EstimateQuotationResponse
+            decimal freightRate;
+            if (matchedPricing != null && matchedPricing.Price.HasValue)
             {
-                QuotationId = Guid.Empty,
-                OrderId = orderId,
-                ConsignmentType = consignmentType,
-                QuoteType = "ESTIMATE",
-                Status = "DRAFT",
-                TotalWeight = totalWeight,
-                TotalVolume = totalVolume,
-                VolumetricWeight = Math.Round(volumetricWeight, 2),
-                ChargeableWeight = Math.Round(chargeableWeight, 2),
-                EstimatedFreightCharge = estimatedFreightCharge,
-                ServiceFee = serviceFee,
-                TaxAndDuty = taxAndDuty,
-                TotalEstimatedCost = totalEstimatedCost,
-                CreatedAt = DateTime.UtcNow,
-                ExpiredAt = DateTime.UtcNow.AddDays(QuotationValidDays),
-                Items = itemDetails
-            };
-        }
+                freightRate = matchedPricing.Price.Value;
+            }
+            else
+            {
+                freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                    ? DefaultExpressRate
+                    : DefaultConsolidationRate;
+            }
 
-        /// <inheritdoc/>
-        public async Task<QuotationActionResponse> SendQuotationAsync(Guid orderId, CreateQuotationRequest request)
-        {
-            var orderRepo = _unitOfWork.Repository<Order>();
-            var order = await orderRepo.GetByIdAsync(orderId);
-            if (order == null)
-                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
+            decimal estimatedFreightCharge;
+            decimal serviceFee;
+            decimal taxAndDuty;
+            decimal totalEstimatedCost;
+
+            bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
+                                 string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
 
             var quotationDetails = request.Quotation;
-            var now = DateTime.UtcNow;
+            if (isConsignment)
+            {
+                estimatedFreightCharge = Math.Round(netWeight * freightRate, 2);
+                serviceFee = domesticShippingFee;
+                taxAndDuty = 0m;
+                totalEstimatedCost = estimatedFreightCharge + serviceFee;
+            }
+            else
+            {
+                estimatedFreightCharge = quotationDetails?.EstimatedFreightCharge ?? 0m;
+                serviceFee = quotationDetails?.ServiceFee ?? 0m;
+                taxAndDuty = quotationDetails?.TotalEstimatedCost.HasValue ?? false
+                    ? Math.Max(0m, quotationDetails.TotalEstimatedCost.Value - (quotationDetails.EstimatedFreightCharge ?? 0m) - (quotationDetails.ServiceFee ?? 0m))
+                    : 0m;
+                totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
+            }
 
+            var now = DateTime.UtcNow;
             var quotation = new Quotation
             {
                 Id = Guid.NewGuid(),
                 OrderId = orderId,
                 QuoteType = "OFFICIAL",
                 Status = "PENDING",
-                EstimatedFreightCharge = quotationDetails?.EstimatedFreightCharge ?? 0m,
-                ServiceFee = quotationDetails?.ServiceFee ?? 0m,
-                TaxAndDuty = quotationDetails?.TotalEstimatedCost.HasValue ?? false
-                    ? Math.Max(0m, quotationDetails.TotalEstimatedCost.Value - (quotationDetails.EstimatedFreightCharge ?? 0m) - (quotationDetails.ServiceFee ?? 0m))
-                    : 0m,
-                TotalVolume = request.VolumeM3 ?? order.TotalVolume ?? 0m,
+                EstimatedFreightCharge = estimatedFreightCharge,
+                ServiceFee = serviceFee,
+                TaxAndDuty = taxAndDuty,
+                TotalVolume = totalVolumeCm3 / 1000000m,
                 CreatedAt = now,
                 ExpiredAt = now.AddDays(QuotationValidDays)
             };
@@ -645,8 +866,8 @@ namespace VCL_BLL.Services
             await quotationRepo.AddAsync(quotation);
 
             order.Status = "QUOTATION_SENT";
-            if (request.WeightKg.HasValue) order.TotalWeight = request.WeightKg.Value;
-            if (request.VolumeM3.HasValue) order.TotalVolume = request.VolumeM3.Value;
+            order.TotalWeight = totalActualWeight > 0m ? totalActualWeight : order.TotalWeight;
+            order.TotalVolume = totalVolumeCm3 > 0m ? totalVolumeCm3 / 1000000m : order.TotalVolume;
             orderRepo.Update(order);
 
             await _unitOfWork.SaveChangesAsync();
