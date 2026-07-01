@@ -114,6 +114,7 @@ namespace VCL_BLL.Services
 
             foreach (var item in orderItems)
             {
+                var qty = item.Quantity ?? 1;
                 var itemWeight = item.Weight ?? 0m;
                 var itemLength = item.Length ?? 0m;
                 var itemWidth = item.Width ?? 0m;
@@ -121,9 +122,9 @@ namespace VCL_BLL.Services
                 var itemVolume = itemLength * itemWidth * itemHeight;
                 var itemDeclaredValue = item.DeclaredValue ?? 0m;
 
-                totalWeight += itemWeight;
-                totalVolume += itemVolume;
-                totalDeclaredValue += itemDeclaredValue;
+                totalWeight += itemWeight * qty;
+                totalVolume += itemVolume * qty;
+                totalDeclaredValue += itemDeclaredValue * qty;
 
                 itemDetails.Add(new OrderItemDetail
                 {
@@ -517,6 +518,7 @@ namespace VCL_BLL.Services
             {
                 foreach (var item in orderItems)
                 {
+                    var qty = item.Quantity ?? 1;
                     var itemWeight = item.Weight ?? 0m;
                     var itemLength = item.Length ?? 0m;
                     var itemWidth = item.Width ?? 0m;
@@ -524,9 +526,9 @@ namespace VCL_BLL.Services
                     var itemVolume = itemLength * itemWidth * itemHeight;
                     var itemDeclaredValue = item.DeclaredValue ?? 0m;
 
-                    totalWeight += itemWeight;
-                    totalVolume += itemVolume;
-                    totalDeclaredValue += itemDeclaredValue;
+                    totalWeight += itemWeight * qty;
+                    totalVolume += itemVolume * qty;
+                    totalDeclaredValue += itemDeclaredValue * qty;
 
                     itemDetails.Add(new OrderItemDetail
                     {
