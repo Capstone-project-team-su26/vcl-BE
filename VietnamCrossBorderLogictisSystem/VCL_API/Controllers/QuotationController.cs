@@ -192,5 +192,29 @@ namespace VCL_API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+        /// <summary>
+        /// Khách hàng xem thông tin báo giá mới nhất của đơn hàng.
+        /// Trả về báo giá ở trạng thái SENT, PENDING, DRAFT hoặc ACCEPTED.
+        /// </summary>
+        [HttpGet("api/orders/{orderId}/quotation")]
+        [ProducesResponseType(typeof(QuotationDetailResponse), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetQuotationByOrderId(Guid orderId)
+        {
+            try
+            {
+                var result = await _quotationService.GetQuotationByOrderIdAsync(orderId);
+                return Ok(new
+                {
+                    message = "Lấy thông tin báo giá thành công.",
+                    data = result
+                });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
     }
 }

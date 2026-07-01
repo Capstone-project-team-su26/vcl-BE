@@ -133,4 +133,49 @@ namespace VCL_BLL.DTOs
     {
         public string RejectionReason { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// Response trả về thông tin báo giá cho khách hàng xem.
+    /// </summary>
+    public class QuotationDetailResponse
+    {
+        public Guid QuotationId { get; set; }
+        public Guid OrderId { get; set; }
+        public string QuoteType { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string ConsignmentType { get; set; } = string.Empty;
+
+        /// <summary>Tổng cân nặng thực tế (kg)</summary>
+        public decimal TotalWeight { get; set; }
+
+        /// <summary>Tổng thể tích (m³)</summary>
+        public decimal TotalVolume { get; set; }
+
+        /// <summary>Cân nặng quy đổi thể tích (kg)</summary>
+        public decimal VolumetricWeight { get; set; }
+
+        /// <summary>Cân tính cước = MAX(ActualWeight, VolumetricWeight, MinWeight)</summary>
+        public decimal ChargeableWeight { get; set; }
+
+        /// <summary>Cước vận chuyển quốc tế</summary>
+        public decimal EstimatedFreightCharge { get; set; }
+
+        /// <summary>Phí dịch vụ / Phí nội địa</summary>
+        public decimal ServiceFee { get; set; }
+
+        /// <summary>Thuế & phí hải quan tạm tính</summary>
+        public decimal TaxAndDuty { get; set; }
+
+        /// <summary>Tổng chi phí</summary>
+        public decimal TotalEstimatedCost { get; set; }
+
+        /// <summary>Ngày tạo báo giá</summary>
+        public DateTime CreatedAt { get; set; }
+
+        /// <summary>Ngày hết hạn báo giá</summary>
+        public DateTime? ExpiredAt { get; set; }
+
+        /// <summary>Ghi chú của nhân viên sales</summary>
+        public string? SalesNote { get; set; }
+    }
 }

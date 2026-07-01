@@ -41,5 +41,11 @@ namespace VCL_BLL.Interface
         /// <param name="userId">ID của user đang đăng nhập (từ JWT)</param>
         /// <returns>Thông tin sau khi xác nhận</returns>
         Task<AcceptQuotationResponse> AcceptQuotationAsync(Guid quotationId, Guid userId);
+
+        /// <summary>
+        /// Lấy thông tin báo giá mới nhất (SENT/PENDING) theo đơn hàng để khách hàng xem.
+        /// </summary>
+        /// <param name="orderId">ID của đơn hàng</param>
+        Task<QuotationDetailResponse> GetQuotationByOrderIdAsync(Guid orderId);
     }
 }
