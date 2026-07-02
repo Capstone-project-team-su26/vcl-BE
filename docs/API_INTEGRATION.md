@@ -101,6 +101,16 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/warehouse-release-requests/{requestId}/picking-list` | Staff | Tạo phiếu picking cho yêu cầu xuất kho |
 | `PUT` | `/api/picking-lists/{pickingListId}/confirm` | WarehouseStaff | Xác nhận picking hàng khỏi vị trí kho |
 | `PUT` | `/api/warehouse-release-requests/{requestId}/complete` | WarehouseStaff | Xác nhận đóng gói và hoàn tất xuất kho |
+| `GET` | `/api/warehouses` | Admin | Lấy danh sách tất cả các kho vận hành |
+| `POST` | `/api/warehouses` | Admin | Tạo mới một kho vận hành |
+| `PUT` | `/api/warehouses/{id}` | Admin | Cập nhật thông tin kho vận hành |
+| `DELETE` | `/api/warehouses/{id}` | Admin | Xóa kho vận hành |
+| `GET` | `/api/warehouses/active` | Authenticated | Lấy danh sách các kho đang hoạt động |
+| `GET` | `/api/warehouses/{warehouseId}/locations` | Admin | Lấy danh sách vị trí lưu trữ trong kho |
+| `POST` | `/api/warehouses/{warehouseId}/locations` | Admin | Tạo mới vị trí lưu trữ trong kho |
+| `PUT` | `/api/warehouse-locations/{locationId}` | Admin | Cập nhật thông tin vị trí lưu trữ |
+| `DELETE` | `/api/warehouse-locations/{locationId}` | Admin | Xóa vị trí lưu trữ |
+| `GET` | `/api/warehouses/{warehouseId}/locations/active` | Authenticated | Lấy danh sách vị trí lưu trữ đang hoạt động |
 
 
 ## 4. Đăng ký khách hàng
@@ -1941,6 +1951,56 @@ export interface CompleteWroResponse {
 export interface CompleteWroDataResponse extends MessageResponse {
   data: CompleteWroResponse;
 }
+
+export interface WarehouseResponse {
+  id: string;
+  name: string;
+  code: string;
+  address: string;
+  warehouseType: string;
+  isActive: boolean;
+}
+
+export interface WarehouseListResponse {
+  items: WarehouseResponse[];
+}
+
+export interface WarehouseLocationResponse {
+  locationId: string;
+  binCode: string;
+  shelfId: string;
+  shelfCode: string;
+  zoneId: string;
+  zoneName: string;
+  warehouseId: string;
+  warehouseName: string;
+  maxVolume: number | null;
+  maxWeight: number | null;
+  isActive: boolean;
+  note: string;
+}
+
+export interface WarehouseLocationListResponse {
+  items: WarehouseLocationResponse[];
+}
+
+export interface CreateWarehouseRequest {
+  name: string;
+  code: string;
+  address: string;
+  warehouseType?: string;
+  isActive?: boolean;
+}
+
+export interface CreateLocationRequest {
+  zoneName: string;
+  shelfCode: string;
+  binCode: string;
+  maxVolume?: number;
+  maxWeight?: number;
+  isActive?: boolean;
+  note?: string;
+}
 ```
 
 ## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
@@ -2177,6 +2237,46 @@ export async function confirmPickingList(pickingListId: string, payload: Confirm
 
 export async function completeWroRequest(requestId: string, payload: CompleteWroRequest) {
   return api.put<CompleteWroDataResponse>(`/api/warehouse-release-requests/${requestId}/complete`, payload);
+}
+
+export async function getWarehouses(isActive?: boolean, search?: string) {
+  return api.get<WarehouseListResponse>('/api/warehouses', { params: { isActive, search } });
+}
+
+export async function getActiveWarehouses() {
+  return api.get<WarehouseListResponse>('/api/warehouses/active');
+}
+
+export async function createWarehouse(payload: CreateWarehouseRequest) {
+  return api.post<WarehouseResponse>('/api/warehouses', payload);
+}
+
+export async function updateWarehouse(id: string, payload: CreateWarehouseRequest) {
+  return api.put<WarehouseResponse>(`/api/warehouses/${id}`, payload);
+}
+
+export async function deleteWarehouse(id: string) {
+  return api.delete<MessageResponse>(`/api/warehouses/${id}`);
+}
+
+export async function getWarehouseLocations(warehouseId: string, isActive?: boolean) {
+  return api.get<WarehouseLocationListResponse>(`/api/warehouses/${warehouseId}/locations`, { params: { isActive } });
+}
+
+export async function createWarehouseLocation(warehouseId: string, payload: CreateLocationRequest) {
+  return api.post<WarehouseLocationResponse>(`/api/warehouses/${warehouseId}/locations`, payload);
+}
+
+export async function updateWarehouseLocation(locationId: string, payload: CreateLocationRequest) {
+  return api.put<WarehouseLocationResponse>(`/api/warehouse-locations/${locationId}`, payload);
+}
+
+export async function deleteWarehouseLocation(locationId: string) {
+  return api.delete<MessageResponse>(`/api/warehouse-locations/${locationId}`);
+}
+
+export async function getActiveWarehouseLocations(warehouseId: string) {
+  return api.get<WarehouseLocationListResponse>(`/api/warehouses/${warehouseId}/locations/active`);
 }
 ```
 
@@ -2670,6 +2770,184 @@ Authorization: Bearer {accessToken}
 {
   "message": "Xóa bảng giá dịch vụ thành công."
 }
+```
+
+---
+
+## 27. Quản lý kho và vị trí lưu trữ (Warehouse & Location Management)
+
+Admin quản lý các kho vận hành, thiết lập Zone/Shelf/Bin trong kho. Cung cấp API lấy danh sách kho/vị trí hoạt động (active) cho các nghiệp vụ check-in, put-away, picking, xuất kho và tạo lô vận chuyển.
+
+### 27.1. Lấy danh sách tất cả các kho vận hành (Admin)
+
+```http
+GET /api/warehouses
+Authorization: Bearer {adminToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "items": [
+    {
+      "id": "a1b2c3d4-...",
+      "name": "Kho Hà Nội",
+      "code": "WH-HAN",
+      "address": "Số 1 Đại Cồ Việt, Hà Nội",
+      "warehouseType": "DOMESTIC",
+      "isActive": true
+    }
+  ]
+}
+```
+
+### 27.2. Lấy danh sách kho đang hoạt động (Nghiệp vụ)
+
+Tất cả các tài khoản nhân viên (Admin, Sale, Staff, WarehouseStaff, Operations) đều có thể gọi để chọn kho đi, kho đến.
+
+```http
+GET /api/warehouses/active
+Authorization: Bearer {accessToken}
+```
+
+### 27.3. Tạo kho mới (Admin)
+
+```http
+POST /api/warehouses
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+
+{
+  "name": "Kho Hải Phòng",
+  "code": "WH-HPH",
+  "address": "Cảng Hải Phòng",
+  "warehouseType": "DOMESTIC",
+  "isActive": true
+}
+```
+
+**Ràng buộc:** Không cho tạo trùng mã kho (`code`). Nếu trùng trả về `400 Bad Request`.
+
+### 27.4. Cập nhật thông tin kho (Admin)
+
+```http
+PUT /api/warehouses/{warehouseId}
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+
+{
+  "name": "Kho Hải Phòng Cập Nhật",
+  "code": "WH-HPH",
+  "address": "Cảng Hải Phòng mới",
+  "warehouseType": "DOMESTIC",
+  "isActive": false
+}
+```
+
+**Ràng buộc:**
+- Không cho cập nhật trùng mã kho của kho khác.
+- Không cho vô hiệu hóa (`isActive = false`) nếu kho đó đang chứa hàng hóa lưu trữ có số lượng > 0, hoặc có yêu cầu xuất kho đang xử lý, hoặc có phiếu tiếp nhận hàng chưa hoàn tất. Trả về `400 Bad Request`.
+
+### 27.5. Xóa kho (Admin)
+
+```http
+DELETE /api/warehouses/{warehouseId}
+Authorization: Bearer {adminToken}
+```
+
+**Ràng buộc:** Không cho xóa kho đã có lịch sử kiện hàng hoặc lịch sử tồn kho. Trả về `400 Bad Request`.
+
+### 27.6. Lấy danh sách vị trí lưu trữ trong kho (Admin)
+
+```http
+GET /api/warehouses/{warehouseId}/locations
+Authorization: Bearer {adminToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "items": [
+    {
+      "locationId": "b1c2d3e4-...",
+      "binCode": "BIN-A-01",
+      "shelfId": "c1d2e3f4-...",
+      "shelfCode": "SHELF-A",
+      "zoneId": "d1e2f3a4-...",
+      "zoneName": "Zone A",
+      "warehouseId": "a1b2c3d4-...",
+      "warehouseName": "Kho Hà Nội",
+      "maxVolume": 100.00,
+      "maxWeight": 500.00,
+      "isActive": true,
+      "note": "Vị trí hàng thường"
+    }
+  ]
+}
+```
+
+### 27.7. Tạo vị trí lưu trữ mới (Admin)
+
+```http
+POST /api/warehouses/{warehouseId}/locations
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+
+{
+  "zoneName": "Zone A",
+  "shelfCode": "SHELF-A",
+  "binCode": "BIN-A-01",
+  "maxVolume": 100,
+  "maxWeight": 500,
+  "isActive": true,
+  "note": "Kệ A1 hàng dễ vỡ"
+}
+```
+
+**Ràng buộc:**
+- Tự động tìm hoặc tạo Zone/Shelf theo tên/mã gửi lên.
+- Không cho tạo trùng mã vị trí lưu trữ (`binCode`) trong cùng một kho. Nếu trùng trả về `400 Bad Request`.
+
+### 27.8. Cập nhật vị trí lưu trữ (Admin)
+
+```http
+PUT /api/warehouse-locations/{locationId}
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+
+{
+  "zoneName": "Zone A",
+  "shelfCode": "SHELF-A",
+  "binCode": "BIN-A-01-EDITED",
+  "maxVolume": 150,
+  "maxWeight": 600,
+  "isActive": false,
+  "note": "Đang bảo trì"
+}
+```
+
+**Ràng buộc:**
+- Không cho cập nhật trùng mã vị trí lưu trữ trong cùng một kho.
+- Không cho vô hiệu hóa (`isActive = false`) nếu vị trí đó đang chứa hàng hóa khả dụng (`Inventory.Quantity > 0`) hoặc đang liên kết với kiện hàng. Trả về `400 Bad Request`.
+
+### 27.9. Xóa vị trí lưu trữ (Admin)
+
+```http
+DELETE /api/warehouse-locations/{locationId}
+Authorization: Bearer {adminToken}
+```
+
+**Ràng buộc:** Không cho xóa vị trí đang chứa hàng hoặc liên kết với kiện hàng. Trả về `400 Bad Request`.
+
+### 27.10. Lấy danh sách vị trí đang hoạt động trong kho (Nghiệp vụ)
+
+Tất cả các tài khoản nhân viên đều có thể gọi khi thực hiện put-away hoặc picking.
+
+```http
+GET /api/warehouses/{warehouseId}/locations/active
+Authorization: Bearer {accessToken}
 ```
 
 ---
