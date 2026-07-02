@@ -10,5 +10,6 @@ namespace VCL_BLL.Interface
         Task<WroDetailResponseDto> GetWroRequestDetailAsync(Guid requestId, Guid userId, string role);
         Task<UpdateWroStatusResponseDto> UpdateWroStatusAsync(Guid requestId, Guid userId, string role, UpdateWroStatusRequestDto request);
         Task<PickingListResponseDto> CreatePickingListAsync(Guid requestId, Guid userId, string role);
+        Task<CompleteWroResponseDto> CompleteWroRequestAsync(Guid requestId, Guid userId, string role, CompleteWroRequestDto request);
     }
 }

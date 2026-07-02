@@ -583,5 +583,253 @@ namespace VCL_BLL.Services
                 Items = itemsResponse
             };
         }
+
+        public async Task<CompleteWroResponseDto> CompleteWroRequestAsync(
+            Guid requestId,
+            Guid userId,
+            string role,
+            CompleteWroRequestDto request)
+        {
+            if (request == null)
+            {
+                throw new ArgumentException("Yêu cầu hoàn tất xuất kho không được để trống.");
+            }
+
+            // 1. Phân quyền: Chỉ Warehouse Staff, Staff hoặc Operations được thao tác
+            var allowedRoles = new[] { "WarehouseStaff", "Staff", "OperationsManager", "Operations", "Admin" };
+            if (!allowedRoles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền hoàn tất xuất kho.");
+            }
+
+            // 2. Tìm yêu cầu xuất kho
+            var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
+            var wroRequest = await wroRequestRepo.GetByIdAsync(requestId);
+            if (wroRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
+            }
+
+            // 3. Chỉ hoàn tất xuất kho với yêu cầu đã PICKED hoặc PACKING
+            if (string.Equals(wroRequest.Status, "RELEASED", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Yêu cầu xuất kho này đã hoàn tất xuất kho trước đó.");
+            }
+
+            var validStatuses = new[] { "PICKED", "PACKING" };
+            if (!validStatuses.Any(s => string.Equals(s, wroRequest.Status, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ArgumentException($"Yêu cầu xuất kho chưa đủ điều kiện xuất kho. Trạng thái hiện tại: {wroRequest.Status}");
+            }
+
+            // 4. Lấy phiếu picking để xác nhận có phiếu và liên kết
+            var pickingListRepo = _unitOfWork.Repository<PickingList>();
+            var allPickingLists = await pickingListRepo.GetAllAsync();
+            var pickingList = allPickingLists.FirstOrDefault(pl => pl.WroRequestId == requestId);
+            if (pickingList == null)
+            {
+                throw new ArgumentException("Không tìm thấy phiếu picking liên kết với yêu cầu xuất kho này.");
+            }
+
+            // 5. Lấy danh sách hàng đã picking (RESERVED hoặc PICKED)
+            var pickingItemRepo = _unitOfWork.Repository<PickingItem>();
+            var allPickingItems = await pickingItemRepo.GetAllAsync();
+            var relatedPickingItems = allPickingItems.Where(pi => pi.PickingListId == pickingList.Id).ToList();
+
+            var wroItemRepo = _unitOfWork.Repository<WroItem>();
+            var allWroItems = await wroItemRepo.GetAllAsync();
+            var relatedWroItems = allWroItems.Where(wi => wi.WroRequestId == requestId).ToList();
+
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
+            var allBins = await binRepo.GetAllAsync();
+            var allWarehouses = await warehouseRepo.GetAllAsync();
+
+            // 6. Kiểm tra các InventoryId gửi lên có hợp lệ không
+            var pickedInventoryIds = relatedPickingItems.Select(pi => pi.InventoryId).ToHashSet();
+            foreach (var reqItem in request.Items)
+            {
+                if (!pickedInventoryIds.Contains(reqItem.InventoryId))
+                {
+                    throw new ArgumentException($"Tồn kho ID {reqItem.InventoryId} không nằm trong danh sách đã picking của yêu cầu xuất kho này.");
+                }
+            }
+
+            // 7. Kiểm tra số lượng đóng gói không vượt quá số lượng đã picking (RESERVED/PICKED)
+            foreach (var item in relatedPickingItems)
+            {
+                var reqItem = request.Items.FirstOrDefault(ri => ri.InventoryId == item.InventoryId);
+                var qShipped = reqItem?.Quantity ?? 0;
+
+                if (qShipped < 0)
+                {
+                    throw new ArgumentException("Số lượng xuất kho không được nhỏ hơn 0.");
+                }
+
+                if (qShipped > item.Quantity)
+                {
+                    throw new ArgumentException($"Số lượng xuất ({qShipped}) vượt quá số lượng đã picking ({item.Quantity}) cho tồn kho ID {item.InventoryId}.");
+                }
+            }
+
+            // 8. Cập nhật Inventory và các liên kết
+            var confirmedItemsResponse = new List<CompleteWroItemResponseDto>();
+            Guid? warehouseId = null;
+            string warehouseName = string.Empty;
+
+            foreach (var item in relatedPickingItems)
+            {
+                var reqItem = request.Items.FirstOrDefault(ri => ri.InventoryId == item.InventoryId);
+                var qShipped = reqItem?.Quantity ?? 0;
+                var qPicked = item.Quantity;
+
+                var inventoryRecord = await inventoryRepo.GetByIdAsync(item.InventoryId);
+                var wroItem = relatedWroItems.FirstOrDefault(wi => wi.InventoryId == item.InventoryId);
+
+                // Xác định thông tin Kho xuất hàng từ Bin của inventory đầu tiên có hợp lệ
+                if (inventoryRecord != null && !warehouseId.HasValue)
+                {
+                    var bin = allBins.FirstOrDefault(b => b.Id == inventoryRecord.BinId);
+                    if (bin != null && bin.WarehouseId.HasValue)
+                    {
+                        warehouseId = bin.WarehouseId.Value;
+                        var wh = allWarehouses.FirstOrDefault(w => w.Id == warehouseId.Value);
+                        warehouseName = wh?.WarehouseName ?? string.Empty;
+                    }
+                }
+
+                if (qShipped == 0)
+                {
+                    // Trả lại toàn bộ lượng picked về AVAILABLE
+                    await ReleaseInventoryToAvailableAsync(inventoryRecord, qPicked, inventoryRepo, allInventories);
+
+                    // Xóa liên kết
+                    pickingItemRepo.Delete(item);
+                    if (wroItem != null)
+                    {
+                        wroItemRepo.Delete(wroItem);
+                    }
+                    if (inventoryRecord != null)
+                    {
+                        inventoryRepo.Delete(inventoryRecord);
+                    }
+                }
+                else if (qShipped < qPicked)
+                {
+                    // Trả phần dư về AVAILABLE
+                    var qRemain = qPicked - qShipped;
+                    await ReleaseInventoryToAvailableAsync(inventoryRecord, qRemain, inventoryRepo, allInventories);
+
+                    // Cập nhật số lượng và trạng thái phần xuất
+                    if (inventoryRecord != null)
+                    {
+                        inventoryRecord.Quantity = qShipped;
+                        inventoryRecord.Status = "RELEASED";
+                        inventoryRepo.Update(inventoryRecord);
+                    }
+
+                    item.Quantity = qShipped;
+                    pickingItemRepo.Update(item);
+
+                    if (wroItem != null)
+                    {
+                        wroItem.Quantity = qShipped;
+                        wroItemRepo.Update(wroItem);
+                    }
+
+                    confirmedItemsResponse.Add(new CompleteWroItemResponseDto
+                    {
+                        InventoryId = item.InventoryId,
+                        Quantity = qShipped,
+                        Status = "RELEASED"
+                    });
+                }
+                else // qShipped == qPicked
+                {
+                    if (inventoryRecord != null)
+                    {
+                        inventoryRecord.Status = "RELEASED";
+                        inventoryRepo.Update(inventoryRecord);
+                    }
+
+                    confirmedItemsResponse.Add(new CompleteWroItemResponseDto
+                    {
+                        InventoryId = item.InventoryId,
+                        Quantity = qShipped,
+                        Status = "RELEASED"
+                    });
+                }
+            }
+
+            // 9. Cập nhật yêu cầu xuất kho thành RELEASED
+            wroRequest.Status = "RELEASED";
+            wroRequest.ReleasedBy = userId;
+            wroRequest.ReleasedAt = DateTime.UtcNow;
+            wroRequestRepo.Update(wroRequest);
+
+            // 10. Lưu các thay đổi vào DB
+            await _unitOfWork.SaveChangesAsync();
+
+            // Lấy thông tin người xác nhận
+            var userRepo = _unitOfWork.Repository<User>();
+            var user = await userRepo.GetByIdAsync(userId);
+            var releasedByName = user?.FullName ?? string.Empty;
+
+            return new CompleteWroResponseDto
+            {
+                WroRequestId = wroRequest.Id,
+                WroCode = wroRequest.WroCode,
+                Status = wroRequest.Status,
+                ReleasedBy = wroRequest.ReleasedBy,
+                ReleasedByName = releasedByName,
+                ReleasedAt = wroRequest.ReleasedAt,
+                WarehouseId = warehouseId,
+                WarehouseName = warehouseName,
+                Items = confirmedItemsResponse
+            };
+        }
+
+        private async Task ReleaseInventoryToAvailableAsync(
+            Inventory? reservedInventory,
+            int quantityToRelease,
+            IGenericRepository<Inventory> inventoryRepo,
+            IEnumerable<Inventory> allInventories)
+        {
+            if (reservedInventory == null || quantityToRelease <= 0) return;
+
+            var originalInventory = allInventories.FirstOrDefault(inv =>
+                inv.CustomerId == reservedInventory.CustomerId &&
+                inv.OrderId == reservedInventory.OrderId &&
+                inv.OrderItemId == reservedInventory.OrderItemId &&
+                inv.ParcelId == reservedInventory.ParcelId &&
+                inv.BinId == reservedInventory.BinId &&
+                string.Equals(inv.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase)
+            );
+
+            if (originalInventory != null)
+            {
+                originalInventory.Quantity += quantityToRelease;
+                inventoryRepo.Update(originalInventory);
+            }
+            else
+            {
+                var newAvailable = new Inventory
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerId = reservedInventory.CustomerId,
+                    OrderId = reservedInventory.OrderId,
+                    OrderItemId = reservedInventory.OrderItemId,
+                    ParcelId = reservedInventory.ParcelId,
+                    BinId = reservedInventory.BinId,
+                    Quantity = quantityToRelease,
+                    Status = "AVAILABLE",
+                    CreatedAt = DateTime.UtcNow
+                };
+                await inventoryRepo.AddAsync(newAvailable);
+            }
+        }
     }
 }

@@ -100,6 +100,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/warehouse-release-requests/{requestId}/status` | Staff | Staff cập nhật trạng thái yêu cầu xuất kho (duyệt/từ chối) |
 | `POST` | `/api/warehouse-release-requests/{requestId}/picking-list` | Staff | Tạo phiếu picking cho yêu cầu xuất kho |
 | `PUT` | `/api/picking-lists/{pickingListId}/confirm` | WarehouseStaff | Xác nhận picking hàng khỏi vị trí kho |
+| `PUT` | `/api/warehouse-release-requests/{requestId}/complete` | WarehouseStaff | Xác nhận đóng gói và hoàn tất xuất kho |
 
 
 ## 4. Đăng ký khách hàng
@@ -1909,6 +1910,37 @@ export interface ConfirmPickingResponse {
 export interface ConfirmPickingDataResponse extends MessageResponse {
   data: ConfirmPickingResponse;
 }
+
+export interface CompleteWroItem {
+  inventoryId: string;
+  quantity: number;
+}
+
+export interface CompleteWroRequest {
+  items: CompleteWroItem[];
+}
+
+export interface CompleteWroItemResponse {
+  inventoryId: string;
+  quantity: number;
+  status: string;
+}
+
+export interface CompleteWroResponse {
+  wroRequestId: string;
+  wroCode: string;
+  status: string;
+  releasedBy: string | null;
+  releasedByName: string;
+  releasedAt: string | null;
+  warehouseId: string | null;
+  warehouseName: string;
+  items: CompleteWroItemResponse[];
+}
+
+export interface CompleteWroDataResponse extends MessageResponse {
+  data: CompleteWroResponse;
+}
 ```
 
 ## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
@@ -2141,6 +2173,10 @@ export async function createPickingList(requestId: string) {
 
 export async function confirmPickingList(pickingListId: string, payload: ConfirmPickingRequest) {
   return api.put<ConfirmPickingDataResponse>(`/api/picking-lists/${pickingListId}/confirm`, payload);
+}
+
+export async function completeWroRequest(requestId: string, payload: CompleteWroRequest) {
+  return api.put<CompleteWroDataResponse>(`/api/warehouse-release-requests/${requestId}/complete`, payload);
 }
 ```
 
@@ -2444,6 +2480,76 @@ Content-Type: application/json
 | `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
 | `403` | Khách hàng thực hiện thao tác (chỉ WarehouseStaff/Staff/Ops được thao tác) | `"Bạn không có quyền xác nhận phiếu picking."` |
 | `404` | Không tìm thấy phiếu picking | `"Không tìm thấy phiếu picking với ID {pickingListId}"` |
+
+---
+
+### 24.5. Xác nhận đóng gói và hoàn tất xuất kho
+
+Nhân viên kho (WarehouseStaff/Staff/Operations) xác nhận đóng gói và hoàn tất xuất kho sau khi hàng đã được picking. Trạng thái của phiếu picking tương ứng sẽ chuyển thành `RELEASED` hoặc `OUTBOUND` tùy loại hàng, và trạng thái của yêu cầu xuất kho tương ứng chuyển sang `RELEASED`.
+
+```http
+PUT /api/warehouse-release-requests/{requestId}/complete
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "inventoryId": "d5e243d7-...",
+      "quantity": 2
+    }
+  ]
+}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `requestId` | `Guid` | ID của yêu cầu xuất kho cần hoàn tất |
+
+**Request Body (`CompleteWroRequest`):**
+
+| Field | Kiểu | Mô tả |
+|---|---|---|
+| `items` | `CompleteWroItem[]` | Danh sách hàng đã được đóng gói và xuất kho thực tế |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Hoàn tất xuất kho thành công.",
+  "data": {
+    "wroRequestId": "e14b21a7-...",
+    "wroCode": "WRO-20260629-8439",
+    "status": "RELEASED",
+    "releasedBy": "d5e243d7-...",
+    "releasedByName": "Nguyen Van Warehouse Staff",
+    "releasedAt": "2026-07-02T13:50:00Z",
+    "warehouseId": "a1b2c3d4-...",
+    "warehouseName": "Kho Ha Noi",
+    "items": [
+      {
+        "inventoryId": "d5e243d7-...",
+        "quantity": 2,
+        "status": "RELEASED"
+      }
+    ]
+  }
+}
+```
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Yêu cầu xuất kho đã hoàn tất trước đó | `"Yêu cầu xuất kho này đã hoàn tất xuất kho trước đó."` |
+| `400` | Yêu cầu xuất kho chưa được picking (không ở trạng thái `PICKED`/`PACKING`) | `"Yêu cầu xuất kho chưa đủ điều kiện xuất kho. Trạng thái hiện tại: {status}"` |
+| `400` | Số lượng đóng gói không hợp lệ hoặc vượt quá số lượng đã picking | `"Số lượng xuất kho không được nhỏ hơn 0."` hoặc `"Số lượng xuất ({qShipped}) vượt quá số lượng đã picking..."` |
+| `400` | Tồn kho ID trong request không thuộc danh sách đã picking | `"Tồn kho ID {inventoryId} không nằm trong danh sách đã picking của yêu cầu xuất kho này."` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Khách hàng thực hiện thao tác (chỉ WarehouseStaff/Staff/Ops được thao tác) | `"Bạn không có quyền hoàn tất xuất kho."` |
+| `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
 
 ---
 

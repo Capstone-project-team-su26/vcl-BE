@@ -1810,6 +1810,14 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("rejection_reason");
 
+                    b.Property<DateTime?>("ReleasedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("released_at");
+
+                    b.Property<Guid?>("ReleasedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("released_by");
+
                     b.Property<string>("ShelfCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -1833,6 +1841,8 @@ namespace VCL_DLL.Migrations
                         .HasName("PK__WRO_REQU__3213E83F1D9751C6");
 
                     b.HasIndex("CustomerId");
+
+                    b.HasIndex("ReleasedBy");
 
                     b.HasIndex("UserId");
 
@@ -2341,12 +2351,19 @@ namespace VCL_DLL.Migrations
                         .HasForeignKey("CustomerId")
                         .HasConstraintName("FK_WRO_CUSTOMER");
 
+                    b.HasOne("VCL_DLL.Models.User", "ReleasedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReleasedBy")
+                        .HasConstraintName("FK_WRO_RELEASED_USER");
+
                     b.HasOne("VCL_DLL.Models.User", "User")
                         .WithMany("WroRequests")
                         .HasForeignKey("UserId")
                         .HasConstraintName("FK_WRO_USER");
 
                     b.Navigation("Customer");
+
+                    b.Navigation("ReleasedByUser");
 
                     b.Navigation("User");
                 });
