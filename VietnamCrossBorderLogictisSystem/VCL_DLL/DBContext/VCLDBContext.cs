@@ -1239,6 +1239,8 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.RejectionReason)
                 .HasMaxLength(500)
                 .HasColumnName("rejection_reason");
+            entity.Property(e => e.ReleasedBy).HasColumnName("released_by");
+            entity.Property(e => e.ReleasedAt).HasColumnName("released_at");
 
             entity.HasOne(d => d.Customer).WithMany(p => p.WroRequests)
                 .HasForeignKey(d => d.CustomerId)
@@ -1247,6 +1249,11 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.WroRequests)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("FK_WRO_USER");
+
+            entity.HasOne(d => d.ReleasedByUser).WithMany()
+                .HasForeignKey(d => d.ReleasedBy)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WRO_RELEASED_USER");
         });
 
         modelBuilder.Entity<PickingList>(entity =>

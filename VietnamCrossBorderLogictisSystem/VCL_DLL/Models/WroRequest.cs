@@ -29,6 +29,10 @@ public partial class WroRequest
 
     public string RejectionReason { get; set; }
 
+    public Guid? ReleasedBy { get; set; }
+
+    public DateTime? ReleasedAt { get; set; }
+
     public virtual Customer Customer { get; set; }
 
     public virtual ICollection<Quotation> Quotations { get; set; } = new List<Quotation>();
@@ -36,4 +40,6 @@ public partial class WroRequest
     public virtual ICollection<WroItem> WroItems { get; set; } = new List<WroItem>();
 
     public virtual User User { get; set; }
+
+    public virtual User ReleasedByUser { get; set; }
 }

@@ -122,4 +122,35 @@ namespace VCL_BLL.DTOs
         public DateTime CreatedAt { get; set; }
         public List<PickingItemResponseDto> Items { get; set; } = new();
     }
+
+    public class CompleteWroItemDto
+    {
+        public Guid InventoryId { get; set; }
+        public int Quantity { get; set; }
+    }
+
+    public class CompleteWroRequestDto
+    {
+        public List<CompleteWroItemDto> Items { get; set; } = new();
+    }
+
+    public class CompleteWroItemResponseDto
+    {
+        public Guid InventoryId { get; set; }
+        public int Quantity { get; set; }
+        public string Status { get; set; } = string.Empty;
+    }
+
+    public class CompleteWroResponseDto
+    {
+        public Guid WroRequestId { get; set; }
+        public string WroCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public Guid? ReleasedBy { get; set; }
+        public string ReleasedByName { get; set; } = string.Empty;
+        public DateTime? ReleasedAt { get; set; }
+        public Guid? WarehouseId { get; set; }
+        public string WarehouseName { get; set; } = string.Empty;
+        public List<CompleteWroItemResponseDto> Items { get; set; } = new();
+    }
 }
