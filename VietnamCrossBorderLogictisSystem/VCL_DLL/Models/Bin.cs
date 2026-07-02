@@ -23,6 +23,10 @@ public partial class Bin
 
     public decimal? MaxWeight { get; set; }
 
+    public bool IsActive { get; set; } = true;
+
+    public string Note { get; set; }
+
     public virtual OrderItem Product { get; set; }
 
     public virtual Shelf Shelf { get; set; }

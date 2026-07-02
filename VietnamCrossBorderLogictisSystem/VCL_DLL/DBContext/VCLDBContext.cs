@@ -138,6 +138,12 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.ShelfId).HasColumnName("shelf_id");
             entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.Note)
+                .HasMaxLength(500)
+                .HasColumnName("note");
 
             entity.HasOne(d => d.Product).WithMany(p => p.Bins)
                 .HasForeignKey(d => d.ProductId)

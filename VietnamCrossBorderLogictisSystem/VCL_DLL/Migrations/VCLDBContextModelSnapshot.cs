@@ -39,6 +39,12 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("current_volume");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
                     b.Property<decimal?>("MaxVolume")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("max_volume");
@@ -46,6 +52,11 @@ namespace VCL_DLL.Migrations
                     b.Property<decimal?>("MaxWeight")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("max_weight");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
 
                     b.Property<Guid?>("ProductId")
                         .HasColumnType("uniqueidentifier")
