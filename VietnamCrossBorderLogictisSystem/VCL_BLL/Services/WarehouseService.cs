@@ -183,7 +183,8 @@ namespace VCL_BLL.Services
             // Rule: check if there are active parcels in bins of this warehouse
             var binRepo = _unitOfWork.Repository<Bin>();
             var allBins = await binRepo.GetAllAsync();
-            var warehouseBinIds = allBins.Where(b => b.WarehouseId == id).Select(b => b.Id).ToList();
+            var warehouseBins = allBins.Where(b => b.WarehouseId == id).ToList();
+            var warehouseBinIds = warehouseBins.Select(b => b.Id).ToList();
 
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var allParcels = await parcelRepo.GetAllAsync();
@@ -198,6 +199,34 @@ namespace VCL_BLL.Services
             if (hasInventory)
                 throw new ArgumentException("Không thể xóa kho đang chứa lịch sử tồn kho.");
 
+            // 1. Delete all bins of this warehouse
+            foreach (var bin in warehouseBins)
+            {
+                binRepo.Delete(bin);
+            }
+
+            // 2. Delete all shelves associated with zones of this warehouse
+            var zoneRepo = _unitOfWork.Repository<WarehouseZone>();
+            var allZones = await zoneRepo.GetAllAsync();
+            var warehouseZones = allZones.Where(z => z.WarehouseId == id).ToList();
+            var warehouseZoneIds = warehouseZones.Select(z => z.Id).ToList();
+
+            var shelfRepo = _unitOfWork.Repository<Shelf>();
+            var allShelves = await shelfRepo.GetAllAsync();
+            var warehouseShelves = allShelves.Where(s => s.ZoneId.HasValue && warehouseZoneIds.Contains(s.ZoneId.Value)).ToList();
+
+            foreach (var shelf in warehouseShelves)
+            {
+                shelfRepo.Delete(shelf);
+            }
+
+            // 3. Delete all warehouse zones of this warehouse
+            foreach (var zone in warehouseZones)
+            {
+                zoneRepo.Delete(zone);
+            }
+
+            // 4. Delete the warehouse itself
             warehouseRepo.Delete(warehouse);
             await _unitOfWork.SaveChangesAsync();
         }
