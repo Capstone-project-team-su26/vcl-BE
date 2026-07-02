@@ -17,7 +17,13 @@ public partial class PickingList
 
     public DateTime CreatedAt { get; set; }
 
+    public Guid? ConfirmedBy { get; set; }
+
+    public DateTime? ConfirmedAt { get; set; }
+
     public virtual User CreatedByUser { get; set; }
+
+    public virtual User ConfirmedByUser { get; set; }
 
     public virtual WroRequest WroRequest { get; set; }
 

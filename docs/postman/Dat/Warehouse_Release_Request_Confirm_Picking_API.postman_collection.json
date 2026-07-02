@@ -1,0 +1,421 @@
+{
+  "info": {
+    "name": "VCL - Warehouse Release Request Confirm Picking API (Dat)",
+    "description": "Bộ API test tính năng xác nhận picking hàng khỏi vị trí kho.\nEndpoint: PUT /api/picking-lists/{pickingListId}/confirm\nQuy trình tự động:\n1. Seed dữ liệu & Đăng nhập\n2. Khởi tạo tồn kho AVAILABLE & Tạo đơn xuất kho WRO\n3. Staff duyệt đơn WRO & Tạo phiếu picking (PENDING)\n4. Test phân quyền (403)\n5. Test lỗi Not Found (404)\n6. Test lỗi số lượng vượt mức (400)\n7. Xác nhận picking thành công (200) -> Chuyển trạng thái phiếu sang PICKED, WRO sang PACKING, Inventory sang PICKED.\n8. Test chặn xác nhận lại phiếu đã confirm (400).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5209", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" },
+    { "key": "customerEmail", "value": "customer@test.com", "type": "string" },
+    { "key": "customerPassword", "value": "Customer123", "type": "string" },
+    { "key": "storedParcelId", "value": "3f00f601-be63-4a50-9524-88355ce84280", "type": "string" },
+    { "key": "inventoryId", "value": "", "type": "string" },
+    { "key": "wroId", "value": "", "type": "string" },
+    { "key": "pickingListId", "value": "", "type": "string" },
+    { "key": "reservedInventoryId", "value": "", "type": "string" },
+    { "key": "reservedQuantity", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0a. Seed Staff",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-staff", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-staff"] }
+      }
+    },
+    {
+      "name": "0b. Seed Customers",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-customer", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-customer"] }
+      }
+    },
+    {
+      "name": "0c. Reset Test Data",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/reset-wro-test", "host": ["{{baseUrl}}"], "path": ["api", "Test", "reset-wro-test"] }
+      }
+    },
+    {
+      "name": "1. Login (Staff) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('staffToken', json.token); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. Login Customer (Owner) - Lay JWT token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('customerToken', json.token); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3. Khoi tao ton kho AVAILABLE",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 or 201', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+              "var res = pm.response.json();",
+              "pm.collectionVariables.set('inventoryId', res.data.inventoryId);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/inventories/from-parcel/{{storedParcelId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "inventories", "from-parcel", "{{storedParcelId}}"]
+        }
+      }
+    },
+    {
+      "name": "4. Tao don WRO (expect 201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+              "var res = pm.response.json();",
+              "pm.collectionVariables.set('wroId', res.data.wroId);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0987654321\",\n  \"deliveryAddress\": \"123 Le Loi, HCM\",\n  \"items\": [\n    {\n      \"inventoryId\": \"{{inventoryId}}\",\n      \"quantity\": 2\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests"]
+        }
+      }
+    },
+    {
+      "name": "5. Staff duyet don WRO (expect 200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"APPROVED\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "6. Tao Picking List - Happy Path (expect 201)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201 Created', function () { pm.response.to.have.status(201); });",
+              "var res = pm.response.json();",
+              "pm.collectionVariables.set('pickingListId', res.data.pickingListId);",
+              "pm.collectionVariables.set('reservedInventoryId', res.data.items[0].inventoryId);",
+              "pm.collectionVariables.set('reservedQuantity', res.data.items[0].quantity);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroId}}/picking-list",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-release-requests", "{{wroId}}", "picking-list"]
+        }
+      }
+    },
+    {
+      "name": "7a. Confirm Picking - Customer Request (expect 403 Forbidden)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 403 Forbidden', function () { pm.response.to.have.status(403); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify error message', function () { pm.expect(res.message).to.contain('Bạn không có quyền'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"inventoryId\": \"{{reservedInventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/picking-lists/{{pickingListId}}/confirm",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "picking-lists", "{{pickingListId}}", "confirm"]
+        }
+      }
+    },
+    {
+      "name": "7b. Confirm Picking - Not Found List (expect 404 Not Found)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify not found message', function () { pm.expect(res.message).to.contain('Không tìm thấy phiếu picking'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"inventoryId\": \"{{reservedInventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/picking-lists/00000000-0000-0000-0000-000000000000/confirm",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "picking-lists", "00000000-0000-0000-0000-000000000000", "confirm"]
+        }
+      }
+    },
+    {
+      "name": "7c. Confirm Picking - Invalid Quantity (expect 400 Bad Request)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify validation message', function () { pm.expect(res.message).to.contain('vượt quá số lượng đã RESERVED'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"inventoryId\": \"{{reservedInventoryId}}\",\n      \"quantity\": 9999\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/picking-lists/{{pickingListId}}/confirm",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "picking-lists", "{{pickingListId}}", "confirm"]
+        }
+      }
+    },
+    {
+      "name": "7d. Confirm Picking - Happy Path (expect 200 OK)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200 OK', function () { pm.response.to.have.status(200); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify response mapping', function () {",
+              "  pm.expect(res.data.pickingListId).to.eql(pm.collectionVariables.get('pickingListId'));",
+              "  pm.expect(res.data.status).to.eql('PICKED');",
+              "  pm.expect(res.data.confirmedBy).to.not.be.empty;",
+              "  pm.expect(res.data.confirmedByName).to.eql('Test Warehouse Staff');",
+              "  pm.expect(res.data.confirmedAt).to.not.be.empty;",
+              "  pm.expect(res.data.items).to.be.an('array').that.is.not.empty;",
+              "  pm.expect(res.data.items[0].inventoryId).to.eql(pm.collectionVariables.get('reservedInventoryId'));",
+              "  pm.expect(res.data.items[0].quantity).to.eql(parseInt(pm.collectionVariables.get('reservedQuantity'), 10));",
+              "  pm.expect(res.data.items[0].binCode).to.not.be.empty;",
+              "  pm.expect(res.data.items[0].shelfCode).to.not.be.empty;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"inventoryId\": \"{{reservedInventoryId}}\",\n      \"quantity\": {{reservedQuantity}}\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/picking-lists/{{pickingListId}}/confirm",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "picking-lists", "{{pickingListId}}", "confirm"]
+        }
+      }
+    },
+    {
+      "name": "7e. Confirm Picking - Already Picked (expect 400 Bad Request)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400 Bad Request', function () { pm.response.to.have.status(400); });",
+              "var res = pm.response.json();",
+              "pm.test('Verify invalid status error', function () { pm.expect(res.message).to.contain('ở trạng thái PENDING'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"inventoryId\": \"{{reservedInventoryId}}\",\n      \"quantity\": {{reservedQuantity}}\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/picking-lists/{{pickingListId}}/confirm",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "picking-lists", "{{pickingListId}}", "confirm"]
+        }
+      }
+    }
+  ]
+}

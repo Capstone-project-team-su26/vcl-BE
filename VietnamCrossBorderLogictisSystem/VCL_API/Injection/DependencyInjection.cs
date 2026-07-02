@@ -34,6 +34,7 @@ namespace VCL_API.Injection
             services.AddScoped<IParcelService, ParcelService>();
             services.AddScoped<IInventoryService, InventoryService>();
             services.AddScoped<IWroService, WroService>();
+            services.AddScoped<IPickingListService, PickingListService>();
             services.AddScoped<ICustomerService, CustomerService>();
             services.AddScoped<IWarehouseReceivingNoteService, WarehouseReceivingNoteService>();
             services.AddScoped<IWarehouseService, WarehouseService>();
