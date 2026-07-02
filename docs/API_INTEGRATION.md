@@ -99,6 +99,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
 | `PUT` | `/api/warehouse-release-requests/{requestId}/status` | Staff | Staff cập nhật trạng thái yêu cầu xuất kho (duyệt/từ chối) |
 | `POST` | `/api/warehouse-release-requests/{requestId}/picking-list` | Staff | Tạo phiếu picking cho yêu cầu xuất kho |
+| `PUT` | `/api/picking-lists/{pickingListId}/confirm` | WarehouseStaff | Xác nhận picking hàng khỏi vị trí kho |
 
 
 ## 4. Đăng ký khách hàng
@@ -1877,6 +1878,37 @@ export interface PickingListResponse {
 export interface PickingListDataResponse extends MessageResponse {
   data: PickingListResponse;
 }
+
+export interface ConfirmPickingItem {
+  inventoryId: string;
+  quantity: number;
+}
+
+export interface ConfirmPickingRequest {
+  items: ConfirmPickingItem[];
+}
+
+export interface ConfirmPickingItemResponse {
+  inventoryId: string;
+  quantity: number;
+  binId: string;
+  binCode: string;
+  shelfCode: string;
+}
+
+export interface ConfirmPickingResponse {
+  pickingListId: string;
+  wroRequestId: string;
+  status: string;
+  confirmedBy: string | null;
+  confirmedByName: string;
+  confirmedAt: string | null;
+  items: ConfirmPickingItemResponse[];
+}
+
+export interface ConfirmPickingDataResponse extends MessageResponse {
+  data: ConfirmPickingResponse;
+}
 ```
 
 ## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
@@ -2105,6 +2137,10 @@ export async function updateWroStatus(requestId: string, payload: UpdateWroStatu
 
 export async function createPickingList(requestId: string) {
   return api.post<PickingListDataResponse>(`/api/warehouse-release-requests/${requestId}/picking-list`);
+}
+
+export async function confirmPickingList(pickingListId: string, payload: ConfirmPickingRequest) {
+  return api.put<ConfirmPickingDataResponse>(`/api/picking-lists/${pickingListId}/confirm`, payload);
 }
 ```
 
@@ -2339,6 +2375,75 @@ Authorization: Bearer {accessToken}
 | `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
 | `403` | Khách hàng thực hiện thao tác (chỉ Staff/Ops được thao tác) | `"Bạn không có quyền tạo phiếu picking."` |
 | `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
+
+---
+
+### 24.4. Xác nhận picking hàng khỏi vị trí kho
+
+Nhân viên kho (WarehouseStaff/Staff/Operations) xác nhận đã lấy hàng khỏi vị trí kho theo phiếu picking. Trạng thái của phiếu picking sẽ chuyển thành `PICKED`, và trạng thái của yêu cầu xuất kho tương ứng chuyển sang `PACKING`. Đồng thời, trạng thái của tồn kho được picking sẽ cập nhật sang `PICKED`.
+
+```http
+PUT /api/picking-lists/{pickingListId}/confirm
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "inventoryId": "d5e243d7-...",
+      "quantity": 2
+    }
+  ]
+}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `pickingListId` | `Guid` | ID của phiếu picking cần xác nhận |
+
+**Request Body (`ConfirmPickingRequest`):**
+
+| Field | Kiểu | Mô tả |
+|---|---|---|
+| `items` | `ConfirmPickingItem[]` | Danh sách tồn kho đã thực tế picking |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Xác nhận picking thành công.",
+  "data": {
+    "pickingListId": "b1a7d6c5-...",
+    "wroRequestId": "e14b21a7-...",
+    "status": "PICKED",
+    "confirmedBy": "d5e243d7-...",
+    "confirmedByName": "Nguyen Van Warehouse Staff",
+    "confirmedAt": "2026-07-02T13:30:00Z",
+    "items": [
+      {
+        "inventoryId": "d5e243d7-...",
+        "quantity": 2,
+        "binId": "f3b4c5d6-...",
+        "binCode": "BIN-A-01",
+        "shelfCode": "SHELF-01"
+      }
+    ]
+  }
+}
+```
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Phiếu picking không ở trạng thái `PENDING` | `"Chỉ có thể xác nhận phiếu picking ở trạng thái PENDING. Trạng thái hiện tại: {status}"` |
+| `400` | Số lượng picking không hợp lệ (âm hoặc vượt quá số lượng `RESERVED`) | `"Số lượng picking không hợp lệ..."` hoặc `"Số lượng picking ({qPick}) vượt quá số lượng đã RESERVED..."` |
+| `400` | Tồn kho ID trong request không thuộc danh sách picking | `"Tồn kho ID {inventoryId} không thuộc danh sách hàng cần picking của phiếu này."` |
+| `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
+| `403` | Khách hàng thực hiện thao tác (chỉ WarehouseStaff/Staff/Ops được thao tác) | `"Bạn không có quyền xác nhận phiếu picking."` |
+| `404` | Không tìm thấy phiếu picking | `"Không tìm thấy phiếu picking với ID {pickingListId}"` |
 
 ---
 

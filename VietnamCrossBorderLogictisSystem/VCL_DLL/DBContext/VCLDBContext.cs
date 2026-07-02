@@ -1258,6 +1258,8 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50).HasDefaultValueSql("('PENDING')");
             entity.Property(e => e.CreatedBy).HasColumnName("created_by");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.ConfirmedBy).HasColumnName("confirmed_by");
+            entity.Property(e => e.ConfirmedAt).HasColumnName("confirmed_at");
 
             entity.HasOne(d => d.WroRequest)
                 .WithOne()
@@ -1270,6 +1272,12 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.CreatedBy)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_PICKING_LIST_USER");
+
+            entity.HasOne(d => d.ConfirmedByUser)
+                .WithMany()
+                .HasForeignKey(d => d.ConfirmedBy)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKING_LIST_CONFIRMED_USER");
         });
 
         modelBuilder.Entity<PickingItem>(entity =>

@@ -991,6 +991,14 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("(newid())");
 
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<Guid?>("ConfirmedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("confirmed_by");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -1014,6 +1022,8 @@ namespace VCL_DLL.Migrations
 
                     b.HasKey("Id")
                         .HasName("PK_PICKING_LISTS");
+
+                    b.HasIndex("ConfirmedBy");
 
                     b.HasIndex("CreatedBy");
 
@@ -2104,6 +2114,11 @@ namespace VCL_DLL.Migrations
 
             modelBuilder.Entity("VCL_DLL.Models.PickingList", b =>
                 {
+                    b.HasOne("VCL_DLL.Models.User", "ConfirmedByUser")
+                        .WithMany()
+                        .HasForeignKey("ConfirmedBy")
+                        .HasConstraintName("FK_PICKING_LIST_CONFIRMED_USER");
+
                     b.HasOne("VCL_DLL.Models.User", "CreatedByUser")
                         .WithMany()
                         .HasForeignKey("CreatedBy")
@@ -2116,6 +2131,8 @@ namespace VCL_DLL.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("FK_PICKING_LIST_WRO_REQUEST");
+
+                    b.Navigation("ConfirmedByUser");
 
                     b.Navigation("CreatedByUser");
 
