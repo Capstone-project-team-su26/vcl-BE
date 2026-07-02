@@ -221,6 +221,26 @@ namespace VCL_API.Controllers
 
             // Get release requests to delete
             var wroRequestIdsToDelete = wroItemsToDelete.Select(wi => wi.WroRequestId).Distinct().ToList();
+
+            // Explicitly delete picking items and lists first to avoid FK constraint issues
+            var pickingListRepo = _unitOfWork.Repository<PickingList>();
+            var pickingItemRepo = _unitOfWork.Repository<PickingItem>();
+            var allPickingLists = await pickingListRepo.GetAllAsync();
+            var pickingListsToDelete = allPickingLists.Where(p => wroRequestIdsToDelete.Contains(p.WroRequestId)).ToList();
+            var pickingListIdsToDelete = pickingListsToDelete.Select(p => p.Id).ToList();
+
+            var allPickingItems = await pickingItemRepo.GetAllAsync();
+            var pickingItemsToDelete = allPickingItems.Where(pi => pickingListIdsToDelete.Contains(pi.PickingListId) || targetInventoryIds.Contains(pi.InventoryId)).ToList();
+
+            foreach (var pi in pickingItemsToDelete)
+            {
+                pickingItemRepo.Delete(pi);
+            }
+            foreach (var pl in pickingListsToDelete)
+            {
+                pickingListRepo.Delete(pl);
+            }
+
             foreach (var reqId in wroRequestIdsToDelete)
             {
                 var req = await wroRequestRepo.GetByIdAsync(reqId);
