@@ -236,5 +236,87 @@ namespace VCL_BLL.Services
                 PageSize = pageSize
             };
         }
+
+        public async Task<PurchaseRequestDetailResponseDto> GetPurchaseRequestDetailAsync(Guid requestId, Guid? userId, string userRole)
+        {
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+
+            // 1. Tìm yêu cầu mua hộ (404 nếu không có)
+            var request = await requestRepo.GetByIdAsync(requestId);
+            if (request == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+            }
+
+            // 2. Phân quyền: Customer chỉ xem yêu cầu của chính mình; Staff/Sales xem tất cả
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var allCustomers = await customerRepo.GetAllAsync();
+
+            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
+                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+
+            if (!isStaff)
+            {
+                if (userId == null)
+                {
+                    throw new UnauthorizedAccessException("Người dùng không hợp lệ.");
+                }
+
+                var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
+                if (customer == null || request.CustomerId != customer.Id)
+                {
+                    throw new UnauthorizedAccessException("Bạn không có quyền xem yêu cầu mua hộ này.");
+                }
+            }
+
+            // 3. Lấy tên Customer sở hữu + người tạo
+            var owner = request.CustomerId.HasValue
+                ? allCustomers.FirstOrDefault(c => c.Id == request.CustomerId.Value)
+                : null;
+
+            string createdByName = owner?.FullName ?? string.Empty;
+            if (request.UserId.HasValue)
+            {
+                var creator = await _unitOfWork.Repository<User>().GetByIdAsync(request.UserId.Value);
+                if (creator != null) createdByName = creator.FullName ?? createdByName;
+            }
+
+            // 4. Lấy danh sách sản phẩm của yêu cầu
+            var allItems = await _unitOfWork.Repository<PurchaseRequestItem>().GetAllAsync();
+            var relatedItems = allItems.Where(i => i.PurchaseRequestId == requestId).ToList();
+
+            var itemDtos = relatedItems.Select(i => new PurchaseRequestItemResponseDto
+            {
+                ItemId = i.Id,
+                ProductLink = i.ProductLink ?? string.Empty,
+                SourceWebsite = i.SourceWebsite,
+                ProductType = i.ProductType,
+                ProductName = i.ProductName,
+                Quantity = i.Quantity,
+                Attributes = i.Attributes,
+                Note = i.Note,
+                ImageUrl = i.ImageUrl
+            }).ToList();
+
+            return new PurchaseRequestDetailResponseDto
+            {
+                PurchaseRequestId = request.Id,
+                PurchaseCode = request.PurchaseCode ?? string.Empty,
+                CustomerId = request.CustomerId,
+                CustomerName = owner?.FullName ?? string.Empty,
+                CreatedByName = createdByName,
+                Route = request.Route,
+                ReceiverName = request.ReceiverName,
+                ReceiverPhone = request.ReceiverPhone,
+                ReceiverAddress = request.ReceiverAddress,
+                RequiresInspection = request.RequiresInspection,
+                RequiresQuantityCheck = request.RequiresQuantityCheck,
+                GeneralNote = request.GeneralNote,
+                Status = request.Status ?? string.Empty,
+                CreatedAt = request.CreatedAt ?? DateTime.MinValue,
+                TotalQuantity = relatedItems.Sum(i => i.Quantity),
+                Items = itemDtos
+            };
+        }
     }
 }
