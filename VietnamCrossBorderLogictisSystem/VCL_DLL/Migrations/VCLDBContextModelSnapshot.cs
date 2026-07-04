@@ -1143,6 +1143,102 @@ namespace VCL_DLL.Migrations
                     b.ToTable("PRICING_RULES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.PurchaseRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<Guid?>("CustomerId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("PurchaseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("purchase_code");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PURCHASE_REQUESTS");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PURCHASE_REQUESTS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PurchaseRequestItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("Attributes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("attributes");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("image_url");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("ProductLink")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("product_link");
+
+                    b.Property<string>("ProductName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("product_name");
+
+                    b.Property<Guid>("PurchaseRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("purchase_request_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PURCHASE_REQUEST_ITEMS");
+
+                    b.HasIndex("PurchaseRequestId");
+
+                    b.ToTable("PURCHASE_REQUEST_ITEMS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Quotation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2171,6 +2267,35 @@ namespace VCL_DLL.Migrations
                     b.Navigation("ServicePricing");
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.PurchaseRequest", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .HasConstraintName("FK_PURCHASE_REQ_CUSTOMER");
+
+                    b.HasOne("VCL_DLL.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .HasConstraintName("FK_PURCHASE_REQ_USER");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PurchaseRequestItem", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.PurchaseRequest", "PurchaseRequest")
+                        .WithMany("PurchaseRequestItems")
+                        .HasForeignKey("PurchaseRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_PURCHASE_REQ_ITEM_REQUEST");
+
+                    b.Navigation("PurchaseRequest");
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Quotation", b =>
                 {
                     b.HasOne("VCL_DLL.Models.Order", "Order")
@@ -2460,6 +2585,11 @@ namespace VCL_DLL.Migrations
             modelBuilder.Entity("VCL_DLL.Models.PickingList", b =>
                 {
                     b.Navigation("PickingItems");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PurchaseRequest", b =>
+                {
+                    b.Navigation("PurchaseRequestItems");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Quotation", b =>
