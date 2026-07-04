@@ -768,5 +768,44 @@ namespace VCL_BLL.Services
             };
         }
 
+        /// <summary>
+        /// Danh sách các tuyến hàng (route) khả dụng để FE đổ dropdown, lấy từ ServicePricing.
+        /// Route có định dạng "{OriginCountry}-{DestinationCountry}" (VD: "CN-VN").
+        /// </summary>
+        public async Task<List<string>> GetConsignmentRoutesAsync()
+        {
+            var pricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            return pricings
+                .Where(p => !string.IsNullOrWhiteSpace(p.OriginCountry) && !string.IsNullOrWhiteSpace(p.DestinationCountry))
+                .Select(p => $"{p.OriginCountry}-{p.DestinationCountry}")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(r => r)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Danh sách phương án vận chuyển (shippingOption = ServiceType) để FE đổ dropdown.
+        /// Nếu truyền route sẽ lọc theo tuyến hàng tương ứng.
+        /// </summary>
+        public async Task<List<string>> GetShippingOptionsAsync(string? route)
+        {
+            var pricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            var query = pricings.Where(p => !string.IsNullOrWhiteSpace(p.ServiceType));
+
+            if (!string.IsNullOrWhiteSpace(route))
+            {
+                query = query.Where(p =>
+                    !string.IsNullOrWhiteSpace(p.OriginCountry)
+                    && !string.IsNullOrWhiteSpace(p.DestinationCountry)
+                    && string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route.Trim(), StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query
+                .Select(p => p.ServiceType)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s)
+                .ToList();
+        }
+
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 
@@ -13,5 +14,7 @@ namespace VCL_BLL.Interface
         Task<ValidateItemsResponse> ValidateConsignmentItemsAsync(ValidateItemsRequest request);
         Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request);
         Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode);
+        Task<List<string>> GetConsignmentRoutesAsync();
+        Task<List<string>> GetShippingOptionsAsync(string? route);
     }
 }

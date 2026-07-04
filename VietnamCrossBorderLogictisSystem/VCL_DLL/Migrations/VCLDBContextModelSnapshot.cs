@@ -1143,6 +1143,95 @@ namespace VCL_DLL.Migrations
                     b.ToTable("PRICING_RULES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.ProductType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PRODUCT_TYPES");
+
+                    b.ToTable("PRODUCT_TYPES", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000001"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Electronics"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000002"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Clothing"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000003"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Cosmetics"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000004"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Accessories"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000005"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Food"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000006"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Books"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000007"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Toys"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000008"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Household Goods"
+                        });
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.PurchaseRequest", b =>
                 {
                     b.Property<Guid>("Id")
