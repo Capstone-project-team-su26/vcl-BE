@@ -117,6 +117,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `DELETE` | `/api/warehouse-locations/{locationId}` | Admin | Xóa vị trí lưu trữ |
 | `GET` | `/api/warehouses/{warehouseId}/locations/active` | Authenticated | Lấy danh sách vị trí lưu trữ đang hoạt động |
 | `POST` | `/api/purchase-requests` | Customer | Customer tạo yêu cầu mua hộ hàng Trung Quốc |
+| `GET` | `/api/purchase-requests` | Customer / Staff / Sales | Lấy danh sách yêu cầu mua hộ (phân trang, tìm kiếm, lọc trạng thái) |
 
 
 ## 4. Đăng ký khách hàng
@@ -3183,6 +3184,78 @@ interface PurchaseRequestResponseDto {
   status: string;
   createdAt: string;
   items: PurchaseRequestItemResponseDto[];
+}
+```
+
+### 29.1. Lấy danh sách yêu cầu mua hộ
+
+Lấy danh sách yêu cầu mua hộ có phân trang. **Customer** chỉ thấy yêu cầu của chính mình; **Staff/Sales/Admin/Operations** thấy toàn bộ yêu cầu cần xử lý. Yêu cầu ở trạng thái `PENDING_REVIEW` được ưu tiên hiển thị lên đầu.
+
+```http
+GET /api/purchase-requests?pageNumber=1&pageSize=10&status=PENDING_REVIEW&searchKeyword=PUR-2026
+Authorization: Bearer {accessToken}
+```
+
+**Query params (đều tùy chọn):**
+
+| Name | Type | Default | Mô tả |
+|---|---|---|---|
+| `pageNumber` | `number` | `1` | Trang hiện tại (min 1) |
+| `pageSize` | `number` | `10` | Số bản ghi mỗi trang (min 1) |
+| `status` | `string` | — | Lọc theo trạng thái, ví dụ `PENDING_REVIEW` |
+| `searchKeyword` | `string` | — | Tìm theo mã yêu cầu (`purchaseCode`) hoặc tên Customer |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Lấy danh sách yêu cầu mua hộ thành công.",
+  "data": {
+    "items": [
+      {
+        "purchaseRequestId": "b037ab62-...",
+        "purchaseCode": "PUR-20260704-7582",
+        "customerId": "1b53ba9c-...",
+        "customerName": "Bùi Đình Trọng",
+        "itemCount": 2,
+        "status": "PENDING_REVIEW",
+        "note": "Mua giúp mình đợt sale",
+        "createdAt": "2026-07-04T04:18:52Z"
+      }
+    ],
+    "totalCount": 3,
+    "pageNumber": 1,
+    "pageSize": 10,
+    "totalPages": 1
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Ưu tiên hiển thị yêu cầu `PENDING_REVIEW` lên đầu, sau đó sắp xếp theo `createdAt` mới nhất.
+- Trả về `items: []` với `totalCount: 0` nếu chưa có yêu cầu nào (không phải lỗi).
+- Trả `401` nếu chưa đăng nhập.
+
+**TypeScript interface (khớp DTO C#):**
+
+```typescript
+interface PurchaseRequestListItemDto {
+  purchaseRequestId: string;
+  purchaseCode: string;
+  customerId?: string | null;
+  customerName: string;
+  itemCount: number;
+  status: string;
+  note?: string | null;
+  createdAt: string;
+}
+
+interface PaginatedResponse<T> {
+  items: T[];
+  totalCount: number;
+  pageNumber: number;
+  pageSize: number;
+  totalPages: number;
 }
 ```
 

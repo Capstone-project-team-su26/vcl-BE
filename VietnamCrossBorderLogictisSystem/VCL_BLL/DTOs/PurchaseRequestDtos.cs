@@ -54,4 +54,16 @@ namespace VCL_BLL.DTOs
         public DateTime CreatedAt { get; set; }
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
     }
+
+    public class PurchaseRequestListItemDto
+    {
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public Guid? CustomerId { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public int ItemCount { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? Note { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
 }
