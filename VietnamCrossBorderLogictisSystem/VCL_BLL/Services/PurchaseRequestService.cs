@@ -68,7 +68,13 @@ namespace VCL_BLL.Services
                 UserId = userId,
                 CustomerId = customer.Id,
                 PurchaseCode = purchaseCode,
-                Note = request.Note,
+                Route = request.Route,
+                ReceiverName = request.ReceiverName,
+                ReceiverPhone = request.ReceiverPhone,
+                ReceiverAddress = request.ReceiverAddress,
+                RequiresInspection = request.RequiresInspection,
+                RequiresQuantityCheck = request.RequiresQuantityCheck,
+                GeneralNote = request.GeneralNote,
                 Status = "PENDING_REVIEW",
                 CreatedAt = DateTime.UtcNow
             };
@@ -86,6 +92,8 @@ namespace VCL_BLL.Services
                     Id = Guid.NewGuid(),
                     PurchaseRequestId = purchaseRequest.Id,
                     ProductLink = item.ProductLink,
+                    SourceWebsite = item.SourceWebsite,
+                    ProductType = item.ProductType,
                     ProductName = item.ProductName,
                     Quantity = item.Quantity,
                     Attributes = item.Attributes,
@@ -98,6 +106,8 @@ namespace VCL_BLL.Services
                 {
                     ItemId = requestItem.Id,
                     ProductLink = requestItem.ProductLink,
+                    SourceWebsite = requestItem.SourceWebsite,
+                    ProductType = requestItem.ProductType,
                     ProductName = requestItem.ProductName,
                     Quantity = requestItem.Quantity,
                     Attributes = requestItem.Attributes,
@@ -114,7 +124,13 @@ namespace VCL_BLL.Services
                 PurchaseRequestId = purchaseRequest.Id,
                 PurchaseCode = purchaseRequest.PurchaseCode,
                 CustomerId = purchaseRequest.CustomerId,
-                Note = purchaseRequest.Note,
+                Route = purchaseRequest.Route,
+                ReceiverName = purchaseRequest.ReceiverName,
+                ReceiverPhone = purchaseRequest.ReceiverPhone,
+                ReceiverAddress = purchaseRequest.ReceiverAddress,
+                RequiresInspection = purchaseRequest.RequiresInspection,
+                RequiresQuantityCheck = purchaseRequest.RequiresQuantityCheck,
+                GeneralNote = purchaseRequest.GeneralNote,
                 Status = purchaseRequest.Status,
                 CreatedAt = purchaseRequest.CreatedAt ?? DateTime.UtcNow,
                 Items = resultItems
@@ -207,7 +223,7 @@ namespace VCL_BLL.Services
                     CustomerName = customerInfo?.FullName ?? string.Empty,
                     ItemCount = allItems.Count(i => i.PurchaseRequestId == r.Id),
                     Status = r.Status ?? string.Empty,
-                    Note = r.Note,
+                    GeneralNote = r.GeneralNote,
                     CreatedAt = r.CreatedAt ?? DateTime.MinValue
                 };
             }).ToList();

@@ -14,7 +14,19 @@ public partial class PurchaseRequest
 
     public string PurchaseCode { get; set; }
 
-    public string Note { get; set; }
+    public string Route { get; set; }
+
+    public string ReceiverName { get; set; }
+
+    public string ReceiverPhone { get; set; }
+
+    public string ReceiverAddress { get; set; }
+
+    public bool RequiresInspection { get; set; }
+
+    public bool RequiresQuantityCheck { get; set; }
+
+    public string GeneralNote { get; set; }
 
     public string Status { get; set; }
 

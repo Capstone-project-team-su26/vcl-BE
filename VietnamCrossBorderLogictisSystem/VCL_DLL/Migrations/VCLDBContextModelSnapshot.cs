@@ -1250,7 +1250,7 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_id");
 
-                    b.Property<string>("Note")
+                    b.Property<string>("GeneralNote")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("note");
@@ -1259,6 +1259,34 @@ namespace VCL_DLL.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("purchase_code");
+
+                    b.Property<string>("ReceiverAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("receiver_address");
+
+                    b.Property<string>("ReceiverName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("receiver_name");
+
+                    b.Property<string>("ReceiverPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("receiver_phone");
+
+                    b.Property<bool>("RequiresInspection")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_inspection");
+
+                    b.Property<bool>("RequiresQuantityCheck")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_quantity_check");
+
+                    b.Property<string>("Route")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("route");
 
                     b.Property<string>("Status")
                         .HasMaxLength(50)
@@ -1312,6 +1340,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("product_name");
 
+                    b.Property<string>("ProductType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("product_type");
+
                     b.Property<Guid>("PurchaseRequestId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("purchase_request_id");
@@ -1319,6 +1352,11 @@ namespace VCL_DLL.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("int")
                         .HasColumnName("quantity");
+
+                    b.Property<string>("SourceWebsite")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("source_website");
 
                     b.HasKey("Id")
                         .HasName("PK_PURCHASE_REQUEST_ITEMS");

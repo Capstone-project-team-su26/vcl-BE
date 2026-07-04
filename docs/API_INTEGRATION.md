@@ -3076,7 +3076,9 @@ Authorization: Bearer {accessToken}
 
 ## 29. Tạo yêu cầu mua hộ (Purchase Request)
 
-Customer tạo yêu cầu mua hộ hàng Trung Quốc. Khách nhập danh sách sản phẩm cần mua (link, số lượng, thuộc tính...); hệ thống ghi nhận yêu cầu ở trạng thái `PENDING_REVIEW` để Staff/Sales tiếp nhận và xử lý báo giá ở bước sau.
+Customer tạo yêu cầu mua hộ hàng Trung Quốc. Khách nhập thông tin nhận hàng + danh sách sản phẩm cần mua; hệ thống ghi nhận yêu cầu ở trạng thái `PENDING_REVIEW` để Staff/Sales tiếp nhận và xử lý báo giá ở bước sau.
+
+> **Về 2 loại ghi chú:** `generalNote` là ghi chú chung cho cả yêu cầu; `items[].note` là ghi chú riêng cho từng sản phẩm — hai trường khác mục đích, không trùng nhau.
 
 ```http
 POST /api/purchase-requests
@@ -3084,10 +3086,18 @@ Authorization: Bearer {accessToken}
 Content-Type: application/json
 
 {
-  "note": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
+  "route": "TQ-VN",
+  "receiverName": "Nguyễn Văn A",
+  "receiverPhone": "0901234567",
+  "receiverAddress": "123 Lê Lợi, Q1, TP.HCM",
+  "requiresInspection": true,
+  "requiresQuantityCheck": true,
+  "generalNote": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
   "items": [
     {
       "productLink": "https://item.taobao.com/item.htm?id=123456",
+      "sourceWebsite": "Taobao",
+      "productType": "Electronics",
       "productName": "Áo khoác nam",
       "quantity": 2,
       "attributes": "Size L, màu đen",
@@ -3102,9 +3112,17 @@ Content-Type: application/json
 
 | Trường | Bắt buộc | Mô tả |
 |---|---|---|
-| `note` | Không | Ghi chú mua hộ chung cho cả yêu cầu |
+| `route` | Không | Tuyến hàng (dropdown `/api/orders/consignments/routes`) |
+| `receiverName` | Không | Tên người nhận |
+| `receiverPhone` | Không | SĐT người nhận |
+| `receiverAddress` | Không | Địa chỉ nhận hàng |
+| `requiresInspection` | Không | Yêu cầu kiểm tra hàng (mặc định `false`) |
+| `requiresQuantityCheck` | Không | Yêu cầu kiểm tra số lượng (mặc định `false`) |
+| `generalNote` | Không | Ghi chú mua hộ chung cho cả yêu cầu |
 | `items` | **Có** | Danh sách sản phẩm, tối thiểu 1 phần tử |
 | `items[].productLink` | **Có** | Link sản phẩm cần mua |
+| `items[].sourceWebsite` | Không | Website/sàn nguồn (Taobao, 1688, Tmall...) |
+| `items[].productType` | Không | Loại hàng (dropdown `/api/product-types`) |
 | `items[].productName` | Không | Tên sản phẩm (nếu có) |
 | `items[].quantity` | **Có** | Số lượng, phải `>= 1` |
 | `items[].attributes` | Không | Thuộc tính như size, màu, mẫu mã |
@@ -3120,13 +3138,21 @@ Content-Type: application/json
     "purchaseRequestId": "e14b21a7-...",
     "purchaseCode": "PUR-20260704-8439",
     "customerId": "81a7b4c9-...",
-    "note": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
+    "route": "TQ-VN",
+    "receiverName": "Nguyễn Văn A",
+    "receiverPhone": "0901234567",
+    "receiverAddress": "123 Lê Lợi, Q1, TP.HCM",
+    "requiresInspection": true,
+    "requiresQuantityCheck": true,
+    "generalNote": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
     "status": "PENDING_REVIEW",
     "createdAt": "2026-07-04T09:21:00Z",
     "items": [
       {
         "itemId": "a1b2c3d4-...",
         "productLink": "https://item.taobao.com/item.htm?id=123456",
+        "sourceWebsite": "Taobao",
+        "productType": "Electronics",
         "productName": "Áo khoác nam",
         "quantity": 2,
         "attributes": "Size L, màu đen",
@@ -3158,6 +3184,8 @@ Content-Type: application/json
 ```typescript
 interface CreatePurchaseRequestItemDto {
   productLink: string;
+  sourceWebsite?: string | null;
+  productType?: string | null;
   productName?: string | null;
   quantity: number;
   attributes?: string | null;
@@ -3166,13 +3194,21 @@ interface CreatePurchaseRequestItemDto {
 }
 
 interface CreatePurchaseRequestDto {
-  note?: string | null;
+  route?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  receiverAddress?: string | null;
+  requiresInspection: boolean;
+  requiresQuantityCheck: boolean;
+  generalNote?: string | null;
   items: CreatePurchaseRequestItemDto[];
 }
 
 interface PurchaseRequestItemResponseDto {
   itemId: string;
   productLink: string;
+  sourceWebsite?: string | null;
+  productType?: string | null;
   productName?: string | null;
   quantity: number;
   attributes?: string | null;
@@ -3184,7 +3220,13 @@ interface PurchaseRequestResponseDto {
   purchaseRequestId: string;
   purchaseCode: string;
   customerId?: string | null;
-  note?: string | null;
+  route?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  receiverAddress?: string | null;
+  requiresInspection: boolean;
+  requiresQuantityCheck: boolean;
+  generalNote?: string | null;
   status: string;
   createdAt: string;
   items: PurchaseRequestItemResponseDto[];
@@ -3223,7 +3265,7 @@ Authorization: Bearer {accessToken}
         "customerName": "Bùi Đình Trọng",
         "itemCount": 2,
         "status": "PENDING_REVIEW",
-        "note": "Mua giúp mình đợt sale",
+        "generalNote": "Mua giúp mình đợt sale",
         "createdAt": "2026-07-04T04:18:52Z"
       }
     ],
@@ -3250,7 +3292,7 @@ interface PurchaseRequestListItemDto {
   customerName: string;
   itemCount: number;
   status: string;
-  note?: string | null;
+  generalNote?: string | null;
   createdAt: string;
 }
 
