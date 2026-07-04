@@ -5,6 +5,15 @@ using System.ComponentModel.DataAnnotations;
 namespace VCL_BLL.DTOs
 {
     /// <summary>
+    /// Một trạng thái của yêu cầu ký gửi để FE đổ dropdown/lọc (code + nhãn hiển thị).
+    /// </summary>
+    public class ConsignmentStatusDto
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+    }
+
+    /// <summary>
     /// Chi tiết đầy đủ một yêu cầu ký gửi: header + khách hàng + mặt hàng + báo giá mới nhất.
     /// </summary>
     public class ConsignmentDetailResponse

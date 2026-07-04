@@ -85,6 +85,33 @@
       }
     },
     {
+      "name": "3b. GET consignments/statuses (dropdown trang thai)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('data la mang', function () { pm.expect(data).to.be.an('array'); });",
+              "if (data.length) { pm.expect(data[0]).to.have.property('code'); pm.expect(data[0]).to.have.property('label'); }",
+              "console.log('Statuses:', JSON.stringify(data.map(function(s){return s.code;})));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/statuses",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "statuses"]
+        }
+      }
+    },
+    {
       "name": "4. GET product-types (dropdown loai hang)",
       "event": [
         {

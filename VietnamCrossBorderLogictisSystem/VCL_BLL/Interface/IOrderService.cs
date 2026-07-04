@@ -16,5 +16,6 @@ namespace VCL_BLL.Interface
         Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode);
         Task<List<string>> GetConsignmentRoutesAsync();
         Task<List<string>> GetShippingOptionsAsync(string? route);
+        List<ConsignmentStatusDto> GetConsignmentStatuses();
     }
 }

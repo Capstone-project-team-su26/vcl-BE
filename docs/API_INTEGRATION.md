@@ -121,6 +121,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/orders/consignments/routes` | Public | Danh sách tuyến hàng (route) cho dropdown FE |
 | `GET` | `/api/orders/consignments/shipping-options` | Public | Danh sách phương án vận chuyển cho dropdown FE (lọc theo `?route=`) |
 | `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
+| `GET` | `/api/orders/consignments/statuses` | Public | Danh sách toàn bộ trạng thái yêu cầu ký gửi (code + label) |
 
 
 ## 4. Đăng ký khách hàng
@@ -3318,6 +3319,28 @@ GET /api/product-types
 
 Lấy từ bảng `PRODUCT_TYPES` (chỉ các loại `isActive = true`), sắp xếp theo tên. Admin có thể mở rộng danh sách này về sau.
 
+### 30.4. Danh sách trạng thái yêu cầu ký gửi (statuses)
+
+```http
+GET /api/orders/consignments/statuses
+```
+
+```json
+{
+  "message": "Lấy danh sách trạng thái yêu cầu ký gửi thành công.",
+  "data": [
+    { "code": "PENDING_REVIEW", "label": "Chờ duyệt" },
+    { "code": "QUOTATION_SENT", "label": "Đã gửi báo giá" },
+    { "code": "APPROVED", "label": "Đã duyệt" },
+    { "code": "REJECTED", "label": "Đã từ chối" },
+    { "code": "CANCELLED", "label": "Đã hủy" },
+    { "code": "COMPLETED", "label": "Hoàn tất" }
+  ]
+}
+```
+
+Dùng cho dropdown lọc trạng thái ở màn danh sách ký gửi. `code` gửi lại BE khi lọc (`GET /api/orders/consignments?status=`), `label` để hiển thị.
+
 **TypeScript interface:**
 
 ```typescript
@@ -3331,7 +3354,14 @@ interface ProductTypeResponse {
   id: string;
   name: string;
 }
+
+interface ConsignmentStatusDto {
+  code: string;
+  label: string;
+}
 ```
+
+> **Lưu ý về `consignmentCode`:** mã ký gửi do **BE tự sinh** ngay khi khách tạo yêu cầu (định dạng `VCL-{yyyyMMddHHmmss}-{6 số}`). FE **không cần** tự tạo hay gửi mã này lên.
 
 ---
 

@@ -327,5 +327,17 @@ namespace VCL_API.Controllers
             return Ok(new { message = "Lấy danh sách phương án vận chuyển thành công.", data });
         }
 
+        /// <summary>
+        /// Lấy danh sách toàn bộ trạng thái yêu cầu ký gửi (code + nhãn) để FE lọc/hiển thị.
+        /// </summary>
+        [HttpGet("consignments/statuses")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(object), 200)]
+        public IActionResult GetConsignmentStatuses()
+        {
+            var data = _orderService.GetConsignmentStatuses();
+            return Ok(new { message = "Lấy danh sách trạng thái yêu cầu ký gửi thành công.", data });
+        }
+
     }
 }
