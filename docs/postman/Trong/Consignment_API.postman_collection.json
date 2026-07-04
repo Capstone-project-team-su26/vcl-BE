@@ -592,7 +592,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"receiverName\": \"Dinh Trong\",\n  \"receiverPhone\": \"0901234567\",\n  \"address\": \"45 Le Loi, Quan 1, TP.HCM\",\n  \"isDefault\": true\n}"
+          "raw": "{\n  \"address\": \"45 Le Loi, Quan 1, TP.HCM\"\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/delivery-addresses", "host": ["{{baseUrl}}"], "path": ["api", "delivery-addresses"] }
       }
@@ -638,7 +638,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"receiverName\": \"Dinh Trong (cap nhat)\",\n  \"receiverPhone\": \"0909999999\",\n  \"address\": \"99 Nguyen Hue, Quan 1, TP.HCM\",\n  \"isDefault\": true\n}"
+          "raw": "{\n  \"address\": \"99 Nguyen Hue, Quan 1, TP.HCM\"\n}"
         },
         "url": {
           "raw": "{{baseUrl}}/api/delivery-addresses/{{deliveryAddressId}}",

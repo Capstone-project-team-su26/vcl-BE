@@ -302,6 +302,30 @@ namespace VCL_API.Controllers
             }
         }
 
+        /// <summary>
+        /// Lấy danh sách tuyến hàng (route) để FE đổ dropdown khi tạo yêu cầu ký gửi.
+        /// </summary>
+        [HttpGet("consignments/routes")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(object), 200)]
+        public async Task<IActionResult> GetConsignmentRoutes()
+        {
+            var data = await _orderService.GetConsignmentRoutesAsync();
+            return Ok(new { message = "Lấy danh sách tuyến hàng thành công.", data });
+        }
+
+        /// <summary>
+        /// Lấy danh sách phương án vận chuyển (shippingOption) để FE đổ dropdown.
+        /// Có thể lọc theo route qua query param.
+        /// </summary>
+        [HttpGet("consignments/shipping-options")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(object), 200)]
+        public async Task<IActionResult> GetShippingOptions([FromQuery] string? route = null)
+        {
+            var data = await _orderService.GetShippingOptionsAsync(route);
+            return Ok(new { message = "Lấy danh sách phương án vận chuyển thành công.", data });
+        }
 
     }
 }

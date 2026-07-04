@@ -87,6 +87,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<PurchaseRequestItem> PurchaseRequestItems { get; set; }
 
+    public virtual DbSet<ProductType> ProductTypes { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DeliveryAddress>(entity =>
@@ -1264,6 +1266,35 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.ReleasedBy)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_WRO_RELEASED_USER");
+        });
+
+        modelBuilder.Entity<ProductType>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PRODUCT_TYPES");
+            entity.ToTable("PRODUCT_TYPES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.Name)
+                .HasMaxLength(100)
+                .HasColumnName("name");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("created_at");
+
+            // Seed các loại hàng phổ biến cho dropdown (FE feedback Phong)
+            entity.HasData(
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000001"), Name = "Electronics", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000002"), Name = "Clothing", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000003"), Name = "Cosmetics", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000004"), Name = "Accessories", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000005"), Name = "Food", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000006"), Name = "Books", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000007"), Name = "Toys", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000008"), Name = "Household Goods", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+            );
         });
 
         modelBuilder.Entity<PurchaseRequest>(entity =>

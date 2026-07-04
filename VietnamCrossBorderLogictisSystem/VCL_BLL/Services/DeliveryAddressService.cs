@@ -25,8 +25,7 @@ namespace VCL_BLL.Services
             var all = await _unitOfWork.Repository<DeliveryAddress>().GetAllAsync();
             return all
                 .Where(a => a.CustomerId == customer.Id)
-                .OrderByDescending(a => a.IsDefault)
-                .ThenByDescending(a => a.CreatedAt)
+                .OrderByDescending(a => a.CreatedAt)
                 .Select(MapToResponse)
                 .ToList();
         }
@@ -40,16 +39,13 @@ namespace VCL_BLL.Services
             {
                 Id = Guid.NewGuid(),
                 CustomerId = customer.Id,
-                ReceiverName = request.ReceiverName,
-                ReceiverPhone = request.ReceiverPhone,
                 Address = request.Address,
-                IsDefault = request.IsDefault,
+                // Các cột dưới DB vẫn giữ nguyên nhưng không còn nhận từ FE (theo feedback FE Phong)
+                ReceiverName = string.Empty,
+                ReceiverPhone = string.Empty,
+                IsDefault = false,
                 CreatedAt = DateTime.UtcNow
             };
-
-            // Nếu đặt làm mặc định → bỏ mặc định của các địa chỉ khác
-            if (request.IsDefault)
-                await UnsetOtherDefaultsAsync(customer.Id, null);
 
             await repo.AddAsync(address);
             await _unitOfWork.SaveChangesAsync();
@@ -66,13 +62,7 @@ namespace VCL_BLL.Services
             if (address == null || address.CustomerId != customer.Id)
                 throw new NotFoundException("Không tìm thấy địa chỉ nhận hàng.");
 
-            address.ReceiverName = request.ReceiverName;
-            address.ReceiverPhone = request.ReceiverPhone;
             address.Address = request.Address;
-            address.IsDefault = request.IsDefault;
-
-            if (request.IsDefault)
-                await UnsetOtherDefaultsAsync(customer.Id, address.Id);
 
             repo.Update(address);
             await _unitOfWork.SaveChangesAsync();
@@ -91,18 +81,6 @@ namespace VCL_BLL.Services
             await _unitOfWork.SaveChangesAsync();
         }
 
-        private async Task UnsetOtherDefaultsAsync(Guid customerId, Guid? exceptId)
-        {
-            var repo = _unitOfWork.Repository<DeliveryAddress>();
-            var all = await repo.GetAllAsync();
-            var others = all.Where(a => a.CustomerId == customerId && a.IsDefault && a.Id != exceptId).ToList();
-            foreach (var a in others)
-            {
-                a.IsDefault = false;
-                repo.Update(a);
-            }
-        }
-
         private async Task<Customer> GetCustomerOrThrowAsync(Guid userId)
         {
             var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
@@ -116,10 +94,7 @@ namespace VCL_BLL.Services
         {
             Id = a.Id,
             CustomerId = a.CustomerId,
-            ReceiverName = a.ReceiverName ?? string.Empty,
-            ReceiverPhone = a.ReceiverPhone ?? string.Empty,
             Address = a.Address ?? string.Empty,
-            IsDefault = a.IsDefault,
             CreatedAt = a.CreatedAt
         };
     }

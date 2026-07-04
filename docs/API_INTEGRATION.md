@@ -118,6 +118,9 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/warehouses/{warehouseId}/locations/active` | Authenticated | Lấy danh sách vị trí lưu trữ đang hoạt động |
 | `POST` | `/api/purchase-requests` | Customer | Customer tạo yêu cầu mua hộ hàng Trung Quốc |
 | `GET` | `/api/purchase-requests` | Customer / Staff / Sales | Lấy danh sách yêu cầu mua hộ (phân trang, tìm kiếm, lọc trạng thái) |
+| `GET` | `/api/orders/consignments/routes` | Public | Danh sách tuyến hàng (route) cho dropdown FE |
+| `GET` | `/api/orders/consignments/shipping-options` | Public | Danh sách phương án vận chuyển cho dropdown FE (lọc theo `?route=`) |
+| `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
 
 
 ## 4. Đăng ký khách hàng
@@ -3256,6 +3259,77 @@ interface PaginatedResponse<T> {
   pageNumber: number;
   pageSize: number;
   totalPages: number;
+}
+```
+
+---
+
+## 30. Dropdown dữ liệu cho form ký gửi (Consignment dropdowns)
+
+Nhóm API `GET` cung cấp dữ liệu đổ dropdown cho form tạo yêu cầu ký gửi (`route`, `shippingOption`, `productType`). Tất cả đều **public** (không cần token) và trả về `data` là mảng.
+
+### 30.1. Danh sách tuyến hàng (route)
+
+```http
+GET /api/orders/consignments/routes
+```
+
+```json
+{
+  "message": "Lấy danh sách tuyến hàng thành công.",
+  "data": ["VIETNAM-JAPAN", "Vietnam-Korea", "VIETNAM-USA"]
+}
+```
+
+Giá trị route lấy từ `ServicePricing` theo định dạng `{OriginCountry}-{DestinationCountry}`, đã `distinct` và sắp xếp A→Z.
+
+### 30.2. Danh sách phương án vận chuyển (shippingOption)
+
+```http
+GET /api/orders/consignments/shipping-options
+GET /api/orders/consignments/shipping-options?route=Vietnam-Korea
+```
+
+```json
+{
+  "message": "Lấy danh sách phương án vận chuyển thành công.",
+  "data": ["CONSOLIDATION", "EXPRESS", "Standard"]
+}
+```
+
+- Không truyền `route` → trả về toàn bộ `ServiceType` distinct.
+- Truyền `route` → chỉ trả về các phương án khả dụng cho tuyến đó (rỗng `[]` nếu route không có).
+
+### 30.3. Danh sách loại hàng (productType)
+
+```http
+GET /api/product-types
+```
+
+```json
+{
+  "message": "Lấy danh sách loại hàng thành công.",
+  "data": [
+    { "id": "11111111-0000-0000-0000-000000000004", "name": "Accessories" },
+    { "id": "11111111-0000-0000-0000-000000000002", "name": "Clothing" }
+  ]
+}
+```
+
+Lấy từ bảng `PRODUCT_TYPES` (chỉ các loại `isActive = true`), sắp xếp theo tên. Admin có thể mở rộng danh sách này về sau.
+
+**TypeScript interface:**
+
+```typescript
+// routes & shipping-options: data là string[]
+interface DropdownStringResponse {
+  message: string;
+  data: string[];
+}
+
+interface ProductTypeResponse {
+  id: string;
+  name: string;
 }
 ```
 

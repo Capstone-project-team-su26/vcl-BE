@@ -42,6 +42,7 @@ namespace VCL_API.Injection
             services.AddScoped<IFileUploadService, CloudinaryFileUploadService>();
             services.AddScoped<IConsolidationService, ConsolidationService>();
             services.AddScoped<IPurchaseRequestService, PurchaseRequestService>();
+            services.AddScoped<IProductTypeService, ProductTypeService>();
 
             // Add JWT Authentication
             var jwtSettings = configuration.GetSection("JWT");
