@@ -1311,7 +1311,23 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.PurchaseCode)
                 .HasMaxLength(100)
                 .HasColumnName("purchase_code");
-            entity.Property(e => e.Note)
+            entity.Property(e => e.Route)
+                .HasMaxLength(100)
+                .HasColumnName("route");
+            entity.Property(e => e.ReceiverName)
+                .HasMaxLength(255)
+                .HasColumnName("receiver_name");
+            entity.Property(e => e.ReceiverPhone)
+                .HasMaxLength(50)
+                .HasColumnName("receiver_phone");
+            entity.Property(e => e.ReceiverAddress)
+                .HasMaxLength(500)
+                .HasColumnName("receiver_address");
+            entity.Property(e => e.RequiresInspection)
+                .HasColumnName("requires_inspection");
+            entity.Property(e => e.RequiresQuantityCheck)
+                .HasColumnName("requires_quantity_check");
+            entity.Property(e => e.GeneralNote)
                 .HasMaxLength(1000)
                 .HasColumnName("note");
             entity.Property(e => e.Status)
@@ -1337,6 +1353,12 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ProductLink)
                 .HasMaxLength(1000)
                 .HasColumnName("product_link");
+            entity.Property(e => e.SourceWebsite)
+                .HasMaxLength(500)
+                .HasColumnName("source_website");
+            entity.Property(e => e.ProductType)
+                .HasMaxLength(100)
+                .HasColumnName("product_type");
             entity.Property(e => e.ProductName)
                 .HasMaxLength(255)
                 .HasColumnName("product_name");
