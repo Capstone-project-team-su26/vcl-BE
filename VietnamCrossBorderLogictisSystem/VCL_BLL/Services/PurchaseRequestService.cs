@@ -14,6 +14,9 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
 
+        // Các role được phép xem toàn bộ yêu cầu mua hộ cần xử lý (Staff/Sales)
+        private static readonly string[] StaffRoles = { "ADMIN", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
+
         public PurchaseRequestService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
@@ -115,6 +118,106 @@ namespace VCL_BLL.Services
                 Status = purchaseRequest.Status,
                 CreatedAt = purchaseRequest.CreatedAt ?? DateTime.UtcNow,
                 Items = resultItems
+            };
+        }
+
+        public async Task<PaginatedResponse<PurchaseRequestListItemDto>> GetPurchaseRequestsAsync(
+            Guid? userId, string userRole, int pageNumber, int pageSize, string? status, string? searchKeyword)
+        {
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var itemRepo = _unitOfWork.Repository<PurchaseRequestItem>();
+            var customerRepo = _unitOfWork.Repository<Customer>();
+
+            var allRequests = await requestRepo.GetAllAsync();
+            var allItems = await itemRepo.GetAllAsync();
+            var allCustomers = await customerRepo.GetAllAsync();
+
+            var query = allRequests.AsQueryable();
+
+            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
+                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+
+            // 1. Phân quyền: Customer chỉ xem yêu cầu của chính mình, Staff/Sales xem tất cả
+            if (!isStaff)
+            {
+                if (userId == null)
+                {
+                    throw new UnauthorizedAccessException("Người dùng không hợp lệ.");
+                }
+
+                var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
+                if (customer == null)
+                {
+                    // Không phải Staff và không có hồ sơ khách hàng -> trả về danh sách rỗng
+                    return new PaginatedResponse<PurchaseRequestListItemDto>
+                    {
+                        Items = new List<PurchaseRequestListItemDto>(),
+                        TotalCount = 0,
+                        PageNumber = pageNumber,
+                        PageSize = pageSize
+                    };
+                }
+
+                query = query.Where(r => r.CustomerId == customer.Id);
+            }
+
+            // 2. Lọc theo trạng thái
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // 3. Tìm kiếm theo mã yêu cầu hoặc tên Customer
+            if (!string.IsNullOrWhiteSpace(searchKeyword))
+            {
+                var keyword = searchKeyword.Trim();
+                var matchedCustomerIds = allCustomers
+                    .Where(c => !string.IsNullOrEmpty(c.FullName)
+                        && c.FullName.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                    .Select(c => c.Id)
+                    .ToHashSet();
+
+                query = query.Where(r =>
+                    (r.PurchaseCode != null && r.PurchaseCode.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                    || (r.CustomerId.HasValue && matchedCustomerIds.Contains(r.CustomerId.Value)));
+            }
+
+            var totalCount = query.Count();
+
+            // 4. Ưu tiên PENDING_REVIEW lên đầu, sau đó theo ngày tạo mới nhất; rồi phân trang
+            var pagedRequests = query
+                .OrderByDescending(r => string.Equals(r.Status, "PENDING_REVIEW", StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(r => r.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            // 5. Map sang DTO (kèm tên Customer và số lượng sản phẩm)
+            var resultItems = pagedRequests.Select(r =>
+            {
+                var customerInfo = r.CustomerId.HasValue
+                    ? allCustomers.FirstOrDefault(c => c.Id == r.CustomerId.Value)
+                    : null;
+
+                return new PurchaseRequestListItemDto
+                {
+                    PurchaseRequestId = r.Id,
+                    PurchaseCode = r.PurchaseCode ?? string.Empty,
+                    CustomerId = r.CustomerId,
+                    CustomerName = customerInfo?.FullName ?? string.Empty,
+                    ItemCount = allItems.Count(i => i.PurchaseRequestId == r.Id),
+                    Status = r.Status ?? string.Empty,
+                    Note = r.Note,
+                    CreatedAt = r.CreatedAt ?? DateTime.MinValue
+                };
+            }).ToList();
+
+            return new PaginatedResponse<PurchaseRequestListItemDto>
+            {
+                Items = resultItems,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
             };
         }
     }
