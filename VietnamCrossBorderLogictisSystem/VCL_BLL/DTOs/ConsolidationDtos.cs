@@ -6,7 +6,6 @@ namespace VCL_BLL.DTOs
     public class CreateConsolidationRequest
     {
         public List<Guid> OrderIds { get; set; } = new List<Guid>();
-        public string? CustomMasterCode { get; set; }
         public string? Status { get; set; }
     }
 

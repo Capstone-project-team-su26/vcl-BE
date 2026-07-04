@@ -11,7 +11,7 @@ namespace VCL_API.Controllers
 {
     [Route("api/consolidation")]
     [ApiController]
-    [Authorize(Roles = "Staff,WarehouseStaff,Admin")]
+    [Authorize(Roles = "Staff,WarehouseStaff,Admin,OperationsManager")]
     public class ConsolidationController : ControllerBase
     {
         private readonly IConsolidationService _consolidationService;

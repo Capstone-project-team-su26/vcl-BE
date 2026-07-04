@@ -58,24 +58,14 @@ namespace VCL_BLL.Services
             var masterBoxRepo = _unitOfWork.Repository<MasterBox>();
             var allMasterBoxes = await masterBoxRepo.GetAllAsync();
 
-            string masterCode = request.CustomMasterCode?.Trim();
-            if (string.IsNullOrWhiteSpace(masterCode))
+            var random = new Random();
+            string masterCode;
+            do
             {
-                var random = new Random();
-                do
-                {
-                    var dateStr = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-                    var suffix = random.Next(100000, 999999).ToString();
-                    masterCode = $"MBX-{dateStr}-{suffix}";
-                } while (allMasterBoxes.Any(mb => mb.MasterCode.Equals(masterCode, StringComparison.OrdinalIgnoreCase)));
-            }
-            else
-            {
-                if (allMasterBoxes.Any(mb => mb.MasterCode.Equals(masterCode, StringComparison.OrdinalIgnoreCase)))
-                {
-                    throw new ArgumentException($"MasterCode '{masterCode}' đã tồn tại.");
-                }
-            }
+                var dateStr = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+                var suffix = random.Next(100000, 999999).ToString();
+                masterCode = $"MBX-{dateStr}-{suffix}";
+            } while (allMasterBoxes.Any(mb => mb.MasterCode.Equals(masterCode, StringComparison.OrdinalIgnoreCase)));
 
             var totalVolumeCm3 = parcelsToConsolidate.Sum(p => (p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m));
             var masterBox = new MasterBox
