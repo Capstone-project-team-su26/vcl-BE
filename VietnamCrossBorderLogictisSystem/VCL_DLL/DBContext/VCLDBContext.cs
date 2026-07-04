@@ -83,6 +83,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<WarehouseReceivingNote> WarehouseReceivingNotes { get; set; }
 
+    public virtual DbSet<PurchaseRequest> PurchaseRequests { get; set; }
+
+    public virtual DbSet<PurchaseRequestItem> PurchaseRequestItems { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DeliveryAddress>(entity =>
@@ -1260,6 +1264,66 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.ReleasedBy)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_WRO_RELEASED_USER");
+        });
+
+        modelBuilder.Entity<PurchaseRequest>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PURCHASE_REQUESTS");
+            entity.ToTable("PURCHASE_REQUESTS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("created_at");
+            entity.Property(e => e.CustomerId).HasColumnName("customer_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.PurchaseCode)
+                .HasMaxLength(100)
+                .HasColumnName("purchase_code");
+            entity.Property(e => e.Note)
+                .HasMaxLength(1000)
+                .HasColumnName("note");
+            entity.Property(e => e.Status)
+                .HasMaxLength(50)
+                .HasColumnName("status");
+
+            entity.HasOne(d => d.Customer).WithMany()
+                .HasForeignKey(d => d.CustomerId)
+                .HasConstraintName("FK_PURCHASE_REQ_CUSTOMER");
+
+            entity.HasOne(d => d.User).WithMany()
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK_PURCHASE_REQ_USER");
+        });
+
+        modelBuilder.Entity<PurchaseRequestItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PURCHASE_REQUEST_ITEMS");
+            entity.ToTable("PURCHASE_REQUEST_ITEMS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.PurchaseRequestId).HasColumnName("purchase_request_id");
+            entity.Property(e => e.ProductLink)
+                .HasMaxLength(1000)
+                .HasColumnName("product_link");
+            entity.Property(e => e.ProductName)
+                .HasMaxLength(255)
+                .HasColumnName("product_name");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.Attributes)
+                .HasMaxLength(500)
+                .HasColumnName("attributes");
+            entity.Property(e => e.Note)
+                .HasMaxLength(500)
+                .HasColumnName("note");
+            entity.Property(e => e.ImageUrl)
+                .HasMaxLength(1000)
+                .HasColumnName("image_url");
+
+            entity.HasOne(d => d.PurchaseRequest).WithMany(p => p.PurchaseRequestItems)
+                .HasForeignKey(d => d.PurchaseRequestId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PURCHASE_REQ_ITEM_REQUEST");
         });
 
         modelBuilder.Entity<PickingList>(entity =>

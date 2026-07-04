@@ -116,6 +116,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/warehouse-locations/{locationId}` | Admin | Cập nhật thông tin vị trí lưu trữ |
 | `DELETE` | `/api/warehouse-locations/{locationId}` | Admin | Xóa vị trí lưu trữ |
 | `GET` | `/api/warehouses/{warehouseId}/locations/active` | Authenticated | Lấy danh sách vị trí lưu trữ đang hoạt động |
+| `POST` | `/api/purchase-requests` | Customer | Customer tạo yêu cầu mua hộ hàng Trung Quốc |
 
 
 ## 4. Đăng ký khách hàng
@@ -3065,6 +3066,125 @@ Khi thực hiện xóa MasterBox, hệ thống sẽ tự động giải tán t�
 ```http
 DELETE /api/consolidation/{id}
 Authorization: Bearer {accessToken}
+```
+
+---
+
+## 29. Tạo yêu cầu mua hộ (Purchase Request)
+
+Customer tạo yêu cầu mua hộ hàng Trung Quốc. Khách nhập danh sách sản phẩm cần mua (link, số lượng, thuộc tính...); hệ thống ghi nhận yêu cầu ở trạng thái `PENDING_REVIEW` để Staff/Sales tiếp nhận và xử lý báo giá ở bước sau.
+
+```http
+POST /api/purchase-requests
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "note": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
+  "items": [
+    {
+      "productLink": "https://item.taobao.com/item.htm?id=123456",
+      "productName": "Áo khoác nam",
+      "quantity": 2,
+      "attributes": "Size L, màu đen",
+      "note": "Chọn loại vải dày",
+      "imageUrl": "https://res.cloudinary.com/.../ref.jpg"
+    }
+  ]
+}
+```
+
+**Ràng buộc dữ liệu:**
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `note` | Không | Ghi chú mua hộ chung cho cả yêu cầu |
+| `items` | **Có** | Danh sách sản phẩm, tối thiểu 1 phần tử |
+| `items[].productLink` | **Có** | Link sản phẩm cần mua |
+| `items[].productName` | Không | Tên sản phẩm (nếu có) |
+| `items[].quantity` | **Có** | Số lượng, phải `>= 1` |
+| `items[].attributes` | Không | Thuộc tính như size, màu, mẫu mã |
+| `items[].note` | Không | Ghi chú riêng cho từng sản phẩm |
+| `items[].imageUrl` | Không | Hình ảnh tham khảo |
+
+**Response thành công (201 Created):**
+
+```json
+{
+  "message": "Tạo yêu cầu mua hộ thành công.",
+  "data": {
+    "purchaseRequestId": "e14b21a7-...",
+    "purchaseCode": "PUR-20260704-8439",
+    "customerId": "81a7b4c9-...",
+    "note": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
+    "status": "PENDING_REVIEW",
+    "createdAt": "2026-07-04T09:21:00Z",
+    "items": [
+      {
+        "itemId": "a1b2c3d4-...",
+        "productLink": "https://item.taobao.com/item.htm?id=123456",
+        "productName": "Áo khoác nam",
+        "quantity": 2,
+        "attributes": "Size L, màu đen",
+        "note": "Chọn loại vải dày",
+        "imageUrl": "https://res.cloudinary.com/.../ref.jpg"
+      }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Trạng thái yêu cầu ban đầu luôn là `"PENDING_REVIEW"`.
+- Mã yêu cầu `purchaseCode` được sinh tự động theo định dạng `PUR-yyyyMMdd-xxxx`.
+- Chỉ tài khoản **Customer** mới được tạo yêu cầu mua hộ. Không xử lý bước nhà cung cấp chuẩn bị hàng ở API này.
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Thiếu link sản phẩm | `"Link sản phẩm không được để trống."` |
+| `400` | Số lượng không hợp lệ | `"Số lượng sản phẩm phải lớn hơn 0."` |
+| `400` | Danh sách sản phẩm rỗng | `"Danh sách sản phẩm cần mua hộ phải có ít nhất một sản phẩm."` |
+| `401` | Chưa đăng nhập | (JWT thiếu/không hợp lệ) |
+| `403` | Không phải Customer | `"Chỉ khách hàng mới được tạo yêu cầu mua hộ."` |
+
+**TypeScript interface (khớp DTO C#):**
+
+```typescript
+interface CreatePurchaseRequestItemDto {
+  productLink: string;
+  productName?: string | null;
+  quantity: number;
+  attributes?: string | null;
+  note?: string | null;
+  imageUrl?: string | null;
+}
+
+interface CreatePurchaseRequestDto {
+  note?: string | null;
+  items: CreatePurchaseRequestItemDto[];
+}
+
+interface PurchaseRequestItemResponseDto {
+  itemId: string;
+  productLink: string;
+  productName?: string | null;
+  quantity: number;
+  attributes?: string | null;
+  note?: string | null;
+  imageUrl?: string | null;
+}
+
+interface PurchaseRequestResponseDto {
+  purchaseRequestId: string;
+  purchaseCode: string;
+  customerId?: string | null;
+  note?: string | null;
+  status: string;
+  createdAt: string;
+  items: PurchaseRequestItemResponseDto[];
+}
 ```
 
 ---
