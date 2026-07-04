@@ -99,5 +99,39 @@ namespace VCL_API.Controllers
                 return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Lấy chi tiết một yêu cầu mua hộ (Customer xem của mình, Staff/Sales xem tất cả)
+        /// </summary>
+        [HttpGet("{requestId}")]
+        public async Task<IActionResult> GetPurchaseRequestDetail(Guid requestId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = null;
+            if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var parsedId))
+            {
+                userId = parsedId;
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchaseRequestService.GetPurchaseRequestDetailAsync(requestId, userId, userRole);
+                return Ok(new { message = "Lấy chi tiết yêu cầu mua hộ thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
     }
 }

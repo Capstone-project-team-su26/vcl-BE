@@ -118,6 +118,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/warehouses/{warehouseId}/locations/active` | Authenticated | Lấy danh sách vị trí lưu trữ đang hoạt động |
 | `POST` | `/api/purchase-requests` | Customer | Customer tạo yêu cầu mua hộ hàng Trung Quốc |
 | `GET` | `/api/purchase-requests` | Customer / Staff / Sales | Lấy danh sách yêu cầu mua hộ (phân trang, tìm kiếm, lọc trạng thái) |
+| `GET` | `/api/purchase-requests/{requestId}` | Customer / Staff / Sales | Lấy chi tiết một yêu cầu mua hộ |
 | `GET` | `/api/orders/consignments/routes` | Public | Danh sách tuyến hàng (route) cho dropdown FE |
 | `GET` | `/api/orders/consignments/shipping-options` | Public | Danh sách phương án vận chuyển cho dropdown FE (lọc theo `?route=`) |
 | `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
@@ -3302,6 +3303,84 @@ interface PaginatedResponse<T> {
   pageNumber: number;
   pageSize: number;
   totalPages: number;
+}
+```
+
+### 29.2. Lấy chi tiết yêu cầu mua hộ
+
+Lấy chi tiết đầy đủ một yêu cầu mua hộ theo `requestId`. **Customer** chỉ xem được yêu cầu của chính mình; **Staff/Sales/Admin/Operations** xem được mọi yêu cầu.
+
+```http
+GET /api/purchase-requests/{requestId}
+Authorization: Bearer {accessToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Lấy chi tiết yêu cầu mua hộ thành công.",
+  "data": {
+    "purchaseRequestId": "97e4fd25-...",
+    "purchaseCode": "PUR-20260704-3113",
+    "customerId": "1b53ba9c-...",
+    "customerName": "Bùi Đình Trọng",
+    "createdByName": "Bùi Đình Trọng",
+    "route": "TQ-VN",
+    "receiverName": "Nguyễn Văn A",
+    "receiverPhone": "0901234567",
+    "receiverAddress": "123 Lê Lợi, Q1, TP.HCM",
+    "requiresInspection": true,
+    "requiresQuantityCheck": true,
+    "generalNote": "Mua giúp mình đợt sale",
+    "status": "PENDING_REVIEW",
+    "createdAt": "2026-07-04T04:18:52Z",
+    "totalQuantity": 7,
+    "items": [
+      {
+        "itemId": "80d01761-...",
+        "productLink": "https://item.taobao.com/item.htm?id=123456",
+        "sourceWebsite": "Taobao",
+        "productType": "Electronics",
+        "productName": "Áo khoác nam",
+        "quantity": 2,
+        "attributes": "Size L, màu đen",
+        "note": "Chọn loại vải dày",
+        "imageUrl": "https://res.cloudinary.com/.../ref.jpg"
+      }
+    ]
+  }
+}
+```
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `401` | Chưa đăng nhập | (JWT thiếu/không hợp lệ) |
+| `403` | Customer xem yêu cầu của người khác | `"Bạn không có quyền xem yêu cầu mua hộ này."` |
+| `404` | Không tìm thấy yêu cầu | `"Không tìm thấy yêu cầu mua hộ với ID {requestId}"` |
+
+**TypeScript interface (khớp DTO C#):**
+
+```typescript
+interface PurchaseRequestDetailResponseDto {
+  purchaseRequestId: string;
+  purchaseCode: string;
+  customerId?: string | null;
+  customerName: string;
+  createdByName: string;
+  route?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  receiverAddress?: string | null;
+  requiresInspection: boolean;
+  requiresQuantityCheck: boolean;
+  generalNote?: string | null;
+  status: string;
+  createdAt: string;
+  totalQuantity: number;
+  items: PurchaseRequestItemResponseDto[];
 }
 ```
 
