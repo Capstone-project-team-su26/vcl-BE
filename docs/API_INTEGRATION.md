@@ -101,11 +101,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/warehouse-release-requests/{requestId}/picking-list` | Staff | Tạo phiếu picking cho yêu cầu xuất kho |
 | `PUT` | `/api/picking-lists/{pickingListId}/confirm` | WarehouseStaff | Xác nhận picking hàng khỏi vị trí kho |
 | `PUT` | `/api/warehouse-release-requests/{requestId}/complete` | WarehouseStaff | Xác nhận đóng gói và hoàn tất xuất kho |
-| `POST` | `/api/consolidation` | Staff/WarehouseStaff/Admin | Tạo mới một lô gom hàng (Consolidation) từ danh sách Order IDs |
-| `GET` | `/api/consolidation` | Staff/WarehouseStaff/Admin | Lấy danh sách các lô gom hàng (MasterBox) |
-| `GET` | `/api/consolidation/{id}` | Staff/WarehouseStaff/Admin | Lấy chi tiết thông tin lô gom hàng theo ID |
-| `PUT` | `/api/consolidation/{id}` | Staff/WarehouseStaff/Admin | Cập nhật thông tin/danh sách đơn hàng gom |
-| `DELETE` | `/api/consolidation/{id}` | Staff/WarehouseStaff/Admin | Hủy bỏ lô gom hàng (giải tán các kiện hàng trở lại trạng thái tự do) |
+| `POST` | `/api/consolidation` | Staff/WarehouseStaff/Admin/OperationsManager | Tạo mới một lô gom hàng (Consolidation) từ danh sách Order IDs |
+| `GET` | `/api/consolidation` | Staff/WarehouseStaff/Admin/OperationsManager | Lấy danh sách các lô gom hàng (MasterBox) |
+| `GET` | `/api/consolidation/{id}` | Staff/WarehouseStaff/Admin/OperationsManager | Lấy chi tiết thông tin lô gom hàng theo ID |
+| `PUT` | `/api/consolidation/{id}` | Staff/WarehouseStaff/Admin/OperationsManager | Cập nhật thông tin/danh sách đơn hàng gom |
+| `DELETE` | `/api/consolidation/{id}` | Staff/WarehouseStaff/Admin/OperationsManager | Hủy bỏ lô gom hàng (giải tán các kiện hàng trở lại trạng thái tự do) |
 | `GET` | `/api/warehouses` | Admin | Lấy danh sách tất cả các kho vận hành |
 | `POST` | `/api/warehouses` | Admin | Tạo mới một kho vận hành |
 | `PUT` | `/api/warehouses/{id}` | Admin | Cập nhật thông tin kho vận hành |
@@ -2960,11 +2960,11 @@ Authorization: Bearer {accessToken}
 
 ## 28. Gom hàng và đóng bao (Consolidation - MasterBox)
 
-Tài khoản nhân viên (Staff, WarehouseStaff, Admin) sử dụng các API này để thực hiện quy trình gom nhiều đơn hàng ký gửi của khách hàng vào một MasterBox (mã bao hàng gom chung) trước khi làm thủ tục xuất khẩu hoặc vận chuyển xuyên biên giới.
+Tài khoản nhân viên (Staff, WarehouseStaff, Admin, OperationsManager) sử dụng các API này để thực hiện quy trình gom nhiều đơn hàng ký gửi của khách hàng vào một MasterBox (mã bao hàng gom chung) trước khi làm thủ tục xuất khẩu hoặc vận chuyển xuyên biên giới.
 
 ### 28.1. Tạo lô gom hàng mới
 
-Gom hàng bằng cách truyền lên danh sách các Order ID của các đơn hàng. Hệ thống sẽ tự động tìm kiếm các kiện hàng (Parcels) tương ứng của các đơn hàng này, kiểm tra tính hợp lệ và tự động sinh ra một mã `MasterCode` duy nhất định dạng `MBX-yyyyMMddHHmmss-XXXXXX` (nếu không truyền `customMasterCode`).
+Gom hàng bằng cách truyền lên danh sách các Order ID của các đơn hàng. Hệ thống sẽ tự động tìm kiếm các kiện hàng (Parcels) tương ứng của các đơn hàng này, kiểm tra tính hợp lệ và tự động sinh ra một mã `MasterCode` duy nhất định dạng `MBX-yyyyMMddHHmmss-XXXXXX`.
 
 ```http
 POST /api/consolidation
@@ -2976,7 +2976,6 @@ Content-Type: application/json
     "c5b2a472-87db-4ce5-be8d-192a4e21a37c",
     "b8c3d9a1-02cf-4b72-a1f9-90bde6ef76a8"
   ],
-  "customMasterCode": "MBX-SPECIAL-001",
   "status": "CONSOLIDATED"
 }
 ```
@@ -2985,7 +2984,7 @@ Content-Type: application/json
 - Danh sách `orderIds` phải chứa ít nhất 1 Order ID hợp lệ.
 - Tất cả các đơn hàng được chọn phải tồn tại và có chứa ít nhất 1 kiện hàng (`Parcel`).
 - Không cho phép gom những kiện hàng đã được gom ở một MasterBox khác (tránh trùng lặp). Nếu phát hiện trùng sẽ trả về `400 Bad Request`.
-- `customMasterCode` nếu được truyền lên phải là duy nhất và chưa tồn tại trong hệ thống.
+- Hệ thống tự động sinh `MasterCode` duy nhất định dạng `MBX-yyyyMMddHHmmss-XXXXXX`.
 
 **Response thành công (201 Created):**
 Trả về chi tiết MasterBox đã tạo cùng danh sách đơn hàng và kiện hàng được liên kết:
