@@ -125,6 +125,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/orders/consignments/shipping-options` | Public | Danh sách phương án vận chuyển cho dropdown FE (lọc theo `?route=`) |
 | `GET` | `/api/orders/consignments/statuses` | Public | Danh sách toàn bộ trạng thái yêu cầu ký gửi (code + label) |
 | `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
+| `POST` | `/api/international-shipments` | Staff / Operations | Tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
 | `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
@@ -4060,6 +4061,110 @@ Authorization: Bearer {accessToken}
    - Nhận thông báo khi đối phương vừa mở xem cuộc hội thoại và đánh dấu đọc.
 3. **`NewConversationCreated(conversation: ConversationDto)`**:
    - Nhận thông báo khi có một khách hàng vừa tạo một cuộc trao đổi mới (Dành cho Sales/Admin ở màn hình chờ chat).
+
+---
+
+## 31. Tạo lô vận chuyển quốc tế (International Shipment)
+
+Staff/Operations gom các yêu cầu xuất kho (WRO) đã `RELEASED` vào một lô vận chuyển quốc tế. Hệ thống gom danh sách kiện (Parcel) từ các WRO, tính tổng số kiện + tổng cân nặng, và tạo lô ở trạng thái `CREATED`.
+
+```http
+POST /api/international-shipments
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "wroRequestIds": ["e14b21a7-...", "a5816037-..."],
+  "originWarehouseId": "11111111-...",
+  "destinationWarehouseId": "22222222-...",
+  "carrierId": "33333333-...",
+  "shippingMethod": "Sea"
+}
+```
+
+**Ràng buộc:**
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `wroRequestIds` | **Có** | Danh sách WRO (tối thiểu 1), tất cả phải ở trạng thái `RELEASED` |
+| `originWarehouseId` | **Có** | Kho đi |
+| `destinationWarehouseId` | **Có** | Kho đến |
+| `carrierId` | Không | Đơn vị vận chuyển |
+| `shippingMethod` | Không | Phương thức vận chuyển (Sea, Air...) |
+
+**Response thành công (201 Created):**
+
+```json
+{
+  "message": "Tạo lô vận chuyển quốc tế thành công.",
+  "data": {
+    "shipmentId": "9c1f...",
+    "shipmentCode": "INTL-20260708080000-1234",
+    "originWarehouseId": "11111111-...",
+    "originWarehouseName": "Kho Trung Quốc",
+    "destinationWarehouseId": "22222222-...",
+    "destinationWarehouseName": "Kho Việt Nam HCM",
+    "carrierId": "33333333-...",
+    "carrierName": "GHTK",
+    "shippingMethod": "Sea",
+    "totalPackages": 5,
+    "totalWeight": 12.5,
+    "status": "CREATED",
+    "wroRequests": [
+      { "wroRequestId": "e14b21a7-...", "wroCode": "WRO-20260701-1234" }
+    ],
+    "parcels": [
+      { "parcelId": "d5e243d7-...", "packageCode": "PCL-...", "weight": 2.5 }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ nhận WRO đã `RELEASED`; WRO chưa đủ điều kiện → `400`.
+- Một WRO chỉ được thuộc **một** lô vận chuyển (ràng buộc unique) — gán lại vào lô khác trả `400`.
+- Danh sách kiện được gom tự động từ các WRO (WroItem → Inventory → Parcel), distinct.
+- `totalPackages` = số kiện; `totalWeight` = tổng cân nặng thực tế (ActualWeight, fallback ChargeableWeight).
+- Trạng thái lô ban đầu luôn là `CREATED`.
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Danh sách WRO rỗng | `"Phải chọn ít nhất một yêu cầu xuất kho."` |
+| `400` | WRO chưa RELEASED | `"Yêu cầu xuất kho {code} chưa đủ điều kiện (phải ở trạng thái RELEASED)."` |
+| `400` | WRO đã thuộc lô khác | `"Yêu cầu xuất kho {code} đã thuộc một lô vận chuyển khác."` |
+| `403` | Không phải Staff/Operations | `"Chỉ Staff hoặc Operations được tạo lô vận chuyển quốc tế."` |
+| `404` | Không tìm thấy WRO/kho/carrier | `"Không tìm thấy yêu cầu xuất kho với ID {id}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface CreateInternationalShipmentDto {
+  wroRequestIds: string[];
+  originWarehouseId: string;
+  destinationWarehouseId: string;
+  carrierId?: string | null;
+  shippingMethod?: string | null;
+}
+
+interface InternationalShipmentResponseDto {
+  shipmentId: string;
+  shipmentCode: string;
+  originWarehouseId?: string | null;
+  originWarehouseName: string;
+  destinationWarehouseId?: string | null;
+  destinationWarehouseName: string;
+  carrierId?: string | null;
+  carrierName?: string | null;
+  shippingMethod?: string | null;
+  totalPackages: number;
+  totalWeight: number;
+  status: string;
+  wroRequests: { wroRequestId: string; wroCode: string }[];
+  parcels: { parcelId: string; packageCode: string; weight?: number | null }[];
+}
+```
 
 ---
 
