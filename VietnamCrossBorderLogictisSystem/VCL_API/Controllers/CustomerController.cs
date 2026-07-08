@@ -94,5 +94,26 @@ namespace VCL_API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Vô hiệu hóa (ngừng hoạt động) hồ sơ khách hàng — soft-delete để giữ lịch sử đơn.
+        /// </summary>
+        [HttpDelete("api/customers/{id}")]
+        public async Task<IActionResult> DeactivateCustomer(Guid id)
+        {
+            try
+            {
+                await _customerService.DeactivateCustomerAsync(id);
+                return Ok(new { message = "Vô hiệu hóa hồ sơ khách hàng thành công." });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

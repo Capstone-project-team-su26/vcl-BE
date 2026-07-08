@@ -279,6 +279,22 @@ namespace VCL_BLL.Services
             return MapProfile(customer);
         }
 
+        // VCL-159: Sales vô hiệu hóa hồ sơ khách hàng (soft-delete để giữ lịch sử đơn)
+        public async Task DeactivateCustomerAsync(Guid id)
+        {
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customer = await customerRepo.GetByIdAsync(id);
+            if (customer == null)
+                throw new NotFoundException($"Không tìm thấy khách hàng với ID: {id}");
+
+            if (string.Equals(customer.Status, "INACTIVE", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Khách hàng đã ở trạng thái ngừng hoạt động (INACTIVE).");
+
+            customer.Status = "INACTIVE";
+            customerRepo.Update(customer);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
         private async Task<Customer> FindCustomerByUserIdOrThrowAsync(Guid userId)
         {
             var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();

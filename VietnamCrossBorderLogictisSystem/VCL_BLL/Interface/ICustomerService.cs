@@ -13,5 +13,6 @@ namespace VCL_BLL.Interface
         Task<CustomerResponseDto> UpdateCustomerAsync(Guid id, UpdateCustomerRequestDto request);
         Task<CustomerProfileResponseDto> GetMyProfileAsync(Guid userId);
         Task<CustomerProfileResponseDto> UpdateMyProfileAsync(Guid userId, UpdateCustomerProfileRequestDto request);
+        Task DeactivateCustomerAsync(Guid id);
     }
 }

@@ -132,6 +132,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/customer/parcels` | Customer | Customer tra cứu kiện hàng thuộc yêu cầu ký gửi của mình |
 | `GET` | `/api/customer/profile` | Customer | Customer xem hồ sơ cá nhân |
 | `PUT` | `/api/customer/profile` | Customer | Customer cập nhật hồ sơ cá nhân |
+| `GET` | `/api/customers?search=` | Admin / Sale | Sales xem danh sách + tìm kiếm khách hàng |
+| `GET` | `/api/customers/{id}` | Admin / Sale | Chi tiết hồ sơ khách hàng |
+| `POST` | `/api/customers` | Admin / Sale | Tạo hồ sơ khách hàng |
+| `PUT` | `/api/customers/{id}` | Admin / Sale | Cập nhật hồ sơ khách hàng |
+| `DELETE` | `/api/customers/{id}` | Admin / Sale | Vô hiệu hóa hồ sơ khách hàng (soft-delete) |
 | `POST` | `/api/warehouse-receiving-notes` | Sale / Admin | Sales tạo phiếu tiếp nhận kho từ yêu cầu ký gửi đã APPROVED |
 | `GET` | `/api/warehouse-receiving-notes/by-consignment/{orderId}` | Sale / Admin | Lấy phiếu tiếp nhận kho đang hiệu lực theo đơn ký gửi |
 | `GET` | `/api/warehouse-receiving-notes/scan?code={code}` | WarehouseStaff / Admin | Warehouse Staff scan mã phiếu để nhận thông tin hàng dự kiến |
@@ -4741,6 +4746,35 @@ interface UpdateCustomerProfileRequestDto {
   country?: string | null;
   address?: string | null;
 }
+```
+
+---
+
+## 36. Sales quản lý hồ sơ khách hàng (Customer Management)
+
+Sales/Admin quản lý hồ sơ khách hàng: xem danh sách + tìm kiếm, xem chi tiết, tạo, cập nhật, và **vô hiệu hóa** (soft-delete). Tất cả yêu cầu quyền **Admin hoặc Sale**.
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/api/customers?search={kw}` | Danh sách; `search` lọc theo tên/mã/email/SĐT/địa chỉ/công ty |
+| `GET` | `/api/customers/{id}` | Chi tiết một khách hàng |
+| `POST` | `/api/customers` | Tạo hồ sơ khách hàng |
+| `PUT` | `/api/customers/{id}` | Cập nhật hồ sơ |
+| `DELETE` | `/api/customers/{id}` | **Vô hiệu hóa** (đặt `Status = INACTIVE`) — giữ lịch sử đơn |
+
+**Vô hiệu hóa khách hàng (VCL-159):**
+
+```http
+DELETE /api/customers/{id}
+Authorization: Bearer {saleToken}
+```
+
+- Không xóa cứng (Customer bị `Orders` tham chiếu) → chỉ đặt `Status = INACTIVE`.
+- Khách đã `INACTIVE` mà gọi lại → `400`.
+- Không tìm thấy → `404`. Không đúng quyền (Customer) → `403`.
+
+```json
+{ "message": "Vô hiệu hóa hồ sơ khách hàng thành công." }
 ```
 
 ---
