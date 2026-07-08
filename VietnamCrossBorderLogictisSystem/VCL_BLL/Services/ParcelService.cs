@@ -415,5 +415,110 @@ namespace VCL_BLL.Services
                 PutAwayTime = putAwayTime
             };
         }
+
+        /// <summary>
+        /// VCL-90: Customer tra cứu danh sách kiện hàng thuộc yêu cầu ký gửi của chính mình.
+        /// </summary>
+        public async Task<List<CustomerParcelDto>> GetCustomerParcelsAsync(Guid userId, string? consignmentCode, string? searchCode)
+        {
+            // 1. Tìm Customer tương ứng với tài khoản
+            var allCustomers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+            var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
+            if (customer == null)
+            {
+                // Không có hồ sơ khách hàng -> danh sách rỗng
+                return new List<CustomerParcelDto>();
+            }
+
+            // 2. Các đơn ký gửi thuộc customer
+            var allOrders = await _unitOfWork.Repository<Order>().GetAllAsync();
+            var myOrders = allOrders.Where(o => o.CustomerId == customer.Id).ToList();
+            var myOrderIds = myOrders.Select(o => o.Id).ToHashSet();
+
+            // 3. Nếu lọc theo mã yêu cầu ký gửi -> kiểm tra quyền sở hữu
+            if (!string.IsNullOrWhiteSpace(consignmentCode))
+            {
+                var targetOrder = allOrders.FirstOrDefault(o =>
+                    o.ConsignmentCode != null &&
+                    string.Equals(o.ConsignmentCode, consignmentCode.Trim(), StringComparison.OrdinalIgnoreCase));
+
+                if (targetOrder != null && targetOrder.CustomerId != customer.Id)
+                {
+                    throw new UnauthorizedAccessException("Bạn không có quyền xem kiện hàng của yêu cầu ký gửi này.");
+                }
+
+                // Chỉ giữ đúng đơn được lọc (nếu không tìm thấy -> không có kiện nào)
+                myOrderIds = targetOrder != null && targetOrder.CustomerId == customer.Id
+                    ? new HashSet<Guid> { targetOrder.Id }
+                    : new HashSet<Guid>();
+            }
+
+            if (myOrderIds.Count == 0)
+            {
+                return new List<CustomerParcelDto>();
+            }
+
+            // 4. Lấy các kiện đã check-in thuộc các đơn này
+            var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
+            var parcels = allParcels
+                .Where(p => p.ConsignmentId.HasValue && myOrderIds.Contains(p.ConsignmentId.Value))
+                .Where(p => p.CheckInTime != null
+                    || string.Equals(p.PackageStatus, "RECEIVED", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase));
+
+            // 5. Tìm kiếm theo mã kiện
+            if (!string.IsNullOrWhiteSpace(searchCode))
+            {
+                var keyword = searchCode.Trim();
+                parcels = parcels.Where(p =>
+                    p.PackageCode != null && p.PackageCode.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var parcelList = parcels.OrderByDescending(p => p.CheckInTime).ToList();
+
+            // 6. Map kèm thông tin đơn + sản phẩm
+            var allOrderItems = await _unitOfWork.Repository<OrderItem>().GetAllAsync();
+            var orderMap = myOrders.ToDictionary(o => o.Id);
+
+            var result = parcelList.Select(p =>
+            {
+                Order? order = p.ConsignmentId.HasValue && orderMap.ContainsKey(p.ConsignmentId.Value)
+                    ? orderMap[p.ConsignmentId.Value]
+                    : null;
+
+                var items = order != null
+                    ? allOrderItems
+                        .Where(i => i.OrderId == order.Id)
+                        .Select(i => new CustomerParcelItemDto
+                        {
+                            ProductName = i.ProductName ?? string.Empty,
+                            Quantity = i.Quantity ?? 0,
+                            DeclaredValue = i.DeclaredValue
+                        })
+                        .ToList()
+                    : new List<CustomerParcelItemDto>();
+
+                return new CustomerParcelDto
+                {
+                    ParcelId = p.Id,
+                    PackageCode = p.PackageCode ?? string.Empty,
+                    ConsignmentId = p.ConsignmentId,
+                    ConsignmentCode = order?.ConsignmentCode ?? string.Empty,
+                    PackageStatus = p.PackageStatus ?? string.Empty,
+                    ActualWeight = p.ActualWeight,
+                    Length = p.Length,
+                    Width = p.Width,
+                    Height = p.Height,
+                    VolumetricWeight = p.VolumetricWeight,
+                    ChargeableWeight = p.ChargeableWeight,
+                    CheckInTime = p.CheckInTime,
+                    PutAwayTime = p.PutAwayTime,
+                    SaleNote = order?.Note,
+                    Items = items
+                };
+            }).ToList();
+
+            return result;
+        }
     }
 }
