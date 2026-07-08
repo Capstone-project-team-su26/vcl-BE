@@ -133,6 +133,12 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/warehouse-receiving-notes` | Sale / Admin | Sales tạo phiếu tiếp nhận kho từ yêu cầu ký gửi đã APPROVED |
 | `GET` | `/api/warehouse-receiving-notes/by-consignment/{orderId}` | Sale / Admin | Lấy phiếu tiếp nhận kho đang hiệu lực theo đơn ký gửi |
 | `GET` | `/api/warehouse-receiving-notes/scan?code={code}` | WarehouseStaff / Admin | Warehouse Staff scan mã phiếu để nhận thông tin hàng dự kiến |
+| `GET` | `/api/shipping-methods` | Admin | Danh sách toàn bộ phương thức vận chuyển |
+| `GET` | `/api/shipping-methods/active` | Authenticated | Danh sách phương thức đang hoạt động (Customer/Staff chọn) |
+| `GET` | `/api/shipping-methods/{id}` | Admin | Chi tiết một phương thức vận chuyển |
+| `POST` | `/api/shipping-methods` | Admin | Tạo phương thức vận chuyển mới |
+| `PUT` | `/api/shipping-methods/{id}` | Admin | Cập nhật / vô hiệu hóa phương thức vận chuyển |
+| `DELETE` | `/api/shipping-methods/{id}` | Admin | Xóa phương thức vận chuyển |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
 | `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
@@ -4578,6 +4584,87 @@ interface WarehouseReceivingNoteScanResponseDto {
   warehouseName: string;
   warehouseNote: string;
   expectedItems: WarehouseReceivingNoteExpectedItemDto[];
+}
+```
+
+---
+
+## 34. Quản lý phương thức vận chuyển (Shipping Methods)
+
+Admin quản lý danh mục phương thức vận chuyển (Express, Air Freight, Sea Freight, Road Freight, Domestic Delivery...). Customer/Staff dùng danh sách **đang hoạt động** khi tạo yêu cầu ký gửi / báo giá.
+
+```http
+POST /api/shipping-methods
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+
+{
+  "methodName": "Sea Freight",
+  "methodCode": "SEA",
+  "description": "Vận chuyển đường biển",
+  "estimatedTransitTime": "15-25 ngày",
+  "applicableCondition": "Đơn > 50kg",
+  "isActive": true,
+  "internalNote": "Ưu tiên hàng cồng kềnh"
+}
+```
+
+**Endpoints:**
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/shipping-methods` | Admin | Toàn bộ danh sách |
+| `GET` | `/api/shipping-methods/active` | Authenticated | Chỉ phương thức `isActive = true` |
+| `GET` | `/api/shipping-methods/{id}` | Admin | Chi tiết |
+| `POST` | `/api/shipping-methods` | Admin | Tạo mới |
+| `PUT` | `/api/shipping-methods/{id}` | Admin | Cập nhật / đặt `isActive=false` để vô hiệu hóa |
+| `DELETE` | `/api/shipping-methods/{id}` | Admin | Xóa |
+
+**Ràng buộc / lỗi:**
+- `methodName`, `methodCode` bắt buộc; thiếu → `400`.
+- **Mã (`methodCode`) không được trùng** → `409` (khi tạo/cập nhật).
+- Không tìm thấy → `404`. Chỉ **Admin** thao tác CRUD (`403` nếu sai quyền).
+- Vô hiệu hóa: `PUT` với `isActive: false` → phương thức không còn xuất hiện ở `/active`.
+
+**Response mẫu (một phương thức):**
+
+```json
+{
+  "id": "41a99f30-...",
+  "methodName": "Sea Freight",
+  "methodCode": "SEA",
+  "description": "Vận chuyển đường biển",
+  "estimatedTransitTime": "15-25 ngày",
+  "applicableCondition": "Đơn > 50kg",
+  "isActive": true,
+  "internalNote": "Ưu tiên hàng cồng kềnh",
+  "createdAt": "2026-07-08T18:58:00Z"
+}
+```
+
+**TypeScript interface:**
+
+```typescript
+interface ShippingMethodResponseDto {
+  id: string;
+  methodName: string;
+  methodCode: string;
+  description?: string | null;
+  estimatedTransitTime?: string | null;
+  applicableCondition?: string | null;
+  isActive: boolean;
+  internalNote?: string | null;
+  createdAt?: string | null;
+}
+
+interface CreateShippingMethodRequestDto {
+  methodName: string;
+  methodCode: string;
+  description?: string | null;
+  estimatedTransitTime?: string | null;
+  applicableCondition?: string | null;
+  isActive?: boolean;
+  internalNote?: string | null;
 }
 ```
 

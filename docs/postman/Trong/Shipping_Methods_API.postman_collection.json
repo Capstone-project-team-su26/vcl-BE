@@ -1,0 +1,143 @@
+{
+  "info": {
+    "name": "VCL - Quan ly phuong thuc van chuyen (Shipping Methods)",
+    "description": "VCL-152: Admin CRUD phuong thuc van chuyen. Customer/Staff dung GET /active. Ma phuong thuc khong duoc trung.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "shippingMethodId", "value": "", "type": "string" },
+    { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
+    { "key": "customerPassword", "value": "trong123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0a. Seed Admin",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/Test/seed-admin", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-admin"] } }
+    },
+    {
+      "name": "0b. Login Admin",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var j = pm.response.json(); if (j.token) pm.collectionVariables.set('adminToken', j.token);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"Admin123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "0c. Login Customer",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var j = pm.response.json(); if (j.token) pm.collectionVariables.set('customerToken', j.token);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "1. Tao phuong thuc (201, save id)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+        "var d = pm.response.json().data; if (d && d.id) pm.collectionVariables.set('shippingMethodId', d.id);",
+        "pm.test('Dung methodCode', function () { pm.expect(d.methodCode).to.eql('SEA'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"methodName\": \"Sea Freight\",\n  \"methodCode\": \"SEA\",\n  \"description\": \"Van chuyen duong bien\",\n  \"estimatedTransitTime\": \"15-25 ngay\",\n  \"isActive\": true\n}" },
+        "url": { "raw": "{{baseUrl}}/api/shipping-methods", "host": ["{{baseUrl}}"], "path": ["api", "shipping-methods"] }
+      }
+    },
+    {
+      "name": "2. (Negative) Trung ma -> 409",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 409', function () { pm.response.to.have.status(409); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"methodName\": \"Khac\",\n  \"methodCode\": \"SEA\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/shipping-methods", "host": ["{{baseUrl}}"], "path": ["api", "shipping-methods"] }
+      }
+    },
+    {
+      "name": "3. (Negative) Customer tao -> 403",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 403', function () { pm.response.to.have.status(403); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"methodName\": \"x\",\n  \"methodCode\": \"AIR\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/shipping-methods", "host": ["{{baseUrl}}"], "path": ["api", "shipping-methods"] }
+      }
+    },
+    {
+      "name": "4. GET all (Admin)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "pm.test('data la mang', function () { pm.expect(pm.response.json().data).to.be.an('array'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/shipping-methods", "host": ["{{baseUrl}}"], "path": ["api", "shipping-methods"] }
+      }
+    },
+    {
+      "name": "5. GET active (Customer)",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/shipping-methods/active", "host": ["{{baseUrl}}"], "path": ["api", "shipping-methods", "active"] }
+      }
+    },
+    {
+      "name": "6. PUT vo hieu hoa (isActive=false)",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"methodName\": \"Sea Freight\",\n  \"methodCode\": \"SEA\",\n  \"isActive\": false\n}" },
+        "url": { "raw": "{{baseUrl}}/api/shipping-methods/{{shippingMethodId}}", "host": ["{{baseUrl}}"], "path": ["api", "shipping-methods", "{{shippingMethodId}}"] }
+      }
+    },
+    {
+      "name": "7. DELETE",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/shipping-methods/{{shippingMethodId}}", "host": ["{{baseUrl}}"], "path": ["api", "shipping-methods", "{{shippingMethodId}}"] }
+      }
+    },
+    {
+      "name": "8. (Negative) GET by id sau xoa -> 404",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 404', function () { pm.response.to.have.status(404); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/shipping-methods/{{shippingMethodId}}", "host": ["{{baseUrl}}"], "path": ["api", "shipping-methods", "{{shippingMethodId}}"] }
+      }
+    }
+  ]
+}

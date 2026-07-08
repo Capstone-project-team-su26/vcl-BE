@@ -97,6 +97,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<ShipmentParcel> ShipmentParcels { get; set; }
 
+    public virtual DbSet<ShippingMethod> ShippingMethods { get; set; }
+
     public virtual DbSet<Conversation> Conversations { get; set; }
 
     public virtual DbSet<Message> Messages { get; set; }
@@ -1349,6 +1351,24 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.ReleasedBy)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_WRO_RELEASED_USER");
+        });
+
+        modelBuilder.Entity<ShippingMethod>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_SHIPPING_METHODS");
+            entity.ToTable("SHIPPING_METHODS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.MethodName).HasMaxLength(150).HasColumnName("method_name");
+            entity.Property(e => e.MethodCode).HasMaxLength(50).HasColumnName("method_code");
+            entity.Property(e => e.Description).HasMaxLength(1000).HasColumnName("description");
+            entity.Property(e => e.EstimatedTransitTime).HasMaxLength(100).HasColumnName("estimated_transit_time");
+            entity.Property(e => e.ApplicableCondition).HasMaxLength(500).HasColumnName("applicable_condition");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.InternalNote).HasMaxLength(1000).HasColumnName("internal_note");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+
+            entity.HasIndex(e => e.MethodCode).IsUnique().HasDatabaseName("UQ_SHIPPING_METHOD_CODE");
         });
 
         modelBuilder.Entity<ProductType>(entity =>
