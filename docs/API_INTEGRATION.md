@@ -128,6 +128,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/international-shipments` | Staff / Operations | Tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED |
 | `PUT` | `/api/international-shipments/{shipmentId}/status` | Staff / Operations | Cập nhật trạng thái lô vận chuyển quốc tế (MANIFESTED → IN_TRANSIT → ARRIVED_DESTINATION) |
 | `PUT` | `/api/international-shipments/{shipmentId}/arrive` | Staff / Operations | Xác nhận lô đến kho đích (cập nhật lô + kiện sang ARRIVED_DESTINATION) |
+| `PUT` | `/api/international-shipments/{shipmentId}/destination-receiving` | WarehouseStaff / Staff / Operations | Xác nhận nhận kiện tại kho đích (kiện sang RECEIVED_AT_DESTINATION) |
 | `GET` | `/api/customer/parcels` | Customer | Customer tra cứu kiện hàng thuộc yêu cầu ký gửi của mình |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
@@ -4397,6 +4398,88 @@ interface ConfirmShipmentArrivalResponseDto {
   note?: string | null;
   totalPackages: number;
   parcels: { parcelId: string; packageCode: string; weight?: number | null }[];
+}
+```
+
+---
+
+### 31.3. Xác nhận nhận kiện tại kho đích
+
+Warehouse Staff (hoặc Staff/Operations) xác nhận các kiện trong lô đã được nhận tại kho đích, sau khi lô đã `ARRIVED_DESTINATION`. Sau bước này kiện chuyển `RECEIVED_AT_DESTINATION` và sẵn sàng cho put-away.
+
+```http
+PUT /api/international-shipments/{shipmentId}/destination-receiving
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "parcelIds": ["d5e243d7-..."],
+  "note": "Nhận đủ 5 kiện"
+}
+```
+
+**Ràng buộc:**
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `parcelIds` | Không | Danh sách kiện cần nhận; **bỏ trống = nhận tất cả** kiện trong lô chưa nhận |
+| `note` | Không | Ghi chú nhận kiện |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Xác nhận nhận kiện tại kho đích thành công.",
+  "data": {
+    "shipmentId": "9c1f...",
+    "shipmentCode": "INTL-20260708080000-1234",
+    "destinationWarehouseId": "22222222-...",
+    "destinationWarehouseName": "Kho Việt Nam HCM",
+    "receivedAt": "2026-07-08T13:00:00Z",
+    "receivedByName": "Warehouse Staff A",
+    "note": "Nhận đủ 5 kiện",
+    "receivedCount": 5,
+    "parcels": [
+      { "parcelId": "d5e243d7-...", "packageCode": "PCL-...", "packageStatus": "RECEIVED_AT_DESTINATION" }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ nhận kiện khi lô đang `ARRIVED_DESTINATION` (chưa đến → `400`).
+- Cập nhật kiện → `PackageStatus = RECEIVED_AT_DESTINATION` + set `checkInTime`, sẵn sàng cho put-away (VCL-120).
+- Không cho nhận trùng: kiện đã `RECEIVED_AT_DESTINATION` → `400` (nếu truyền `parcelIds`), hoặc bỏ qua nếu nhận tất cả; nhận hết rồi mà gọi lại → `400`.
+- Lưu lịch sử vào `TRACKINGS` (stage `DESTINATION_RECEIVING`).
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Lô chưa đến kho đích | `"Lô chưa đến kho đích (phải ở trạng thái ARRIVED_DESTINATION, hiện tại: {status})."` |
+| `400` | Parcel không thuộc lô | `"Parcel {id} không thuộc lô vận chuyển này."` |
+| `400` | Kiện đã nhận trước đó | `"Parcel {code} đã được xác nhận nhận tại kho đích trước đó."` |
+| `403` | Không đúng quyền | `"Chỉ Warehouse Staff, Staff hoặc Operations được xác nhận nhận kiện tại kho đích."` |
+| `404` | Không tìm thấy lô | `"Không tìm thấy lô vận chuyển với ID {shipmentId}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface DestinationReceivingDto {
+  parcelIds?: string[] | null;
+  note?: string | null;
+}
+
+interface DestinationReceivingResponseDto {
+  shipmentId: string;
+  shipmentCode: string;
+  destinationWarehouseId?: string | null;
+  destinationWarehouseName: string;
+  receivedAt: string;
+  receivedByName: string;
+  note?: string | null;
+  receivedCount: number;
+  parcels: { parcelId: string; packageCode: string; packageStatus: string }[];
 }
 ```
 

@@ -14,8 +14,11 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
 
-        // Chỉ Staff hoặc Operations được tạo lô vận chuyển quốc tế
+        // Chỉ Staff hoặc Operations được tạo/cập nhật lô vận chuyển quốc tế
         private static readonly string[] AllowedRoles = { "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
+
+        // Nhận kiện tại kho đích: thêm cả Warehouse Staff
+        private static readonly string[] ReceivingRoles = { "WAREHOUSESTAFF", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
 
         public InternationalShipmentService(IUnitOfWork unitOfWork)
         {
@@ -352,6 +355,121 @@ namespace VCL_BLL.Services
                     ParcelId = p.Id,
                     PackageCode = p.PackageCode ?? string.Empty,
                     Weight = p.ActualWeight ?? p.ChargeableWeight
+                }).ToList()
+            };
+        }
+
+        public async Task<DestinationReceivingResponseDto> ConfirmDestinationReceivingAsync(
+            Guid shipmentId, Guid userId, string userRole, DestinationReceivingDto request)
+        {
+            // 1. Phân quyền (Warehouse Staff / Staff / Operations)
+            bool allowed = !string.IsNullOrWhiteSpace(userRole)
+                && ReceivingRoles.Contains(userRole.Trim().ToUpperInvariant());
+            if (!allowed)
+            {
+                throw new UnauthorizedAccessException("Chỉ Warehouse Staff, Staff hoặc Operations được xác nhận nhận kiện tại kho đích.");
+            }
+
+            // 2. Tìm lô (404)
+            var shipmentRepo = _unitOfWork.Repository<Shipment>();
+            var shipment = await shipmentRepo.GetByIdAsync(shipmentId);
+            if (shipment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {shipmentId}");
+            }
+
+            // 3. Chỉ nhận kiện khi lô đã ARRIVED_DESTINATION
+            if (!string.Equals(shipment.Status, "ARRIVED_DESTINATION", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"Lô chưa đến kho đích (phải ở trạng thái ARRIVED_DESTINATION, hiện tại: {shipment.Status}).");
+            }
+
+            // 4. Lấy các Parcel thuộc lô
+            var shipmentParcelRepo = _unitOfWork.Repository<ShipmentParcel>();
+            var allShipmentParcels = await shipmentParcelRepo.GetAllAsync();
+            var shipmentParcelIds = allShipmentParcels
+                .Where(sp => sp.ShipmentId == shipment.Id)
+                .Select(sp => sp.ParcelId)
+                .ToHashSet();
+
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var allParcels = await parcelRepo.GetAllAsync();
+            var shipmentParcels = allParcels.Where(p => shipmentParcelIds.Contains(p.Id)).ToList();
+
+            // 5. Xác định danh sách Parcel cần nhận
+            List<Parcel> targets;
+            if (request?.ParcelIds != null && request.ParcelIds.Count > 0)
+            {
+                var requestedIds = request.ParcelIds.Distinct().ToList();
+                targets = new List<Parcel>();
+                foreach (var pid in requestedIds)
+                {
+                    var parcel = shipmentParcels.FirstOrDefault(p => p.Id == pid);
+                    if (parcel == null)
+                    {
+                        throw new ArgumentException($"Parcel {pid} không thuộc lô vận chuyển này.");
+                    }
+                    if (string.Equals(parcel.PackageStatus, "RECEIVED_AT_DESTINATION", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new ArgumentException($"Parcel {parcel.PackageCode ?? pid.ToString()} đã được xác nhận nhận tại kho đích trước đó.");
+                    }
+                    targets.Add(parcel);
+                }
+            }
+            else
+            {
+                // Nhận tất cả kiện chưa nhận
+                targets = shipmentParcels
+                    .Where(p => !string.Equals(p.PackageStatus, "RECEIVED_AT_DESTINATION", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (targets.Count == 0)
+                {
+                    throw new ArgumentException("Tất cả kiện trong lô đã được xác nhận nhận tại kho đích.");
+                }
+            }
+
+            // 6. Cập nhật trạng thái Parcel + thời gian nhận
+            var now = DateTime.UtcNow;
+            foreach (var parcel in targets)
+            {
+                parcel.PackageStatus = "RECEIVED_AT_DESTINATION";
+                parcel.CheckInTime = now;
+                parcelRepo.Update(parcel);
+            }
+
+            // 7. Lưu lịch sử nhận kiện tại kho đích
+            await _unitOfWork.Repository<Tracking>().AddAsync(new Tracking
+            {
+                Id = Guid.NewGuid(),
+                ShipmentId = shipment.Id,
+                TrackingStatus = "RECEIVED_AT_DESTINATION",
+                TrackingStage = "DESTINATION_RECEIVING",
+                Note = request?.Note,
+                TrackingTime = now
+            });
+
+            await _unitOfWork.SaveChangesAsync();
+
+            var destinationWarehouse = shipment.DestinationWarehouseId.HasValue
+                ? await _unitOfWork.Repository<Warehouse>().GetByIdAsync(shipment.DestinationWarehouseId.Value)
+                : null;
+            var user = await _unitOfWork.Repository<User>().GetByIdAsync(userId);
+
+            return new DestinationReceivingResponseDto
+            {
+                ShipmentId = shipment.Id,
+                ShipmentCode = shipment.ShipmentCode ?? string.Empty,
+                DestinationWarehouseId = shipment.DestinationWarehouseId,
+                DestinationWarehouseName = destinationWarehouse?.WarehouseName ?? string.Empty,
+                ReceivedAt = now,
+                ReceivedByName = user?.FullName ?? string.Empty,
+                Note = request?.Note,
+                ReceivedCount = targets.Count,
+                Parcels = targets.Select(p => new DestinationReceivingParcelDto
+                {
+                    ParcelId = p.Id,
+                    PackageCode = p.PackageCode ?? string.Empty,
+                    PackageStatus = p.PackageStatus ?? string.Empty
                 }).ToList()
             };
         }
