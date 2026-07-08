@@ -44,6 +44,9 @@ namespace VCL_API.Injection
             services.AddScoped<IConsolidationService, ConsolidationService>();
             services.AddScoped<IPurchaseRequestService, PurchaseRequestService>();
             services.AddScoped<IProductTypeService, ProductTypeService>();
+            services.AddScoped<IConversationService, ConversationService>();
+
+            services.AddSignalR();
 
             // Add JWT Authentication
             var jwtSettings = configuration.GetSection("JWT");
@@ -67,6 +70,20 @@ namespace VCL_API.Injection
                     ValidAudience = jwtSettings["ValidAudience"],
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.Zero
+                };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
+                        {
+                            context.Token = accessToken;
+                        }
+                        return Task.CompletedTask;
+                    }
                 };
             });
 

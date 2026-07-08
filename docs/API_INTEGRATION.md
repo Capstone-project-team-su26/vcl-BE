@@ -3485,6 +3485,218 @@ interface ConsignmentStatusDto {
 
 ---
 
+## 31. Hỗ trợ trao đổi giữa Customer và Sales (SignalR Chat)
+
+Chức năng nhắn tin trực tuyến thời gian thực tích hợp giữa REST API lưu trữ dữ liệu và SignalR Hub để truyền tin tức thời.
+
+### 31.1. Tạo cuộc trao đổi mới (Customer only)
+
+Khách hàng bắt đầu một cuộc hội thoại mới, có thể gắn với một Consignment (Yêu cầu ký gửi), Purchase Request (Yêu cầu mua hộ) hoặc Quotation (Báo giá).
+
+```http
+POST /api/conversations
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+**Request body:**
+
+```json
+{
+  "relatedType": "CONSIGNMENT", // Hoặc "PURCHASE_REQUEST", "QUOTATION", hoặc null
+  "relatedId": "b037ab62-23c2-4fa1-8439-c1155fb9ebac", // Hoặc null
+  "message": "Tôi muốn hỏi thêm về đơn hàng này.",
+  "attachmentUrl": "https://cloudinary.com/..." // Hoặc null
+}
+```
+
+- `relatedType` phải thuộc các giá trị: `CONSIGNMENT`, `PURCHASE_REQUEST`, `QUOTATION`.
+- `message` bắt buộc từ 1 đến 2000 ký tự.
+
+**Response thành công (201 Created):**
+
+```json
+{
+  "id": "e8d77a28-bc4a-4e20-96f3-3c97db39a1ab",
+  "customerId": "8a3da14d-03ee-fad5-0eb1-1f7881ddce19",
+  "customerName": "Nguyễn Văn Khách",
+  "customerCode": "KH-12345",
+  "salesId": null,
+  "salesName": null,
+  "relatedType": "CONSIGNMENT",
+  "relatedId": "b037ab62-23c2-4fa1-8439-c1155fb9ebac",
+  "relatedCode": "VCL-20260708-000001",
+  "status": "OPEN",
+  "createdAt": "2026-07-08T04:24:00Z",
+  "updatedAt": "2026-07-08T04:24:00Z",
+  "unreadCount": 0
+}
+```
+
+### 31.2. Lấy danh sách cuộc trao đổi
+
+- **Customer:** Chỉ lấy danh sách cuộc trao đổi của chính mình.
+- **Sales/Admin:** Lấy danh sách các cuộc trao đổi chưa được phân công (`salesId = null`) hoặc cuộc trao đổi do chính mình đảm nhận (`salesId = currentUserId`).
+
+```http
+GET /api/conversations
+Authorization: Bearer {accessToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+[
+  {
+    "id": "e8d77a28-bc4a-4e20-96f3-3c97db39a1ab",
+    "customerId": "8a3da14d-03ee-fad5-0eb1-1f7881ddce19",
+    "customerName": "Nguyễn Văn Khách",
+    "customerCode": "KH-12345",
+    "salesId": "7cc4a1f8-0cf2-4467-93aa-bf482d8c97dd",
+    "salesName": "Trần Văn Sales",
+    "relatedType": "CONSIGNMENT",
+    "relatedId": "b037ab62-23c2-4fa1-8439-c1155fb9ebac",
+    "relatedCode": "VCL-20260708-000001",
+    "status": "OPEN",
+    "createdAt": "2026-07-08T04:24:00Z",
+    "updatedAt": "2026-07-08T04:25:30Z",
+    "unreadCount": 2
+  }
+]
+```
+
+### 31.3. Lấy chi tiết lịch sử tin nhắn cuộc trao đổi
+
+Truy cập chi tiết một cuộc trao đổi và danh sách tin nhắn. Chỉ cho phép các bên liên quan truy cập (Customer của chat hoặc Sales được phân công / chưa phân công).
+
+```http
+GET /api/conversations/{conversationId}
+Authorization: Bearer {accessToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "id": "e8d77a28-bc4a-4e20-96f3-3c97db39a1ab",
+  "customerId": "8a3da14d-03ee-fad5-0eb1-1f7881ddce19",
+  "customerName": "Nguyễn Văn Khách",
+  "customerCode": "KH-12345",
+  "salesId": "7cc4a1f8-0cf2-4467-93aa-bf482d8c97dd",
+  "salesName": "Trần Văn Sales",
+  "relatedType": "CONSIGNMENT",
+  "relatedId": "b037ab62-23c2-4fa1-8439-c1155fb9ebac",
+  "relatedCode": "VCL-20260708-000001",
+  "status": "OPEN",
+  "createdAt": "2026-07-08T04:24:00Z",
+  "updatedAt": "2026-07-08T04:25:30Z",
+  "unreadCount": 0,
+  "messages": [
+    {
+      "id": "d13bf2a9-...",
+      "conversationId": "e8d77a28-bc4a-4e20-96f3-3c97db39a1ab",
+      "senderId": "4c94fd11-...",
+      "senderRole": "Customer",
+      "content": "Tôi muốn hỏi thêm về đơn hàng này.",
+      "attachmentUrl": null,
+      "isRead": true,
+      "createdAt": "2026-07-08T04:24:00Z"
+    },
+    {
+      "id": "f58bc449-...",
+      "conversationId": "e8d77a28-bc4a-4e20-96f3-3c97db39a1ab",
+      "senderId": "7cc4a1f8-...",
+      "senderRole": "Sale",
+      "content": "Chào anh, tôi có thể giúp gì ạ?",
+      "attachmentUrl": null,
+      "isRead": true,
+      "createdAt": "2026-07-08T04:25:30Z"
+    }
+  ]
+}
+```
+
+### 31.4. Gửi tin nhắn mới
+
+Gửi tin nhắn vào cuộc trao đổi hiện tại. 
+- Nếu Sales gửi tin nhắn vào một cuộc trao đổi chưa được phân công (`salesId` rỗng), hệ thống tự động gán cuộc trao đổi này cho Sales đó.
+
+```http
+POST /api/conversations/{conversationId}/messages
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+**Request body:**
+
+```json
+{
+  "content": "Tôi gửi ảnh hóa đơn nhé.",
+  "attachmentUrl": "https://cloudinary.com/..." // Hoặc null
+}
+```
+
+- `content` bắt buộc từ 1 đến 2000 ký tự.
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "id": "3bb87c12-...",
+  "conversationId": "e8d77a28-bc4a-4e20-96f3-3c97db39a1ab",
+  "senderId": "4c94fd11-...",
+  "senderRole": "Customer",
+  "content": "Tôi gửi ảnh hóa đơn nhé.",
+  "attachmentUrl": "https://cloudinary.com/...",
+  "isRead": false,
+  "createdAt": "2026-07-08T04:26:00Z"
+}
+```
+
+### 31.5. Đánh dấu đã đọc các tin nhắn
+
+Đánh dấu tất cả tin nhắn do đối phương gửi đến trong cuộc hội thoại là đã đọc.
+
+```http
+PUT /api/conversations/{conversationId}/read
+Authorization: Bearer {accessToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Đã đánh dấu đọc tin nhắn."
+}
+```
+
+---
+
+### 31.6. Kết nối SignalR Hub (Real-time WebSockets)
+
+- **Hub Endpoint:** `/chatHub`
+- **Giao thức bắt tay (Handshake & Auth):** Vì trình duyệt không hỗ trợ custom header trong WebSocket handshake, FE phải truyền JWT token qua query parameter:
+  - Ví dụ: `wss://domain.com/chatHub?access_token={accessToken}`
+
+#### Các Hub Method mà FE gọi lên (Invoke):
+
+1. **`JoinConversation(conversationId: string)`**:
+   - Tham gia vào nhóm hội thoại để nhận tin nhắn real-time.
+   - Hệ thống tự động kiểm tra quyền truy cập. Nếu không có quyền, Hub ném lỗi `HubException`.
+2. **`LeaveConversation(conversationId: string)`**:
+   - Rời nhóm hội thoại khi người dùng thoát cửa sổ chat.
+
+#### Các Sự kiện thời gian thực mà FE lắng nghe từ Hub (On):
+
+1. **`ReceiveMessage(message: MessageDto)`**:
+   - Nhận tin nhắn mới tức thời gửi bởi đối phương trong phòng hội thoại đang tham gia.
+2. **`ConversationRead(data: { conversationId: string, readerId: string })`**:
+   - Nhận thông báo khi đối phương vừa mở xem cuộc hội thoại và đánh dấu đọc.
+3. **`NewConversationCreated(conversation: ConversationDto)`**:
+   - Nhận thông báo khi có một khách hàng vừa tạo một cuộc trao đổi mới (Dành cho Sales/Admin ở màn hình chờ chat).
+
+---
+
 ## 26. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
@@ -3535,5 +3747,9 @@ interface ConsignmentStatusDto {
 | `/admin/carriers` | `GET /api/carriers` |
 | `/admin/carriers/create` | `POST /api/carriers` |
 | `/admin/carriers/{id}/edit` | `PUT /api/carriers/{id}` |
+| `/customer/chat` | `GET /api/conversations`, `POST /api/conversations` |
+| `/customer/chat/{id}` | `GET /api/conversations/{id}`, `POST /api/conversations/{id}/messages`, `PUT /api/conversations/{id}/read` |
+| `/sales/chat` | `GET /api/conversations` |
+| `/sales/chat/{id}` | `GET /api/conversations/{id}`, `POST /api/conversations/{id}/messages`, `PUT /api/conversations/{id}/read` |
 
 

@@ -195,6 +195,58 @@ namespace VCL_DLL.Migrations
                     b.ToTable("COMPANIES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.Conversation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("customer_id");
+
+                    b.Property<Guid?>("RelatedId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("related_id");
+
+                    b.Property<string>("RelatedType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("related_type");
+
+                    b.Property<Guid?>("SalesId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("sales_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("SalesId");
+
+                    b.ToTable("CONVERSATIONS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Customer", b =>
                 {
                     b.Property<Guid>("Id")
@@ -656,6 +708,56 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("ShipmentId");
 
                     b.ToTable("MASTER_BOXES", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.Message", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("AttachmentUrl")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("attachment_url");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("content");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<bool>("IsRead")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_read");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("sender_id");
+
+                    b.Property<string>("SenderRole")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("sender_role");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConversationId");
+
+                    b.ToTable("MESSAGES", (string)null);
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Notification", b =>
@@ -2152,6 +2254,24 @@ namespace VCL_DLL.Migrations
                     b.Navigation("Owner");
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.Conversation", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .IsRequired()
+                        .HasConstraintName("FK_CONV_CUSTOMER");
+
+                    b.HasOne("VCL_DLL.Models.User", "Sales")
+                        .WithMany()
+                        .HasForeignKey("SalesId")
+                        .HasConstraintName("FK_CONV_SALES");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Sales");
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Customer", b =>
                 {
                     b.HasOne("VCL_DLL.Models.Company", "Company")
@@ -2291,6 +2411,18 @@ namespace VCL_DLL.Migrations
                         .HasConstraintName("FK_MASTER_SHIP");
 
                     b.Navigation("Shipment");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.Message", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Conversation", "Conversation")
+                        .WithMany("Messages")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_MSG_CONV");
+
+                    b.Navigation("Conversation");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Notification", b =>
@@ -2689,6 +2821,11 @@ namespace VCL_DLL.Migrations
                     b.Navigation("OrderItems");
 
                     b.Navigation("Orders");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.Conversation", b =>
+                {
+                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Customer", b =>
