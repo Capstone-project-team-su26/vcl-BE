@@ -64,7 +64,7 @@ namespace VCL_API.Controllers
 
         /// <summary>
         /// Lấy chi tiết một kiện hàng trong kho theo parcelId.
-        /// Trả về thông tin kiện, yêu cầu ký gửi & khách hàng liên quan, cân đo thực tế, và vị trí kho nếu đã put-away.
+        /// Trả về thông tin kiện, yêu cầu ký gửi và khách hàng liên quan, cân đo thực tế, và vị trí kho nếu đã put-away.
         /// </summary>
         /// <param name="parcelId">ID của kiện hàng</param>
         /// <returns>Chi tiết kiện hàng</returns>

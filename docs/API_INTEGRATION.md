@@ -2785,6 +2785,174 @@ Authorization: Bearer {accessToken}
 
 ---
 
+## 26. Quản lý đơn vị vận chuyển (Carrier Management)
+
+Admin quản lý danh sách các đơn vị vận chuyển hoặc forwarder được sử dụng trong hệ thống. Dữ liệu này dùng cho Staff hoặc Operations chọn khi tạo lô vận chuyển quốc tế, cập nhật trạng thái vận chuyển hoặc ghi nhận thông tin vận chuyển.
+
+### 26.1. Lấy danh sách tất cả các đơn vị vận chuyển (Admin only)
+
+```http
+GET /api/carriers
+Authorization: Bearer {accessToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+[
+  {
+    "id": "f4c1d2e3-5717-4562-b3fc-2c963f66afa6",
+    "carrierName": "Viettel Post",
+    "carrierCode": "VIETTEL_POST",
+    "carrierType": "COURIER",
+    "apiUrl": "https://api.viettelpost.com.vn",
+    "contactEmail": "support@viettelpost.com.vn",
+    "contactPhone": "19008095",
+    "supportedShippingMethods": "Hỏa tốc, Tiết kiệm, Đường bộ",
+    "supportedRegions": "Vietnam, Domestic",
+    "isActive": true,
+    "internalNotes": "Đối tác vận chuyển chính nội địa"
+  }
+]
+```
+
+### 26.2. Lấy danh sách các đơn vị vận chuyển đang hoạt động (Nghiệp vụ)
+
+Tất cả các tài khoản nhân viên (Admin, Staff, Operations, WarehouseStaff) đều có thể gọi để chọn đơn vị vận chuyển khi tạo lô hoặc cập nhật trạng thái.
+
+```http
+GET /api/carriers/active
+Authorization: Bearer {accessToken}
+```
+
+**Response tương tự như GET /api/carriers nhưng chỉ lọc các bản ghi có `isActive = true`.**
+
+### 26.3. Lấy thông tin chi tiết một đơn vị vận chuyển theo ID (Admin only)
+
+```http
+GET /api/carriers/{id}
+Authorization: Bearer {accessToken}
+```
+
+### 26.4. Tạo mới một đơn vị vận chuyển (Admin only)
+
+```http
+POST /api/carriers
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "carrierName": "DHL Express",
+  "carrierCode": "DHL_EXPRESS",
+  "carrierType": "AIR",
+  "apiUrl": "https://api.dhl.com",
+  "contactEmail": "contact@dhl.com",
+  "contactPhone": "18001530",
+  "supportedShippingMethods": "Express, Air Cargo",
+  "supportedRegions": "Global, Vietnam, Japan, Korea",
+  "isActive": true,
+  "internalNotes": "Vận chuyển quốc tế đường hàng không"
+}
+```
+
+**Ràng buộc:**
+- `carrierName`, `carrierCode`, `carrierType` là bắt buộc.
+- `carrierCode` không được chứa ký tự đặc biệt ngoài chữ, số, gạch dưới và gạch ngang. Nếu trùng lặp với `carrierCode` hiện có sẽ trả về `400 Bad Request`.
+
+**Response thành công (201 Created):** Trả về đối tượng vừa tạo kèm ID và Header `Location`.
+
+### 26.5. Cập nhật thông tin đơn vị vận chuyển (Admin only)
+
+```http
+PUT /api/carriers/{id}
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "carrierName": "DHL Express VN",
+  "carrierCode": "DHL_EXPRESS",
+  "carrierType": "AIR",
+  "apiUrl": "https://api.dhl.com.vn",
+  "contactEmail": "support.vn@dhl.com",
+  "contactPhone": "18001530",
+  "supportedShippingMethods": "Express, Air Cargo",
+  "supportedRegions": "Global, Vietnam, Japan, Korea",
+  "isActive": false,
+  "internalNotes": "Tạm dừng hoạt động để bảo trì hệ thống API"
+}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Cập nhật đơn vị vận chuyển thành công."
+}
+```
+
+### 26.6. Xóa đơn vị vận chuyển (Admin only)
+
+Xóa hoàn toàn một đơn vị vận chuyển khỏi hệ thống nếu không có ràng buộc dữ liệu lịch sử.
+
+```http
+DELETE /api/carriers/{id}
+Authorization: Bearer {accessToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Xóa đơn vị vận chuyển thành công."
+}
+```
+
+#### TypeScript Interfaces:
+
+```typescript
+interface CarrierDto {
+  id: string;
+  carrierName: string;
+  carrierCode: string;
+  carrierType: string;
+  apiUrl?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  supportedShippingMethods?: string | null;
+  supportedRegions?: string | null;
+  isActive: boolean;
+  internalNotes?: string | null;
+}
+
+interface CreateCarrierRequestDto {
+  carrierName: string;
+  carrierCode: string;
+  carrierType: string;
+  apiUrl?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  supportedShippingMethods?: string | null;
+  supportedRegions?: string | null;
+  isActive: boolean;
+  internalNotes?: string | null;
+}
+
+interface UpdateCarrierRequestDto {
+  carrierName: string;
+  carrierCode: string;
+  carrierType: string;
+  apiUrl?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  supportedShippingMethods?: string | null;
+  supportedRegions?: string | null;
+  isActive: boolean;
+  internalNotes?: string | null;
+}
+```
+
+---
+
 ## 27. Quản lý kho và vị trí lưu trữ (Warehouse & Location Management)
 
 Admin quản lý các kho vận hành, thiết lập Zone/Shelf/Bin trong kho. Cung cấp API lấy danh sách kho/vị trí hoạt động (active) cho các nghiệp vụ check-in, put-away, picking, xuất kho và tạo lô vận chuyển.
