@@ -103,9 +103,80 @@ namespace VCL_BLL.DTOs
         public bool RequiresQuantityCheck { get; set; }
         public string? GeneralNote { get; set; }
         public string Status { get; set; } = string.Empty;
+        public string? Reason { get; set; }
         public DateTime CreatedAt { get; set; }
         public int TotalQuantity { get; set; }
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
+    }
+
+    public class UpdatePurchaseRequestStatusRequestDto
+    {
+        [Required(ErrorMessage = "Trạng thái không được để trống.")]
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>Lý do (bắt buộc khi trạng thái là NEED_MORE_INFO hoặc REJECTED).</summary>
+        public string? Reason { get; set; }
+    }
+
+    public class UpdatePurchaseRequestStatusResponseDto
+    {
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? Reason { get; set; }
+    }
+
+    public class CreatePurchaseQuotationItemDto
+    {
+        [Required]
+        public Guid PurchaseRequestItemId { get; set; }
+
+        /// <summary>Giá sản phẩm (đơn giá).</summary>
+        [Range(0, double.MaxValue, ErrorMessage = "Đơn giá sản phẩm không được âm.")]
+        public decimal UnitPrice { get; set; }
+    }
+
+    public class CreatePurchaseQuotationDto
+    {
+        /// <summary>Phí mua hộ.</summary>
+        [Range(0, double.MaxValue, ErrorMessage = "Phí mua hộ không được âm.")]
+        public decimal PurchaseFee { get; set; }
+
+        /// <summary>Phí vận chuyển dự kiến (nếu có).</summary>
+        [Range(0, double.MaxValue, ErrorMessage = "Phí vận chuyển không được âm.")]
+        public decimal ShippingFee { get; set; }
+
+        /// <summary>Ghi chú báo giá (nếu có).</summary>
+        public string? Note { get; set; }
+
+        [Required]
+        [MinLength(1, ErrorMessage = "Báo giá phải có ít nhất một sản phẩm.")]
+        public List<CreatePurchaseQuotationItemDto> Items { get; set; } = new();
+    }
+
+    public class PurchaseQuotationItemResponseDto
+    {
+        public Guid QuotationItemId { get; set; }
+        public Guid PurchaseRequestItemId { get; set; }
+        public string? ProductName { get; set; }
+        public decimal UnitPrice { get; set; }
+        public int Quantity { get; set; }
+        public decimal LineTotal { get; set; }
+    }
+
+    public class PurchaseQuotationResponseDto
+    {
+        public Guid QuotationId { get; set; }
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public decimal ProductsSubtotal { get; set; }
+        public decimal PurchaseFee { get; set; }
+        public decimal ShippingFee { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string? Note { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public List<PurchaseQuotationItemResponseDto> Items { get; set; } = new();
     }
 
     public class PurchaseRequestListProductDto

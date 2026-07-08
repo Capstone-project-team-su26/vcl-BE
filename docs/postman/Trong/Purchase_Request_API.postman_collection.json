@@ -8,6 +8,9 @@
     { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
     { "key": "token", "value": "", "type": "string" },
     { "key": "purchaseRequestId", "value": "", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "purchaseItemId1", "value": "", "type": "string" },
+    { "key": "purchaseItemId2", "value": "", "type": "string" },
     { "key": "uploadedImageUrl", "value": "", "type": "string" },
     { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
     { "key": "customerPassword", "value": "trong123", "type": "string" }
@@ -89,6 +92,8 @@
               "pm.test('Co field don: route/receiver/requires/generalNote', function () { pm.expect(data).to.have.property('route'); pm.expect(data).to.have.property('receiverName'); pm.expect(data).to.have.property('requiresInspection'); pm.expect(data).to.have.property('generalNote'); });",
               "pm.test('Item co sourceWebsite/productType', function () { var i = data.items[0]; pm.expect(i).to.have.property('sourceWebsite'); pm.expect(i).to.have.property('productType'); });",
               "if (data && data.purchaseRequestId) { pm.collectionVariables.set('purchaseRequestId', data.purchaseRequestId); }",
+              "if (data && data.items && data.items[0]) { pm.collectionVariables.set('purchaseItemId1', data.items[0].itemId); }",
+              "if (data && data.items && data.items[1]) { pm.collectionVariables.set('purchaseItemId2', data.items[1].itemId); }",
               "console.log('purchaseRequestId:', pm.collectionVariables.get('purchaseRequestId'));",
               "console.log('purchaseCode:', data.purchaseCode);"
             ],
@@ -324,6 +329,183 @@
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": { "mode": "raw", "raw": "{\n  \"items\": [ { \"productLink\": \"https://item.taobao.com/x\", \"quantity\": 1 } ]\n}" },
         "url": { "raw": "{{baseUrl}}/api/purchase-requests", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests"] }
+      }
+    },
+    {
+      "name": "7a. Setup - Seed Admin (lay quyen Staff)",
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-admin", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-admin"] }
+      }
+    },
+    {
+      "name": "7b. Setup - Login Admin (lay adminToken)",
+      "event": [
+        { "listen": "test", "script": { "exec": [
+          "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+          "var json = pm.response.json();",
+          "if (json.token) { pm.collectionVariables.set('adminToken', json.token); }"
+        ], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"Admin123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "7c. Staff cap nhat trang thai -> IN_REVIEW (200)",
+      "event": [
+        { "listen": "test", "script": { "exec": [
+          "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+          "pm.test('Status = IN_REVIEW', function () { pm.expect(pm.response.json().data.status).to.eql('IN_REVIEW'); });"
+        ], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"IN_REVIEW\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "{{purchaseRequestId}}", "status"] }
+      }
+    },
+    {
+      "name": "7d. Staff -> NEED_MORE_INFO co reason (200, luu reason)",
+      "event": [
+        { "listen": "test", "script": { "exec": [
+          "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+          "var data = pm.response.json().data;",
+          "pm.test('Status = NEED_MORE_INFO', function () { pm.expect(data.status).to.eql('NEED_MORE_INFO'); });",
+          "pm.test('Co reason', function () { pm.expect(data.reason).to.be.a('string').and.not.empty; });"
+        ], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"NEED_MORE_INFO\",\n  \"reason\": \"Thieu anh san pham, vui long bo sung\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "{{purchaseRequestId}}", "status"] }
+      }
+    },
+    {
+      "name": "7e. (Negative) NEED_MORE_INFO thieu reason -> 400",
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"NEED_MORE_INFO\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "{{purchaseRequestId}}", "status"] }
+      }
+    },
+    {
+      "name": "7f. (Negative) Status khong hop le -> 400",
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"XYZ\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "{{purchaseRequestId}}", "status"] }
+      }
+    },
+    {
+      "name": "7g. (Negative) Customer cap nhat -> 403",
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.test('Status 403', function () { pm.response.to.have.status(403); });"], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"IN_REVIEW\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "{{purchaseRequestId}}", "status"] }
+      }
+    },
+    {
+      "name": "7h. (Negative) Cap nhat id khong ton tai -> 404",
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.test('Status 404', function () { pm.response.to.have.status(404); });"], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"IN_REVIEW\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/00000000-0000-0000-0000-000000000000/status", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "00000000-0000-0000-0000-000000000000", "status"] }
+      }
+    },
+    {
+      "name": "8a. Staff tao bao gia mua ho (201)",
+      "event": [
+        { "listen": "test", "script": { "exec": [
+          "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+          "var data = pm.response.json().data;",
+          "pm.test('Status bao gia = PENDING_CUSTOMER_CONFIRMATION', function () { pm.expect(data.status).to.eql('PENDING_CUSTOMER_CONFIRMATION'); });",
+          "pm.test('Total = subtotal + phi mua ho + phi ship', function () { pm.expect(data.totalAmount).to.eql(data.productsSubtotal + data.purchaseFee + data.shippingFee); });",
+          "pm.test('Moi item co lineTotal = unitPrice * quantity', function () { data.items.forEach(function (i) { pm.expect(i.lineTotal).to.eql(i.unitPrice * i.quantity); }); });",
+          "console.log('Tong bao gia:', data.totalAmount);"
+        ], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"purchaseFee\": 50000,\n  \"shippingFee\": 120000,\n  \"note\": \"Bao gia dot 1\",\n  \"items\": [\n    { \"purchaseRequestItemId\": \"{{purchaseItemId1}}\", \"unitPrice\": 200000 },\n    { \"purchaseRequestItemId\": \"{{purchaseItemId2}}\", \"unitPrice\": 150000 }\n  ]\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/quotation", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "{{purchaseRequestId}}", "quotation"] }
+      }
+    },
+    {
+      "name": "8b. (Negative) Tao trung bao gia / da QUOTED -> 400",
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"purchaseFee\": 0,\n  \"shippingFee\": 0,\n  \"items\": [ { \"purchaseRequestItemId\": \"{{purchaseItemId1}}\", \"unitPrice\": 100 } ]\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/quotation", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "{{purchaseRequestId}}", "quotation"] }
+      }
+    },
+    {
+      "name": "8c. (Negative) Customer tao bao gia -> 403",
+      "event": [
+        { "listen": "test", "script": { "exec": ["pm.test('Status 403', function () { pm.response.to.have.status(403); });"], "type": "text/javascript" } }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"purchaseFee\": 0,\n  \"shippingFee\": 0,\n  \"items\": [ { \"purchaseRequestItemId\": \"{{purchaseItemId1}}\", \"unitPrice\": 100 } ]\n}" },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/quotation", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests", "{{purchaseRequestId}}", "quotation"] }
       }
     }
   ]
