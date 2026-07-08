@@ -36,6 +36,25 @@ namespace VCL_BLL.DTOs
         public decimal? Weight { get; set; }
     }
 
+    public class UpdateInternationalShipmentStatusDto
+    {
+        [Required(ErrorMessage = "Trạng thái không được để trống.")]
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>Ghi chú vận chuyển (nếu có).</summary>
+        public string? Note { get; set; }
+    }
+
+    public class UpdateInternationalShipmentStatusResponseDto
+    {
+        public Guid ShipmentId { get; set; }
+        public string ShipmentCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? Note { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public string UpdatedByName { get; set; } = string.Empty;
+    }
+
     public class InternationalShipmentResponseDto
     {
         public Guid ShipmentId { get; set; }

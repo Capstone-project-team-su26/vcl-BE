@@ -183,5 +183,84 @@ namespace VCL_BLL.Services
                 }).ToList()
             };
         }
+
+        // Chuyển trạng thái hợp lệ: mỗi target chỉ được từ 1 trạng thái nguồn nhất định
+        private static readonly Dictionary<string, string> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            { "MANIFESTED", "CREATED" },
+            { "IN_TRANSIT", "MANIFESTED" },
+            { "ARRIVED_DESTINATION", "IN_TRANSIT" }
+        };
+
+        public async Task<UpdateInternationalShipmentStatusResponseDto> UpdateStatusAsync(
+            Guid shipmentId, Guid userId, string userRole, UpdateInternationalShipmentStatusDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Dữ liệu cập nhật không được để trống.");
+
+            // 1. Phân quyền
+            bool allowed = !string.IsNullOrWhiteSpace(userRole)
+                && AllowedRoles.Contains(userRole.Trim().ToUpperInvariant());
+            if (!allowed)
+            {
+                throw new UnauthorizedAccessException("Chỉ Staff hoặc Operations được cập nhật trạng thái lô vận chuyển.");
+            }
+
+            // 2. Tìm lô vận chuyển (404 nếu không có)
+            var shipmentRepo = _unitOfWork.Repository<Shipment>();
+            var shipment = await shipmentRepo.GetByIdAsync(shipmentId);
+            if (shipment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {shipmentId}");
+            }
+
+            // 3. Validate trạng thái mới + đúng thứ tự
+            var targetStatus = request.Status.Trim().ToUpperInvariant();
+            if (!AllowedTransitions.ContainsKey(targetStatus))
+            {
+                throw new ArgumentException("Trạng thái không hợp lệ. Hợp lệ: MANIFESTED, IN_TRANSIT, ARRIVED_DESTINATION.");
+            }
+
+            var currentStatus = shipment.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            var requiredFrom = AllowedTransitions[targetStatus];
+            if (!string.Equals(currentStatus, requiredFrom, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"Không thể chuyển sang {targetStatus} khi lô đang ở trạng thái {shipment.Status}. Chỉ chuyển được từ {requiredFrom}.");
+            }
+
+            // 4. Cập nhật trạng thái + mốc thời gian tương ứng
+            var now = DateTime.UtcNow;
+            shipment.Status = targetStatus;
+            if (targetStatus == "IN_TRANSIT") shipment.ShippedAt = now;
+            if (targetStatus == "ARRIVED_DESTINATION") shipment.DeliveredAt = now;
+            shipmentRepo.Update(shipment);
+
+            // 5. Lưu lịch sử cập nhật (Tracking)
+            await _unitOfWork.Repository<Tracking>().AddAsync(new Tracking
+            {
+                Id = Guid.NewGuid(),
+                ShipmentId = shipment.Id,
+                TrackingStatus = targetStatus,
+                TrackingStage = "INTERNATIONAL",
+                Note = request.Note,
+                TrackingTime = now
+            });
+
+            await _unitOfWork.SaveChangesAsync();
+
+            // 6. Lấy tên người cập nhật
+            var user = await _unitOfWork.Repository<User>().GetByIdAsync(userId);
+
+            return new UpdateInternationalShipmentStatusResponseDto
+            {
+                ShipmentId = shipment.Id,
+                ShipmentCode = shipment.ShipmentCode ?? string.Empty,
+                Status = shipment.Status,
+                Note = request.Note,
+                UpdatedAt = now,
+                UpdatedByName = user?.FullName ?? string.Empty
+            };
+        }
     }
 }

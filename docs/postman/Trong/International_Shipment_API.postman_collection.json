@@ -9,6 +9,7 @@
     { "key": "adminToken", "value": "", "type": "string" },
     { "key": "customerToken", "value": "", "type": "string" },
     { "key": "releasedWroId", "value": "", "type": "string" },
+    { "key": "shipmentId", "value": "", "type": "string" },
     { "key": "originWarehouseId", "value": "", "type": "string" },
     { "key": "destinationWarehouseId", "value": "", "type": "string" },
     { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
@@ -55,6 +56,7 @@
         "pm.test('Co shipmentCode dinh dang INTL-', function () { pm.expect(data.shipmentCode).to.match(/^INTL-\\d{14}-\\d{4}$/); });",
         "pm.test('Co totalPackages va totalWeight', function () { pm.expect(data).to.have.property('totalPackages'); pm.expect(data).to.have.property('totalWeight'); });",
         "pm.test('Co danh sach wroRequests va parcels', function () { pm.expect(data.wroRequests).to.be.an('array'); pm.expect(data.parcels).to.be.an('array'); });",
+        "if (data.shipmentId) { pm.collectionVariables.set('shipmentId', data.shipmentId); }",
         "console.log('Shipment:', data.shipmentCode, '| kien:', data.totalPackages, '| can:', data.totalWeight);"
       ], "type": "text/javascript" } } ],
       "request": {
@@ -65,6 +67,106 @@
         ],
         "body": { "mode": "raw", "raw": "{\n  \"wroRequestIds\": [ \"{{releasedWroId}}\" ],\n  \"originWarehouseId\": \"{{originWarehouseId}}\",\n  \"destinationWarehouseId\": \"{{destinationWarehouseId}}\",\n  \"shippingMethod\": \"Sea\"\n}" },
         "url": { "raw": "{{baseUrl}}/api/international-shipments", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments"] }
+      }
+    },
+    {
+      "name": "1b. Cap nhat status -> MANIFESTED (can shipmentId, 200)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "pm.test('Status = MANIFESTED', function () { pm.expect(pm.response.json().data.status).to.eql('MANIFESTED'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"MANIFESTED\",\n  \"note\": \"Da tao manifest\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/{{shipmentId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "{{shipmentId}}", "status"] }
+      }
+    },
+    {
+      "name": "1c. Cap nhat status -> IN_TRANSIT (200)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "pm.test('Status = IN_TRANSIT', function () { pm.expect(pm.response.json().data.status).to.eql('IN_TRANSIT'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"IN_TRANSIT\",\n  \"note\": \"Da roi cang\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/{{shipmentId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "{{shipmentId}}", "status"] }
+      }
+    },
+    {
+      "name": "1d. (Negative) Sai thu tu: bo qua IN_TRANSIT sang ARRIVED khi dang... -> 400",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"MANIFESTED\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/{{shipmentId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "{{shipmentId}}", "status"] }
+      }
+    },
+    {
+      "name": "1e. Cap nhat status -> ARRIVED_DESTINATION (200)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "pm.test('Status = ARRIVED_DESTINATION', function () { pm.expect(pm.response.json().data.status).to.eql('ARRIVED_DESTINATION'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"ARRIVED_DESTINATION\",\n  \"note\": \"Da den kho dich\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/{{shipmentId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "{{shipmentId}}", "status"] }
+      }
+    },
+    {
+      "name": "1f. (Negative) Status khong hop le -> 400",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"XYZ\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/{{shipmentId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "{{shipmentId}}", "status"] }
+      }
+    },
+    {
+      "name": "1g. (Negative) Update status - Customer -> 403",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 403', function () { pm.response.to.have.status(403); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"IN_TRANSIT\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/{{shipmentId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "{{shipmentId}}", "status"] }
+      }
+    },
+    {
+      "name": "1h. (Negative) Update status - shipment khong ton tai -> 404",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 404', function () { pm.response.to.have.status(404); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"MANIFESTED\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/00000000-0000-0000-0000-000000000000/status", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "00000000-0000-0000-0000-000000000000", "status"] }
       }
     },
     {

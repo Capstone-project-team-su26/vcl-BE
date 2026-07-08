@@ -126,6 +126,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/orders/consignments/statuses` | Public | Danh sách toàn bộ trạng thái yêu cầu ký gửi (code + label) |
 | `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
 | `POST` | `/api/international-shipments` | Staff / Operations | Tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED |
+| `PUT` | `/api/international-shipments/{shipmentId}/status` | Staff / Operations | Cập nhật trạng thái lô vận chuyển quốc tế (MANIFESTED → IN_TRANSIT → ARRIVED_DESTINATION) |
 | `GET` | `/api/customer/parcels` | Customer | Customer tra cứu kiện hàng thuộc yêu cầu ký gửi của mình |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
@@ -4245,6 +4246,83 @@ interface CustomerParcelDto {
   putAwayTime?: string | null;
   saleNote?: string | null;
   items: CustomerParcelItemDto[];
+}
+```
+
+---
+
+### 31.1. Cập nhật trạng thái lô vận chuyển quốc tế
+
+Staff/Operations cập nhật trạng thái lô theo vòng đời vận chuyển. Mỗi lần cập nhật lưu 1 bản ghi lịch sử (bảng `TRACKINGS`).
+
+```http
+PUT /api/international-shipments/{shipmentId}/status
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "status": "IN_TRANSIT",
+  "note": "Đã rời cảng Busan"
+}
+```
+
+**Vòng đời trạng thái (đúng thứ tự):**
+
+```
+CREATED → MANIFESTED → IN_TRANSIT → ARRIVED_DESTINATION
+```
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `status` | **Có** | Một trong: `MANIFESTED`, `IN_TRANSIT`, `ARRIVED_DESTINATION` |
+| `note` | Không | Ghi chú vận chuyển |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Cập nhật trạng thái lô vận chuyển thành công.",
+  "data": {
+    "shipmentId": "9c1f...",
+    "shipmentCode": "INTL-20260708080000-1234",
+    "status": "IN_TRANSIT",
+    "note": "Đã rời cảng Busan",
+    "updatedAt": "2026-07-08T09:00:00Z",
+    "updatedByName": "Nguyễn Văn Staff"
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ chuyển đúng thứ tự: `MANIFESTED` (từ `CREATED`) → `IN_TRANSIT` (từ `MANIFESTED`) → `ARRIVED_DESTINATION` (từ `IN_TRANSIT`).
+- Chuyển sai thứ tự → `400`.
+- Mỗi lần cập nhật lưu lịch sử vào `TRACKINGS` (status + note + thời gian).
+- `IN_TRANSIT` set `shippedAt`, `ARRIVED_DESTINATION` set `deliveredAt` trên lô.
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Trạng thái không hợp lệ | `"Trạng thái không hợp lệ. Hợp lệ: MANIFESTED, IN_TRANSIT, ARRIVED_DESTINATION."` |
+| `400` | Sai thứ tự chuyển | `"Không thể chuyển sang {target} khi lô đang ở trạng thái {current}. Chỉ chuyển được từ {required}."` |
+| `403` | Không phải Staff/Operations | `"Chỉ Staff hoặc Operations được cập nhật trạng thái lô vận chuyển."` |
+| `404` | Không tìm thấy lô | `"Không tìm thấy lô vận chuyển với ID {shipmentId}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface UpdateInternationalShipmentStatusDto {
+  status: "MANIFESTED" | "IN_TRANSIT" | "ARRIVED_DESTINATION";
+  note?: string | null;
+}
+
+interface UpdateInternationalShipmentStatusResponseDto {
+  shipmentId: string;
+  shipmentCode: string;
+  status: string;
+  note?: string | null;
+  updatedAt: string;
+  updatedByName: string;
 }
 ```
 
