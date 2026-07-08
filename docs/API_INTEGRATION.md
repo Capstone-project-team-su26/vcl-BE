@@ -1164,7 +1164,11 @@ Response `200 OK`:
 
 ## 17. Lấy danh sách kiện chờ nhập vị trí kho (Pending Putaway)
 
-Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xem danh sách các kiện hàng đã được check-in vào hệ thống thành công (PackageStatus = "RECEIVED") nhưng chưa được sắp xếp/gán vào ô kệ (Bin) cụ thể trong kho (BinId = null) để tiến hành put-away.
+Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xem danh sách các kiện hàng đã được nhận tại kho nhưng chưa được sắp xếp/gán vào ô kệ (Bin) cụ thể (BinId = null) để tiến hành put-away.
+
+> **Cập nhật (VCL-120):** khi không truyền `status`, danh sách bao gồm kiện ở **cả hai** trạng thái sẵn sàng put-away:
+> - `RECEIVED` — kiện check-in trực tiếp tại kho/điểm tập kết
+> - `RECEIVED_AT_DESTINATION` — kiện nhận từ lô vận chuyển quốc tế tại kho đích (xem mục 31.3)
 
 ```http
 GET /api/parcels/pending-putaway?pageNumber=1&pageSize=10
@@ -1223,7 +1227,9 @@ Response `200 OK`:
 
 ## 18. Nhập vị trí kho cho kiện hàng (Put-away)
 
-Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xếp kiện hàng (đang ở trạng thái `RECEIVED`) vào một ô kệ (`Bin`) cụ thể trong kho. Trạng thái kiện hàng sau khi nhập vị trí thành công sẽ cập nhật thành `STORED`.
+Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xếp kiện hàng vào một ô kệ (`Bin`) cụ thể trong kho. Trạng thái kiện hàng sau khi nhập vị trí thành công sẽ cập nhật thành `STORED`.
+
+> **Cập nhật (VCL-120):** cho phép put-away kiện ở trạng thái `RECEIVED` **hoặc** `RECEIVED_AT_DESTINATION` (kiện nhận từ lô vận chuyển quốc tế). Kiện chưa được nhận tại kho hoặc đã `STORED` → `400`. Sau put-away, `POST /api/inventories/from-parcel/{parcelId}` ghi nhận tồn kho `AVAILABLE` theo đúng kho hiện tại của kiện (không đổi, dùng chung cho cả 2 luồng).
 
 ```http
 PUT /api/parcels/{parcelId}/put-away
