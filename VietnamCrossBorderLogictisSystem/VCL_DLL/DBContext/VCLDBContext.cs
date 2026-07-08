@@ -89,6 +89,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<ProductType> ProductTypes { get; set; }
 
+    public virtual DbSet<Conversation> Conversations { get; set; }
+
+    public virtual DbSet<Message> Messages { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DeliveryAddress>(entity =>
@@ -1451,6 +1455,51 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.InventoryId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_PICKING_ITEM_INVENTORY");
+        });
+
+        modelBuilder.Entity<Conversation>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("CONVERSATIONS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.CustomerId).HasColumnName("customer_id");
+            entity.Property(e => e.SalesId).HasColumnName("sales_id");
+            entity.Property(e => e.RelatedType).HasMaxLength(50).HasColumnName("related_type");
+            entity.Property(e => e.RelatedId).HasColumnName("related_id");
+            entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Customer).WithMany()
+                .HasForeignKey(d => d.CustomerId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CONV_CUSTOMER");
+
+            entity.HasOne(d => d.Sales).WithMany()
+                .HasForeignKey(d => d.SalesId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CONV_SALES");
+        });
+
+        modelBuilder.Entity<Message>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("MESSAGES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.ConversationId).HasColumnName("conversation_id");
+            entity.Property(e => e.SenderId).HasColumnName("sender_id");
+            entity.Property(e => e.SenderRole).HasMaxLength(50).HasColumnName("sender_role");
+            entity.Property(e => e.Content).IsRequired().HasColumnName("content");
+            entity.Property(e => e.AttachmentUrl).HasColumnName("attachment_url");
+            entity.Property(e => e.IsRead).HasDefaultValue(false).HasColumnName("is_read");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+
+            entity.HasOne(d => d.Conversation).WithMany(p => p.Messages)
+                .HasForeignKey(d => d.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_MSG_CONV");
         });
 
         OnModelCreatingPartial(modelBuilder);
