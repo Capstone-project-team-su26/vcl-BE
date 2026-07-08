@@ -3262,11 +3262,15 @@ Authorization: Bearer {accessToken}
         "purchaseRequestId": "b037ab62-...",
         "purchaseCode": "PUR-20260704-7582",
         "customerId": "1b53ba9c-...",
-        "customerName": "Bùi Đình Trọng",
+        "receiverName": "Nguyễn Văn A",
         "itemCount": 2,
         "status": "PENDING_REVIEW",
         "generalNote": "Mua giúp mình đợt sale",
-        "createdAt": "2026-07-04T04:18:52Z"
+        "createdAt": "2026-07-04T04:18:52Z",
+        "items": [
+          { "productName": "Áo khoác nam", "quantity": 2 },
+          { "productName": null, "quantity": 5 }
+        ]
       }
     ],
     "totalCount": 3,
@@ -3285,15 +3289,21 @@ Authorization: Bearer {accessToken}
 **TypeScript interface (khớp DTO C#):**
 
 ```typescript
+interface PurchaseRequestListProductDto {
+  productName?: string | null;
+  quantity: number;
+}
+
 interface PurchaseRequestListItemDto {
   purchaseRequestId: string;
   purchaseCode: string;
   customerId?: string | null;
-  customerName: string;
+  receiverName: string;
   itemCount: number;
   status: string;
   generalNote?: string | null;
   createdAt: string;
+  items: PurchaseRequestListProductDto[];
 }
 
 interface PaginatedResponse<T> {

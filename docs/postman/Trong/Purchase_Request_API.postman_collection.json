@@ -120,7 +120,7 @@
               "var data = pm.response.json().data;",
               "pm.test('Co mang items', function () { pm.expect(data.items).to.be.an('array'); });",
               "pm.test('Co truong phan trang', function () { pm.expect(data).to.have.property('totalCount'); pm.expect(data).to.have.property('totalPages'); });",
-              "if (data.items.length) { pm.expect(data.items[0]).to.have.property('purchaseCode'); pm.expect(data.items[0]).to.have.property('itemCount'); pm.expect(data.items[0]).to.have.property('customerName'); }",
+              "if (data.items.length) { var row = data.items[0]; pm.expect(row).to.have.property('purchaseCode'); pm.expect(row).to.have.property('receiverName'); pm.expect(row).to.not.have.property('customerName'); pm.expect(row.items).to.be.an('array'); if (row.items.length) { pm.expect(row.items[0]).to.have.property('productName'); pm.expect(row.items[0]).to.have.property('quantity'); } }",
               "console.log('Tong so yeu cau:', data.totalCount);"
             ],
             "type": "text/javascript"

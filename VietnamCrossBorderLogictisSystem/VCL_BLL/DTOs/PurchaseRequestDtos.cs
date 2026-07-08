@@ -108,15 +108,22 @@ namespace VCL_BLL.DTOs
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
     }
 
+    public class PurchaseRequestListProductDto
+    {
+        public string? ProductName { get; set; }
+        public int Quantity { get; set; }
+    }
+
     public class PurchaseRequestListItemDto
     {
         public Guid PurchaseRequestId { get; set; }
         public string PurchaseCode { get; set; } = string.Empty;
         public Guid? CustomerId { get; set; }
-        public string CustomerName { get; set; } = string.Empty;
+        public string ReceiverName { get; set; } = string.Empty;
         public int ItemCount { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? GeneralNote { get; set; }
         public DateTime CreatedAt { get; set; }
+        public List<PurchaseRequestListProductDto> Items { get; set; } = new();
     }
 }
