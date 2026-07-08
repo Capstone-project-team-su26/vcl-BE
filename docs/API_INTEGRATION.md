@@ -3684,9 +3684,9 @@ Authorization: Bearer {accessToken}
 
 ### 31.6. Kết nối SignalR Hub (Real-time WebSockets)
 
-- **Hub Endpoint:** `/chatHub`
+- **Hub Endpoint:** `/hubs/chat`
 - **Giao thức bắt tay (Handshake & Auth):** Vì trình duyệt không hỗ trợ custom header trong WebSocket handshake, FE phải truyền JWT token qua query parameter:
-  - Ví dụ: `wss://domain.com/chatHub?access_token={accessToken}`
+  - Ví dụ: `wss://domain.com/hubs/chat?access_token={accessToken}`
 
 #### Các Hub Method mà FE gọi lên (Invoke):
 

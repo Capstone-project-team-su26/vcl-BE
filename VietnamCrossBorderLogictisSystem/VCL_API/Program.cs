@@ -48,7 +48,7 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHub<VCL_API.Hubs.ChatHub>("/chatHub");
 app.MapControllers();
+app.MapHub<VCL_API.Hubs.ChatHub>("/hubs/chat");
 
 app.Run();
