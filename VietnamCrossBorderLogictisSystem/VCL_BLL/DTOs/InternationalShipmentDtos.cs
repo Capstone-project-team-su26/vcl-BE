@@ -36,6 +36,73 @@ namespace VCL_BLL.DTOs
         public decimal? Weight { get; set; }
     }
 
+    public class UpdateInternationalShipmentStatusDto
+    {
+        [Required(ErrorMessage = "Trạng thái không được để trống.")]
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>Ghi chú vận chuyển (nếu có).</summary>
+        public string? Note { get; set; }
+    }
+
+    public class UpdateInternationalShipmentStatusResponseDto
+    {
+        public Guid ShipmentId { get; set; }
+        public string ShipmentCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? Note { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public string UpdatedByName { get; set; } = string.Empty;
+    }
+
+    public class ConfirmShipmentArrivalDto
+    {
+        /// <summary>Ghi chú khi xác nhận đến kho đích (nếu có).</summary>
+        public string? Note { get; set; }
+    }
+
+    public class ConfirmShipmentArrivalResponseDto
+    {
+        public Guid ShipmentId { get; set; }
+        public string ShipmentCode { get; set; } = string.Empty;
+        public Guid? DestinationWarehouseId { get; set; }
+        public string DestinationWarehouseName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime ArrivedAt { get; set; }
+        public string ConfirmedByName { get; set; } = string.Empty;
+        public string? Note { get; set; }
+        public int TotalPackages { get; set; }
+        public List<InternationalShipmentParcelDto> Parcels { get; set; } = new();
+    }
+
+    public class DestinationReceivingDto
+    {
+        /// <summary>Danh sách Parcel cần xác nhận nhận (bỏ trống = nhận tất cả kiện trong lô chưa nhận).</summary>
+        public List<Guid>? ParcelIds { get; set; }
+
+        public string? Note { get; set; }
+    }
+
+    public class DestinationReceivingParcelDto
+    {
+        public Guid ParcelId { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public string PackageStatus { get; set; } = string.Empty;
+    }
+
+    public class DestinationReceivingResponseDto
+    {
+        public Guid ShipmentId { get; set; }
+        public string ShipmentCode { get; set; } = string.Empty;
+        public Guid? DestinationWarehouseId { get; set; }
+        public string DestinationWarehouseName { get; set; } = string.Empty;
+        public DateTime ReceivedAt { get; set; }
+        public string ReceivedByName { get; set; } = string.Empty;
+        public string? Note { get; set; }
+        public int ReceivedCount { get; set; }
+        public List<DestinationReceivingParcelDto> Parcels { get; set; } = new();
+    }
+
     public class InternationalShipmentResponseDto
     {
         public Guid ShipmentId { get; set; }

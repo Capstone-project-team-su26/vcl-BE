@@ -126,7 +126,26 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/orders/consignments/statuses` | Public | Danh sách toàn bộ trạng thái yêu cầu ký gửi (code + label) |
 | `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
 | `POST` | `/api/international-shipments` | Staff / Operations | Tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED |
+| `PUT` | `/api/international-shipments/{shipmentId}/status` | Staff / Operations | Cập nhật trạng thái lô vận chuyển quốc tế (MANIFESTED → IN_TRANSIT → ARRIVED_DESTINATION) |
+| `PUT` | `/api/international-shipments/{shipmentId}/arrive` | Staff / Operations | Xác nhận lô đến kho đích (cập nhật lô + kiện sang ARRIVED_DESTINATION) |
+| `PUT` | `/api/international-shipments/{shipmentId}/destination-receiving` | WarehouseStaff / Staff / Operations | Xác nhận nhận kiện tại kho đích (kiện sang RECEIVED_AT_DESTINATION) |
 | `GET` | `/api/customer/parcels` | Customer | Customer tra cứu kiện hàng thuộc yêu cầu ký gửi của mình |
+| `GET` | `/api/customer/profile` | Customer | Customer xem hồ sơ cá nhân |
+| `PUT` | `/api/customer/profile` | Customer | Customer cập nhật hồ sơ cá nhân |
+| `GET` | `/api/customers?search=` | Admin / Sale | Sales xem danh sách + tìm kiếm khách hàng |
+| `GET` | `/api/customers/{id}` | Admin / Sale | Chi tiết hồ sơ khách hàng |
+| `POST` | `/api/customers` | Admin / Sale | Tạo hồ sơ khách hàng |
+| `PUT` | `/api/customers/{id}` | Admin / Sale | Cập nhật hồ sơ khách hàng |
+| `DELETE` | `/api/customers/{id}` | Admin / Sale | Vô hiệu hóa hồ sơ khách hàng (soft-delete) |
+| `POST` | `/api/warehouse-receiving-notes` | Sale / Admin | Sales tạo phiếu tiếp nhận kho từ yêu cầu ký gửi đã APPROVED |
+| `GET` | `/api/warehouse-receiving-notes/by-consignment/{orderId}` | Sale / Admin | Lấy phiếu tiếp nhận kho đang hiệu lực theo đơn ký gửi |
+| `GET` | `/api/warehouse-receiving-notes/scan?code={code}` | WarehouseStaff / Admin | Warehouse Staff scan mã phiếu để nhận thông tin hàng dự kiến |
+| `GET` | `/api/shipping-methods` | Admin | Danh sách toàn bộ phương thức vận chuyển |
+| `GET` | `/api/shipping-methods/active` | Authenticated | Danh sách phương thức đang hoạt động (Customer/Staff chọn) |
+| `GET` | `/api/shipping-methods/{id}` | Admin | Chi tiết một phương thức vận chuyển |
+| `POST` | `/api/shipping-methods` | Admin | Tạo phương thức vận chuyển mới |
+| `PUT` | `/api/shipping-methods/{id}` | Admin | Cập nhật / vô hiệu hóa phương thức vận chuyển |
+| `DELETE` | `/api/shipping-methods/{id}` | Admin | Xóa phương thức vận chuyển |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
 | `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
@@ -1161,7 +1180,11 @@ Response `200 OK`:
 
 ## 17. Lấy danh sách kiện chờ nhập vị trí kho (Pending Putaway)
 
-Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xem danh sách các kiện hàng đã được check-in vào hệ thống thành công (PackageStatus = "RECEIVED") nhưng chưa được sắp xếp/gán vào ô kệ (Bin) cụ thể trong kho (BinId = null) để tiến hành put-away.
+Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xem danh sách các kiện hàng đã được nhận tại kho nhưng chưa được sắp xếp/gán vào ô kệ (Bin) cụ thể (BinId = null) để tiến hành put-away.
+
+> **Cập nhật (VCL-120):** khi không truyền `status`, danh sách bao gồm kiện ở **cả hai** trạng thái sẵn sàng put-away:
+> - `RECEIVED` — kiện check-in trực tiếp tại kho/điểm tập kết
+> - `RECEIVED_AT_DESTINATION` — kiện nhận từ lô vận chuyển quốc tế tại kho đích (xem mục 31.3)
 
 ```http
 GET /api/parcels/pending-putaway?pageNumber=1&pageSize=10
@@ -1220,7 +1243,9 @@ Response `200 OK`:
 
 ## 18. Nhập vị trí kho cho kiện hàng (Put-away)
 
-Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xếp kiện hàng (đang ở trạng thái `RECEIVED`) vào một ô kệ (`Bin`) cụ thể trong kho. Trạng thái kiện hàng sau khi nhập vị trí thành công sẽ cập nhật thành `STORED`.
+Quy trình dành cho nhân viên kho (Warehouse Staff / Staff) xếp kiện hàng vào một ô kệ (`Bin`) cụ thể trong kho. Trạng thái kiện hàng sau khi nhập vị trí thành công sẽ cập nhật thành `STORED`.
+
+> **Cập nhật (VCL-120):** cho phép put-away kiện ở trạng thái `RECEIVED` **hoặc** `RECEIVED_AT_DESTINATION` (kiện nhận từ lô vận chuyển quốc tế). Kiện chưa được nhận tại kho hoặc đã `STORED` → `400`. Sau put-away, `POST /api/inventories/from-parcel/{parcelId}` ghi nhận tồn kho `AVAILABLE` theo đúng kho hiện tại của kiện (không đổi, dùng chung cho cả 2 luồng).
 
 ```http
 PUT /api/parcels/{parcelId}/put-away
@@ -4246,6 +4271,510 @@ interface CustomerParcelDto {
   saleNote?: string | null;
   items: CustomerParcelItemDto[];
 }
+```
+
+---
+
+### 31.1. Cập nhật trạng thái lô vận chuyển quốc tế
+
+Staff/Operations cập nhật trạng thái lô theo vòng đời vận chuyển. Mỗi lần cập nhật lưu 1 bản ghi lịch sử (bảng `TRACKINGS`).
+
+```http
+PUT /api/international-shipments/{shipmentId}/status
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "status": "IN_TRANSIT",
+  "note": "Đã rời cảng Busan"
+}
+```
+
+**Vòng đời trạng thái (đúng thứ tự):**
+
+```
+CREATED → MANIFESTED → IN_TRANSIT → ARRIVED_DESTINATION
+```
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `status` | **Có** | Một trong: `MANIFESTED`, `IN_TRANSIT`, `ARRIVED_DESTINATION` |
+| `note` | Không | Ghi chú vận chuyển |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Cập nhật trạng thái lô vận chuyển thành công.",
+  "data": {
+    "shipmentId": "9c1f...",
+    "shipmentCode": "INTL-20260708080000-1234",
+    "status": "IN_TRANSIT",
+    "note": "Đã rời cảng Busan",
+    "updatedAt": "2026-07-08T09:00:00Z",
+    "updatedByName": "Nguyễn Văn Staff"
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ chuyển đúng thứ tự: `MANIFESTED` (từ `CREATED`) → `IN_TRANSIT` (từ `MANIFESTED`) → `ARRIVED_DESTINATION` (từ `IN_TRANSIT`).
+- Chuyển sai thứ tự → `400`.
+- Mỗi lần cập nhật lưu lịch sử vào `TRACKINGS` (status + note + thời gian).
+- `IN_TRANSIT` set `shippedAt`, `ARRIVED_DESTINATION` set `deliveredAt` trên lô.
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Trạng thái không hợp lệ | `"Trạng thái không hợp lệ. Hợp lệ: MANIFESTED, IN_TRANSIT, ARRIVED_DESTINATION."` |
+| `400` | Sai thứ tự chuyển | `"Không thể chuyển sang {target} khi lô đang ở trạng thái {current}. Chỉ chuyển được từ {required}."` |
+| `403` | Không phải Staff/Operations | `"Chỉ Staff hoặc Operations được cập nhật trạng thái lô vận chuyển."` |
+| `404` | Không tìm thấy lô | `"Không tìm thấy lô vận chuyển với ID {shipmentId}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface UpdateInternationalShipmentStatusDto {
+  status: "MANIFESTED" | "IN_TRANSIT" | "ARRIVED_DESTINATION";
+  note?: string | null;
+}
+
+interface UpdateInternationalShipmentStatusResponseDto {
+  shipmentId: string;
+  shipmentCode: string;
+  status: string;
+  note?: string | null;
+  updatedAt: string;
+  updatedByName: string;
+}
+```
+
+---
+
+### 31.2. Xác nhận lô đến kho đích
+
+Staff/Operations xác nhận lô vận chuyển đã đến kho đích. Kết thúc bước vận chuyển quốc tế và chuẩn bị dữ liệu kiện cho quy trình nhập kho tại kho đích.
+
+```http
+PUT /api/international-shipments/{shipmentId}/arrive
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "note": "Lô đã cập cảng Cát Lái"
+}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Xác nhận lô đến kho đích thành công.",
+  "data": {
+    "shipmentId": "9c1f...",
+    "shipmentCode": "INTL-20260708080000-1234",
+    "destinationWarehouseId": "22222222-...",
+    "destinationWarehouseName": "Kho Việt Nam HCM",
+    "status": "ARRIVED_DESTINATION",
+    "arrivedAt": "2026-07-08T12:00:00Z",
+    "confirmedByName": "Nguyễn Văn Staff",
+    "note": "Lô đã cập cảng Cát Lái",
+    "totalPackages": 5,
+    "parcels": [
+      { "parcelId": "d5e243d7-...", "packageCode": "PCL-...", "weight": 2.5 }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ xác nhận khi lô đang `IN_TRANSIT`; lô đã `ARRIVED_DESTINATION` → `400` (không xác nhận 2 lần).
+- Cập nhật lô → `ARRIVED_DESTINATION` + `deliveredAt`, và **tất cả Parcel trong lô** → `PackageStatus = ARRIVED_DESTINATION` (sẵn sàng cho nhập kho VCL-118/120).
+- Lưu lịch sử vào `TRACKINGS` (status + note + thời gian).
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Lô đã xác nhận đến trước đó | `"Lô vận chuyển này đã được xác nhận đến kho đích trước đó."` |
+| `400` | Lô chưa IN_TRANSIT | `"Lô chưa đủ điều kiện xác nhận đến kho đích (phải đang IN_TRANSIT, hiện tại: {status})."` |
+| `403` | Không phải Staff/Operations | `"Chỉ Staff hoặc Operations được xác nhận lô đến kho đích."` |
+| `404` | Không tìm thấy lô | `"Không tìm thấy lô vận chuyển với ID {shipmentId}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface ConfirmShipmentArrivalDto {
+  note?: string | null;
+}
+
+interface ConfirmShipmentArrivalResponseDto {
+  shipmentId: string;
+  shipmentCode: string;
+  destinationWarehouseId?: string | null;
+  destinationWarehouseName: string;
+  status: string;
+  arrivedAt: string;
+  confirmedByName: string;
+  note?: string | null;
+  totalPackages: number;
+  parcels: { parcelId: string; packageCode: string; weight?: number | null }[];
+}
+```
+
+---
+
+### 31.3. Xác nhận nhận kiện tại kho đích
+
+Warehouse Staff (hoặc Staff/Operations) xác nhận các kiện trong lô đã được nhận tại kho đích, sau khi lô đã `ARRIVED_DESTINATION`. Sau bước này kiện chuyển `RECEIVED_AT_DESTINATION` và sẵn sàng cho put-away.
+
+```http
+PUT /api/international-shipments/{shipmentId}/destination-receiving
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "parcelIds": ["d5e243d7-..."],
+  "note": "Nhận đủ 5 kiện"
+}
+```
+
+**Ràng buộc:**
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `parcelIds` | Không | Danh sách kiện cần nhận; **bỏ trống = nhận tất cả** kiện trong lô chưa nhận |
+| `note` | Không | Ghi chú nhận kiện |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Xác nhận nhận kiện tại kho đích thành công.",
+  "data": {
+    "shipmentId": "9c1f...",
+    "shipmentCode": "INTL-20260708080000-1234",
+    "destinationWarehouseId": "22222222-...",
+    "destinationWarehouseName": "Kho Việt Nam HCM",
+    "receivedAt": "2026-07-08T13:00:00Z",
+    "receivedByName": "Warehouse Staff A",
+    "note": "Nhận đủ 5 kiện",
+    "receivedCount": 5,
+    "parcels": [
+      { "parcelId": "d5e243d7-...", "packageCode": "PCL-...", "packageStatus": "RECEIVED_AT_DESTINATION" }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ nhận kiện khi lô đang `ARRIVED_DESTINATION` (chưa đến → `400`).
+- Cập nhật kiện → `PackageStatus = RECEIVED_AT_DESTINATION` + set `checkInTime`, sẵn sàng cho put-away (VCL-120).
+- Không cho nhận trùng: kiện đã `RECEIVED_AT_DESTINATION` → `400` (nếu truyền `parcelIds`), hoặc bỏ qua nếu nhận tất cả; nhận hết rồi mà gọi lại → `400`.
+- Lưu lịch sử vào `TRACKINGS` (stage `DESTINATION_RECEIVING`).
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Lô chưa đến kho đích | `"Lô chưa đến kho đích (phải ở trạng thái ARRIVED_DESTINATION, hiện tại: {status})."` |
+| `400` | Parcel không thuộc lô | `"Parcel {id} không thuộc lô vận chuyển này."` |
+| `400` | Kiện đã nhận trước đó | `"Parcel {code} đã được xác nhận nhận tại kho đích trước đó."` |
+| `403` | Không đúng quyền | `"Chỉ Warehouse Staff, Staff hoặc Operations được xác nhận nhận kiện tại kho đích."` |
+| `404` | Không tìm thấy lô | `"Không tìm thấy lô vận chuyển với ID {shipmentId}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface DestinationReceivingDto {
+  parcelIds?: string[] | null;
+  note?: string | null;
+}
+
+interface DestinationReceivingResponseDto {
+  shipmentId: string;
+  shipmentCode: string;
+  destinationWarehouseId?: string | null;
+  destinationWarehouseName: string;
+  receivedAt: string;
+  receivedByName: string;
+  note?: string | null;
+  receivedCount: number;
+  parcels: { parcelId: string; packageCode: string; packageStatus: string }[];
+}
+```
+
+---
+
+## 33. Phiếu tiếp nhận kho (Warehouse Receiving Note)
+
+Sales tạo phiếu tiếp nhận kho từ yêu cầu ký gửi đã `APPROVED`; phiếu có mã riêng (`WRN-xxxxxxxx`) để Warehouse Staff **scan trên mobile** và nhận hàng. Không thay thế API check-in — chỉ bổ sung bước lấy thông tin phiếu trước khi check-in.
+
+### 33.1. Sales tạo phiếu tiếp nhận kho
+
+```http
+POST /api/warehouse-receiving-notes
+Authorization: Bearer {saleToken}
+Content-Type: application/json
+
+{
+  "consignmentOrderId": "5c94b9d5-...",
+  "warehouseId": "df34760c-...",
+  "warehouseNote": "Giao trước 5h chiều"
+}
+```
+
+**Response thành công (201):** trả `receivingNote` gồm `receivingNoteCode`, `status: ACTIVE`, kho, ghi chú...
+
+**Lưu ý / lỗi:**
+- Chỉ tạo khi yêu cầu ký gửi đã `APPROVED` → nếu chưa: `400`.
+- Mỗi đơn chỉ có **1 phiếu đang hiệu lực** → tạo trùng: `409`.
+- Không tìm thấy đơn/kho: `404`. Chỉ **Sale/Admin** được tạo.
+
+### 33.2. Warehouse Staff scan phiếu
+
+```http
+GET /api/warehouse-receiving-notes/scan?code=WRN-63670531
+Authorization: Bearer {warehouseStaffToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Quét phiếu tiếp nhận kho thành công.",
+  "data": {
+    "receivingNoteId": "...",
+    "receivingNoteCode": "WRN-63670531",
+    "status": "ACTIVE",
+    "consignmentOrderId": "5c94b9d5-...",
+    "consignmentCode": "VCL-20260708184739-692376",
+    "customerId": "1b53ba9c-...",
+    "customerName": "Bùi Đình Trọng",
+    "customerCode": "...",
+    "warehouseId": "df34760c-...",
+    "warehouseName": "Kho HCM - Tân Bình",
+    "warehouseNote": "Giao trước 5h chiều",
+    "expectedItems": [
+      { "productName": "Loa", "productType": "Điện tử", "quantity": 2, "declaredValue": 800000 }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ **WarehouseStaff/Admin** được scan (`403` nếu sai quyền); mã không tồn tại → `404`.
+- Sau khi kho xác nhận nhận hàng, **reuse** `POST /api/parcels/check-in` (mục 16) để tạo Parcel. Check-in thành công sẽ tự cập nhật phiếu sang `RECEIVED`.
+- Không ảnh hưởng flow check-in bằng mã gửi hàng đã có.
+
+**TypeScript interface (scan):**
+
+```typescript
+interface WarehouseReceivingNoteExpectedItemDto {
+  productName: string;
+  productType: string;
+  quantity: number;
+  declaredValue?: number | null;
+}
+
+interface WarehouseReceivingNoteScanResponseDto {
+  receivingNoteId: string;
+  receivingNoteCode: string;
+  status: string;
+  consignmentOrderId: string;
+  consignmentCode: string;
+  customerId?: string | null;
+  customerName: string;
+  customerCode: string;
+  warehouseId: string;
+  warehouseName: string;
+  warehouseNote: string;
+  expectedItems: WarehouseReceivingNoteExpectedItemDto[];
+}
+```
+
+---
+
+## 34. Quản lý phương thức vận chuyển (Shipping Methods)
+
+Admin quản lý danh mục phương thức vận chuyển (Express, Air Freight, Sea Freight, Road Freight, Domestic Delivery...). Customer/Staff dùng danh sách **đang hoạt động** khi tạo yêu cầu ký gửi / báo giá.
+
+```http
+POST /api/shipping-methods
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+
+{
+  "methodName": "Sea Freight",
+  "methodCode": "SEA",
+  "description": "Vận chuyển đường biển",
+  "estimatedTransitTime": "15-25 ngày",
+  "applicableCondition": "Đơn > 50kg",
+  "isActive": true,
+  "internalNote": "Ưu tiên hàng cồng kềnh"
+}
+```
+
+**Endpoints:**
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/shipping-methods` | Admin | Toàn bộ danh sách |
+| `GET` | `/api/shipping-methods/active` | Authenticated | Chỉ phương thức `isActive = true` |
+| `GET` | `/api/shipping-methods/{id}` | Admin | Chi tiết |
+| `POST` | `/api/shipping-methods` | Admin | Tạo mới |
+| `PUT` | `/api/shipping-methods/{id}` | Admin | Cập nhật / đặt `isActive=false` để vô hiệu hóa |
+| `DELETE` | `/api/shipping-methods/{id}` | Admin | Xóa |
+
+**Ràng buộc / lỗi:**
+- `methodName`, `methodCode` bắt buộc; thiếu → `400`.
+- **Mã (`methodCode`) không được trùng** → `409` (khi tạo/cập nhật).
+- Không tìm thấy → `404`. Chỉ **Admin** thao tác CRUD (`403` nếu sai quyền).
+- Vô hiệu hóa: `PUT` với `isActive: false` → phương thức không còn xuất hiện ở `/active`.
+
+**Response mẫu (một phương thức):**
+
+```json
+{
+  "id": "41a99f30-...",
+  "methodName": "Sea Freight",
+  "methodCode": "SEA",
+  "description": "Vận chuyển đường biển",
+  "estimatedTransitTime": "15-25 ngày",
+  "applicableCondition": "Đơn > 50kg",
+  "isActive": true,
+  "internalNote": "Ưu tiên hàng cồng kềnh",
+  "createdAt": "2026-07-08T18:58:00Z"
+}
+```
+
+**TypeScript interface:**
+
+```typescript
+interface ShippingMethodResponseDto {
+  id: string;
+  methodName: string;
+  methodCode: string;
+  description?: string | null;
+  estimatedTransitTime?: string | null;
+  applicableCondition?: string | null;
+  isActive: boolean;
+  internalNote?: string | null;
+  createdAt?: string | null;
+}
+
+interface CreateShippingMethodRequestDto {
+  methodName: string;
+  methodCode: string;
+  description?: string | null;
+  estimatedTransitTime?: string | null;
+  applicableCondition?: string | null;
+  isActive?: boolean;
+  internalNote?: string | null;
+}
+```
+
+---
+
+## 35. Customer quản lý hồ sơ cá nhân (Customer Profile)
+
+Customer tự xem và cập nhật hồ sơ cá nhân (dữ liệu từ entity `Customer`). Khác với `GET/PUT /api/User/profile` (cấp User), API này thao tác trên hồ sơ Customer đầy đủ.
+
+```http
+GET  /api/customer/profile
+PUT  /api/customer/profile
+Authorization: Bearer {customerToken}
+```
+
+**PUT request:**
+
+```json
+{
+  "fullName": "Bùi Đình Trọng",
+  "phone": "0912345678",
+  "country": "Việt Nam",
+  "address": "123 Lê Lợi, Q1, HCM"
+}
+```
+
+**Response (GET/PUT) — 200 OK:**
+
+```json
+{
+  "message": "Lấy hồ sơ cá nhân thành công.",
+  "data": {
+    "id": "1b53ba9c-...",
+    "customerCode": "CUS-20260615153018-1B53BA",
+    "fullName": "Bùi Đình Trọng",
+    "email": "buidinhtrong912@gmail.com",
+    "phone": "0912345678",
+    "country": "Việt Nam",
+    "address": "123 Lê Lợi, Q1, HCM",
+    "customerType": "Individual",
+    "status": "Active",
+    "createdAt": "2026-06-15T15:30:18Z"
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ **Customer** thao tác (`403` nếu role khác, `401` nếu chưa đăng nhập).
+- **Chỉ sửa được:** `fullName`, `phone`, `country`, `address`. `email` và `customerCode` **read-only** (không nhận từ request).
+- `fullName` bắt buộc → thiếu: `400`. Trùng `phone` với khách khác → `400`.
+- Không tìm thấy hồ sơ khách hàng tương ứng tài khoản → `404`.
+
+**TypeScript interface:**
+
+```typescript
+interface CustomerProfileResponseDto {
+  id: string;
+  customerCode: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  country: string;
+  address: string;
+  customerType: string;
+  status: string;
+  createdAt?: string | null;
+}
+
+interface UpdateCustomerProfileRequestDto {
+  fullName: string;
+  phone?: string | null;
+  country?: string | null;
+  address?: string | null;
+}
+```
+
+---
+
+## 36. Sales quản lý hồ sơ khách hàng (Customer Management)
+
+Sales/Admin quản lý hồ sơ khách hàng: xem danh sách + tìm kiếm, xem chi tiết, tạo, cập nhật, và **vô hiệu hóa** (soft-delete). Tất cả yêu cầu quyền **Admin hoặc Sale**.
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/api/customers?search={kw}` | Danh sách; `search` lọc theo tên/mã/email/SĐT/địa chỉ/công ty |
+| `GET` | `/api/customers/{id}` | Chi tiết một khách hàng |
+| `POST` | `/api/customers` | Tạo hồ sơ khách hàng |
+| `PUT` | `/api/customers/{id}` | Cập nhật hồ sơ |
+| `DELETE` | `/api/customers/{id}` | **Vô hiệu hóa** (đặt `Status = INACTIVE`) — giữ lịch sử đơn |
+
+**Vô hiệu hóa khách hàng (VCL-159):**
+
+```http
+DELETE /api/customers/{id}
+Authorization: Bearer {saleToken}
+```
+
+- Không xóa cứng (Customer bị `Orders` tham chiếu) → chỉ đặt `Status = INACTIVE`.
+- Khách đã `INACTIVE` mà gọi lại → `400`.
+- Không tìm thấy → `404`. Không đúng quyền (Customer) → `403`.
+
+```json
+{ "message": "Vô hiệu hóa hồ sơ khách hàng thành công." }
 ```
 
 ---

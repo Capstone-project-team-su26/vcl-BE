@@ -1,0 +1,80 @@
+{
+  "info": {
+    "name": "VCL - Customer quan ly ho so ca nhan (Customer Profile)",
+    "description": "VCL-157: Customer xem + cap nhat ho so ca nhan. Sua duoc fullName/phone/country/address; email + customerCode read-only. GET/PUT /api/customer/profile.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
+    { "key": "customerPassword", "value": "trong123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Login (Customer)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var j = pm.response.json(); if (j.token) pm.collectionVariables.set('token', j.token);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. GET ho so ca nhan",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var d = pm.response.json().data;",
+        "pm.test('Co customerCode + email + fullName', function () { pm.expect(d).to.have.property('customerCode'); pm.expect(d).to.have.property('email'); pm.expect(d).to.have.property('fullName'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{baseUrl}}/api/customer/profile", "host": ["{{baseUrl}}"], "path": ["api", "customer", "profile"] }
+      }
+    },
+    {
+      "name": "3. PUT cap nhat ho so (200)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var d = pm.response.json().data;",
+        "pm.test('Cap nhat dung', function () { pm.expect(d.country).to.eql('Việt Nam'); pm.expect(d.phone).to.eql('0912345678'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"Bùi Đình Trọng\",\n  \"phone\": \"0912345678\",\n  \"country\": \"Việt Nam\",\n  \"address\": \"123 Lê Lợi, Q1, HCM\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/customer/profile", "host": ["{{baseUrl}}"], "path": ["api", "customer", "profile"] }
+      }
+    },
+    {
+      "name": "4. (Negative) PUT thieu fullName -> 400",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"phone\": \"0900000000\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/customer/profile", "host": ["{{baseUrl}}"], "path": ["api", "customer", "profile"] }
+      }
+    },
+    {
+      "name": "5. (Negative) Khong co token -> 401",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 401', function () { pm.response.to.have.status(401); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/customer/profile", "host": ["{{baseUrl}}"], "path": ["api", "customer", "profile"] }
+      }
+    }
+  ]
+}

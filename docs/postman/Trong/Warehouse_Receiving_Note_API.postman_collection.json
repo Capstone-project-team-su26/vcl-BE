@@ -1,0 +1,169 @@
+{
+  "info": {
+    "name": "VCL - Phieu tiep nhan kho (Warehouse Receiving Note)",
+    "description": "VCL-146: Sales tao phieu tiep nhan kho tu yeu cau ky gui da APPROVED; Warehouse Staff scan ma phieu (mobile) de nhan thong tin hang du kien. Full flow: tao consignment -> approve -> tao phieu -> scan.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "orderId", "value": "", "type": "string" },
+    { "key": "warehouseId", "value": "", "type": "string" },
+    { "key": "receivingNoteCode", "value": "", "type": "string" },
+    { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
+    { "key": "customerPassword", "value": "trong123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0a. Seed Admin",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/Test/seed-admin", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-admin"] } }
+    },
+    {
+      "name": "0b. Login Admin (dong vai Sale/WarehouseStaff)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var j = pm.response.json(); if (j.token) pm.collectionVariables.set('adminToken', j.token);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"Admin123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "0c. Login Customer",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var j = pm.response.json(); if (j.token) pm.collectionVariables.set('customerToken', j.token);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "1. Lay kho dang hoat dong (save warehouseId)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var j = pm.response.json(); var arr = Array.isArray(j) ? j : (j.data || []);",
+        "if (arr.length) { pm.collectionVariables.set('warehouseId', arr[0].id); console.log('warehouseId:', arr[0].id); }"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/warehouses/active", "host": ["{{baseUrl}}"], "path": ["api", "warehouses", "active"] }
+      }
+    },
+    {
+      "name": "2. Customer tao yeu cau ky gui (save orderId)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+        "var d = pm.response.json().data; if (d && d.orderId) pm.collectionVariables.set('orderId', d.orderId);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"route\": \"KOREA-VIETNAM\",\n  \"shippingOption\": \"Hỏa Tốc\",\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0901234567\",\n  \"receiverAddress\": \"HCM\",\n  \"requiresInspection\": false,\n  \"items\": [ { \"productName\": \"Loa\", \"productType\": \"Điện tử\", \"quantity\": 2, \"weight\": 1.2, \"declaredValue\": 800000 } ]\n}" },
+        "url": { "raw": "{{baseUrl}}/api/orders/consignments", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments"] }
+      }
+    },
+    {
+      "name": "3. Staff duyet yeu cau ky gui -> APPROVED",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"APPROVED\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "orders", "consignments", "{{orderId}}", "status"] }
+      }
+    },
+    {
+      "name": "4. Sales tao phieu tiep nhan kho (save code)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+        "var n = pm.response.json().receivingNote; if (n && n.receivingNoteCode) pm.collectionVariables.set('receivingNoteCode', n.receivingNoteCode);",
+        "console.log('receivingNoteCode:', pm.collectionVariables.get('receivingNoteCode'));"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"consignmentOrderId\": \"{{orderId}}\",\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"warehouseNote\": \"Giao truoc 5h chieu\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/warehouse-receiving-notes", "host": ["{{baseUrl}}"], "path": ["api", "warehouse-receiving-notes"] }
+      }
+    },
+    {
+      "name": "5. Warehouse Staff scan phieu (200 + expectedItems)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var d = pm.response.json().data;",
+        "pm.test('Co consignmentCode + customerName', function () { pm.expect(d).to.have.property('consignmentCode'); pm.expect(d).to.have.property('customerName'); });",
+        "pm.test('Co expectedItems', function () { pm.expect(d.expectedItems).to.be.an('array'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-receiving-notes/scan?code={{receivingNoteCode}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-receiving-notes", "scan"],
+          "query": [{ "key": "code", "value": "{{receivingNoteCode}}" }]
+        }
+      }
+    },
+    {
+      "name": "6. (Negative) Scan ma khong ton tai -> 404",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 404', function () { pm.response.to.have.status(404); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-receiving-notes/scan?code=WRN-00000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-receiving-notes", "scan"],
+          "query": [{ "key": "code", "value": "WRN-00000000" }]
+        }
+      }
+    },
+    {
+      "name": "7. (Negative) Customer scan -> 403",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 403', function () { pm.response.to.have.status(403); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouse-receiving-notes/scan?code={{receivingNoteCode}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouse-receiving-notes", "scan"],
+          "query": [{ "key": "code", "value": "{{receivingNoteCode}}" }]
+        }
+      }
+    },
+    {
+      "name": "8. (Negative) Tao trung phieu cung 1 don -> 409",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 409', function () { pm.response.to.have.status(409); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"consignmentOrderId\": \"{{orderId}}\",\n  \"warehouseId\": \"{{warehouseId}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/warehouse-receiving-notes", "host": ["{{baseUrl}}"], "path": ["api", "warehouse-receiving-notes"] }
+      }
+    }
+  ]
+}

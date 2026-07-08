@@ -51,6 +51,65 @@ namespace VCL_BLL.Services
             };
         }
 
+        public async Task<WarehouseReceivingNoteScanResponseDto> ScanReceivingNoteAsync(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+                throw new ArgumentException("Vui lòng cung cấp mã phiếu tiếp nhận kho.");
+
+            // 1. Tìm phiếu theo mã (404 nếu không có)
+            var wrnRepo = _unitOfWork.Repository<WarehouseReceivingNote>();
+            var allNotes = await wrnRepo.GetAllAsync();
+            var note = allNotes.FirstOrDefault(n =>
+                string.Equals(n.ReceivingNoteCode, code.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (note == null)
+                throw new NotFoundException($"Không tìm thấy phiếu tiếp nhận kho với mã: {code}");
+
+            // 2. Yêu cầu ký gửi + khách hàng
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(note.ConsignmentOrderId);
+            if (order == null)
+                throw new NotFoundException("Không tìm thấy yêu cầu ký gửi liên kết với phiếu tiếp nhận.");
+
+            Customer? customer = null;
+            if (order.CustomerId.HasValue)
+            {
+                var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+                customer = customers.FirstOrDefault(c => c.Id == order.CustomerId.Value);
+            }
+
+            // 3. Danh sách hàng dự kiến nhận (order items)
+            var allItems = await _unitOfWork.Repository<OrderItem>().GetAllAsync();
+            var expectedItems = allItems
+                .Where(i => i.OrderId == order.Id)
+                .Select(i => new WarehouseReceivingNoteExpectedItemDto
+                {
+                    ProductName = i.ProductName ?? string.Empty,
+                    ProductType = i.ProductType ?? string.Empty,
+                    Quantity = i.Quantity ?? 0,
+                    DeclaredValue = i.DeclaredValue
+                })
+                .ToList();
+
+            // 4. Kho tiếp nhận
+            var warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(note.WarehouseId);
+
+            return new WarehouseReceivingNoteScanResponseDto
+            {
+                ReceivingNoteId = note.Id,
+                ReceivingNoteCode = note.ReceivingNoteCode ?? string.Empty,
+                Status = note.Status ?? string.Empty,
+                ConsignmentOrderId = order.Id,
+                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                CustomerId = order.CustomerId,
+                CustomerName = customer?.FullName ?? string.Empty,
+                CustomerCode = customer?.CustomerCode ?? string.Empty,
+                WarehouseId = note.WarehouseId,
+                WarehouseName = warehouse?.WarehouseName ?? "Kho không xác định",
+                WarehouseNote = note.WarehouseNote ?? string.Empty,
+                ExpectedItems = expectedItems
+            };
+        }
+
         public async Task<WarehouseReceivingNoteResponseDto> CreateReceivingNoteAsync(CreateWarehouseReceivingNoteRequestDto request)
         {
             var orderRepo = _unitOfWork.Repository<Order>();

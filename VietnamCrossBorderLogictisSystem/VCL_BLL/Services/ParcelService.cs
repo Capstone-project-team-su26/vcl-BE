@@ -103,6 +103,19 @@ namespace VCL_BLL.Services
             order.Status = "WAREHOUSE_RECEIVED";
             orderRepo.Update(order);
 
+            // 8b. Nếu có phiếu tiếp nhận kho đang hiệu lực (VCL-146) -> cập nhật sang RECEIVED
+            var wrnRepo = _unitOfWork.Repository<WarehouseReceivingNote>();
+            var allNotes = await wrnRepo.GetAllAsync();
+            var activeNote = allNotes.FirstOrDefault(n =>
+                n.ConsignmentOrderId == order.Id &&
+                (string.Equals(n.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(n.Status, "PARTIALLY_RECEIVED", StringComparison.OrdinalIgnoreCase)));
+            if (activeNote != null)
+            {
+                activeNote.Status = "RECEIVED";
+                wrnRepo.Update(activeNote);
+            }
+
             // 9. Lấy thông tin khách hàng và danh sách mặt hàng đã khai báo để trả về
             var customerRepo = _unitOfWork.Repository<Customer>();
             var allCustomers = await customerRepo.GetAllAsync();
@@ -228,10 +241,17 @@ namespace VCL_BLL.Services
 
             var query = allParcels.Where(p => p.BinId == null).AsQueryable();
 
-            // Filter by status if provided
+            // Filter by status if provided; nếu không truyền, chỉ lấy kiện đã nhận tại kho đang chờ put-away
+            // (RECEIVED = check-in trực tiếp, RECEIVED_AT_DESTINATION = nhận từ lô vận chuyển quốc tế)
             if (!string.IsNullOrWhiteSpace(status))
             {
                 query = query.Where(p => string.Equals(p.PackageStatus, status, StringComparison.OrdinalIgnoreCase));
+            }
+            else
+            {
+                var pendingStatuses = new[] { "RECEIVED", "RECEIVED_AT_DESTINATION" };
+                query = query.Where(p => p.PackageStatus != null
+                    && pendingStatuses.Any(s => string.Equals(s, p.PackageStatus, StringComparison.OrdinalIgnoreCase)));
             }
 
             // Search by package code or consignment code
@@ -305,10 +325,13 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Kiện hàng đã được nhập vị trí kho (STORED).");
             }
 
-            // 3. Chỉ cho nhập vị trí kho với Parcel đã check-in (RECEIVED)
-            if (!string.Equals(parcel.PackageStatus, "RECEIVED", StringComparison.OrdinalIgnoreCase))
+            // 3. Chỉ cho nhập vị trí kho với Parcel đã được nhận tại kho:
+            //    - RECEIVED: check-in trực tiếp tại kho/điểm tập kết
+            //    - RECEIVED_AT_DESTINATION: nhận từ lô vận chuyển quốc tế tại kho đích (VCL-118)
+            var putAwayEligibleStatuses = new[] { "RECEIVED", "RECEIVED_AT_DESTINATION" };
+            if (!putAwayEligibleStatuses.Any(s => string.Equals(s, parcel.PackageStatus, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new ArgumentException("Chỉ cho phép nhập vị trí kho với kiện hàng đã check-in.");
+                throw new ArgumentException("Chỉ cho phép nhập vị trí kho với kiện hàng đã được nhận tại kho (RECEIVED hoặc RECEIVED_AT_DESTINATION).");
             }
 
             // 4. Tìm Warehouse, Zone, Shelf, Bin

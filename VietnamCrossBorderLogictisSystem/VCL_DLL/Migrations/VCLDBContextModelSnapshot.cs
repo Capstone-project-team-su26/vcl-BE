@@ -1970,6 +1970,67 @@ namespace VCL_DLL.Migrations
                     b.ToTable("SHIPMENT_WRO_REQUESTS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.ShippingMethod", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("ApplicableCondition")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("applicable_condition");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("EstimatedTransitTime")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("estimated_transit_time");
+
+                    b.Property<string>("InternalNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("internal_note");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("MethodCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("method_code");
+
+                    b.Property<string>("MethodName")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)")
+                        .HasColumnName("method_name");
+
+                    b.HasKey("Id")
+                        .HasName("PK_SHIPPING_METHODS");
+
+                    b.HasIndex("MethodCode")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_SHIPPING_METHOD_CODE")
+                        .HasFilter("[method_code] IS NOT NULL");
+
+                    b.ToTable("SHIPPING_METHODS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.SupportTicket", b =>
                 {
                     b.Property<Guid>("Id")

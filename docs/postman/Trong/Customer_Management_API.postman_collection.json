@@ -1,0 +1,123 @@
+{
+  "info": {
+    "name": "VCL - Sales quan ly ho so khach hang (Customer Management)",
+    "description": "VCL-159: Sales/Admin CRUD ho so khach hang + vo hieu hoa (soft-delete). List/search, get, create, update, deactivate.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "customerId", "value": "", "type": "string" },
+    { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
+    { "key": "customerPassword", "value": "trong123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0a. Seed Admin",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/Test/seed-admin", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-admin"] } }
+    },
+    {
+      "name": "0b. Login Admin",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var j = pm.response.json(); if (j.token) pm.collectionVariables.set('adminToken', j.token);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"Admin123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "0c. Login Customer (de test 403)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var j = pm.response.json(); if (j.token) pm.collectionVariables.set('customerToken', j.token);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "1. Tao ho so KH (save id)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+        "var c = pm.response.json().customer; if (c && c.id) pm.collectionVariables.set('customerId', c.id);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"KH Nhap Test\",\n  \"email\": \"khnhap_test_pm@example.com\",\n  \"phone\": \"0988000222\",\n  \"address\": \"Test addr\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/customers", "host": ["{{baseUrl}}"], "path": ["api", "customers"] }
+      }
+    },
+    {
+      "name": "2. GET danh sach (search)",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/customers?search=Nhap",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "customers"],
+          "query": [{ "key": "search", "value": "Nhap" }]
+        }
+      }
+    },
+    {
+      "name": "3. GET chi tiet",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/customers/{{customerId}}", "host": ["{{baseUrl}}"], "path": ["api", "customers", "{{customerId}}"] }
+      }
+    },
+    {
+      "name": "4. DELETE (vo hieu hoa) -> 200",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/customers/{{customerId}}", "host": ["{{baseUrl}}"], "path": ["api", "customers", "{{customerId}}"] }
+      }
+    },
+    {
+      "name": "5. (Negative) DELETE lan 2 (da INACTIVE) -> 400",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/customers/{{customerId}}", "host": ["{{baseUrl}}"], "path": ["api", "customers", "{{customerId}}"] }
+      }
+    },
+    {
+      "name": "6. (Negative) DELETE khong ton tai -> 404",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 404', function () { pm.response.to.have.status(404); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/customers/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api", "customers", "00000000-0000-0000-0000-000000000000"] }
+      }
+    },
+    {
+      "name": "7. (Negative) Customer goi DELETE -> 403",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 403', function () { pm.response.to.have.status(403); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": { "raw": "{{baseUrl}}/api/customers/{{customerId}}", "host": ["{{baseUrl}}"], "path": ["api", "customers", "{{customerId}}"] }
+      }
+    }
+  ]
+}

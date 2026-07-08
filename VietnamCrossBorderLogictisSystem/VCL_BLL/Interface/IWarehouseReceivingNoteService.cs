@@ -8,5 +8,6 @@ namespace VCL_BLL.Interface
     {
         Task<WarehouseReceivingNoteResponseDto> GetReceivingNoteByConsignmentIdAsync(Guid consignmentOrderId);
         Task<WarehouseReceivingNoteResponseDto> CreateReceivingNoteAsync(CreateWarehouseReceivingNoteRequestDto request);
+        Task<WarehouseReceivingNoteScanResponseDto> ScanReceivingNoteAsync(string code);
     }
 }

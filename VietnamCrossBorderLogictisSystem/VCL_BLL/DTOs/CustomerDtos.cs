@@ -1,7 +1,34 @@
 using System;
+using System.ComponentModel.DataAnnotations;
 
 namespace VCL_BLL.DTOs
 {
+    /// <summary>Hồ sơ cá nhân của Customer (VCL-157).</summary>
+    public class CustomerProfileResponseDto
+    {
+        public Guid Id { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string Country { get; set; } = string.Empty;
+        public string Address { get; set; } = string.Empty;
+        public string CustomerType { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime? CreatedAt { get; set; }
+    }
+
+    /// <summary>Customer cập nhật hồ sơ (email + customerCode không sửa được).</summary>
+    public class UpdateCustomerProfileRequestDto
+    {
+        [Required(ErrorMessage = "Họ tên không được để trống.")]
+        public string FullName { get; set; } = string.Empty;
+
+        public string? Phone { get; set; }
+        public string? Country { get; set; }
+        public string? Address { get; set; }
+    }
+
     public class CustomerResponseDto
     {
         public Guid Id { get; set; }
