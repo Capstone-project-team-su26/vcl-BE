@@ -112,6 +112,22 @@ namespace VCL_API.Injection
                         new List<string>()
                     }
                 });
+
+                // Load XML documentation comments for API
+                var xmlFileApi = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+                var xmlPathApi = System.IO.Path.Combine(System.AppContext.BaseDirectory, xmlFileApi);
+                if (System.IO.File.Exists(xmlPathApi))
+                {
+                    c.IncludeXmlComments(xmlPathApi);
+                }
+
+                // Load XML documentation comments for BLL (DTOs)
+                var xmlFileBll = "VCL_BLL.xml";
+                var xmlPathBll = System.IO.Path.Combine(System.AppContext.BaseDirectory, xmlFileBll);
+                if (System.IO.File.Exists(xmlPathBll))
+                {
+                    c.IncludeXmlComments(xmlPathBll);
+                }
             });
 
             return services;
