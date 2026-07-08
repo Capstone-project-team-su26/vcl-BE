@@ -202,7 +202,6 @@ Quy trình tiếp nhận kiện hàng thực tế tại kho nguồn (Inbound Che
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Staff as Warehouse Staff
     participant UI as &laquo;User Interface&raquo;<br/>:Warehouse App
     participant PC as &laquo;Controller&raquo;<br/>:ParcelController
@@ -211,68 +210,68 @@ sequenceDiagram
     participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
-    Staff ->> UI: Scan consignment code / enter dimensions
+    Staff ->> UI: 1: Scan consignment code / enter dimensions
     activate UI
-    UI ->> PC: POST /api/parcels/check-in (ShippingCode, ActualWeight, dimensions)
+    UI ->> PC: 2: POST /api/parcels/check-in (ShippingCode, ActualWeight, dimensions)
     activate PC
-    PC ->> PS: CheckInParcelAsync(request)
+    PC ->> PS: 3: CheckInParcelAsync(request)
     activate PS
 
     Note over PS: Validate format: ShippingCode must start with "VCL-"
-    PS ->> UOW: Repository<Order>()
+    PS ->> UOW: 4: Repository<Order>()
     activate UOW
-    UOW -->> PS: orderRepository
+    UOW -->> PS: 4.1: orderRepository
     deactivate UOW
 
-    PS ->> Repo: GetAllAsync()
+    PS ->> Repo: 5: GetAllAsync()
     activate Repo
-    Repo ->> DB: SELECT * FROM Orders
+    Repo ->> DB: 5.1: SELECT * FROM Orders
     activate DB
-    DB -->> Repo: List of orders
+    DB -->> Repo: 5.2: List of orders
     deactivate DB
-    Repo -->> PS: allOrders
+    Repo -->> PS: 5.3: allOrders
     deactivate Repo
 
     Note over PS: Find Order by ConsignmentCode.<br/>Check status must be 'APPROVED'.
 
-    alt Order Not Found or Status != APPROVED
-        PS -->> PC: Throw ArgumentException/NotFoundException
-        PC -->> UI: 400 BadRequest / 404 NotFound
-        UI -->> Staff: Show error message
+    alt [Order Not Found or Status != APPROVED]
+        PS -->> PC: 6: Throw ArgumentException/NotFoundException
+        PC -->> UI: 6.1: 400 BadRequest / 404 NotFound
+        UI -->> Staff: 6.2: Show error message
     end
 
     Note over PS: Generate PackageCode: PCL-YYYYMMDDHHMMSS-XXXXXX<br/>Calculate VolumetricWeight & ChargeableWeight
 
-    PS ->> UOW: Repository<Parcel>()
+    PS ->> UOW: 7: Repository<Parcel>()
     activate UOW
-    UOW -->> PS: parcelRepository
+    UOW -->> PS: 7.1: parcelRepository
     deactivate UOW
 
-    PS ->> Repo: AddAsync(new Parcel)
+    PS ->> Repo: 8: AddAsync(new Parcel)
     activate Repo
-    Repo -->> PS: Done
+    Repo -->> PS: 8.1: Done
     deactivate Repo
 
     Note over PS: Update Order status to 'WAREHOUSE_RECEIVED'
-    PS ->> Repo: Update(order)
+    PS ->> Repo: 9: Update(order)
     activate Repo
-    Repo -->> PS: Done
+    Repo -->> PS: 9.1: Done
     deactivate Repo
 
-    PS ->> UOW: SaveChangesAsync()
+    PS ->> UOW: 10: SaveChangesAsync()
     activate UOW
-    UOW ->> DB: INSERT Parcel, UPDATE Order (Transaction)
+    UOW ->> DB: 10.1: INSERT Parcel, UPDATE Order (Transaction)
     activate DB
-    DB -->> UOW: Success (Rows affected)
+    DB -->> UOW: 10.2: Success (Rows affected)
     deactivate DB
-    UOW -->> PS: 1
+    UOW -->> PS: 10.3: 1
     deactivate UOW
 
-    PS -->> PC: ParcelCheckInResponse
+    PS -->> PC: 11: ParcelCheckInResponse
     deactivate PS
-    PC -->> UI: 200 OK (ParcelDetails & DeclaredItems)
+    PC -->> UI: 12: 200 OK (ParcelDetails & DeclaredItems)
     deactivate PC
-    UI -->> Staff: Show success & print label
+    UI -->> Staff: 13: Show success & print label
     deactivate UI
 ```
 
@@ -284,7 +283,6 @@ Quy trình nhập vị trí kho (Put-Away). Sau khi kiểm tra thực tế, nhâ
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Staff as Warehouse Staff
     participant UI as &laquo;User Interface&raquo;<br/>:Warehouse App
     participant PC as &laquo;Controller&raquo;<br/>:ParcelController
@@ -293,80 +291,80 @@ sequenceDiagram
     participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
-    Staff ->> UI: Scan Bin & Parcel
+    Staff ->> UI: 1: Scan Bin & Parcel
     activate UI
-    UI ->> PC: PUT /api/parcels/{id}/put-away (WarehouseId, ZoneId, ShelfId, BinId)
+    UI ->> PC: 2: PUT /api/parcels/{id}/put-away (WarehouseId, ZoneId, ShelfId, BinId)
     activate PC
-    PC ->> PS: PutAwayParcelAsync(parcelId, request)
+    PC ->> PS: 3: PutAwayParcelAsync(parcelId, request)
     activate PS
 
-    PS ->> UOW: Repository<Parcel>()
+    PS ->> UOW: 4: Repository<Parcel>()
     activate UOW
-    UOW -->> PS: parcelRepo
+    UOW -->> PS: 4.1: parcelRepo
     deactivate UOW
 
-    PS ->> Repo: GetByIdAsync(parcelId)
+    PS ->> Repo: 5: GetByIdAsync(parcelId)
     activate Repo
-    Repo ->> DB: SELECT * FROM Parcels WHERE Id = parcelId
+    Repo ->> DB: 5.1: SELECT * FROM Parcels WHERE Id = parcelId
     activate DB
-    DB -->> Repo: Parcel
+    DB -->> Repo: 5.2: Parcel
     deactivate DB
-    Repo -->> PS: parcel
+    Repo -->> PS: 5.3: parcel
     deactivate Repo
 
     Note over PS: Check parcel status. Must be 'RECEIVED' (not 'STORED')
 
-    PS ->> UOW: Repository<Warehouse/Zone/Shelf/Bin>()
+    PS ->> UOW: 6: Repository<Warehouse/Zone/Shelf/Bin>()
     activate UOW
-    UOW -->> PS: repos
+    UOW -->> PS: 6.1: repos
     deactivate UOW
     Note over PS: Retrieve Warehouse, Zone, Shelf, and Bin from Database
 
-    PS ->> Repo: GetByIdAsync(ids)
+    PS ->> Repo: 7: GetByIdAsync(ids)
     activate Repo
-    Repo ->> DB: Query related storage models
+    Repo ->> DB: 7.1: Query related storage models
     activate DB
-    DB -->> Repo: Location data
+    DB -->> Repo: 7.2: Location data
     deactivate DB
-    Repo -->> PS: warehouse, zone, shelf, bin
+    Repo -->> PS: 7.3: warehouse, zone, shelf, bin
     deactivate Repo
 
     Note over PS: Validate Hierarchy:<br/>Zone.WarehouseId == Warehouse.Id<br/>Shelf.ZoneId == Zone.Id<br/>Bin.ShelfId == Shelf.Id
 
     Note over PS: Validate Capacity:<br/>- Calculate parcel volume<br/>- Check if bin.CurrentVolume + parcelVolume <= bin.MaxVolume<br/>- Check if total weight stored in Bin + parcel.ActualWeight <= bin.MaxWeight
 
-    alt Hierarchy or Capacity Validation Fails
-        PS -->> PC: Throw ArgumentException
-        PC -->> UI: 400 BadRequest (Lý do chi tiết)
-        UI -->> Staff: Show error message
+    alt [Hierarchy or Capacity Validation Fails]
+        PS -->> PC: 8: Throw ArgumentException
+        PC -->> UI: 8.1: 400 BadRequest (Lý do chi tiết)
+        UI -->> Staff: 8.2: Show error message
     end
 
     Note over PS: Update Parcel: BinId = bin.Id, Status = 'STORED', PutAwayTime = UtcNow<br/>Update Bin: CurrentVolume += parcelVolume
 
-    PS ->> Repo: Update(parcel)
+    PS ->> Repo: 9: Update(parcel)
     activate Repo
-    Repo -->> PS: Done
+    Repo -->> PS: 9.1: Done
     deactivate Repo
     
-    PS ->> Repo: Update(bin)
+    PS ->> Repo: 10: Update(bin)
     activate Repo
-    Repo -->> PS: Done
+    Repo -->> PS: 10.1: Done
     deactivate Repo
     
-    PS ->> UOW: SaveChangesAsync()
+    PS ->> UOW: 11: SaveChangesAsync()
     activate UOW
-    UOW ->> DB: Commit updates
+    UOW ->> DB: 11.1: Commit updates
     activate DB
-    DB -->> UOW: Success
+    DB -->> UOW: 11.2: Success
     deactivate DB
-    UOW -->> PS: Done
+    UOW -->> PS: 11.3: Done
     deactivate UOW
 
-    PS -->> PC: ParcelPutAwayResponse
+    PS -->> PC: 12: ParcelPutAwayResponse
     deactivate PS
-    PC -->> UI: 200 OK (Put-away success details)
+    PC -->> UI: 13: 200 OK (Put-away success details)
     deactivate PC
-    UI -->> Staff: Show success message
+    UI -->> Staff: 14: Show success message
     deactivate UI
 ```
 
@@ -378,7 +376,6 @@ Quy trình gom hàng đóng bao (Consolidation) và xuất kho hàng loạt. Nhi
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Staff as Warehouse Staff
     participant UI as &laquo;User Interface&raquo;<br/>:Warehouse App
     participant SC as &laquo;Controller&raquo;<br/>:ShipmentController
@@ -387,78 +384,78 @@ sequenceDiagram
     participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
-    Staff ->> UI: Select parcels & consolidate
+    Staff ->> UI: 1: Select parcels & consolidate
     activate UI
-    UI ->> SC: POST /api/shipments/consolidate (List~parcelIds~, ShipmentDetails)
+    UI ->> SC: 2: POST /api/shipments/consolidate (List~parcelIds~, ShipmentDetails)
     activate SC
-    SC ->> SS: ConsolidateParcelsAsync(request)
+    SC ->> SS: 3: ConsolidateParcelsAsync(request)
     activate SS
 
-    SS ->> UOW: Repository<Parcel>()
+    SS ->> UOW: 4: Repository<Parcel>()
     activate UOW
-    UOW -->> SS: parcelRepo
+    UOW -->> SS: 4.1: parcelRepo
     deactivate UOW
 
-    SS ->> Repo: GetAllAsync()
+    SS ->> Repo: 5: GetAllAsync()
     activate Repo
-    Repo ->> DB: SELECT * FROM Parcels
+    Repo ->> DB: 5.1: SELECT * FROM Parcels
     activate DB
-    DB -->> Repo: List of Parcels
+    DB -->> Repo: 5.2: List of Parcels
     deactivate DB
-    Repo -->> SS: allParcels
+    Repo -->> SS: 5.3: allParcels
     deactivate Repo
 
     Note over SS: Filter selected parcels.<br/>Verify all are currently in status 'STORED'.<br/>Calculate TotalWeight & TotalVolume of these parcels.
 
-    SS ->> UOW: Repository<MasterBox>()
+    SS ->> UOW: 6: Repository<MasterBox>()
     activate UOW
-    UOW -->> SS: masterBoxRepo
+    UOW -->> SS: 6.1: masterBoxRepo
     deactivate UOW
 
     Note over SS: Create MasterBox: Status = 'CONSOLIDATED', MasterCode = BOX-YYYYMMDD...
-    SS ->> Repo: AddAsync(new MasterBox)
+    SS ->> Repo: 7: AddAsync(new MasterBox)
     activate Repo
-    Repo -->> SS: Done
+    Repo -->> SS: 7.1: Done
     deactivate Repo
 
-    loop For each Parcel
+    loop [For each Parcel]
         Note over SS: Update status to 'CONSOLIDATED'<br/>Link MasterBoxId = masterBox.Id<br/>Update storage Bin: CurrentVolume -= parcelVolume
-        SS ->> Repo: Update(parcel)
+        SS ->> Repo: 8: Update(parcel)
         activate Repo
-        Repo -->> SS: Done
+        Repo -->> SS: 8.1: Done
         deactivate Repo
         
-        SS ->> Repo: Update(bin)
+        SS ->> Repo: 9: Update(bin)
         activate Repo
-        Repo -->> SS: Done
+        Repo -->> SS: 9.1: Done
         deactivate Repo
     end
 
-    SS ->> UOW: Repository<Shipment>()
+    SS ->> UOW: 10: Repository<Shipment>()
     activate UOW
-    UOW -->> SS: shipmentRepo
+    UOW -->> SS: 10.1: shipmentRepo
     deactivate UOW
     
     Note over SS: Create/Update Shipment mapping to this MasterBox<br/>Status = 'PENDING_DEPARTURE'
-    SS ->> Repo: AddAsync(new Shipment)
+    SS ->> Repo: 11: AddAsync(new Shipment)
     activate Repo
-    Repo -->> SS: Done
+    Repo -->> SS: 11.1: Done
     deactivate Repo
 
-    SS ->> UOW: SaveChangesAsync()
+    SS ->> UOW: 12: SaveChangesAsync()
     activate UOW
-    UOW ->> DB: Commit transaction (INSERT MasterBox & Shipment, UPDATE Parcels & Bins)
+    UOW ->> DB: 12.1: Commit transaction (INSERT MasterBox & Shipment, UPDATE Parcels & Bins)
     activate DB
-    DB -->> UOW: Success
+    DB -->> UOW: 12.2: Success
     deactivate DB
-    UOW -->> SS: Done
+    UOW -->> SS: 12.3: Done
     deactivate UOW
 
-    SS -->> SC: ConsolidationResponse (MasterBox code, associated parcels, shipment code)
+    SS -->> SC: 13: ConsolidationResponse (MasterBox code, associated parcels, shipment code)
     deactivate SS
-    SC -->> UI: 200 OK
+    SC -->> UI: 14: 200 OK
     deactivate SC
-    UI -->> Staff: Show success & print manifest
+    UI -->> Staff: 15: Show success & print manifest
     deactivate UI
 ```
 
@@ -560,7 +557,6 @@ Quy trình Khách hàng khởi tạo yêu cầu ký gửi trên hệ thống. H�
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Customer as Customer
     participant UI as &laquo;User Interface&raquo;<br/>:Customer Portal
     participant OC as &laquo;Controller&raquo;<br/>:OrderController
@@ -570,105 +566,105 @@ sequenceDiagram
     participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
-    Customer ->> UI: Create consignment request (Route, Items...)
+    Customer ->> UI: 1: Create consignment request (Route, Items...)
     activate UI
-    UI ->> OC: POST /api/orders/consignments (Route, ShippingOption, Items)
+    UI ->> OC: 2: POST /api/orders/consignments (Route, ShippingOption, Items)
     activate OC
-    OC ->> OS: CreateConsignmentAsync(request, userId)
+    OC ->> OS: 3: CreateConsignmentAsync(request, userId)
     activate OS
 
     Note over OS: 1. Validate Route & ShippingOption from PricingRule
-    OS ->> UOW: Repository<PricingRule>()
+    OS ->> UOW: 4: Repository<PricingRule>()
     activate UOW
-    UOW -->> OS: pricingRepo
+    UOW -->> OS: 4.1: pricingRepo
     deactivate UOW
     
-    OS ->> Repo: GetAllAsync()
+    OS ->> Repo: 5: GetAllAsync()
     activate Repo
-    Repo ->> DB: SELECT * FROM PricingRules
+    Repo ->> DB: 5.1: SELECT * FROM PricingRules
     activate DB
-    DB -->> Repo: pricingRules
+    DB -->> Repo: 5.2: pricingRules
     deactivate DB
-    Repo -->> OS: pricingRules
+    Repo -->> OS: 5.3: pricingRules
     deactivate Repo
 
     Note over OS: 2. Map User to Customer profile
-    OS ->> UOW: Repository<Customer>()
+    OS ->> UOW: 6: Repository<Customer>()
     activate UOW
-    UOW -->> OS: customerRepo
+    UOW -->> OS: 6.1: customerRepo
     deactivate UOW
     
-    OS ->> Repo: Get Customer by userId
+    OS ->> Repo: 7: Get Customer by userId
     activate Repo
-    Repo ->> DB: SELECT * FROM Customers WHERE UserId = userId
+    Repo ->> DB: 7.1: SELECT * FROM Customers WHERE UserId = userId
     activate DB
-    DB -->> Repo: Customer profile
+    DB -->> Repo: 7.2: Customer profile
     deactivate DB
-    Repo -->> OS: customer
+    Repo -->> OS: 7.3: customer
     deactivate Repo
 
     Note over OS: 3. Verify Items against RestrictedItems
-    OS ->> UOW: Repository<RestrictedItem>()
+    OS ->> UOW: 8: Repository<RestrictedItem>()
     activate UOW
-    UOW -->> OS: restrictedItemRepo
+    UOW -->> OS: 8.1: restrictedItemRepo
     deactivate UOW
     
-    OS ->> Repo: GetAllAsync()
+    OS ->> Repo: 9: GetAllAsync()
     activate Repo
-    Repo ->> DB: SELECT * FROM RestrictedItems
+    Repo ->> DB: 9.1: SELECT * FROM RestrictedItems
     activate DB
-    DB -->> Repo: listRestrictedItems
+    DB -->> Repo: 9.2: listRestrictedItems
     deactivate DB
-    Repo -->> OS: listRestrictedItems
+    Repo -->> OS: 9.3: listRestrictedItems
     deactivate Repo
 
-    alt Contains Banned Items
-        OS -->> OC: Throw ArgumentException (Hàng hóa bị cấm)
-        OC -->> UI: 400 BadRequest (Banned items list)
-        UI -->> Customer: Show validation error
+    alt [Contains Banned Items]
+        OS -->> OC: 10: Throw ArgumentException (Hàng hóa bị cấm)
+        OC -->> UI: 10.1: 400 BadRequest (Banned items list)
+        UI -->> Customer: 10.2: Show validation error
     end
 
     Note over OS: 4. Create Order (Status = 'PENDING_REVIEW') & OrderItems
-    OS ->> UOW: Repository<Order>()
+    OS ->> UOW: 11: Repository<Order>()
     activate UOW
-    UOW -->> OS: orderRepo
+    UOW -->> OS: 11.1: orderRepo
     deactivate UOW
     
-    OS ->> Repo: AddAsync(new Order)
+    OS ->> Repo: 12: AddAsync(new Order)
     activate Repo
-    Repo -->> OS: Done
+    Repo -->> OS: 12.1: Done
     deactivate Repo
     
-    OS ->> UOW: Repository<OrderItem>()
+    OS ->> UOW: 13: Repository<OrderItem>()
     activate UOW
-    UOW -->> OS: orderItemRepo
+    UOW -->> OS: 13.1: orderItemRepo
     deactivate UOW
     
-    OS ->> Repo: AddAsync(items)
+    OS ->> Repo: 14: AddAsync(items)
     activate Repo
-    Repo -->> OS: Done
+    Repo -->> OS: 14.1: Done
     deactivate Repo
 
-    OS ->> UOW: SaveChangesAsync()
+    OS ->> UOW: 15: SaveChangesAsync()
     activate UOW
-    UOW ->> DB: Save changes to DB
+    UOW ->> DB: 15.1: Save changes to DB
     activate DB
-    DB -->> UOW: Success
+    DB -->> UOW: 15.2: Success
     deactivate DB
-    UOW -->> OS: Done
+    UOW -->> OS: 15.3: Done
     deactivate UOW
 
     Note over OS: 5. Generate automated DRAFT estimation
-    OS ->> QS: CreateEstimateQuotationAsync(order.Id)
+    OS ->> QS: 16: CreateEstimateQuotationAsync(order.Id)
     activate QS
-    QS -->> OS: EstimateQuotationResponse
+    QS -->> OS: 16.1: EstimateQuotationResponse
     deactivate QS
 
-    OS -->> OC: CreateConsignmentResponse (Order, Quotation, warnings)
+    OS -->> OC: 17: CreateConsignmentResponse (Order, Quotation, warnings)
     deactivate OS
-    OC -->> UI: 201 Created
+    OC -->> UI: 18: 201 Created
     deactivate OC
-    UI -->> Customer: Display success & draft estimation
+    UI -->> Customer: 19: Display success & draft estimation
     deactivate UI
 ```
 
@@ -680,7 +676,6 @@ Quy trình nhân viên bộ phận nghiệp vụ (Staff/Admin) xem xét và phê
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Staff as Staff / Admin
     participant UI as &laquo;User Interface&raquo;<br/>:Admin Portal
     participant OC as &laquo;Controller&raquo;<br/>:OrderController
@@ -689,68 +684,68 @@ sequenceDiagram
     participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
-    Staff ->> UI: Review & approve/reject order
+    Staff ->> UI: 1: Review & approve/reject order
     activate UI
-    UI ->> OC: PUT /api/orders/consignments/{id}/status (Status, RejectionReason)
+    UI ->> OC: 2: PUT /api/orders/consignments/{id}/status (Status, RejectionReason)
     activate OC
-    OC ->> OS: UpdateConsignmentStatusAsync(orderId, request)
+    OC ->> OS: 3: UpdateConsignmentStatusAsync(orderId, request)
     activate OS
 
-    OS ->> UOW: Repository<Order>()
+    OS ->> UOW: 4: Repository<Order>()
     activate UOW
-    UOW -->> OS: orderRepo
+    UOW -->> OS: 4.1: orderRepo
     deactivate UOW
 
-    OS ->> Repo: GetByIdAsync(orderId)
+    OS ->> Repo: 5: GetByIdAsync(orderId)
     activate Repo
-    Repo ->> DB: SELECT * FROM Orders WHERE Id = orderId
+    Repo ->> DB: 5.1: SELECT * FROM Orders WHERE Id = orderId
     activate DB
-    DB -->> Repo: Order
+    DB -->> Repo: 5.2: Order
     deactivate DB
-    Repo -->> OS: order
+    Repo -->> OS: 5.3: order
     deactivate Repo
 
     Note over OS: Validate status transition.<br/>Cannot update if order status is CANCELLED/WAITING_FOR_PARCEL
 
-    alt Request Status == APPROVED
+    alt [Request Status == APPROVED]
         Note over OS: Generate ConsignmentCode:<br/>VCL-YYYYMMDDHHMMSS-XXXXXX
-        OS ->> Repo: Update(order)
+        OS ->> Repo: 6: Update(order)
         activate Repo
-        Repo -->> OS: Done
+        Repo -->> OS: 6.1: Done
         deactivate Repo
-    else Request Status == REJECTED
+    else [Request Status == REJECTED]
         Note over OS: Save RejectionReason in Note
-        OS ->> Repo: Update(order)
+        OS ->> Repo: 7: Update(order)
         activate Repo
-        Repo -->> OS: Done
+        Repo -->> OS: 7.1: Done
         deactivate Repo
     end
 
     Note over OS: Create Notification for Customer
-    OS ->> UOW: Repository<Notification>()
+    OS ->> UOW: 8: Repository<Notification>()
     activate UOW
-    UOW -->> OS: notificationRepo
+    UOW -->> OS: 8.1: notificationRepo
     deactivate UOW
     
-    OS ->> Repo: AddAsync(new Notification)
+    OS ->> Repo: 9: AddAsync(new Notification)
     activate Repo
-    Repo -->> OS: Done
+    Repo -->> OS: 9.1: Done
     deactivate Repo
 
-    OS ->> UOW: SaveChangesAsync()
+    OS ->> UOW: 10: SaveChangesAsync()
     activate UOW
-    UOW ->> DB: UPDATE Order, INSERT Notification
+    UOW ->> DB: 10.1: UPDATE Order, INSERT Notification
     activate DB
-    DB -->> UOW: Success
+    DB -->> UOW: 10.2: Success
     deactivate DB
-    UOW -->> OS: Done
+    UOW -->> OS: 10.3: Done
     deactivate UOW
 
-    OS -->> OC: UpdateConsignmentStatusResponse
+    OS -->> OC: 11: UpdateConsignmentStatusResponse
     deactivate OS
-    OC -->> UI: 200 OK
+    OC -->> UI: 12: 200 OK
     deactivate OC
-    UI -->> Staff: Display success status
+    UI -->> Staff: 13: Display success status
     deactivate UI
 ```
 
@@ -866,94 +861,93 @@ Quy trình tự động tính toán báo giá ước tính (Estimate) khi khách
 
 ```mermaid
 sequenceDiagram
-    autonumber
     participant OS as &laquo;Service&raquo;<br/>:OrderService
     participant QS as &laquo;Service&raquo;<br/>:QuotationService
     participant UOW as &laquo;UnitOfWork&raquo;<br/>:IUnitOfWork
     participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
-    OS ->> QS: CreateEstimateQuotationAsync(orderId)
+    OS ->> QS: 1: CreateEstimateQuotationAsync(orderId)
     activate QS
 
-    QS ->> UOW: Repository~Order~()
+    QS ->> UOW: 2: Repository~Order~()
     activate UOW
-    UOW -->> QS: orderRepo
+    UOW -->> QS: 2.1: orderRepo
     deactivate UOW
     
-    QS ->> Repo: GetByIdAsync(orderId)
+    QS ->> Repo: 3: GetByIdAsync(orderId)
     activate Repo
-    Repo ->> DB: SELECT * FROM Orders WHERE Id = orderId
+    Repo ->> DB: 3.1: SELECT * FROM Orders WHERE Id = orderId
     activate DB
-    DB -->> Repo: Order
+    DB -->> Repo: 3.2: Order
     deactivate DB
-    Repo -->> QS: order
+    Repo -->> QS: 3.3: order
     deactivate Repo
 
-    QS ->> UOW: Repository~OrderItem~()
+    QS ->> UOW: 4: Repository~OrderItem~()
     activate UOW
-    UOW -->> QS: orderItemRepo
+    UOW -->> QS: 4.1: orderItemRepo
     deactivate UOW
     
-    QS ->> Repo: Get items by OrderId
+    QS ->> Repo: 5: Get items by OrderId
     activate Repo
-    Repo ->> DB: SELECT * FROM OrderItems WHERE OrderId = orderId
+    Repo ->> DB: 5.1: SELECT * FROM OrderItems WHERE OrderId = orderId
     activate DB
-    DB -->> Repo: orderItems
+    DB -->> Repo: 5.2: orderItems
     deactivate DB
-    Repo -->> QS: orderItems
+    Repo -->> QS: 5.3: orderItems
     deactivate Repo
 
     Note over QS: Calculate weight & volume sum:<br/>- Volumetric Weight = TotalVolume / 5000<br/>- Chargeable Weight = Max(TotalWeight, VolumetricWeight)
 
-    QS ->> UOW: Repository~PricingRule~()
+    QS ->> UOW: 6: Repository~PricingRule~()
     activate UOW
-    UOW -->> QS: pricingRuleRepo
+    UOW -->> QS: 6.1: pricingRuleRepo
     deactivate UOW
     
-    QS ->> Repo: GetAllAsync()
+    QS ->> Repo: 7: GetAllAsync()
     activate Repo
-    Repo ->> DB: SELECT * FROM PricingRules
+    Repo ->> DB: 7.1: SELECT * FROM PricingRules
     activate DB
-    DB -->> Repo: activeRules
+    DB -->> Repo: 7.2: activeRules
     deactivate DB
-    Repo -->> QS: activeRules
+    Repo -->> QS: 7.3: activeRules
     deactivate Repo
 
     Note over QS: Find active rule matching Order.ConsignmentType and Customer.Country.<br/>Calculate Cost:<br/>- FreightCharge = Max(ChargeableWeight * PricePerWeight, Volume * PricePerVolume)<br/>- ServiceFee = rule.ServiceFee<br/>- TaxAndDuty = DeclaredValue * 10%<br/>- Total = FreightCharge + ServiceFee + TaxAndDuty
 
-    QS ->> UOW: Repository~Quotation~()
+    QS ->> UOW: 8: Repository~Quotation~()
     activate UOW
-    UOW -->> QS: quotationRepo
+    UOW -->> QS: 8.1: quotationRepo
     deactivate UOW
     
     Note over QS: Create Quotation entity: Status = 'DRAFT', QuoteType = 'ESTIMATE', ExpiredAt = CreatedAt + 7 days
-    QS ->> Repo: AddAsync(new Quotation)
+    QS ->> Repo: 9: AddAsync(new Quotation)
     activate Repo
-    Repo -->> QS: Done
+    Repo -->> QS: 9.1: Done
     deactivate Repo
 
     Note over QS: Update Order: TotalWeight = calculatedWeight, TotalVolume = calculatedVolume
-    QS ->> UOW: Repository~Order~()
+    QS ->> UOW: 10: Repository~Order~()
     activate UOW
-    UOW -->> QS: orderRepo
+    UOW -->> QS: 10.1: orderRepo
     deactivate UOW
     
-    QS ->> Repo: Update(order)
+    QS ->> Repo: 11: Update(order)
     activate Repo
-    Repo -->> QS: Done
+    Repo -->> QS: 11.1: Done
     deactivate Repo
 
-    QS ->> UOW: SaveChangesAsync()
+    QS ->> UOW: 12: SaveChangesAsync()
     activate UOW
-    UOW ->> DB: INSERT Quotation, UPDATE Order
+    UOW ->> DB: 12.1: INSERT Quotation, UPDATE Order
     activate DB
-    DB -->> UOW: Success
+    DB -->> UOW: 12.2: Success
     deactivate DB
-    UOW -->> QS: Done
+    UOW -->> QS: 12.3: Done
     deactivate UOW
 
-    QS -->> OS: EstimateQuotationResponse
+    QS -->> OS: 13: EstimateQuotationResponse
     deactivate QS
 ```
 
@@ -965,7 +959,6 @@ Quy trình khách hàng phê duyệt báo giá từ giao diện Frontend. Sau kh
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Customer as Customer
     participant UI as &laquo;User Interface&raquo;<br/>:Customer Portal
     participant QC as &laquo;Controller&raquo;<br/>:QuotationController
@@ -974,80 +967,80 @@ sequenceDiagram
     participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
-    Customer ->> UI: Accept quotation
+    Customer ->> UI: 1: Accept quotation
     activate UI
-    UI ->> QC: PUT /api/quotations/{id}/accept
+    UI ->> QC: 2: PUT /api/quotations/{id}/accept
     activate QC
-    QC ->> QS: AcceptQuotationAsync(quotationId, userId)
+    QC ->> QS: 3: AcceptQuotationAsync(quotationId, userId)
     activate QS
 
-    QS ->> UOW: Repository~Quotation~()
+    QS ->> UOW: 4: Repository~Quotation~()
     activate UOW
-    UOW -->> QS: quotationRepo
+    UOW -->> QS: 4.1: quotationRepo
     deactivate UOW
     
-    QS ->> Repo: GetByIdAsync(quotationId)
+    QS ->> Repo: 5: GetByIdAsync(quotationId)
     activate Repo
-    Repo ->> DB: SELECT * FROM Quotations WHERE Id = quotationId
+    Repo ->> DB: 5.1: SELECT * FROM Quotations WHERE Id = quotationId
     activate DB
-    DB -->> Repo: Quotation
+    DB -->> Repo: 5.2: Quotation
     deactivate DB
-    Repo -->> QS: quotation
+    Repo -->> QS: 5.3: quotation
     deactivate Repo
 
     Note over QS: Validate Quotation status must be 'DRAFT' & not expired
 
-    QS ->> UOW: Repository~Order~()
+    QS ->> UOW: 6: Repository~Order~()
     activate UOW
-    UOW -->> QS: orderRepo
+    UOW -->> QS: 6.1: orderRepo
     deactivate UOW
     
-    QS ->> Repo: GetByIdAsync(quotation.OrderId)
+    QS ->> Repo: 7: GetByIdAsync(quotation.OrderId)
     activate Repo
-    Repo ->> DB: SELECT * FROM Orders WHERE Id = orderId
+    Repo ->> DB: 7.1: SELECT * FROM Orders WHERE Id = orderId
     activate DB
-    DB -->> Repo: Order
+    DB -->> Repo: 7.2: Order
     deactivate DB
-    Repo -->> QS: order
+    Repo -->> QS: 7.3: order
     deactivate Repo
 
     Note over QS: Verify Order customer maps to current login userId
 
     Note over QS: Update Quotation: Status = 'ACCEPTED'<br/>Update Order: Status = 'WAITING_FOR_PARCEL'
-    QS ->> UOW: Repository~Quotation~()
+    QS ->> UOW: 8: Repository~Quotation~()
     activate UOW
-    UOW -->> QS: quotationRepo
+    UOW -->> QS: 8.1: quotationRepo
     deactivate UOW
     
-    QS ->> Repo: Update(quotation)
+    QS ->> Repo: 9: Update(quotation)
     activate Repo
-    Repo -->> QS: Done
+    Repo -->> QS: 9.1: Done
     deactivate Repo
     
-    QS ->> UOW: Repository~Order~()
+    QS ->> UOW: 10: Repository~Order~()
     activate UOW
-    UOW -->> QS: orderRepo
+    UOW -->> QS: 10.1: orderRepo
     deactivate UOW
     
-    QS ->> Repo: Update(order)
+    QS ->> Repo: 11: Update(order)
     activate Repo
-    Repo -->> QS: Done
+    Repo -->> QS: 11.1: Done
     deactivate Repo
 
-    QS ->> UOW: SaveChangesAsync()
+    QS ->> UOW: 12: SaveChangesAsync()
     activate UOW
-    UOW ->> DB: Update Database
+    UOW ->> DB: 12.1: Update Database
     activate DB
-    DB -->> UOW: Success
+    DB -->> UOW: 12.2: Success
     deactivate DB
-    UOW -->> QS: Done
+    UOW -->> QS: 12.3: Done
     deactivate UOW
 
-    QS -->> QC: AcceptQuotationResponse
+    QS -->> QC: 13: AcceptQuotationResponse
     deactivate QS
-    QC -->> UI: 200 OK (Quotation accepted)
+    QC -->> UI: 14: 200 OK (Quotation accepted)
     deactivate QC
-    UI -->> Customer: Show approval success
+    UI -->> Customer: 15: Show approval success
     deactivate UI
 ```
 
@@ -1179,7 +1172,6 @@ Quy trình đăng ký tài khoản cho Khách hàng. Để kích hoạt tài kho
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor Customer as Customer
     participant UI as &laquo;User Interface&raquo;<br/>:Customer Portal
     participant AC as &laquo;Controller&raquo;<br/>:AuthController
@@ -1190,112 +1182,112 @@ sequenceDiagram
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
     %% Registration Step
-    Customer ->> UI: Enter details & click Register
+    Customer ->> UI: 1: Enter details & click Register
     activate UI
-    UI ->> AC: POST /api/Auth/customer/register (Email, Password, FullName, Phone, Address)
+    UI ->> AC: 2: POST /api/Auth/customer/register (Email, Password, FullName, Phone, Address)
     activate AC
-    AC ->> AS: RegisterCustomerAsync(request)
+    AC ->> AS: 3: RegisterCustomerAsync(request)
     activate AS
 
-    AS ->> UOW: Repository~User~()
+    AS ->> UOW: 4: Repository~User~()
     activate UOW
-    UOW -->> AS: userRepo
+    UOW -->> AS: 4.1: userRepo
     deactivate UOW
     
-    AS ->> Repo: Get user by email
+    AS ->> Repo: 5: Get user by email
     activate Repo
-    Repo ->> DB: SELECT * FROM Users WHERE Email = email
+    Repo ->> DB: 5.1: SELECT * FROM Users WHERE Email = email
     activate DB
-    DB -->> Repo: User
+    DB -->> Repo: 5.2: User
     deactivate DB
-    Repo -->> AS: user
+    Repo -->> AS: 5.3: user
     deactivate Repo
 
     Note over AS: Check if email already used & verified.<br/>Generate random 6-digit OTP.<br/>Hash password and OTP.<br/>Create User (Status = 'PendingVerification', IsEmailVerified = false).<br/>Create Customer profile.
 
-    AS ->> Repo: AddAsync(new User)
+    AS ->> Repo: 6: AddAsync(new User)
     activate Repo
-    Repo -->> AS: Done
+    Repo -->> AS: 6.1: Done
     deactivate Repo
     
-    AS ->> Repo: AddAsync(new Customer)
+    AS ->> Repo: 7: AddAsync(new Customer)
     activate Repo
-    Repo -->> AS: Done
+    Repo -->> AS: 7.1: Done
     deactivate Repo
     
-    AS ->> UOW: SaveChangesAsync()
+    AS ->> UOW: 8: SaveChangesAsync()
     activate UOW
-    UOW ->> DB: INSERT User, INSERT Customer
+    UOW ->> DB: 8.1: INSERT User, INSERT Customer
     activate DB
-    DB -->> UOW: Success
+    DB -->> UOW: 8.2: Success
     deactivate DB
-    UOW -->> AS: Done
+    UOW -->> AS: 8.3: Done
     deactivate UOW
 
-    AS ->> Email: SendCustomerRegistrationOtpAsync(email, otp)
+    AS ->> Email: 9: SendCustomerRegistrationOtpAsync(email, otp)
     activate Email
     Note over Email: Send email in background
-    Email -->> AS: Sent
+    Email -->> AS: 9.1: Sent
     deactivate Email
 
-    AS -->> AC: Register success (waiting OTP)
+    AS -->> AC: 10: Register success (waiting OTP)
     deactivate AS
-    AC -->> UI: 200 OK (OTP Sent to Email)
+    AC -->> UI: 11: 200 OK (OTP Sent to Email)
     deactivate AC
-    UI -->> Customer: Prompt for OTP
+    UI -->> Customer: 12: Prompt for OTP
     deactivate UI
 
     %% OTP Verification Step
-    Customer ->> UI: Enter OTP & submit
+    Customer ->> UI: 13: Enter OTP & submit
     activate UI
-    UI ->> AC: POST /api/Auth/customer/verify-otp (Email, Otp)
+    UI ->> AC: 14: POST /api/Auth/customer/verify-otp (Email, Otp)
     activate AC
-    AC ->> AS: VerifyCustomerOtpAsync(request)
+    AC ->> AS: 15: VerifyCustomerOtpAsync(request)
     activate AS
 
-    AS ->> UOW: Repository~User~()
+    AS ->> UOW: 16: Repository~User~()
     activate UOW
-    UOW -->> AS: userRepo
+    UOW -->> AS: 16.1: userRepo
     deactivate UOW
     
-    AS ->> Repo: Get user by Email
+    AS ->> Repo: 17: Get user by Email
     activate Repo
-    Repo ->> DB: SELECT * FROM Users WHERE Email = email
+    Repo ->> DB: 17.1: SELECT * FROM Users WHERE Email = email
     activate DB
-    DB -->> Repo: user
-    deactivate DB
-    Repo -->> AS: user
+    DB -->> Repo: 17.2: user
+    deactivate Repo
+    Repo -->> AS: 17.3: user
     deactivate Repo
 
     Note over AS: Validate OTP hash, check expiry & failed attempts count
 
-    alt OTP is Correct & Not Expired
+    alt [OTP is Correct & Not Expired]
         Note over AS: Update User & Customer status = 'Active', IsEmailVerified = true
-        AS ->> Repo: Update(user)
+        AS ->> Repo: 18: Update(user)
         activate Repo
-        Repo -->> AS: Done
+        Repo -->> AS: 18.1: Done
         deactivate Repo
         
-        AS ->> Repo: Update(customer)
+        AS ->> Repo: 19: Update(customer)
         activate Repo
-        Repo -->> AS: Done
+        Repo -->> AS: 19.1: Done
         deactivate Repo
         
-        AS ->> UOW: SaveChangesAsync()
+        AS ->> UOW: 20: SaveChangesAsync()
         activate UOW
-        UOW ->> DB: Commit changes
+        UOW ->> DB: 20.1: Commit changes
         activate DB
-        DB -->> UOW: Success
+        DB -->> UOW: 20.2: Success
         deactivate DB
-        UOW -->> AS: Done
+        UOW -->> AS: 20.3: Done
         deactivate UOW
-        AS -->> AC: customerId
-        AC -->> UI: 200 OK (Account Activated)
-        UI -->> Customer: Show success & redirect to Login
-    else OTP Incorrect or Expired
-        AS -->> AC: Throw AuthException
-        AC -->> UI: 400 BadRequest (OTP Invalid)
-        UI -->> Customer: Show verification error
+        AS -->> AC: 21: customerId
+        AC -->> UI: 22: 200 OK (Account Activated)
+        UI -->> Customer: 23: Show success & redirect to Login
+    else [OTP Incorrect or Expired]
+        AS -->> AC: 24: Throw AuthException
+        AC -->> UI: 24.1: 400 BadRequest (OTP Invalid)
+        UI -->> Customer: 24.2: Show verification error
     end
     deactivate AS
     deactivate AC
@@ -1310,7 +1302,6 @@ Quy trình đăng nhập hệ thống và tạo Token JWT cấp cho máy trạm.
 
 ```mermaid
 sequenceDiagram
-    autonumber
     actor User as User / Client
     participant UI as &laquo;User Interface&raquo;<br/>:Customer Portal
     participant AC as &laquo;Controller&raquo;<br/>:AuthController
@@ -1319,41 +1310,41 @@ sequenceDiagram
     participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
     participant DB as &laquo;Database&raquo;<br/>:SQL Server
 
-    User ->> UI: Enter credentials & click Login
+    User ->> UI: 1: Enter credentials & click Login
     activate UI
-    UI ->> AC: POST /api/Auth/login (Email, Password)
+    UI ->> AC: 2: POST /api/Auth/login (Email, Password)
     activate AC
-    AC ->> AS: LoginAsync(request)
+    AC ->> AS: 3: LoginAsync(request)
     activate AS
 
-    AS ->> UOW: Repository~User~()
+    AS ->> UOW: 4: Repository~User~()
     activate UOW
-    UOW -->> AS: userRepo
+    UOW -->> AS: 4.1: userRepo
     deactivate UOW
     
-    AS ->> Repo: Get user by email
+    AS ->> Repo: 5: Get user by email
     activate Repo
-    Repo ->> DB: SELECT * FROM Users WHERE Email = request.Email
+    Repo ->> DB: 5.1: SELECT * FROM Users WHERE Email = request.Email
     activate DB
-    DB -->> Repo: User
+    DB -->> Repo: 5.2: User
     deactivate DB
-    Repo -->> AS: user
+    Repo -->> AS: 5.3: user
     deactivate Repo
 
     Note over AS: Verify User status is Active.<br/>Compare password hash.
 
-    alt User Not Found or Password Mismatch or Locked
-        AS -->> AC: Throw AuthException
-        AC -->> UI: 401 Unauthorized
-        UI -->> User: Show login error
-    else Authentication Success
+    alt [User Not Found or Password Mismatch or Locked]
+        AS -->> AC: 6: Throw AuthException
+        AC -->> UI: 6.1: 401 Unauthorized
+        UI -->> User: 6.2: Show login error
+    else [Authentication Success]
         Note over AS: Create Claims:<br/>- nameid = user.Id<br/>- name = user.FullName<br/>- email = user.Email<br/>- role = user.Role<br/><br/>Generate JWT token (signed with SecretKey)
-        AS -->> AC: LoginResponse (token, user profile)
+        AS -->> AC: 7: LoginResponse (token, user profile)
     end
     deactivate AS
 
-    AC -->> UI: 200 OK (Bearer {token})
+    AC -->> UI: 8: 200 OK (Bearer {token})
     deactivate AC
-    UI -->> User: Redirect to Dashboard
+    UI -->> User: 9: Redirect to Dashboard
     deactivate UI
 ```
