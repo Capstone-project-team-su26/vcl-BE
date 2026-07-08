@@ -1311,14 +1311,14 @@ public partial class VCLDBContext : DbContext
 
             // Seed các loại hàng phổ biến cho dropdown (FE feedback Phong)
             entity.HasData(
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000001"), Name = "Electronics", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000002"), Name = "Clothing", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000003"), Name = "Cosmetics", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000004"), Name = "Accessories", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000005"), Name = "Food", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000006"), Name = "Books", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000007"), Name = "Toys", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000008"), Name = "Household Goods", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000001"), Name = "Điện tử", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000002"), Name = "Quần áo", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000003"), Name = "Mỹ phẩm", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000004"), Name = "Phụ kiện", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000005"), Name = "Thực phẩm", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000006"), Name = "Sách", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000007"), Name = "Đồ chơi", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000008"), Name = "Đồ gia dụng", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
             );
         });
 
