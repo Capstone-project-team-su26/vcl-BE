@@ -130,6 +130,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/international-shipments/{shipmentId}/arrive` | Staff / Operations | Xác nhận lô đến kho đích (cập nhật lô + kiện sang ARRIVED_DESTINATION) |
 | `PUT` | `/api/international-shipments/{shipmentId}/destination-receiving` | WarehouseStaff / Staff / Operations | Xác nhận nhận kiện tại kho đích (kiện sang RECEIVED_AT_DESTINATION) |
 | `GET` | `/api/customer/parcels` | Customer | Customer tra cứu kiện hàng thuộc yêu cầu ký gửi của mình |
+| `GET` | `/api/customer/profile` | Customer | Customer xem hồ sơ cá nhân |
+| `PUT` | `/api/customer/profile` | Customer | Customer cập nhật hồ sơ cá nhân |
 | `POST` | `/api/warehouse-receiving-notes` | Sale / Admin | Sales tạo phiếu tiếp nhận kho từ yêu cầu ký gửi đã APPROVED |
 | `GET` | `/api/warehouse-receiving-notes/by-consignment/{orderId}` | Sale / Admin | Lấy phiếu tiếp nhận kho đang hiệu lực theo đơn ký gửi |
 | `GET` | `/api/warehouse-receiving-notes/scan?code={code}` | WarehouseStaff / Admin | Warehouse Staff scan mã phiếu để nhận thông tin hàng dự kiến |
@@ -4665,6 +4667,79 @@ interface CreateShippingMethodRequestDto {
   applicableCondition?: string | null;
   isActive?: boolean;
   internalNote?: string | null;
+}
+```
+
+---
+
+## 35. Customer quản lý hồ sơ cá nhân (Customer Profile)
+
+Customer tự xem và cập nhật hồ sơ cá nhân (dữ liệu từ entity `Customer`). Khác với `GET/PUT /api/User/profile` (cấp User), API này thao tác trên hồ sơ Customer đầy đủ.
+
+```http
+GET  /api/customer/profile
+PUT  /api/customer/profile
+Authorization: Bearer {customerToken}
+```
+
+**PUT request:**
+
+```json
+{
+  "fullName": "Bùi Đình Trọng",
+  "phone": "0912345678",
+  "country": "Việt Nam",
+  "address": "123 Lê Lợi, Q1, HCM"
+}
+```
+
+**Response (GET/PUT) — 200 OK:**
+
+```json
+{
+  "message": "Lấy hồ sơ cá nhân thành công.",
+  "data": {
+    "id": "1b53ba9c-...",
+    "customerCode": "CUS-20260615153018-1B53BA",
+    "fullName": "Bùi Đình Trọng",
+    "email": "buidinhtrong912@gmail.com",
+    "phone": "0912345678",
+    "country": "Việt Nam",
+    "address": "123 Lê Lợi, Q1, HCM",
+    "customerType": "Individual",
+    "status": "Active",
+    "createdAt": "2026-06-15T15:30:18Z"
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ **Customer** thao tác (`403` nếu role khác, `401` nếu chưa đăng nhập).
+- **Chỉ sửa được:** `fullName`, `phone`, `country`, `address`. `email` và `customerCode` **read-only** (không nhận từ request).
+- `fullName` bắt buộc → thiếu: `400`. Trùng `phone` với khách khác → `400`.
+- Không tìm thấy hồ sơ khách hàng tương ứng tài khoản → `404`.
+
+**TypeScript interface:**
+
+```typescript
+interface CustomerProfileResponseDto {
+  id: string;
+  customerCode: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  country: string;
+  address: string;
+  customerType: string;
+  status: string;
+  createdAt?: string | null;
+}
+
+interface UpdateCustomerProfileRequestDto {
+  fullName: string;
+  phone?: string | null;
+  country?: string | null;
+  address?: string | null;
 }
 ```
 

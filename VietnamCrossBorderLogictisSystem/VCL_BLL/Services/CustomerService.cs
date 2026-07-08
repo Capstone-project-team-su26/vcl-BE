@@ -240,5 +240,66 @@ namespace VCL_BLL.Services
                 Status = customer.Status
             };
         }
+
+        // VCL-157: Customer tự quản lý hồ sơ cá nhân
+        public async Task<CustomerProfileResponseDto> GetMyProfileAsync(Guid userId)
+        {
+            var customer = await FindCustomerByUserIdOrThrowAsync(userId);
+            return MapProfile(customer);
+        }
+
+        public async Task<CustomerProfileResponseDto> UpdateMyProfileAsync(Guid userId, UpdateCustomerProfileRequestDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Dữ liệu hồ sơ không được để trống.");
+            if (string.IsNullOrWhiteSpace(request.FullName))
+                throw new ArgumentException("Họ tên không được để trống.");
+
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customer = await FindCustomerByUserIdOrThrowAsync(userId);
+
+            // Không cho trùng SĐT với khách khác (nếu có nhập)
+            if (!string.IsNullOrWhiteSpace(request.Phone))
+            {
+                var allCustomers = await customerRepo.GetAllAsync();
+                if (allCustomers.Any(c => c.Id != customer.Id
+                    && string.Equals(c.Phone, request.Phone.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    throw new ArgumentException("Số điện thoại đã tồn tại trên hệ thống.");
+            }
+
+            // Chỉ cập nhật các trường được phép; email + customerCode giữ nguyên
+            customer.FullName = request.FullName.Trim();
+            if (request.Phone != null) customer.Phone = request.Phone.Trim();
+            if (request.Country != null) customer.Country = request.Country.Trim();
+            if (request.Address != null) customer.Address = request.Address.Trim();
+
+            customerRepo.Update(customer);
+            await _unitOfWork.SaveChangesAsync();
+
+            return MapProfile(customer);
+        }
+
+        private async Task<Customer> FindCustomerByUserIdOrThrowAsync(Guid userId)
+        {
+            var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+            var customer = customers.FirstOrDefault(c => c.UserId == userId);
+            if (customer == null)
+                throw new NotFoundException("Không tìm thấy hồ sơ khách hàng tương ứng với tài khoản.");
+            return customer;
+        }
+
+        private static CustomerProfileResponseDto MapProfile(Customer c) => new CustomerProfileResponseDto
+        {
+            Id = c.Id,
+            CustomerCode = c.CustomerCode ?? string.Empty,
+            FullName = c.FullName ?? string.Empty,
+            Email = c.Email ?? string.Empty,
+            Phone = c.Phone ?? string.Empty,
+            Country = c.Country ?? string.Empty,
+            Address = c.Address ?? string.Empty,
+            CustomerType = c.CustomerType ?? string.Empty,
+            Status = c.Status ?? string.Empty,
+            CreatedAt = c.CreatedAt
+        };
     }
 }
