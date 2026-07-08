@@ -1,0 +1,110 @@
+{
+  "info": {
+    "name": "VCL - Tao lo van chuyen quoc te (International Shipment)",
+    "description": "VCL-110: Staff/Operations gom cac yeu cau xuat kho (WRO) da RELEASED vao 1 lo van chuyen quoc te. Endpoint POST /api/international-shipments. LUU Y: happy path can 1 WRO da RELEASED - dien id vao bien releasedWroId + originWarehouseId + destinationWarehouseId truoc khi chay request 2.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "customerToken", "value": "", "type": "string" },
+    { "key": "releasedWroId", "value": "", "type": "string" },
+    { "key": "originWarehouseId", "value": "", "type": "string" },
+    { "key": "destinationWarehouseId", "value": "", "type": "string" },
+    { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
+    { "key": "customerPassword", "value": "trong123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0a. Setup - Seed Admin",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"], "type": "text/javascript" } } ],
+      "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/api/Test/seed-admin", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-admin"] } }
+    },
+    {
+      "name": "0b. Setup - Login Admin (Staff token)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var json = pm.response.json(); if (json.token) { pm.collectionVariables.set('adminToken', json.token); }"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"Admin123\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "0c. Setup - Login Customer",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var json = pm.response.json(); if (json.token) { pm.collectionVariables.set('customerToken', json.token); }"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "1. Tao lo van chuyen quoc te (happy - can releasedWroId)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+        "var data = pm.response.json().data;",
+        "pm.test('Status = CREATED', function () { pm.expect(data.status).to.eql('CREATED'); });",
+        "pm.test('Co shipmentCode dinh dang INTL-', function () { pm.expect(data.shipmentCode).to.match(/^INTL-\\d{14}-\\d{4}$/); });",
+        "pm.test('Co totalPackages va totalWeight', function () { pm.expect(data).to.have.property('totalPackages'); pm.expect(data).to.have.property('totalWeight'); });",
+        "pm.test('Co danh sach wroRequests va parcels', function () { pm.expect(data.wroRequests).to.be.an('array'); pm.expect(data.parcels).to.be.an('array'); });",
+        "console.log('Shipment:', data.shipmentCode, '| kien:', data.totalPackages, '| can:', data.totalWeight);"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"wroRequestIds\": [ \"{{releasedWroId}}\" ],\n  \"originWarehouseId\": \"{{originWarehouseId}}\",\n  \"destinationWarehouseId\": \"{{destinationWarehouseId}}\",\n  \"shippingMethod\": \"Sea\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments"] }
+      }
+    },
+    {
+      "name": "2. (Negative) Danh sach WRO rong -> 400",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"wroRequestIds\": [],\n  \"originWarehouseId\": \"{{originWarehouseId}}\",\n  \"destinationWarehouseId\": \"{{destinationWarehouseId}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments"] }
+      }
+    },
+    {
+      "name": "3. (Negative) WRO khong ton tai -> 404",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 404', function () { pm.response.to.have.status(404); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"wroRequestIds\": [ \"00000000-0000-0000-0000-000000000000\" ],\n  \"originWarehouseId\": \"{{originWarehouseId}}\",\n  \"destinationWarehouseId\": \"{{destinationWarehouseId}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments"] }
+      }
+    },
+    {
+      "name": "4. (Negative) Customer tao -> 403",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 403', function () { pm.response.to.have.status(403); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"wroRequestIds\": [ \"00000000-0000-0000-0000-000000000000\" ],\n  \"originWarehouseId\": \"{{originWarehouseId}}\",\n  \"destinationWarehouseId\": \"{{destinationWarehouseId}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments"] }
+      }
+    }
+  ]
+}

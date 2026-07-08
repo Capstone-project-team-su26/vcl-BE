@@ -1830,10 +1830,23 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("shipped_at");
 
+                    b.Property<string>("ShippingMethod")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("shipping_method");
+
                     b.Property<string>("Status")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("status");
+
+                    b.Property<int?>("TotalPackages")
+                        .HasColumnType("int")
+                        .HasColumnName("total_packages");
+
+                    b.Property<decimal?>("TotalWeight")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("total_weight");
 
                     b.HasKey("Id")
                         .HasName("PK__SHIPMENT__3213E83FAF3C517F");
@@ -1901,6 +1914,60 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("ToCarrierId");
 
                     b.ToTable("SHIPMENT_HANDOVERS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.ShipmentParcel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<Guid>("ShipmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("shipment_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_SHIPMENT_PARCELS");
+
+                    b.HasIndex("ParcelId");
+
+                    b.HasIndex("ShipmentId");
+
+                    b.ToTable("SHIPMENT_PARCELS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.ShipmentWroRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid>("ShipmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("shipment_id");
+
+                    b.Property<Guid>("WroRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("wro_request_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_SHIPMENT_WRO_REQUESTS");
+
+                    b.HasIndex("ShipmentId");
+
+                    b.HasIndex("WroRequestId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_SHIPMENT_WRO_REQUEST");
+
+                    b.ToTable("SHIPMENT_WRO_REQUESTS", (string)null);
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.SupportTicket", b =>
@@ -2817,6 +2884,46 @@ namespace VCL_DLL.Migrations
                     b.Navigation("ToCarrier");
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.ShipmentParcel", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Parcel", "Parcel")
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .IsRequired()
+                        .HasConstraintName("FK_SHIPMENT_PARCEL_PARCEL");
+
+                    b.HasOne("VCL_DLL.Models.Shipment", "Shipment")
+                        .WithMany("ShipmentParcels")
+                        .HasForeignKey("ShipmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SHIPMENT_PARCEL_SHIPMENT");
+
+                    b.Navigation("Parcel");
+
+                    b.Navigation("Shipment");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.ShipmentWroRequest", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Shipment", "Shipment")
+                        .WithMany("ShipmentWroRequests")
+                        .HasForeignKey("ShipmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_SHIPMENT_WRO_SHIPMENT");
+
+                    b.HasOne("VCL_DLL.Models.WroRequest", "WroRequest")
+                        .WithMany()
+                        .HasForeignKey("WroRequestId")
+                        .IsRequired()
+                        .HasConstraintName("FK_SHIPMENT_WRO_REQUEST");
+
+                    b.Navigation("Shipment");
+
+                    b.Navigation("WroRequest");
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.SupportTicket", b =>
                 {
                     b.HasOne("VCL_DLL.Models.Order", "Consignment")
@@ -3034,6 +3141,10 @@ namespace VCL_DLL.Migrations
                     b.Navigation("MasterBoxes");
 
                     b.Navigation("ShipmentHandovers");
+
+                    b.Navigation("ShipmentParcels");
+
+                    b.Navigation("ShipmentWroRequests");
 
                     b.Navigation("Trackings");
                 });

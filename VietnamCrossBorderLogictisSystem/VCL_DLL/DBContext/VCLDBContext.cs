@@ -93,6 +93,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<PurchaseQuotationItem> PurchaseQuotationItems { get; set; }
 
+    public virtual DbSet<ShipmentWroRequest> ShipmentWroRequests { get; set; }
+
+    public virtual DbSet<ShipmentParcel> ShipmentParcels { get; set; }
+
     public virtual DbSet<Conversation> Conversations { get; set; }
 
     public virtual DbSet<Message> Messages { get; set; }
@@ -974,6 +978,13 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
+            entity.Property(e => e.ShippingMethod)
+                .HasMaxLength(100)
+                .HasColumnName("shipping_method");
+            entity.Property(e => e.TotalPackages).HasColumnName("total_packages");
+            entity.Property(e => e.TotalWeight)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("total_weight");
 
             entity.HasOne(d => d.Carrier).WithMany(p => p.Shipments)
                 .HasForeignKey(d => d.CarrierId)
@@ -994,6 +1005,49 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.OriginWarehouse).WithMany(p => p.ShipmentOriginWarehouses)
                 .HasForeignKey(d => d.OriginWarehouseId)
                 .HasConstraintName("FK_SHIP_ORIGIN_WH");
+        });
+
+        modelBuilder.Entity<ShipmentWroRequest>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_SHIPMENT_WRO_REQUESTS");
+            entity.ToTable("SHIPMENT_WRO_REQUESTS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.ShipmentId).HasColumnName("shipment_id");
+            entity.Property(e => e.WroRequestId).HasColumnName("wro_request_id");
+
+            // Một yêu cầu xuất kho chỉ được gán vào duy nhất một lô vận chuyển
+            entity.HasIndex(e => e.WroRequestId).IsUnique().HasDatabaseName("UQ_SHIPMENT_WRO_REQUEST");
+
+            entity.HasOne(d => d.Shipment).WithMany(p => p.ShipmentWroRequests)
+                .HasForeignKey(d => d.ShipmentId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_SHIPMENT_WRO_SHIPMENT");
+
+            entity.HasOne(d => d.WroRequest).WithMany()
+                .HasForeignKey(d => d.WroRequestId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPMENT_WRO_REQUEST");
+        });
+
+        modelBuilder.Entity<ShipmentParcel>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_SHIPMENT_PARCELS");
+            entity.ToTable("SHIPMENT_PARCELS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.ShipmentId).HasColumnName("shipment_id");
+            entity.Property(e => e.ParcelId).HasColumnName("parcel_id");
+
+            entity.HasOne(d => d.Shipment).WithMany(p => p.ShipmentParcels)
+                .HasForeignKey(d => d.ShipmentId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_SHIPMENT_PARCEL_SHIPMENT");
+
+            entity.HasOne(d => d.Parcel).WithMany()
+                .HasForeignKey(d => d.ParcelId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPMENT_PARCEL_PARCEL");
         });
 
         modelBuilder.Entity<ShipmentHandover>(entity =>

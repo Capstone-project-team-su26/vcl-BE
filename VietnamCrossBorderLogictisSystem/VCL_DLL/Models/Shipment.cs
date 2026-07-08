@@ -31,6 +31,16 @@ public partial class Shipment
 
     public string ShipmentCode { get; set; }
 
+    public string ShippingMethod { get; set; }
+
+    public int? TotalPackages { get; set; }
+
+    public decimal? TotalWeight { get; set; }
+
+    public virtual ICollection<ShipmentWroRequest> ShipmentWroRequests { get; set; } = new List<ShipmentWroRequest>();
+
+    public virtual ICollection<ShipmentParcel> ShipmentParcels { get; set; } = new List<ShipmentParcel>();
+
     public virtual Carrier Carrier { get; set; }
 
     public virtual Order Consignment { get; set; }
