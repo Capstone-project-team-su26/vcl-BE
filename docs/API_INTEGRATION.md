@@ -117,12 +117,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `DELETE` | `/api/warehouse-locations/{locationId}` | Admin | Xóa vị trí lưu trữ |
 | `GET` | `/api/warehouses/{warehouseId}/locations/active` | Authenticated | Lấy danh sách vị trí lưu trữ đang hoạt động |
 | `POST` | `/api/purchase-requests` | Customer | Customer tạo yêu cầu mua hộ hàng Trung Quốc |
-| `GET` | `/api/purchase-requests` | Customer / Staff / Sales | Lấy danh sách yêu cầu mua hộ (phân trang, tìm kiếm, lọc trạng thái) |
-| `GET` | `/api/purchase-requests/{requestId}` | Customer / Staff / Sales | Lấy chi tiết một yêu cầu mua hộ |
-| `GET` | `/api/orders/consignments/routes` | Public | Danh sách tuyến hàng (route) cho dropdown FE |
-| `GET` | `/api/orders/consignments/shipping-options` | Public | Danh sách phương án vận chuyển cho dropdown FE (lọc theo `?route=`) |
-| `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
-| `GET` | `/api/orders/consignments/statuses` | Public | Danh sách toàn bộ trạng thái yêu cầu ký gửi (code + label) |
+| `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
+| `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
+| `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
+| `PUT` | `/api/carriers/{carrierId}` | Admin | Cập nhật thông tin đơn vị vận chuyển |
+| `DELETE` | `/api/carriers/{carrierId}` | Admin | Xóa đơn vị vận chuyển |
 
 
 ## 4. Đăng ký khách hàng
@@ -3533,5 +3532,8 @@ interface ConsignmentStatusDto {
 | `/warehouse/release-requests/{id}` | `GET /api/warehouse-release-requests/{requestId}` |
 | `/warehouse/release-requests/{id}/status` | `PUT /api/warehouse-release-requests/{requestId}/status` |
 | `/warehouse/release-requests/{id}/picking-list` | `POST /api/warehouse-release-requests/{requestId}/picking-list` |
+| `/admin/carriers` | `GET /api/carriers` |
+| `/admin/carriers/create` | `POST /api/carriers` |
+| `/admin/carriers/{id}/edit` | `PUT /api/carriers/{id}` |
 
 

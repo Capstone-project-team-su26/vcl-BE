@@ -177,12 +177,33 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.CarrierName)
                 .HasMaxLength(255)
                 .HasColumnName("carrier_name");
+            entity.Property(e => e.CarrierCode)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasColumnName("carrier_code");
+            entity.HasIndex(e => e.CarrierCode)
+                .IsUnique();
             entity.Property(e => e.CarrierType)
                 .HasMaxLength(100)
                 .HasColumnName("carrier_type");
             entity.Property(e => e.ContactEmail)
                 .HasMaxLength(255)
                 .HasColumnName("contact_email");
+            entity.Property(e => e.ContactPhone)
+                .HasMaxLength(50)
+                .HasColumnName("contact_phone");
+            entity.Property(e => e.SupportedShippingMethods)
+                .HasMaxLength(500)
+                .HasColumnName("supported_shipping_methods");
+            entity.Property(e => e.SupportedRegions)
+                .HasMaxLength(500)
+                .HasColumnName("supported_regions");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.InternalNotes)
+                .HasMaxLength(1000)
+                .HasColumnName("internal_notes");
         });
 
         modelBuilder.Entity<Company>(entity =>

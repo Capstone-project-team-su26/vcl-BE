@@ -1,0 +1,353 @@
+{
+	"info": {
+		"_postman_id": "8b9e6f3d-5717-4562-b3fc-2c963f66afa6",
+		"name": "VCL - Carrier Management",
+		"description": "Postman Collection for testing Carrier Management (Quản lý đơn vị vận chuyển) endpoints in the Vietnam Cross-Border Logistics (VCL) system.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Login Admin",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.environment.set(\"accessToken\", jsonData.token);",
+									"    pm.globals.set(\"accessToken\", jsonData.token);",
+									"    console.log(\"Saved accessToken: \" + jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@vcl.com\",\n    \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						},
+						"description": "Authenticate as Admin to obtain access token."
+					},
+					"response": []
+				},
+				{
+					"name": "Login Staff / Operations",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.environment.set(\"accessToken\", jsonData.token);",
+									"    pm.globals.set(\"accessToken\", jsonData.token);",
+									"    console.log(\"Saved accessToken: \" + jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"staff@vcl.com\",\n    \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						},
+						"description": "Authenticate as Staff or Operations to test role permissions."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Carriers",
+			"item": [
+				{
+					"name": "Get All Carriers (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/carriers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"carriers"
+							]
+						},
+						"description": "Get complete list of all carriers. Returns 403 if called by non-Admin role."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Active Carriers (Authenticated)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/carriers/active",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"carriers",
+								"active"
+							]
+						},
+						"description": "Get active carriers list only. Used by Staff, Operations, and Admin."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Carrier Detail (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/carriers/{{carrierId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"carriers",
+								"{{carrierId}}"
+							]
+						},
+						"description": "Get detail of a carrier by ID."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Carrier (Admin Only)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.id) {",
+									"    pm.globals.set(\"carrierId\", jsonData.id);",
+									"    console.log(\"Saved carrierId: \" + jsonData.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"carrierName\": \"DHL Express Vietnam\",\n    \"carrierCode\": \"DHL_VN\",\n    \"carrierType\": \"Carrier\",\n    \"apiUrl\": \"https://api.dhl.com.vn/v1\",\n    \"contactEmail\": \"contact@dhl.com.vn\",\n    \"contactPhone\": \"18001548\",\n    \"supportedShippingMethods\": \"Air,Express\",\n    \"supportedRegions\": \"Vietnam,China,Global\",\n    \"isActive\": true,\n    \"internalNotes\": \"Đối tác vận chuyển hàng không chính\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/carriers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"carriers"
+							]
+						},
+						"description": "Create a new carrier. Code must be unique."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Carrier (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"carrierName\": \"DHL Express Vietnam (Updated)\",\n    \"carrierCode\": \"DHL_VN\",\n    \"carrierType\": \"Forwarder\",\n    \"apiUrl\": \"https://api.dhl.com.vn/v2\",\n    \"contactEmail\": \"support@dhl.com.vn\",\n    \"contactPhone\": \"18001549\",\n    \"supportedShippingMethods\": \"Air\",\n    \"supportedRegions\": \"Vietnam,China\",\n    \"isActive\": false,\n    \"internalNotes\": \"Đã chuyển đổi loại hình sang Forwarder và vô hiệu hóa\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/carriers/{{carrierId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"carriers",
+								"{{carrierId}}"
+							]
+						},
+						"description": "Update information of an existing carrier."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Carrier (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/carriers/{{carrierId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"carriers",
+								"{{carrierId}}"
+							]
+						},
+						"description": "Delete a carrier by ID. If it is referenced by other records, it will return 400 Bad Request."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7237",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
