@@ -117,6 +117,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `DELETE` | `/api/warehouse-locations/{locationId}` | Admin | Xóa vị trí lưu trữ |
 | `GET` | `/api/warehouses/{warehouseId}/locations/active` | Authenticated | Lấy danh sách vị trí lưu trữ đang hoạt động |
 | `POST` | `/api/purchase-requests` | Customer | Customer tạo yêu cầu mua hộ hàng Trung Quốc |
+| `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
+| `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
+| `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
+| `PUT` | `/api/carriers/{carrierId}` | Admin | Cập nhật thông tin đơn vị vận chuyển |
+| `DELETE` | `/api/carriers/{carrierId}` | Admin | Xóa đơn vị vận chuyển |
 
 
 ## 4. Đăng ký khách hàng
@@ -3188,6 +3193,169 @@ interface PurchaseRequestResponseDto {
 
 ---
 
+## 30. Quản lý đơn vị vận chuyển (Carrier Management)
+
+Admin quản lý danh sách đơn vị vận chuyển hoặc forwarder được sử dụng trong hệ thống. Dữ liệu này dùng cho Staff hoặc Operations chọn khi tạo lô vận chuyển quốc tế hoặc ghi nhận/cập nhật thông tin vận chuyển.
+
+### 30.1. Xem danh sách tất cả các đơn vị vận chuyển
+
+Chỉ Admin được phép sử dụng API này để lấy danh sách đầy đủ (cả active và inactive).
+
+```http
+GET /api/carriers
+Authorization: Bearer {adminToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+[
+  {
+    "id": "e3a1b2c3-5717-4562-b3fc-2c963f66afa6",
+    "carrierName": "DHL Express VN",
+    "carrierCode": "DHL_VN",
+    "carrierType": "Carrier",
+    "apiUrl": "https://api.dhl.com/v1",
+    "contactEmail": "contact@dhl.com.vn",
+    "contactPhone": "18001548",
+    "supportedShippingMethods": "Air,Express",
+    "supportedRegions": "Vietnam, China, Global",
+    "isActive": true,
+    "internalNotes": "Đối tác vận chuyển hàng không chính"
+  }
+]
+```
+
+### 30.2. Lấy danh sách các đơn vị vận chuyển đang hoạt động (Active)
+
+Dành cho Staff hoặc Operations lấy danh sách carrier đang hoạt động để gán vào các lô vận chuyển quốc tế.
+
+```http
+GET /api/carriers/active
+Authorization: Bearer {accessToken}
+```
+
+**Response thành công (200 OK):**
+
+Trả về danh sách carrier có `isActive` là `true`.
+
+### 30.3. Tạo đơn vị vận chuyển mới
+
+```http
+POST /api/carriers
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+
+{
+  "carrierName": "DHL Express VN",
+  "carrierCode": "DHL_VN",
+  "carrierType": "Carrier",
+  "apiUrl": "https://api.dhl.com/v1",
+  "contactEmail": "contact@dhl.com.vn",
+  "contactPhone": "18001548",
+  "supportedShippingMethods": "Air,Express",
+  "supportedRegions": "Vietnam, China, Global",
+  "isActive": true,
+  "internalNotes": "Đối tác vận chuyển hàng không chính"
+}
+```
+
+**Response thành công (201 Created):**
+
+Trả về thông tin đơn vị vận chuyển vừa tạo bao gồm cả `id`.
+
+**Response lỗi thường gặp:**
+- `400 Bad Request` nếu `carrierCode` trùng lặp: `{"message": "Mã đơn vị vận chuyển 'DHL_VN' đã tồn tại trong hệ thống."}`
+- `400 Bad Request` nếu dữ liệu validation không hợp lệ (ví dụ: thiếu tên hoặc mã không đúng định dạng regex).
+
+### 30.4. Cập nhật thông tin đơn vị vận chuyển
+
+```http
+PUT /api/carriers/{carrierId}
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+
+{
+  "carrierName": "DHL Express VN - Cập nhật",
+  "carrierCode": "DHL_VN_NEW",
+  "carrierType": "Forwarder",
+  "apiUrl": "https://api.dhl.com/v2",
+  "contactEmail": "support@dhl.com.vn",
+  "contactPhone": "18001549",
+  "supportedShippingMethods": "Air",
+  "supportedRegions": "Vietnam, China",
+  "isActive": false,
+  "internalNotes": "Đã đổi mã và tạm thời vô hiệu hóa"
+}
+```
+
+**Response thành công (200 OK):**
+`{"message": "Cập nhật đơn vị vận chuyển thành công."}`
+
+**Response lỗi thường gặp:**
+- `400 Bad Request` nếu trùng `carrierCode` với đơn vị khác.
+- `404 Not Found` nếu không tìm thấy ID.
+
+### 30.5. Xóa đơn vị vận chuyển
+
+```http
+DELETE /api/carriers/{carrierId}
+Authorization: Bearer {adminToken}
+```
+
+**Response thành công (200 OK):**
+`{"message": "Xóa đơn vị vận chuyển thành công."}`
+
+**Response lỗi thường gặp:**
+- `400 Bad Request` nếu đơn vị vận chuyển đang được liên kết với dữ liệu lô hàng (Shipment), bảng giá (ServicePricing), hoặc bàn giao hàng (ShipmentHandover). Thông báo: `"Không thể xóa đơn vị vận chuyển này vì đang được liên kết với các bảng giá dịch vụ hoặc lô hàng đang vận hành. Vui lòng vô hiệu hóa thay thế."`
+- `404 Not Found` nếu không tìm thấy ID.
+
+**TypeScript interface (khớp DTO C#):**
+
+```typescript
+interface CarrierDto {
+  id: string;
+  carrierName: string;
+  carrierCode: string;
+  carrierType: string;
+  apiUrl?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  supportedShippingMethods?: string | null;
+  supportedRegions?: string | null;
+  isActive: boolean;
+  internalNotes?: string | null;
+}
+
+interface CreateCarrierRequestDto {
+  carrierName: string;
+  carrierCode: string;
+  carrierType: string;
+  apiUrl?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  supportedShippingMethods?: string | null;
+  supportedRegions?: string | null;
+  isActive?: boolean;
+  internalNotes?: string | null;
+}
+
+interface UpdateCarrierRequestDto {
+  carrierName: string;
+  carrierCode: string;
+  carrierType: string;
+  apiUrl?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  supportedShippingMethods?: string | null;
+  supportedRegions?: string | null;
+  isActive: boolean;
+  internalNotes?: string | null;
+}
+```
+
+---
+
 ## 26. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
@@ -3235,5 +3403,8 @@ interface PurchaseRequestResponseDto {
 | `/warehouse/release-requests/{id}` | `GET /api/warehouse-release-requests/{requestId}` |
 | `/warehouse/release-requests/{id}/status` | `PUT /api/warehouse-release-requests/{requestId}/status` |
 | `/warehouse/release-requests/{id}/picking-list` | `POST /api/warehouse-release-requests/{requestId}/picking-list` |
+| `/admin/carriers` | `GET /api/carriers` |
+| `/admin/carriers/create` | `POST /api/carriers` |
+| `/admin/carriers/{id}/edit` | `PUT /api/carriers/{id}` |
 
 

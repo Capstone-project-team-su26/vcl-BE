@@ -94,6 +94,12 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("api_url");
 
+                    b.Property<string>("CarrierCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("carrier_code");
+
                     b.Property<string>("CarrierName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
@@ -109,8 +115,37 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("contact_email");
 
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("contact_phone");
+
+                    b.Property<string>("InternalNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("internal_notes");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("SupportedRegions")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("supported_regions");
+
+                    b.Property<string>("SupportedShippingMethods")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("supported_shipping_methods");
+
                     b.HasKey("Id")
                         .HasName("PK__CARRIERS__3213E83FEE9EF3D6");
+
+                    b.HasIndex("CarrierCode")
+                        .IsUnique();
 
                     b.ToTable("CARRIERS", (string)null);
                 });
