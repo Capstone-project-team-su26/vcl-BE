@@ -130,6 +130,9 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/international-shipments/{shipmentId}/arrive` | Staff / Operations | Xác nhận lô đến kho đích (cập nhật lô + kiện sang ARRIVED_DESTINATION) |
 | `PUT` | `/api/international-shipments/{shipmentId}/destination-receiving` | WarehouseStaff / Staff / Operations | Xác nhận nhận kiện tại kho đích (kiện sang RECEIVED_AT_DESTINATION) |
 | `GET` | `/api/customer/parcels` | Customer | Customer tra cứu kiện hàng thuộc yêu cầu ký gửi của mình |
+| `POST` | `/api/warehouse-receiving-notes` | Sale / Admin | Sales tạo phiếu tiếp nhận kho từ yêu cầu ký gửi đã APPROVED |
+| `GET` | `/api/warehouse-receiving-notes/by-consignment/{orderId}` | Sale / Admin | Lấy phiếu tiếp nhận kho đang hiệu lực theo đơn ký gửi |
+| `GET` | `/api/warehouse-receiving-notes/scan?code={code}` | WarehouseStaff / Admin | Warehouse Staff scan mã phiếu để nhận thông tin hàng dự kiến |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
 | `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
@@ -4486,6 +4489,95 @@ interface DestinationReceivingResponseDto {
   note?: string | null;
   receivedCount: number;
   parcels: { parcelId: string; packageCode: string; packageStatus: string }[];
+}
+```
+
+---
+
+## 33. Phiếu tiếp nhận kho (Warehouse Receiving Note)
+
+Sales tạo phiếu tiếp nhận kho từ yêu cầu ký gửi đã `APPROVED`; phiếu có mã riêng (`WRN-xxxxxxxx`) để Warehouse Staff **scan trên mobile** và nhận hàng. Không thay thế API check-in — chỉ bổ sung bước lấy thông tin phiếu trước khi check-in.
+
+### 33.1. Sales tạo phiếu tiếp nhận kho
+
+```http
+POST /api/warehouse-receiving-notes
+Authorization: Bearer {saleToken}
+Content-Type: application/json
+
+{
+  "consignmentOrderId": "5c94b9d5-...",
+  "warehouseId": "df34760c-...",
+  "warehouseNote": "Giao trước 5h chiều"
+}
+```
+
+**Response thành công (201):** trả `receivingNote` gồm `receivingNoteCode`, `status: ACTIVE`, kho, ghi chú...
+
+**Lưu ý / lỗi:**
+- Chỉ tạo khi yêu cầu ký gửi đã `APPROVED` → nếu chưa: `400`.
+- Mỗi đơn chỉ có **1 phiếu đang hiệu lực** → tạo trùng: `409`.
+- Không tìm thấy đơn/kho: `404`. Chỉ **Sale/Admin** được tạo.
+
+### 33.2. Warehouse Staff scan phiếu
+
+```http
+GET /api/warehouse-receiving-notes/scan?code=WRN-63670531
+Authorization: Bearer {warehouseStaffToken}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Quét phiếu tiếp nhận kho thành công.",
+  "data": {
+    "receivingNoteId": "...",
+    "receivingNoteCode": "WRN-63670531",
+    "status": "ACTIVE",
+    "consignmentOrderId": "5c94b9d5-...",
+    "consignmentCode": "VCL-20260708184739-692376",
+    "customerId": "1b53ba9c-...",
+    "customerName": "Bùi Đình Trọng",
+    "customerCode": "...",
+    "warehouseId": "df34760c-...",
+    "warehouseName": "Kho HCM - Tân Bình",
+    "warehouseNote": "Giao trước 5h chiều",
+    "expectedItems": [
+      { "productName": "Loa", "productType": "Điện tử", "quantity": 2, "declaredValue": 800000 }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ **WarehouseStaff/Admin** được scan (`403` nếu sai quyền); mã không tồn tại → `404`.
+- Sau khi kho xác nhận nhận hàng, **reuse** `POST /api/parcels/check-in` (mục 16) để tạo Parcel. Check-in thành công sẽ tự cập nhật phiếu sang `RECEIVED`.
+- Không ảnh hưởng flow check-in bằng mã gửi hàng đã có.
+
+**TypeScript interface (scan):**
+
+```typescript
+interface WarehouseReceivingNoteExpectedItemDto {
+  productName: string;
+  productType: string;
+  quantity: number;
+  declaredValue?: number | null;
+}
+
+interface WarehouseReceivingNoteScanResponseDto {
+  receivingNoteId: string;
+  receivingNoteCode: string;
+  status: string;
+  consignmentOrderId: string;
+  consignmentCode: string;
+  customerId?: string | null;
+  customerName: string;
+  customerCode: string;
+  warehouseId: string;
+  warehouseName: string;
+  warehouseNote: string;
+  expectedItems: WarehouseReceivingNoteExpectedItemDto[];
 }
 ```
 

@@ -37,6 +37,29 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Warehouse Staff scan mã phiếu tiếp nhận kho (mobile) để lấy thông tin Customer,
+        /// yêu cầu ký gửi và danh sách hàng dự kiến nhận.
+        /// </summary>
+        [HttpGet("api/warehouse-receiving-notes/scan")]
+        [Authorize(Roles = "WarehouseStaff,Admin")]
+        public async Task<IActionResult> ScanReceivingNote([FromQuery] string code)
+        {
+            try
+            {
+                var result = await _wrnService.ScanReceivingNoteAsync(code);
+                return Ok(new { message = "Quét phiếu tiếp nhận kho thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Tạo mới phiếu tiếp nhận kho cho đơn hàng ký gửi đã được duyệt (APPROVED).
         /// </summary>
         [HttpPost("api/warehouse-receiving-notes")]

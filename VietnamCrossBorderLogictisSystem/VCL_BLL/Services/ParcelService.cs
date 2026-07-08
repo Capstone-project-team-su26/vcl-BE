@@ -103,6 +103,19 @@ namespace VCL_BLL.Services
             order.Status = "WAREHOUSE_RECEIVED";
             orderRepo.Update(order);
 
+            // 8b. Nếu có phiếu tiếp nhận kho đang hiệu lực (VCL-146) -> cập nhật sang RECEIVED
+            var wrnRepo = _unitOfWork.Repository<WarehouseReceivingNote>();
+            var allNotes = await wrnRepo.GetAllAsync();
+            var activeNote = allNotes.FirstOrDefault(n =>
+                n.ConsignmentOrderId == order.Id &&
+                (string.Equals(n.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(n.Status, "PARTIALLY_RECEIVED", StringComparison.OrdinalIgnoreCase)));
+            if (activeNote != null)
+            {
+                activeNote.Status = "RECEIVED";
+                wrnRepo.Update(activeNote);
+            }
+
             // 9. Lấy thông tin khách hàng và danh sách mặt hàng đã khai báo để trả về
             var customerRepo = _unitOfWork.Repository<Customer>();
             var allCustomers = await customerRepo.GetAllAsync();
