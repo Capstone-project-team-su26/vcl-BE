@@ -1316,56 +1316,56 @@ namespace VCL_DLL.Migrations
                             Id = new Guid("11111111-0000-0000-0000-000000000001"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            Name = "Electronics"
+                            Name = "Điện tử"
                         },
                         new
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000002"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            Name = "Clothing"
+                            Name = "Quần áo"
                         },
                         new
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000003"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            Name = "Cosmetics"
+                            Name = "Mỹ phẩm"
                         },
                         new
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000004"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            Name = "Accessories"
+                            Name = "Phụ kiện"
                         },
                         new
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000005"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            Name = "Food"
+                            Name = "Thực phẩm"
                         },
                         new
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000006"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            Name = "Books"
+                            Name = "Sách"
                         },
                         new
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000007"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            Name = "Toys"
+                            Name = "Đồ chơi"
                         },
                         new
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000008"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
-                            Name = "Household Goods"
+                            Name = "Đồ gia dụng"
                         });
                 });
 
