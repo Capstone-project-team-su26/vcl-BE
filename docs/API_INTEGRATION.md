@@ -127,6 +127,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
 | `POST` | `/api/international-shipments` | Staff / Operations | Tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED |
 | `PUT` | `/api/international-shipments/{shipmentId}/status` | Staff / Operations | Cập nhật trạng thái lô vận chuyển quốc tế (MANIFESTED → IN_TRANSIT → ARRIVED_DESTINATION) |
+| `PUT` | `/api/international-shipments/{shipmentId}/arrive` | Staff / Operations | Xác nhận lô đến kho đích (cập nhật lô + kiện sang ARRIVED_DESTINATION) |
 | `GET` | `/api/customer/parcels` | Customer | Customer tra cứu kiện hàng thuộc yêu cầu ký gửi của mình |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
@@ -4323,6 +4324,79 @@ interface UpdateInternationalShipmentStatusResponseDto {
   note?: string | null;
   updatedAt: string;
   updatedByName: string;
+}
+```
+
+---
+
+### 31.2. Xác nhận lô đến kho đích
+
+Staff/Operations xác nhận lô vận chuyển đã đến kho đích. Kết thúc bước vận chuyển quốc tế và chuẩn bị dữ liệu kiện cho quy trình nhập kho tại kho đích.
+
+```http
+PUT /api/international-shipments/{shipmentId}/arrive
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "note": "Lô đã cập cảng Cát Lái"
+}
+```
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Xác nhận lô đến kho đích thành công.",
+  "data": {
+    "shipmentId": "9c1f...",
+    "shipmentCode": "INTL-20260708080000-1234",
+    "destinationWarehouseId": "22222222-...",
+    "destinationWarehouseName": "Kho Việt Nam HCM",
+    "status": "ARRIVED_DESTINATION",
+    "arrivedAt": "2026-07-08T12:00:00Z",
+    "confirmedByName": "Nguyễn Văn Staff",
+    "note": "Lô đã cập cảng Cát Lái",
+    "totalPackages": 5,
+    "parcels": [
+      { "parcelId": "d5e243d7-...", "packageCode": "PCL-...", "weight": 2.5 }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ xác nhận khi lô đang `IN_TRANSIT`; lô đã `ARRIVED_DESTINATION` → `400` (không xác nhận 2 lần).
+- Cập nhật lô → `ARRIVED_DESTINATION` + `deliveredAt`, và **tất cả Parcel trong lô** → `PackageStatus = ARRIVED_DESTINATION` (sẵn sàng cho nhập kho VCL-118/120).
+- Lưu lịch sử vào `TRACKINGS` (status + note + thời gian).
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Lô đã xác nhận đến trước đó | `"Lô vận chuyển này đã được xác nhận đến kho đích trước đó."` |
+| `400` | Lô chưa IN_TRANSIT | `"Lô chưa đủ điều kiện xác nhận đến kho đích (phải đang IN_TRANSIT, hiện tại: {status})."` |
+| `403` | Không phải Staff/Operations | `"Chỉ Staff hoặc Operations được xác nhận lô đến kho đích."` |
+| `404` | Không tìm thấy lô | `"Không tìm thấy lô vận chuyển với ID {shipmentId}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface ConfirmShipmentArrivalDto {
+  note?: string | null;
+}
+
+interface ConfirmShipmentArrivalResponseDto {
+  shipmentId: string;
+  shipmentCode: string;
+  destinationWarehouseId?: string | null;
+  destinationWarehouseName: string;
+  status: string;
+  arrivedAt: string;
+  confirmedByName: string;
+  note?: string | null;
+  totalPackages: number;
+  parcels: { parcelId: string; packageCode: string; weight?: number | null }[];
 }
 ```
 

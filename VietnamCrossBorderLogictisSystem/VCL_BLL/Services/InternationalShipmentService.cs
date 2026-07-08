@@ -262,5 +262,98 @@ namespace VCL_BLL.Services
                 UpdatedByName = user?.FullName ?? string.Empty
             };
         }
+
+        public async Task<ConfirmShipmentArrivalResponseDto> ConfirmArrivalAsync(
+            Guid shipmentId, Guid userId, string userRole, ConfirmShipmentArrivalDto request)
+        {
+            // 1. Phân quyền
+            bool allowed = !string.IsNullOrWhiteSpace(userRole)
+                && AllowedRoles.Contains(userRole.Trim().ToUpperInvariant());
+            if (!allowed)
+            {
+                throw new UnauthorizedAccessException("Chỉ Staff hoặc Operations được xác nhận lô đến kho đích.");
+            }
+
+            // 2. Tìm lô (404)
+            var shipmentRepo = _unitOfWork.Repository<Shipment>();
+            var shipment = await shipmentRepo.GetByIdAsync(shipmentId);
+            if (shipment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {shipmentId}");
+            }
+
+            // 3. Chỉ xác nhận khi đang IN_TRANSIT (đồng thời chặn xác nhận nhiều lần vì đã ARRIVED sẽ khác IN_TRANSIT)
+            var currentStatus = shipment.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (currentStatus == "ARRIVED_DESTINATION")
+            {
+                throw new ArgumentException("Lô vận chuyển này đã được xác nhận đến kho đích trước đó.");
+            }
+            if (currentStatus != "IN_TRANSIT")
+            {
+                throw new ArgumentException($"Lô chưa đủ điều kiện xác nhận đến kho đích (phải đang IN_TRANSIT, hiện tại: {shipment.Status}).");
+            }
+
+            var now = DateTime.UtcNow;
+
+            // 4. Cập nhật lô -> ARRIVED_DESTINATION
+            shipment.Status = "ARRIVED_DESTINATION";
+            shipment.DeliveredAt = now;
+            shipmentRepo.Update(shipment);
+
+            // 5. Cập nhật các Parcel trong lô -> ARRIVED_DESTINATION (sẵn sàng cho nhập kho tại kho đích)
+            var shipmentParcelRepo = _unitOfWork.Repository<ShipmentParcel>();
+            var allShipmentParcels = await shipmentParcelRepo.GetAllAsync();
+            var parcelIds = allShipmentParcels
+                .Where(sp => sp.ShipmentId == shipment.Id)
+                .Select(sp => sp.ParcelId)
+                .ToHashSet();
+
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var allParcels = await parcelRepo.GetAllAsync();
+            var parcels = allParcels.Where(p => parcelIds.Contains(p.Id)).ToList();
+            foreach (var parcel in parcels)
+            {
+                parcel.PackageStatus = "ARRIVED_DESTINATION";
+                parcelRepo.Update(parcel);
+            }
+
+            // 6. Lưu lịch sử (Tracking)
+            await _unitOfWork.Repository<Tracking>().AddAsync(new Tracking
+            {
+                Id = Guid.NewGuid(),
+                ShipmentId = shipment.Id,
+                TrackingStatus = "ARRIVED_DESTINATION",
+                TrackingStage = "INTERNATIONAL",
+                Note = request?.Note,
+                TrackingTime = now
+            });
+
+            await _unitOfWork.SaveChangesAsync();
+
+            // 7. Thông tin kho đích + người xác nhận
+            var destinationWarehouse = shipment.DestinationWarehouseId.HasValue
+                ? await _unitOfWork.Repository<Warehouse>().GetByIdAsync(shipment.DestinationWarehouseId.Value)
+                : null;
+            var user = await _unitOfWork.Repository<User>().GetByIdAsync(userId);
+
+            return new ConfirmShipmentArrivalResponseDto
+            {
+                ShipmentId = shipment.Id,
+                ShipmentCode = shipment.ShipmentCode ?? string.Empty,
+                DestinationWarehouseId = shipment.DestinationWarehouseId,
+                DestinationWarehouseName = destinationWarehouse?.WarehouseName ?? string.Empty,
+                Status = shipment.Status,
+                ArrivedAt = now,
+                ConfirmedByName = user?.FullName ?? string.Empty,
+                Note = request?.Note,
+                TotalPackages = parcels.Count,
+                Parcels = parcels.Select(p => new InternationalShipmentParcelDto
+                {
+                    ParcelId = p.Id,
+                    PackageCode = p.PackageCode ?? string.Empty,
+                    Weight = p.ActualWeight ?? p.ChargeableWeight
+                }).ToList()
+            };
+        }
     }
 }

@@ -104,5 +104,43 @@ namespace VCL_API.Controllers
                 return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Staff/Operations xác nhận lô vận chuyển quốc tế đã đến kho đích (chỉ khi đang IN_TRANSIT).
+        /// Cập nhật lô + các kiện sang ARRIVED_DESTINATION để sẵn sàng cho quy trình nhập kho.
+        /// </summary>
+        [HttpPut("{shipmentId}/arrive")]
+        public async Task<IActionResult> ConfirmArrival(Guid shipmentId, [FromBody] ConfirmShipmentArrivalDto request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _shipmentService.ConfirmArrivalAsync(shipmentId, userId, userRole, request ?? new ConfirmShipmentArrivalDto());
+                return Ok(new { message = "Xác nhận lô đến kho đích thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
     }
 }

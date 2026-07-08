@@ -170,6 +170,50 @@
       }
     },
     {
+      "name": "1i. (Arrive) Customer xac nhan den kho -> 403",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 403', function () { pm.response.to.have.status(403); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"note\": \"test\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/{{shipmentId}}/arrive", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "{{shipmentId}}", "arrive"] }
+      }
+    },
+    {
+      "name": "1j. (Arrive) Shipment khong ton tai -> 404",
+      "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 404', function () { pm.response.to.have.status(404); });"], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/00000000-0000-0000-0000-000000000000/arrive", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "00000000-0000-0000-0000-000000000000", "arrive"] }
+      }
+    },
+    {
+      "name": "1k. (Arrive) Xac nhan den kho dich (can shipmentId dang IN_TRANSIT, 200)",
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "var data = pm.response.json().data;",
+        "pm.test('Status = ARRIVED_DESTINATION', function () { pm.expect(data.status).to.eql('ARRIVED_DESTINATION'); });",
+        "pm.test('Co danh sach parcels', function () { pm.expect(data.parcels).to.be.an('array'); });"
+      ], "type": "text/javascript" } } ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"note\": \"Lo da den kho dich\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/international-shipments/{{shipmentId}}/arrive", "host": ["{{baseUrl}}"], "path": ["api", "international-shipments", "{{shipmentId}}", "arrive"] }
+      }
+    },
+    {
       "name": "2. (Negative) Danh sach WRO rong -> 400",
       "event": [ { "listen": "test", "script": { "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"], "type": "text/javascript" } } ],
       "request": {

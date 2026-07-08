@@ -55,6 +55,26 @@ namespace VCL_BLL.DTOs
         public string UpdatedByName { get; set; } = string.Empty;
     }
 
+    public class ConfirmShipmentArrivalDto
+    {
+        /// <summary>Ghi chú khi xác nhận đến kho đích (nếu có).</summary>
+        public string? Note { get; set; }
+    }
+
+    public class ConfirmShipmentArrivalResponseDto
+    {
+        public Guid ShipmentId { get; set; }
+        public string ShipmentCode { get; set; } = string.Empty;
+        public Guid? DestinationWarehouseId { get; set; }
+        public string DestinationWarehouseName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime ArrivedAt { get; set; }
+        public string ConfirmedByName { get; set; } = string.Empty;
+        public string? Note { get; set; }
+        public int TotalPackages { get; set; }
+        public List<InternationalShipmentParcelDto> Parcels { get; set; } = new();
+    }
+
     public class InternationalShipmentResponseDto
     {
         public Guid ShipmentId { get; set; }
