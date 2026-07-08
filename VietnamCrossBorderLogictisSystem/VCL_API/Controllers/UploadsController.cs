@@ -34,7 +34,7 @@ namespace VCL_API.Controllers
         [ProducesResponseType(typeof(object), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
-        public async Task<IActionResult> UploadImage([FromForm] IFormFile file)
+        public async Task<IActionResult> UploadImage(IFormFile file)
         {
             if (file == null || file.Length == 0)
                 return BadRequest(new { message = "Vui lòng chọn một file ảnh." });
