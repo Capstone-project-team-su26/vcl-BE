@@ -319,8 +319,203 @@ namespace VCL_BLL.Services
                 RequiresQuantityCheck = request.RequiresQuantityCheck,
                 GeneralNote = request.GeneralNote,
                 Status = request.Status ?? string.Empty,
+                Reason = request.Reason,
                 CreatedAt = request.CreatedAt ?? DateTime.MinValue,
                 TotalQuantity = relatedItems.Sum(i => i.Quantity),
+                Items = itemDtos
+            };
+        }
+
+        public async Task<UpdatePurchaseRequestStatusResponseDto> UpdatePurchaseRequestStatusAsync(
+            Guid requestId, Guid userId, string userRole, UpdatePurchaseRequestStatusRequestDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Dữ liệu cập nhật không được để trống.");
+
+            // 1. Phân quyền: chỉ Staff/Sales được cập nhật trạng thái
+            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
+                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            if (!isStaff)
+            {
+                throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được cập nhật trạng thái yêu cầu mua hộ.");
+            }
+
+            // 2. Tìm yêu cầu (404 nếu không có)
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId);
+            if (purchaseRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+            }
+
+            // 3. Không cho cập nhật nếu đã sang bước báo giá hoặc đã hủy
+            var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (currentStatus == "QUOTED" || currentStatus == "CANCELLED")
+            {
+                throw new ArgumentException($"Không thể cập nhật trạng thái do yêu cầu đã ở trạng thái {purchaseRequest.Status}.");
+            }
+
+            // 4. Validate trạng thái mới
+            var targetStatus = request.Status.Trim().ToUpperInvariant();
+            var validStatuses = new[] { "PENDING_REVIEW", "IN_REVIEW", "NEED_MORE_INFO", "REJECTED" };
+            if (!validStatuses.Contains(targetStatus))
+            {
+                throw new ArgumentException("Trạng thái không hợp lệ. Hợp lệ: PENDING_REVIEW, IN_REVIEW, NEED_MORE_INFO, REJECTED.");
+            }
+
+            // 5. Lý do bắt buộc khi NEED_MORE_INFO hoặc REJECTED
+            bool needsReason = targetStatus == "NEED_MORE_INFO" || targetStatus == "REJECTED";
+            if (needsReason && string.IsNullOrWhiteSpace(request.Reason))
+            {
+                throw new ArgumentException("Vui lòng cung cấp lý do khi yêu cầu bổ sung thông tin hoặc từ chối.");
+            }
+
+            // 6. Cập nhật
+            purchaseRequest.Status = targetStatus;
+            purchaseRequest.Reason = needsReason ? request.Reason : null;
+            requestRepo.Update(purchaseRequest);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new UpdatePurchaseRequestStatusResponseDto
+            {
+                PurchaseRequestId = purchaseRequest.Id,
+                PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
+                Status = purchaseRequest.Status,
+                Reason = purchaseRequest.Reason
+            };
+        }
+
+        public async Task<PurchaseQuotationResponseDto> CreatePurchaseQuotationAsync(
+            Guid requestId, Guid userId, string userRole, CreatePurchaseQuotationDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Dữ liệu báo giá không được để trống.");
+
+            // 1. Phân quyền: chỉ Staff/Sales được tạo báo giá
+            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
+                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            if (!isStaff)
+            {
+                throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được tạo báo giá mua hộ.");
+            }
+
+            // 2. Tìm yêu cầu (404 nếu không có)
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId);
+            if (purchaseRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+            }
+
+            // 3. Chỉ tạo báo giá cho yêu cầu đang ở trạng thái hợp lệ
+            var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            var quotableStatuses = new[] { "PENDING_REVIEW", "IN_REVIEW", "NEED_MORE_INFO" };
+            if (!quotableStatuses.Contains(currentStatus))
+            {
+                throw new ArgumentException($"Không thể tạo báo giá do yêu cầu đang ở trạng thái {purchaseRequest.Status}.");
+            }
+
+            // 4. Không cho tạo trùng báo giá đang hiệu lực
+            var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
+            var allQuotations = await quotationRepo.GetAllAsync();
+            bool hasActiveQuotation = allQuotations.Any(q =>
+                q.PurchaseRequestId == requestId
+                && string.Equals(q.Status, "PENDING_CUSTOMER_CONFIRMATION", StringComparison.OrdinalIgnoreCase));
+            if (hasActiveQuotation)
+            {
+                throw new ArgumentException("Yêu cầu này đã có báo giá đang chờ khách xác nhận.");
+            }
+
+            // 5. Validate danh sách sản phẩm báo giá (phải thuộc yêu cầu này)
+            if (request.Items == null || request.Items.Count == 0)
+            {
+                throw new ArgumentException("Báo giá phải có ít nhất một sản phẩm.");
+            }
+
+            var allItems = await _unitOfWork.Repository<PurchaseRequestItem>().GetAllAsync();
+            var requestItems = allItems.Where(i => i.PurchaseRequestId == requestId).ToList();
+            var requestItemMap = requestItems.ToDictionary(i => i.Id);
+
+            foreach (var line in request.Items)
+            {
+                if (!requestItemMap.ContainsKey(line.PurchaseRequestItemId))
+                {
+                    throw new ArgumentException($"Sản phẩm {line.PurchaseRequestItemId} không thuộc yêu cầu mua hộ này.");
+                }
+                if (line.UnitPrice < 0)
+                {
+                    throw new ArgumentException("Đơn giá sản phẩm không được âm.");
+                }
+            }
+
+            // 6. Tạo báo giá + chi tiết chi phí theo từng sản phẩm
+            var quotation = new PurchaseQuotation
+            {
+                Id = Guid.NewGuid(),
+                PurchaseRequestId = requestId,
+                PurchaseFee = request.PurchaseFee,
+                ShippingFee = request.ShippingFee,
+                Note = request.Note,
+                Status = "PENDING_CUSTOMER_CONFIRMATION",
+                CreatedBy = userId,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var quotationItemRepo = _unitOfWork.Repository<PurchaseQuotationItem>();
+            var itemDtos = new List<PurchaseQuotationItemResponseDto>();
+            decimal productsSubtotal = 0m;
+
+            foreach (var line in request.Items)
+            {
+                var reqItem = requestItemMap[line.PurchaseRequestItemId];
+                var lineTotal = line.UnitPrice * reqItem.Quantity;
+                productsSubtotal += lineTotal;
+
+                var quotationItem = new PurchaseQuotationItem
+                {
+                    Id = Guid.NewGuid(),
+                    PurchaseQuotationId = quotation.Id,
+                    PurchaseRequestItemId = reqItem.Id,
+                    UnitPrice = line.UnitPrice,
+                    Quantity = reqItem.Quantity,
+                    LineTotal = lineTotal
+                };
+                await quotationItemRepo.AddAsync(quotationItem);
+
+                itemDtos.Add(new PurchaseQuotationItemResponseDto
+                {
+                    QuotationItemId = quotationItem.Id,
+                    PurchaseRequestItemId = reqItem.Id,
+                    ProductName = reqItem.ProductName,
+                    UnitPrice = line.UnitPrice,
+                    Quantity = reqItem.Quantity,
+                    LineTotal = lineTotal
+                });
+            }
+
+            // 7. Tính tổng tiền báo giá
+            quotation.ProductsSubtotal = productsSubtotal;
+            quotation.TotalAmount = productsSubtotal + request.PurchaseFee + request.ShippingFee;
+            await quotationRepo.AddAsync(quotation);
+
+            // 8. Cập nhật trạng thái yêu cầu mua hộ sang QUOTED
+            purchaseRequest.Status = "QUOTED";
+            requestRepo.Update(purchaseRequest);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return new PurchaseQuotationResponseDto
+            {
+                QuotationId = quotation.Id,
+                PurchaseRequestId = requestId,
+                PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
+                ProductsSubtotal = quotation.ProductsSubtotal,
+                PurchaseFee = quotation.PurchaseFee,
+                ShippingFee = quotation.ShippingFee,
+                TotalAmount = quotation.TotalAmount,
+                Note = quotation.Note,
+                Status = quotation.Status,
+                CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 Items = itemDtos
             };
         }

@@ -89,6 +89,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<ProductType> ProductTypes { get; set; }
 
+    public virtual DbSet<PurchaseQuotation> PurchaseQuotations { get; set; }
+
+    public virtual DbSet<PurchaseQuotationItem> PurchaseQuotationItems { get; set; }
+
     public virtual DbSet<Conversation> Conversations { get; set; }
 
     public virtual DbSet<Message> Messages { get; set; }
@@ -1322,6 +1326,46 @@ public partial class VCLDBContext : DbContext
             );
         });
 
+        modelBuilder.Entity<PurchaseQuotation>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PURCHASE_QUOTATIONS");
+            entity.ToTable("PURCHASE_QUOTATIONS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.PurchaseRequestId).HasColumnName("purchase_request_id");
+            entity.Property(e => e.ProductsSubtotal).HasColumnType("decimal(18, 2)").HasColumnName("products_subtotal");
+            entity.Property(e => e.PurchaseFee).HasColumnType("decimal(18, 2)").HasColumnName("purchase_fee");
+            entity.Property(e => e.ShippingFee).HasColumnType("decimal(18, 2)").HasColumnName("shipping_fee");
+            entity.Property(e => e.TotalAmount).HasColumnType("decimal(18, 2)").HasColumnName("total_amount");
+            entity.Property(e => e.Note).HasMaxLength(1000).HasColumnName("note");
+            entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");
+            entity.Property(e => e.CreatedBy).HasColumnName("created_by");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+
+            entity.HasOne(d => d.PurchaseRequest).WithMany()
+                .HasForeignKey(d => d.PurchaseRequestId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PURCHASE_QUOTATION_REQUEST");
+        });
+
+        modelBuilder.Entity<PurchaseQuotationItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PURCHASE_QUOTATION_ITEMS");
+            entity.ToTable("PURCHASE_QUOTATION_ITEMS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.PurchaseQuotationId).HasColumnName("purchase_quotation_id");
+            entity.Property(e => e.PurchaseRequestItemId).HasColumnName("purchase_request_item_id");
+            entity.Property(e => e.UnitPrice).HasColumnType("decimal(18, 2)").HasColumnName("unit_price");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.LineTotal).HasColumnType("decimal(18, 2)").HasColumnName("line_total");
+
+            entity.HasOne(d => d.PurchaseQuotation).WithMany(p => p.PurchaseQuotationItems)
+                .HasForeignKey(d => d.PurchaseQuotationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PURCHASE_QUOTATION_ITEM_QUOTATION");
+        });
+
         modelBuilder.Entity<PurchaseRequest>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("PK_PURCHASE_REQUESTS");
@@ -1358,6 +1402,9 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
+            entity.Property(e => e.Reason)
+                .HasMaxLength(500)
+                .HasColumnName("reason");
 
             entity.HasOne(d => d.Customer).WithMany()
                 .HasForeignKey(d => d.CustomerId)

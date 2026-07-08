@@ -117,6 +117,14 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `DELETE` | `/api/warehouse-locations/{locationId}` | Admin | Xóa vị trí lưu trữ |
 | `GET` | `/api/warehouses/{warehouseId}/locations/active` | Authenticated | Lấy danh sách vị trí lưu trữ đang hoạt động |
 | `POST` | `/api/purchase-requests` | Customer | Customer tạo yêu cầu mua hộ hàng Trung Quốc |
+| `GET` | `/api/purchase-requests` | Customer / Staff / Sales | Lấy danh sách yêu cầu mua hộ (phân trang, tìm kiếm, lọc trạng thái) |
+| `GET` | `/api/purchase-requests/{requestId}` | Customer / Staff / Sales | Lấy chi tiết một yêu cầu mua hộ |
+| `PUT` | `/api/purchase-requests/{requestId}/status` | Staff / Sales | Cập nhật trạng thái yêu cầu mua hộ (tiếp nhận/bổ sung/từ chối) |
+| `POST` | `/api/purchase-requests/{requestId}/quotation` | Staff / Sales | Tạo báo giá cho yêu cầu mua hộ |
+| `GET` | `/api/orders/consignments/routes` | Public | Danh sách tuyến hàng (route) cho dropdown FE |
+| `GET` | `/api/orders/consignments/shipping-options` | Public | Danh sách phương án vận chuyển cho dropdown FE (lọc theo `?route=`) |
+| `GET` | `/api/orders/consignments/statuses` | Public | Danh sách toàn bộ trạng thái yêu cầu ký gửi (code + label) |
+| `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
 | `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
@@ -3511,6 +3519,7 @@ Authorization: Bearer {accessToken}
     "requiresQuantityCheck": true,
     "generalNote": "Mua giúp mình đợt sale",
     "status": "PENDING_REVIEW",
+    "reason": null,
     "createdAt": "2026-07-04T04:18:52Z",
     "totalQuantity": 7,
     "items": [
@@ -3555,9 +3564,188 @@ interface PurchaseRequestDetailResponseDto {
   requiresQuantityCheck: boolean;
   generalNote?: string | null;
   status: string;
+  reason?: string | null;
   createdAt: string;
   totalQuantity: number;
   items: PurchaseRequestItemResponseDto[];
+}
+```
+
+### 29.3. Staff cập nhật trạng thái yêu cầu mua hộ
+
+Staff/Sales tiếp nhận và cập nhật trạng thái một yêu cầu mua hộ. Dùng để chuyển sang đang xử lý, yêu cầu khách bổ sung thông tin, hoặc từ chối.
+
+```http
+PUT /api/purchase-requests/{requestId}/status
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "status": "NEED_MORE_INFO",
+  "reason": "Thiếu ảnh sản phẩm, vui lòng bổ sung"
+}
+```
+
+**Ràng buộc:**
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `status` | **Có** | Một trong: `PENDING_REVIEW`, `IN_REVIEW`, `NEED_MORE_INFO`, `REJECTED` |
+| `reason` | **Có** khi status là `NEED_MORE_INFO` hoặc `REJECTED` | Lý do để Customer xem lại |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Cập nhật trạng thái yêu cầu mua hộ thành công.",
+  "data": {
+    "purchaseRequestId": "b037ab62-...",
+    "purchaseCode": "PUR-20260704-7582",
+    "status": "NEED_MORE_INFO",
+    "reason": "Thiếu ảnh sản phẩm, vui lòng bổ sung"
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ **Staff/Sales** (Admin/Sale/Staff/Operations) được thao tác — Customer gọi trả `403`.
+- **Không** cho cập nhật nếu yêu cầu đã ở `QUOTATION_SENT` (đã sang bước báo giá) hoặc `CANCELLED` (đã hủy).
+- `reason` chỉ được lưu khi status là `NEED_MORE_INFO`/`REJECTED`; các trạng thái khác reason sẽ được xoá.
+- Trường `reason` này trả về trong API chi tiết (mục 29.2) để Customer xem lại.
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Trạng thái không hợp lệ | `"Trạng thái không hợp lệ. Hợp lệ: PENDING_REVIEW, IN_REVIEW, NEED_MORE_INFO, REJECTED."` |
+| `400` | Thiếu lý do khi NEED_MORE_INFO/REJECTED | `"Vui lòng cung cấp lý do khi yêu cầu bổ sung thông tin hoặc từ chối."` |
+| `400` | Yêu cầu đã sang báo giá/đã hủy | `"Không thể cập nhật trạng thái do yêu cầu đã ở trạng thái {status}."` |
+| `403` | Không phải Staff/Sales | `"Chỉ Staff hoặc Sales được cập nhật trạng thái yêu cầu mua hộ."` |
+| `404` | Không tìm thấy yêu cầu | `"Không tìm thấy yêu cầu mua hộ với ID {requestId}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface UpdatePurchaseRequestStatusRequestDto {
+  status: "PENDING_REVIEW" | "IN_REVIEW" | "NEED_MORE_INFO" | "REJECTED";
+  reason?: string | null;
+}
+
+interface UpdatePurchaseRequestStatusResponseDto {
+  purchaseRequestId: string;
+  purchaseCode: string;
+  status: string;
+  reason?: string | null;
+}
+```
+
+### 29.4. Staff tạo báo giá mua hộ
+
+Staff/Sales tạo báo giá cho một yêu cầu mua hộ. Mỗi sản phẩm nhập đơn giá (`unitPrice`), số lượng lấy theo yêu cầu; hệ thống tính `lineTotal = unitPrice × quantity`, `productsSubtotal = Σ lineTotal`, và `totalAmount = productsSubtotal + purchaseFee + shippingFee`.
+
+```http
+POST /api/purchase-requests/{requestId}/quotation
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "purchaseFee": 50000,
+  "shippingFee": 120000,
+  "note": "Báo giá đợt 1",
+  "items": [
+    { "purchaseRequestItemId": "0ebcd2a8-...", "unitPrice": 200000 },
+    { "purchaseRequestItemId": "f7743c57-...", "unitPrice": 150000 }
+  ]
+}
+```
+
+**Ràng buộc:**
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `purchaseFee` | **Có** | Phí mua hộ (>= 0) |
+| `shippingFee` | **Có** | Phí vận chuyển dự kiến (>= 0, có thể 0) |
+| `note` | Không | Ghi chú báo giá |
+| `items` | **Có** | Tối thiểu 1 sản phẩm |
+| `items[].purchaseRequestItemId` | **Có** | Phải là item thuộc yêu cầu này |
+| `items[].unitPrice` | **Có** | Đơn giá sản phẩm (>= 0) |
+
+**Response thành công (201 Created):**
+
+```json
+{
+  "message": "Tạo báo giá mua hộ thành công.",
+  "data": {
+    "quotationId": "9c1f...",
+    "purchaseRequestId": "a5816037-...",
+    "purchaseCode": "PUR-20260708-1234",
+    "productsSubtotal": 900000,
+    "purchaseFee": 50000,
+    "shippingFee": 120000,
+    "totalAmount": 1070000,
+    "note": "Báo giá đợt 1",
+    "status": "PENDING_CUSTOMER_CONFIRMATION",
+    "createdAt": "2026-07-08T07:20:00Z",
+    "items": [
+      { "quotationItemId": "...", "purchaseRequestItemId": "0ebcd2a8-...", "productName": "Tai nghe", "unitPrice": 200000, "quantity": 3, "lineTotal": 600000 },
+      { "quotationItemId": "...", "purchaseRequestItemId": "f7743c57-...", "productName": "Chuột", "unitPrice": 150000, "quantity": 2, "lineTotal": 300000 }
+    ]
+  }
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ tạo báo giá khi yêu cầu đang ở `PENDING_REVIEW`, `IN_REVIEW` hoặc `NEED_MORE_INFO`.
+- Sau khi tạo: báo giá có status `PENDING_CUSTOMER_CONFIRMATION`, và yêu cầu mua hộ chuyển sang `QUOTED`.
+- Không cho tạo trùng báo giá đang hiệu lực (một yêu cầu chỉ có một báo giá chờ khách xác nhận).
+- Số lượng (`quantity`) luôn lấy theo item của yêu cầu, FE không cần gửi.
+
+**Response lỗi:**
+
+| Status | Trường hợp | Message |
+|---|---|---|
+| `400` | Trạng thái yêu cầu không cho báo giá / đã QUOTED | `"Không thể tạo báo giá do yêu cầu đang ở trạng thái {status}."` |
+| `400` | Đã có báo giá chờ xác nhận | `"Yêu cầu này đã có báo giá đang chờ khách xác nhận."` |
+| `400` | Item không thuộc yêu cầu | `"Sản phẩm {id} không thuộc yêu cầu mua hộ này."` |
+| `403` | Không phải Staff/Sales | `"Chỉ Staff hoặc Sales được tạo báo giá mua hộ."` |
+| `404` | Không tìm thấy yêu cầu | `"Không tìm thấy yêu cầu mua hộ với ID {requestId}"` |
+
+**TypeScript interface:**
+
+```typescript
+interface CreatePurchaseQuotationItemDto {
+  purchaseRequestItemId: string;
+  unitPrice: number;
+}
+
+interface CreatePurchaseQuotationDto {
+  purchaseFee: number;
+  shippingFee: number;
+  note?: string | null;
+  items: CreatePurchaseQuotationItemDto[];
+}
+
+interface PurchaseQuotationItemResponseDto {
+  quotationItemId: string;
+  purchaseRequestItemId: string;
+  productName?: string | null;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+}
+
+interface PurchaseQuotationResponseDto {
+  quotationId: string;
+  purchaseRequestId: string;
+  purchaseCode: string;
+  productsSubtotal: number;
+  purchaseFee: number;
+  shippingFee: number;
+  totalAmount: number;
+  note?: string | null;
+  status: string;
+  createdAt: string;
+  items: PurchaseQuotationItemResponseDto[];
 }
 ```
 
