@@ -1,0 +1,142 @@
+{
+  "info": {
+    "name": "VCL - Dropdown form ky gui (Routes / Shipping Options / Product Types)",
+    "description": "Theo feedback FE Phong: cac API GET public de do dropdown cho form tao yeu cau ky gui - route, shippingOption (ServiceType), productType. Khong can token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. GET routes (dropdown tuyen hang)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('data la mang', function () { pm.expect(data).to.be.an('array'); });",
+              "console.log('Routes:', JSON.stringify(data));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/routes",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "routes"]
+        }
+      }
+    },
+    {
+      "name": "2. GET shipping-options (tat ca)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('data la mang', function () { pm.expect(pm.response.json().data).to.be.an('array'); });",
+              "console.log('ShippingOptions:', JSON.stringify(pm.response.json().data));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/shipping-options",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "shipping-options"]
+        }
+      }
+    },
+    {
+      "name": "3. GET shipping-options?route= (loc theo tuyen)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('data la mang', function () { pm.expect(pm.response.json().data).to.be.an('array'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/shipping-options?route=Vietnam-Korea",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "shipping-options"],
+          "query": [{ "key": "route", "value": "Vietnam-Korea" }]
+        }
+      }
+    },
+    {
+      "name": "3b. GET consignments/statuses (dropdown trang thai)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('data la mang', function () { pm.expect(data).to.be.an('array'); });",
+              "if (data.length) { pm.expect(data[0]).to.have.property('code'); pm.expect(data[0]).to.have.property('label'); }",
+              "console.log('Statuses:', JSON.stringify(data.map(function(s){return s.code;})));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/statuses",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "statuses"]
+        }
+      }
+    },
+    {
+      "name": "4. GET product-types (dropdown loai hang)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('data la mang', function () { pm.expect(data).to.be.an('array'); });",
+              "if (data.length) { pm.expect(data[0]).to.have.property('id'); pm.expect(data[0]).to.have.property('name'); }",
+              "console.log('So loai hang:', data.length);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/product-types",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "product-types"]
+        }
+      }
+    }
+  ]
+}

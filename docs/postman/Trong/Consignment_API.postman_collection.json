@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "VCL - Tao yeu cau ky gui (Consignment)",
-    "description": "Test luong A1+A2: Khach hang tao yeu cau ky gui -> he thong sinh bao gia tam tinh. Bao gom login lay token, kiem tra hang cam/han che, tao ky gui, xem chi tiet, xac nhan bao gia, huy.",
+    "name": "VCL - Khach hang tao yeu cau ky gui (Consignment)",
+    "description": "Luong Khach hang tao yeu cau ky gui: login -> load dropdown (routes/shipping-options/product-types/statuses) -> kiem tra hang cam -> tao ky gui (BE tu sinh consignmentCode) -> xem danh sach/chi tiet -> xac nhan bao gia / huy. So dia chi chi con truong address; consignmentCode do BE random tao khong can FE gui.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -12,7 +12,7 @@
     { "key": "quotationId", "value": "", "type": "string" },
     { "key": "deliveryAddressId", "value": "", "type": "string" },
     { "key": "uploadedImageUrl", "value": "", "type": "string" },
-    { "key": "customerEmail", "value": "buidinhtrong09122002@gmail.com", "type": "string" },
+    { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
     { "key": "customerPassword", "value": "trong123", "type": "string" }
   ],
   "item": [
@@ -112,6 +112,102 @@
           "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "1a-1. Dropdown - Danh sach tuyen hang (routes)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('data la mang', function () { pm.expect(pm.response.json().data).to.be.an('array'); });",
+              "console.log('Routes:', JSON.stringify(pm.response.json().data));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/routes",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "routes"]
+        }
+      }
+    },
+    {
+      "name": "1a-2. Dropdown - Phuong an van chuyen (shipping-options)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('data la mang', function () { pm.expect(pm.response.json().data).to.be.an('array'); });",
+              "console.log('ShippingOptions:', JSON.stringify(pm.response.json().data));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/shipping-options",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "shipping-options"]
+        }
+      }
+    },
+    {
+      "name": "1a-3. Dropdown - Loai hang (product-types)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('data la mang co id/name', function () { pm.expect(data).to.be.an('array'); if (data.length) { pm.expect(data[0]).to.have.property('id'); pm.expect(data[0]).to.have.property('name'); } });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/product-types", "host": ["{{baseUrl}}"], "path": ["api", "product-types"] }
+      }
+    },
+    {
+      "name": "1a-4. Dropdown - Trang thai ky gui (statuses)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('data la mang co code/label', function () { pm.expect(data).to.be.an('array'); if (data.length) { pm.expect(data[0]).to.have.property('code'); pm.expect(data[0]).to.have.property('label'); } });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments/statuses",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments", "statuses"]
+        }
       }
     },
     {
@@ -316,6 +412,8 @@
               "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
               "var data = pm.response.json().data;",
               "pm.test('Dung orderId', function () { pm.expect(data.orderId).to.eql(pm.collectionVariables.get('orderId')); });",
+              "pm.test('consignmentCode do BE tu sinh (khong rong, dung format VCL-)', function () { pm.expect(data.consignmentCode).to.be.a('string').and.not.empty; pm.expect(data.consignmentCode).to.match(/^VCL-\\d{14}-\\d{6}$/); });",
+              "console.log('consignmentCode:', data.consignmentCode);",
               "pm.test('Co thong tin khach (email/phone)', function () { pm.expect(data.customer).to.have.property('email'); pm.expect(data.customer).to.have.property('phone'); });",
               "pm.test('Co danh sach mat hang', function () { pm.expect(data.items).to.be.an('array').that.is.not.empty; });",
               "pm.test('Item co quantity/referenceUrl/domesticTrackingCode', function () { var i = data.items[0]; pm.expect(i).to.have.property('quantity'); pm.expect(i).to.have.property('referenceUrl'); pm.expect(i).to.have.property('domesticTrackingCode'); });",
@@ -592,7 +690,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"receiverName\": \"Dinh Trong\",\n  \"receiverPhone\": \"0901234567\",\n  \"address\": \"45 Le Loi, Quan 1, TP.HCM\",\n  \"isDefault\": true\n}"
+          "raw": "{\n  \"address\": \"45 Le Loi, Quan 1, TP.HCM\"\n}"
         },
         "url": { "raw": "{{baseUrl}}/api/delivery-addresses", "host": ["{{baseUrl}}"], "path": ["api", "delivery-addresses"] }
       }
@@ -638,7 +736,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"receiverName\": \"Dinh Trong (cap nhat)\",\n  \"receiverPhone\": \"0909999999\",\n  \"address\": \"99 Nguyen Hue, Quan 1, TP.HCM\",\n  \"isDefault\": true\n}"
+          "raw": "{\n  \"address\": \"99 Nguyen Hue, Quan 1, TP.HCM\"\n}"
         },
         "url": {
           "raw": "{{baseUrl}}/api/delivery-addresses/{{deliveryAddressId}}",

@@ -8,6 +8,7 @@
     { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
     { "key": "token", "value": "", "type": "string" },
     { "key": "purchaseRequestId", "value": "", "type": "string" },
+    { "key": "uploadedImageUrl", "value": "", "type": "string" },
     { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
     { "key": "customerPassword", "value": "trong123", "type": "string" }
   ],
@@ -43,6 +44,34 @@
       }
     },
     {
+      "name": "1c. Upload anh tham khao (chon file thu cong) -> lay uploadedImageUrl",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.url) { pm.collectionVariables.set('uploadedImageUrl', json.url); }",
+              "console.log('URL anh:', json.url);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": [] }
+          ]
+        },
+        "url": { "raw": "{{baseUrl}}/api/uploads/image", "host": ["{{baseUrl}}"], "path": ["api", "uploads", "image"] }
+      }
+    },
+    {
       "name": "2. Tao yeu cau mua ho (happy path)",
       "event": [
         {
@@ -57,6 +86,8 @@
               "pm.test('Co customerId', function () { pm.expect(data).to.have.property('customerId'); });",
               "pm.test('Co 2 san pham', function () { pm.expect(data.items).to.be.an('array').with.lengthOf(2); });",
               "pm.test('San pham 2 cac field tuy chon = null', function () { var i = data.items[1]; pm.expect(i.productName).to.be.null; pm.expect(i.attributes).to.be.null; pm.expect(i.imageUrl).to.be.null; });",
+              "pm.test('Co field don: route/receiver/requires/generalNote', function () { pm.expect(data).to.have.property('route'); pm.expect(data).to.have.property('receiverName'); pm.expect(data).to.have.property('requiresInspection'); pm.expect(data).to.have.property('generalNote'); });",
+              "pm.test('Item co sourceWebsite/productType', function () { var i = data.items[0]; pm.expect(i).to.have.property('sourceWebsite'); pm.expect(i).to.have.property('productType'); });",
               "if (data && data.purchaseRequestId) { pm.collectionVariables.set('purchaseRequestId', data.purchaseRequestId); }",
               "console.log('purchaseRequestId:', pm.collectionVariables.get('purchaseRequestId'));",
               "console.log('purchaseCode:', data.purchaseCode);"
@@ -73,8 +104,136 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"note\": \"Mua giup minh dot sale, uu tien shop uy tin\",\n  \"items\": [\n    {\n      \"productLink\": \"https://item.taobao.com/item.htm?id=123456\",\n      \"productName\": \"Ao khoac nam\",\n      \"quantity\": 2,\n      \"attributes\": \"Size L, mau den\",\n      \"note\": \"Chon loai vai day\",\n      \"imageUrl\": \"https://res.cloudinary.com/demo/ref.jpg\"\n    },\n    {\n      \"productLink\": \"https://detail.1688.com/offer/999.html\",\n      \"quantity\": 5\n    }\n  ]\n}"
+          "raw": "{\n  \"route\": \"TQ-VN\",\n  \"receiverName\": \"Nguyen Van A\",\n  \"receiverPhone\": \"0901234567\",\n  \"receiverAddress\": \"123 Le Loi, Q1, TP.HCM\",\n  \"requiresInspection\": true,\n  \"requiresQuantityCheck\": true,\n  \"generalNote\": \"Mua giup minh dot sale, uu tien shop uy tin\",\n  \"items\": [\n    {\n      \"productLink\": \"https://item.taobao.com/item.htm?id=123456\",\n      \"sourceWebsite\": \"Taobao\",\n      \"productType\": \"Electronics\",\n      \"productName\": \"Ao khoac nam\",\n      \"quantity\": 2,\n      \"attributes\": \"Size L, mau den\",\n      \"note\": \"Chon loai vai day\",\n      \"imageUrl\": \"{{uploadedImageUrl}}\"\n    },\n    {\n      \"productLink\": \"https://detail.1688.com/offer/999.html\",\n      \"sourceWebsite\": \"1688\",\n      \"quantity\": 5\n    }\n  ]\n}"
         },
+        "url": { "raw": "{{baseUrl}}/api/purchase-requests", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests"] }
+      }
+    },
+    {
+      "name": "2b. Lay danh sach yeu cau mua ho (phan trang)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('Co mang items', function () { pm.expect(data.items).to.be.an('array'); });",
+              "pm.test('Co truong phan trang', function () { pm.expect(data).to.have.property('totalCount'); pm.expect(data).to.have.property('totalPages'); });",
+              "if (data.items.length) { pm.expect(data.items[0]).to.have.property('purchaseCode'); pm.expect(data.items[0]).to.have.property('itemCount'); pm.expect(data.items[0]).to.have.property('customerName'); }",
+              "console.log('Tong so yeu cau:', data.totalCount);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-requests?pageNumber=1&pageSize=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "purchase-requests"],
+          "query": [
+            { "key": "pageNumber", "value": "1" },
+            { "key": "pageSize", "value": "10" },
+            { "key": "status", "value": "PENDING_REVIEW", "disabled": true },
+            { "key": "searchKeyword", "value": "", "disabled": true }
+          ]
+        }
+      }
+    },
+    {
+      "name": "2b-2. Lay chi tiet yeu cau mua ho",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var data = pm.response.json().data;",
+              "pm.test('Dung purchaseRequestId', function () { pm.expect(data.purchaseRequestId).to.eql(pm.collectionVariables.get('purchaseRequestId')); });",
+              "pm.test('Co customerName + createdByName', function () { pm.expect(data).to.have.property('customerName'); pm.expect(data).to.have.property('createdByName'); });",
+              "pm.test('Co field don mo rong', function () { pm.expect(data).to.have.property('route'); pm.expect(data).to.have.property('requiresInspection'); pm.expect(data).to.have.property('generalNote'); });",
+              "pm.test('Co danh sach items + totalQuantity', function () { pm.expect(data.items).to.be.an('array'); pm.expect(data).to.have.property('totalQuantity'); });",
+              "console.log('Chi tiet:', data.purchaseCode, '| status:', data.status, '| so SP:', data.items.length);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "purchase-requests", "{{purchaseRequestId}}"]
+        }
+      }
+    },
+    {
+      "name": "2b-3. (Negative) Chi tiet id khong ton tai -> 404",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404 Not Found', function () { pm.response.to.have.status(404); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-requests/00000000-0000-0000-0000-000000000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "purchase-requests", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
+    },
+    {
+      "name": "2b-4. (Negative) Chi tiet khong co token -> 401",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 401 Unauthorized', function () { pm.response.to.have.status(401); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "purchase-requests", "{{purchaseRequestId}}"]
+        }
+      }
+    },
+    {
+      "name": "2c. (Negative) Lay danh sach khong co token -> 401",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 401 Unauthorized', function () { pm.response.to.have.status(401); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
         "url": { "raw": "{{baseUrl}}/api/purchase-requests", "host": ["{{baseUrl}}"], "path": ["api", "purchase-requests"] }
       }
     },

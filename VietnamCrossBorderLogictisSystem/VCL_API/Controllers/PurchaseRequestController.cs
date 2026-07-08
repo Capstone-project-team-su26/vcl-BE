@@ -62,5 +62,76 @@ namespace VCL_API.Controllers
                 return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Lấy danh sách yêu cầu mua hộ (Customer xem của mình, Staff/Sales xem tất cả)
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetPurchaseRequests(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? status = null,
+            [FromQuery] string? searchKeyword = null)
+        {
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 10;
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = null;
+            if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var parsedId))
+            {
+                userId = parsedId;
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchaseRequestService.GetPurchaseRequestsAsync(userId, userRole, pageNumber, pageSize, status, searchKeyword);
+                return Ok(new { message = "Lấy danh sách yêu cầu mua hộ thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Lấy chi tiết một yêu cầu mua hộ (Customer xem của mình, Staff/Sales xem tất cả)
+        /// </summary>
+        [HttpGet("{requestId}")]
+        public async Task<IActionResult> GetPurchaseRequestDetail(Guid requestId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = null;
+            if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var parsedId))
+            {
+                userId = parsedId;
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchaseRequestService.GetPurchaseRequestDetailAsync(requestId, userId, userRole);
+                return Ok(new { message = "Lấy chi tiết yêu cầu mua hộ thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
     }
 }

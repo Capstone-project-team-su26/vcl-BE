@@ -100,7 +100,7 @@ namespace VCL_BLL.Services
                 })
                 .ToList();
 
-            // 4. Tạo Order (chưa sinh ConsignmentCode — sinh khi APPROVED)
+            // 4. Tạo Order (BE tự sinh ConsignmentCode ngay khi khách tạo yêu cầu ký gửi)
             var orderRepo = _unitOfWork.Repository<Order>();
             var now = DateTime.UtcNow;
             var order = new Order
@@ -108,7 +108,7 @@ namespace VCL_BLL.Services
                 Id = Guid.NewGuid(),
                 CustomerId = customer.Id,
                 CompanyId = customer.CompanyId,
-                ConsignmentCode = null,
+                ConsignmentCode = await GenerateUniqueConsignmentCodeAsync(),
                 ConsignmentType = shippingOption,
                 Route = route,
                 ReceiverName = request.ReceiverName,
@@ -255,19 +255,8 @@ namespace VCL_BLL.Services
                 initialStatus = "APPROVED";
             }
 
-            string? consignmentCode = null;
-            if (initialStatus == "APPROVED")
-            {
-                var orderRepoForCode = _unitOfWork.Repository<Order>();
-                var allOrders = await orderRepoForCode.GetAllAsync();
-                var random = new Random();
-                do
-                {
-                    var now = DateTime.UtcNow;
-                    var randomSuffix = random.Next(100000, 999999).ToString();
-                    consignmentCode = $"VCL-{now:yyyyMMddHHmmss}-{randomSuffix}";
-                } while (allOrders.Any(o => o.ConsignmentCode == consignmentCode));
-            }
+            // BE luôn tự sinh ConsignmentCode ngay khi tạo (dù trạng thái ban đầu là gì)
+            var consignmentCode = await GenerateUniqueConsignmentCodeAsync();
 
             // 5. Tạo Order
             var orderRepo = _unitOfWork.Repository<Order>();
@@ -766,6 +755,82 @@ namespace VCL_BLL.Services
                 PageNumber = pageNumber,
                 PageSize = pageSize
             };
+        }
+
+        /// <summary>
+        /// Danh sách toàn bộ trạng thái vòng đời của yêu cầu ký gửi (code + nhãn tiếng Việt) để FE lọc/hiển thị.
+        /// </summary>
+        public List<ConsignmentStatusDto> GetConsignmentStatuses()
+        {
+            return new List<ConsignmentStatusDto>
+            {
+                new() { Code = "PENDING_REVIEW", Label = "Chờ duyệt" },
+                new() { Code = "QUOTATION_SENT", Label = "Đã gửi báo giá" },
+                new() { Code = "APPROVED", Label = "Đã duyệt" },
+                new() { Code = "REJECTED", Label = "Đã từ chối" },
+                new() { Code = "CANCELLED", Label = "Đã hủy" },
+                new() { Code = "COMPLETED", Label = "Hoàn tất" }
+            };
+        }
+
+        /// <summary>
+        /// Sinh mã ký gửi (ConsignmentCode) duy nhất phía BE theo định dạng "VCL-{yyyyMMddHHmmss}-{6 số ngẫu nhiên}".
+        /// </summary>
+        private async Task<string> GenerateUniqueConsignmentCodeAsync()
+        {
+            var allOrders = await _unitOfWork.Repository<Order>().GetAllAsync();
+            var existingCodes = allOrders
+                .Where(o => !string.IsNullOrEmpty(o.ConsignmentCode))
+                .Select(o => o.ConsignmentCode!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var random = new Random();
+            string code;
+            do
+            {
+                code = $"VCL-{DateTime.UtcNow:yyyyMMddHHmmss}-{random.Next(100000, 999999)}";
+            } while (existingCodes.Contains(code));
+
+            return code;
+        }
+
+        /// <summary>
+        /// Danh sách các tuyến hàng (route) khả dụng để FE đổ dropdown, lấy từ ServicePricing.
+        /// Route có định dạng "{OriginCountry}-{DestinationCountry}" (VD: "CN-VN").
+        /// </summary>
+        public async Task<List<string>> GetConsignmentRoutesAsync()
+        {
+            var pricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            return pricings
+                .Where(p => !string.IsNullOrWhiteSpace(p.OriginCountry) && !string.IsNullOrWhiteSpace(p.DestinationCountry))
+                .Select(p => $"{p.OriginCountry}-{p.DestinationCountry}")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(r => r)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Danh sách phương án vận chuyển (shippingOption = ServiceType) để FE đổ dropdown.
+        /// Nếu truyền route sẽ lọc theo tuyến hàng tương ứng.
+        /// </summary>
+        public async Task<List<string>> GetShippingOptionsAsync(string? route)
+        {
+            var pricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            var query = pricings.Where(p => !string.IsNullOrWhiteSpace(p.ServiceType));
+
+            if (!string.IsNullOrWhiteSpace(route))
+            {
+                query = query.Where(p =>
+                    !string.IsNullOrWhiteSpace(p.OriginCountry)
+                    && !string.IsNullOrWhiteSpace(p.DestinationCountry)
+                    && string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route.Trim(), StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query
+                .Select(p => p.ServiceType)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s)
+                .ToList();
         }
 
     }

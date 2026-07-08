@@ -3076,7 +3076,9 @@ Authorization: Bearer {accessToken}
 
 ## 29. Tạo yêu cầu mua hộ (Purchase Request)
 
-Customer tạo yêu cầu mua hộ hàng Trung Quốc. Khách nhập danh sách sản phẩm cần mua (link, số lượng, thuộc tính...); hệ thống ghi nhận yêu cầu ở trạng thái `PENDING_REVIEW` để Staff/Sales tiếp nhận và xử lý báo giá ở bước sau.
+Customer tạo yêu cầu mua hộ hàng Trung Quốc. Khách nhập thông tin nhận hàng + danh sách sản phẩm cần mua; hệ thống ghi nhận yêu cầu ở trạng thái `PENDING_REVIEW` để Staff/Sales tiếp nhận và xử lý báo giá ở bước sau.
+
+> **Về 2 loại ghi chú:** `generalNote` là ghi chú chung cho cả yêu cầu; `items[].note` là ghi chú riêng cho từng sản phẩm — hai trường khác mục đích, không trùng nhau.
 
 ```http
 POST /api/purchase-requests
@@ -3084,10 +3086,18 @@ Authorization: Bearer {accessToken}
 Content-Type: application/json
 
 {
-  "note": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
+  "route": "TQ-VN",
+  "receiverName": "Nguyễn Văn A",
+  "receiverPhone": "0901234567",
+  "receiverAddress": "123 Lê Lợi, Q1, TP.HCM",
+  "requiresInspection": true,
+  "requiresQuantityCheck": true,
+  "generalNote": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
   "items": [
     {
       "productLink": "https://item.taobao.com/item.htm?id=123456",
+      "sourceWebsite": "Taobao",
+      "productType": "Electronics",
       "productName": "Áo khoác nam",
       "quantity": 2,
       "attributes": "Size L, màu đen",
@@ -3102,9 +3112,17 @@ Content-Type: application/json
 
 | Trường | Bắt buộc | Mô tả |
 |---|---|---|
-| `note` | Không | Ghi chú mua hộ chung cho cả yêu cầu |
+| `route` | Không | Tuyến hàng (dropdown `/api/orders/consignments/routes`) |
+| `receiverName` | Không | Tên người nhận |
+| `receiverPhone` | Không | SĐT người nhận |
+| `receiverAddress` | Không | Địa chỉ nhận hàng |
+| `requiresInspection` | Không | Yêu cầu kiểm tra hàng (mặc định `false`) |
+| `requiresQuantityCheck` | Không | Yêu cầu kiểm tra số lượng (mặc định `false`) |
+| `generalNote` | Không | Ghi chú mua hộ chung cho cả yêu cầu |
 | `items` | **Có** | Danh sách sản phẩm, tối thiểu 1 phần tử |
 | `items[].productLink` | **Có** | Link sản phẩm cần mua |
+| `items[].sourceWebsite` | Không | Website/sàn nguồn (Taobao, 1688, Tmall...) |
+| `items[].productType` | Không | Loại hàng (dropdown `/api/product-types`) |
 | `items[].productName` | Không | Tên sản phẩm (nếu có) |
 | `items[].quantity` | **Có** | Số lượng, phải `>= 1` |
 | `items[].attributes` | Không | Thuộc tính như size, màu, mẫu mã |
@@ -3120,13 +3138,21 @@ Content-Type: application/json
     "purchaseRequestId": "e14b21a7-...",
     "purchaseCode": "PUR-20260704-8439",
     "customerId": "81a7b4c9-...",
-    "note": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
+    "route": "TQ-VN",
+    "receiverName": "Nguyễn Văn A",
+    "receiverPhone": "0901234567",
+    "receiverAddress": "123 Lê Lợi, Q1, TP.HCM",
+    "requiresInspection": true,
+    "requiresQuantityCheck": true,
+    "generalNote": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
     "status": "PENDING_REVIEW",
     "createdAt": "2026-07-04T09:21:00Z",
     "items": [
       {
         "itemId": "a1b2c3d4-...",
         "productLink": "https://item.taobao.com/item.htm?id=123456",
+        "sourceWebsite": "Taobao",
+        "productType": "Electronics",
         "productName": "Áo khoác nam",
         "quantity": 2,
         "attributes": "Size L, màu đen",
@@ -3158,6 +3184,8 @@ Content-Type: application/json
 ```typescript
 interface CreatePurchaseRequestItemDto {
   productLink: string;
+  sourceWebsite?: string | null;
+  productType?: string | null;
   productName?: string | null;
   quantity: number;
   attributes?: string | null;
@@ -3166,13 +3194,21 @@ interface CreatePurchaseRequestItemDto {
 }
 
 interface CreatePurchaseRequestDto {
-  note?: string | null;
+  route?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  receiverAddress?: string | null;
+  requiresInspection: boolean;
+  requiresQuantityCheck: boolean;
+  generalNote?: string | null;
   items: CreatePurchaseRequestItemDto[];
 }
 
 interface PurchaseRequestItemResponseDto {
   itemId: string;
   productLink: string;
+  sourceWebsite?: string | null;
+  productType?: string | null;
   productName?: string | null;
   quantity: number;
   attributes?: string | null;
@@ -3184,175 +3220,268 @@ interface PurchaseRequestResponseDto {
   purchaseRequestId: string;
   purchaseCode: string;
   customerId?: string | null;
-  note?: string | null;
+  route?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  receiverAddress?: string | null;
+  requiresInspection: boolean;
+  requiresQuantityCheck: boolean;
+  generalNote?: string | null;
   status: string;
   createdAt: string;
   items: PurchaseRequestItemResponseDto[];
 }
 ```
 
----
+### 29.1. Lấy danh sách yêu cầu mua hộ
 
-## 30. Quản lý đơn vị vận chuyển (Carrier Management)
-
-Admin quản lý danh sách đơn vị vận chuyển hoặc forwarder được sử dụng trong hệ thống. Dữ liệu này dùng cho Staff hoặc Operations chọn khi tạo lô vận chuyển quốc tế hoặc ghi nhận/cập nhật thông tin vận chuyển.
-
-### 30.1. Xem danh sách tất cả các đơn vị vận chuyển
-
-Chỉ Admin được phép sử dụng API này để lấy danh sách đầy đủ (cả active và inactive).
+Lấy danh sách yêu cầu mua hộ có phân trang. **Customer** chỉ thấy yêu cầu của chính mình; **Staff/Sales/Admin/Operations** thấy toàn bộ yêu cầu cần xử lý. Yêu cầu ở trạng thái `PENDING_REVIEW` được ưu tiên hiển thị lên đầu.
 
 ```http
-GET /api/carriers
-Authorization: Bearer {adminToken}
+GET /api/purchase-requests?pageNumber=1&pageSize=10&status=PENDING_REVIEW&searchKeyword=PUR-2026
+Authorization: Bearer {accessToken}
 ```
+
+**Query params (đều tùy chọn):**
+
+| Name | Type | Default | Mô tả |
+|---|---|---|---|
+| `pageNumber` | `number` | `1` | Trang hiện tại (min 1) |
+| `pageSize` | `number` | `10` | Số bản ghi mỗi trang (min 1) |
+| `status` | `string` | — | Lọc theo trạng thái, ví dụ `PENDING_REVIEW` |
+| `searchKeyword` | `string` | — | Tìm theo mã yêu cầu (`purchaseCode`) hoặc tên Customer |
 
 **Response thành công (200 OK):**
 
 ```json
-[
-  {
-    "id": "e3a1b2c3-5717-4562-b3fc-2c963f66afa6",
-    "carrierName": "DHL Express VN",
-    "carrierCode": "DHL_VN",
-    "carrierType": "Carrier",
-    "apiUrl": "https://api.dhl.com/v1",
-    "contactEmail": "contact@dhl.com.vn",
-    "contactPhone": "18001548",
-    "supportedShippingMethods": "Air,Express",
-    "supportedRegions": "Vietnam, China, Global",
-    "isActive": true,
-    "internalNotes": "Đối tác vận chuyển hàng không chính"
+{
+  "message": "Lấy danh sách yêu cầu mua hộ thành công.",
+  "data": {
+    "items": [
+      {
+        "purchaseRequestId": "b037ab62-...",
+        "purchaseCode": "PUR-20260704-7582",
+        "customerId": "1b53ba9c-...",
+        "customerName": "Bùi Đình Trọng",
+        "itemCount": 2,
+        "status": "PENDING_REVIEW",
+        "generalNote": "Mua giúp mình đợt sale",
+        "createdAt": "2026-07-04T04:18:52Z"
+      }
+    ],
+    "totalCount": 3,
+    "pageNumber": 1,
+    "pageSize": 10,
+    "totalPages": 1
   }
-]
+}
 ```
 
-### 30.2. Lấy danh sách các đơn vị vận chuyển đang hoạt động (Active)
+**Lưu ý nghiệp vụ:**
+- Ưu tiên hiển thị yêu cầu `PENDING_REVIEW` lên đầu, sau đó sắp xếp theo `createdAt` mới nhất.
+- Trả về `items: []` với `totalCount: 0` nếu chưa có yêu cầu nào (không phải lỗi).
+- Trả `401` nếu chưa đăng nhập.
 
-Dành cho Staff hoặc Operations lấy danh sách carrier đang hoạt động để gán vào các lô vận chuyển quốc tế.
+**TypeScript interface (khớp DTO C#):**
+
+```typescript
+interface PurchaseRequestListItemDto {
+  purchaseRequestId: string;
+  purchaseCode: string;
+  customerId?: string | null;
+  customerName: string;
+  itemCount: number;
+  status: string;
+  generalNote?: string | null;
+  createdAt: string;
+}
+
+interface PaginatedResponse<T> {
+  items: T[];
+  totalCount: number;
+  pageNumber: number;
+  pageSize: number;
+  totalPages: number;
+}
+```
+
+### 29.2. Lấy chi tiết yêu cầu mua hộ
+
+Lấy chi tiết đầy đủ một yêu cầu mua hộ theo `requestId`. **Customer** chỉ xem được yêu cầu của chính mình; **Staff/Sales/Admin/Operations** xem được mọi yêu cầu.
 
 ```http
-GET /api/carriers/active
+GET /api/purchase-requests/{requestId}
 Authorization: Bearer {accessToken}
 ```
 
 **Response thành công (200 OK):**
 
-Trả về danh sách carrier có `isActive` là `true`.
-
-### 30.3. Tạo đơn vị vận chuyển mới
-
-```http
-POST /api/carriers
-Authorization: Bearer {adminToken}
-Content-Type: application/json
-
+```json
 {
-  "carrierName": "DHL Express VN",
-  "carrierCode": "DHL_VN",
-  "carrierType": "Carrier",
-  "apiUrl": "https://api.dhl.com/v1",
-  "contactEmail": "contact@dhl.com.vn",
-  "contactPhone": "18001548",
-  "supportedShippingMethods": "Air,Express",
-  "supportedRegions": "Vietnam, China, Global",
-  "isActive": true,
-  "internalNotes": "Đối tác vận chuyển hàng không chính"
+  "message": "Lấy chi tiết yêu cầu mua hộ thành công.",
+  "data": {
+    "purchaseRequestId": "97e4fd25-...",
+    "purchaseCode": "PUR-20260704-3113",
+    "customerId": "1b53ba9c-...",
+    "customerName": "Bùi Đình Trọng",
+    "createdByName": "Bùi Đình Trọng",
+    "route": "TQ-VN",
+    "receiverName": "Nguyễn Văn A",
+    "receiverPhone": "0901234567",
+    "receiverAddress": "123 Lê Lợi, Q1, TP.HCM",
+    "requiresInspection": true,
+    "requiresQuantityCheck": true,
+    "generalNote": "Mua giúp mình đợt sale",
+    "status": "PENDING_REVIEW",
+    "createdAt": "2026-07-04T04:18:52Z",
+    "totalQuantity": 7,
+    "items": [
+      {
+        "itemId": "80d01761-...",
+        "productLink": "https://item.taobao.com/item.htm?id=123456",
+        "sourceWebsite": "Taobao",
+        "productType": "Electronics",
+        "productName": "Áo khoác nam",
+        "quantity": 2,
+        "attributes": "Size L, màu đen",
+        "note": "Chọn loại vải dày",
+        "imageUrl": "https://res.cloudinary.com/.../ref.jpg"
+      }
+    ]
+  }
 }
 ```
 
-**Response thành công (201 Created):**
+**Response lỗi:**
 
-Trả về thông tin đơn vị vận chuyển vừa tạo bao gồm cả `id`.
-
-**Response lỗi thường gặp:**
-- `400 Bad Request` nếu `carrierCode` trùng lặp: `{"message": "Mã đơn vị vận chuyển 'DHL_VN' đã tồn tại trong hệ thống."}`
-- `400 Bad Request` nếu dữ liệu validation không hợp lệ (ví dụ: thiếu tên hoặc mã không đúng định dạng regex).
-
-### 30.4. Cập nhật thông tin đơn vị vận chuyển
-
-```http
-PUT /api/carriers/{carrierId}
-Authorization: Bearer {adminToken}
-Content-Type: application/json
-
-{
-  "carrierName": "DHL Express VN - Cập nhật",
-  "carrierCode": "DHL_VN_NEW",
-  "carrierType": "Forwarder",
-  "apiUrl": "https://api.dhl.com/v2",
-  "contactEmail": "support@dhl.com.vn",
-  "contactPhone": "18001549",
-  "supportedShippingMethods": "Air",
-  "supportedRegions": "Vietnam, China",
-  "isActive": false,
-  "internalNotes": "Đã đổi mã và tạm thời vô hiệu hóa"
-}
-```
-
-**Response thành công (200 OK):**
-`{"message": "Cập nhật đơn vị vận chuyển thành công."}`
-
-**Response lỗi thường gặp:**
-- `400 Bad Request` nếu trùng `carrierCode` với đơn vị khác.
-- `404 Not Found` nếu không tìm thấy ID.
-
-### 30.5. Xóa đơn vị vận chuyển
-
-```http
-DELETE /api/carriers/{carrierId}
-Authorization: Bearer {adminToken}
-```
-
-**Response thành công (200 OK):**
-`{"message": "Xóa đơn vị vận chuyển thành công."}`
-
-**Response lỗi thường gặp:**
-- `400 Bad Request` nếu đơn vị vận chuyển đang được liên kết với dữ liệu lô hàng (Shipment), bảng giá (ServicePricing), hoặc bàn giao hàng (ShipmentHandover). Thông báo: `"Không thể xóa đơn vị vận chuyển này vì đang được liên kết với các bảng giá dịch vụ hoặc lô hàng đang vận hành. Vui lòng vô hiệu hóa thay thế."`
-- `404 Not Found` nếu không tìm thấy ID.
+| Status | Trường hợp | Message |
+|---|---|---|
+| `401` | Chưa đăng nhập | (JWT thiếu/không hợp lệ) |
+| `403` | Customer xem yêu cầu của người khác | `"Bạn không có quyền xem yêu cầu mua hộ này."` |
+| `404` | Không tìm thấy yêu cầu | `"Không tìm thấy yêu cầu mua hộ với ID {requestId}"` |
 
 **TypeScript interface (khớp DTO C#):**
 
 ```typescript
-interface CarrierDto {
-  id: string;
-  carrierName: string;
-  carrierCode: string;
-  carrierType: string;
-  apiUrl?: string | null;
-  contactEmail?: string | null;
-  contactPhone?: string | null;
-  supportedShippingMethods?: string | null;
-  supportedRegions?: string | null;
-  isActive: boolean;
-  internalNotes?: string | null;
-}
-
-interface CreateCarrierRequestDto {
-  carrierName: string;
-  carrierCode: string;
-  carrierType: string;
-  apiUrl?: string | null;
-  contactEmail?: string | null;
-  contactPhone?: string | null;
-  supportedShippingMethods?: string | null;
-  supportedRegions?: string | null;
-  isActive?: boolean;
-  internalNotes?: string | null;
-}
-
-interface UpdateCarrierRequestDto {
-  carrierName: string;
-  carrierCode: string;
-  carrierType: string;
-  apiUrl?: string | null;
-  contactEmail?: string | null;
-  contactPhone?: string | null;
-  supportedShippingMethods?: string | null;
-  supportedRegions?: string | null;
-  isActive: boolean;
-  internalNotes?: string | null;
+interface PurchaseRequestDetailResponseDto {
+  purchaseRequestId: string;
+  purchaseCode: string;
+  customerId?: string | null;
+  customerName: string;
+  createdByName: string;
+  route?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+  receiverAddress?: string | null;
+  requiresInspection: boolean;
+  requiresQuantityCheck: boolean;
+  generalNote?: string | null;
+  status: string;
+  createdAt: string;
+  totalQuantity: number;
+  items: PurchaseRequestItemResponseDto[];
 }
 ```
+
+---
+
+## 30. Dropdown dữ liệu cho form ký gửi (Consignment dropdowns)
+
+Nhóm API `GET` cung cấp dữ liệu đổ dropdown cho form tạo yêu cầu ký gửi (`route`, `shippingOption`, `productType`). Tất cả đều **public** (không cần token) và trả về `data` là mảng.
+
+### 30.1. Danh sách tuyến hàng (route)
+
+```http
+GET /api/orders/consignments/routes
+```
+
+```json
+{
+  "message": "Lấy danh sách tuyến hàng thành công.",
+  "data": ["VIETNAM-JAPAN", "Vietnam-Korea", "VIETNAM-USA"]
+}
+```
+
+Giá trị route lấy từ `ServicePricing` theo định dạng `{OriginCountry}-{DestinationCountry}`, đã `distinct` và sắp xếp A→Z.
+
+### 30.2. Danh sách phương án vận chuyển (shippingOption)
+
+```http
+GET /api/orders/consignments/shipping-options
+GET /api/orders/consignments/shipping-options?route=Vietnam-Korea
+```
+
+```json
+{
+  "message": "Lấy danh sách phương án vận chuyển thành công.",
+  "data": ["CONSOLIDATION", "EXPRESS", "Standard"]
+}
+```
+
+- Không truyền `route` → trả về toàn bộ `ServiceType` distinct.
+- Truyền `route` → chỉ trả về các phương án khả dụng cho tuyến đó (rỗng `[]` nếu route không có).
+
+### 30.3. Danh sách loại hàng (productType)
+
+```http
+GET /api/product-types
+```
+
+```json
+{
+  "message": "Lấy danh sách loại hàng thành công.",
+  "data": [
+    { "id": "11111111-0000-0000-0000-000000000004", "name": "Accessories" },
+    { "id": "11111111-0000-0000-0000-000000000002", "name": "Clothing" }
+  ]
+}
+```
+
+Lấy từ bảng `PRODUCT_TYPES` (chỉ các loại `isActive = true`), sắp xếp theo tên. Admin có thể mở rộng danh sách này về sau.
+
+### 30.4. Danh sách trạng thái yêu cầu ký gửi (statuses)
+
+```http
+GET /api/orders/consignments/statuses
+```
+
+```json
+{
+  "message": "Lấy danh sách trạng thái yêu cầu ký gửi thành công.",
+  "data": [
+    { "code": "PENDING_REVIEW", "label": "Chờ duyệt" },
+    { "code": "QUOTATION_SENT", "label": "Đã gửi báo giá" },
+    { "code": "APPROVED", "label": "Đã duyệt" },
+    { "code": "REJECTED", "label": "Đã từ chối" },
+    { "code": "CANCELLED", "label": "Đã hủy" },
+    { "code": "COMPLETED", "label": "Hoàn tất" }
+  ]
+}
+```
+
+Dùng cho dropdown lọc trạng thái ở màn danh sách ký gửi. `code` gửi lại BE khi lọc (`GET /api/orders/consignments?status=`), `label` để hiển thị.
+
+**TypeScript interface:**
+
+```typescript
+// routes & shipping-options: data là string[]
+interface DropdownStringResponse {
+  message: string;
+  data: string[];
+}
+
+interface ProductTypeResponse {
+  id: string;
+  name: string;
+}
+
+interface ConsignmentStatusDto {
+  code: string;
+  label: string;
+}
+```
+
+> **Lưu ý về `consignmentCode`:** mã ký gửi do **BE tự sinh** ngay khi khách tạo yêu cầu (định dạng `VCL-{yyyyMMddHHmmss}-{6 số}`). FE **không cần** tự tạo hay gửi mã này lên.
 
 ---
 

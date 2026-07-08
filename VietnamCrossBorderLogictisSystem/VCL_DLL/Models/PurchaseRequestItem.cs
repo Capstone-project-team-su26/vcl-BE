@@ -11,6 +11,10 @@ public partial class PurchaseRequestItem
 
     public string ProductLink { get; set; }
 
+    public string SourceWebsite { get; set; }
+
+    public string ProductType { get; set; }
+
     public string ProductName { get; set; }
 
     public int Quantity { get; set; }

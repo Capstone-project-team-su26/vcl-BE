@@ -1178,6 +1178,95 @@ namespace VCL_DLL.Migrations
                     b.ToTable("PRICING_RULES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.ProductType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PRODUCT_TYPES");
+
+                    b.ToTable("PRODUCT_TYPES", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000001"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Electronics"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000002"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Clothing"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000003"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Cosmetics"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000004"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Accessories"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000005"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Food"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000006"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Books"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000007"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Toys"
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000008"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            Name = "Household Goods"
+                        });
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.PurchaseRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1196,7 +1285,7 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_id");
 
-                    b.Property<string>("Note")
+                    b.Property<string>("GeneralNote")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("note");
@@ -1205,6 +1294,34 @@ namespace VCL_DLL.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("purchase_code");
+
+                    b.Property<string>("ReceiverAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("receiver_address");
+
+                    b.Property<string>("ReceiverName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("receiver_name");
+
+                    b.Property<string>("ReceiverPhone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("receiver_phone");
+
+                    b.Property<bool>("RequiresInspection")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_inspection");
+
+                    b.Property<bool>("RequiresQuantityCheck")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_quantity_check");
+
+                    b.Property<string>("Route")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("route");
 
                     b.Property<string>("Status")
                         .HasMaxLength(50)
@@ -1258,6 +1375,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("product_name");
 
+                    b.Property<string>("ProductType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("product_type");
+
                     b.Property<Guid>("PurchaseRequestId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("purchase_request_id");
@@ -1265,6 +1387,11 @@ namespace VCL_DLL.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("int")
                         .HasColumnName("quantity");
+
+                    b.Property<string>("SourceWebsite")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("source_website");
 
                     b.HasKey("Id")
                         .HasName("PK_PURCHASE_REQUEST_ITEMS");
