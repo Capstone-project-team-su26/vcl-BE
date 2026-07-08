@@ -23,36 +23,70 @@ namespace VCL_API.Controllers
         public async Task<IActionResult> SeedStaff()
         {
             var userRepo = _unitOfWork.Repository<User>();
-            var email = "staff@employee.com";
-            
             var allUsers = await userRepo.GetAllAsync();
-            var existingStaff = allUsers.FirstOrDefault(u => u.Email == email);
+
+            // Seed Warehouse Staff
+            var staffEmail = "staff@employee.com";
+            var existingStaff = allUsers.FirstOrDefault(u => u.Email == staffEmail);
             if (existingStaff != null)
             {
                 existingStaff.Password = PasswordHelper.HashPassword("Employee123");
                 userRepo.Update(existingStaff);
-                await _unitOfWork.SaveChangesAsync();
-                return Ok(new { message = "WarehouseStaff already exists, password reset.", email = email, password = "Employee123" });
+            }
+            else
+            {
+                var newStaff = new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "Test Warehouse Staff",
+                    Email = staffEmail,
+                    Phone = "0123456789",
+                    Password = PasswordHelper.HashPassword("Employee123"),
+                    Role = "WarehouseStaff",
+                    UserType = "Employee",
+                    Status = "Active",
+                    CreatedAt = DateTime.UtcNow,
+                    IsEmailVerified = true
+                };
+                await userRepo.AddAsync(newStaff);
             }
 
-            var newStaff = new User
+            // Seed Sales Staff
+            var salesEmail = "sales@test.com";
+            var existingSales = allUsers.FirstOrDefault(u => u.Email == salesEmail);
+            if (existingSales != null)
             {
-                Id = Guid.NewGuid(),
-                FullName = "Test Warehouse Staff",
-                Email = email,
-                Phone = "0123456789",
-                Password = PasswordHelper.HashPassword("Employee123"),
-                Role = "WarehouseStaff",
-                UserType = "Employee",
-                Status = "Active",
-                CreatedAt = DateTime.UtcNow,
-                IsEmailVerified = true
-            };
+                existingSales.Password = PasswordHelper.HashPassword("Sales123");
+                userRepo.Update(existingSales);
+            }
+            else
+            {
+                var newSales = new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "Test Sales Staff",
+                    Email = salesEmail,
+                    Phone = "0988888888",
+                    Password = PasswordHelper.HashPassword("Sales123"),
+                    Role = "Sale",
+                    UserType = "Employee",
+                    Status = "Active",
+                    CreatedAt = DateTime.UtcNow,
+                    IsEmailVerified = true
+                };
+                await userRepo.AddAsync(newSales);
+            }
 
-            await userRepo.AddAsync(newStaff);
             await _unitOfWork.SaveChangesAsync();
 
-            return Ok(new { message = "Created WarehouseStaff successfully.", email = email, password = "Employee123" });
+            return Ok(new 
+            { 
+                message = "Created WarehouseStaff and Sales staff successfully.", 
+                staffEmail = staffEmail, 
+                staffPassword = "Employee123",
+                salesEmail = salesEmail,
+                salesPassword = "Sales123"
+            });
         }
 
         [HttpGet("seed-customer")]

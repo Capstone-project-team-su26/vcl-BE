@@ -1,0 +1,270 @@
+{
+	"info": {
+		"_postman_id": "8c48a7b2-df4c-4e8c-bbbb-f245c115ba5d",
+		"name": "Customer & Sales Chat (SignalR) API",
+		"description": "Postman collection to test the Customer & Sales Messaging APIs including HTTP REST endpoints and instructions for WebSocket testing.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Seed Customer & Sales Accounts",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/api/Test/seed-customer",
+						"description": "Pre-seed test customer accounts."
+					},
+					"response": []
+				},
+				{
+					"name": "Seed Staff & Sales Accounts",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/api/Test/seed-staff",
+						"description": "Pre-seed test warehouse staff and sales account."
+					},
+					"response": []
+				},
+				{
+					"name": "Login Customer",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.environment.set(\"customerToken\", jsonData.token);",
+									"    pm.globals.set(\"customerToken\", jsonData.token);",
+									"    console.log(\"Saved customerToken: \" + jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"customer@test.com\",\n    \"password\": \"Customer123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": "{{baseUrl}}/api/Auth/login",
+						"description": "Log in as a customer and retrieve the access token. Token will be automatically saved in environment."
+					},
+					"response": []
+				},
+				{
+					"name": "Login Sales",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.environment.set(\"salesToken\", jsonData.token);",
+									"    pm.globals.set(\"salesToken\", jsonData.token);",
+									"    console.log(\"Saved salesToken: \" + jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"sales@test.com\",\n    \"password\": \"Sales123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": "{{baseUrl}}/api/Auth/login",
+						"description": "Log in as a Sales staff member and retrieve the access token. Token will be automatically saved in environment."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Chat REST APIs",
+			"item": [
+				{
+					"name": "Create Conversation (Customer Only)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.id) {",
+									"    pm.environment.set(\"conversationId\", jsonData.id);",
+									"    pm.globals.set(\"conversationId\", jsonData.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{customerToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"relatedType\": null,\n    \"relatedId\": null,\n    \"message\": \"Xin chào, tôi muốn hỏi về bảng giá ký gửi của tháng này.\",\n    \"attachmentUrl\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": "{{baseUrl}}/api/conversations",
+						"description": "Customer starts a new conversation room. relatedType and relatedId are optional. message is required."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Conversations List (Customer/Sales/Admin)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{customerToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/api/conversations",
+						"description": "Retrieve conversation listings. Customers see their own, Sales see unassigned or assigned chats."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Conversation Detail with Messages",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{customerToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/api/conversations/{{conversationId}}",
+						"description": "Load messages history and conversation details."
+					},
+					"response": []
+				},
+				{
+					"name": "Send Message",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{salesToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"Chào anh, tôi đã tiếp nhận yêu cầu. Lô hàng của anh dự kiến về kho vào ngày mai.\",\n    \"attachmentUrl\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": "{{baseUrl}}/api/conversations/{{conversationId}}/messages",
+						"description": "Send a text or attachment message. If a Sales staff replies to an unassigned chat, it assigns them automatically."
+					},
+					"response": []
+				},
+				{
+					"name": "Mark Messages As Read",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{customerToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": "{{baseUrl}}/api/conversations/{{conversationId}}/read",
+						"description": "Mark all messages from the counter-party in this conversation as read."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "SignalR Websocket Guide",
+			"item": [],
+			"description": "To test real-time chat in Postman:\n\n1. In Postman, click **New** -> **WebSocket Request**.\n2. Set the URL to: `ws://localhost:5209/chatHub?access_token={{customerToken}}` (change port/protocol to match backend, e.g. ws or wss).\n3. Click **Connect**.\n4. Once connected, send a handshake message to format communications (ASP.NET Core SignalR uses JSON protocol ending with ASCII 0x1E record separator):\n   - Send exact string: `{\"protocol\":\"json\",\"version\":1} ` (Note: the last character is ASCII record separator 0x1E, copy it precisely).\n5. Join a conversation group by sending:\n   - Send exact string: `{\"arguments\":[\"{{conversationId}}\"],\"invocationId\":\"0\",\"target\":\"JoinConversation\",\"type\":1} `\n6. When you send messages via the REST API POST `/messages` or another WebSocket client, you will receive real-time JSON frames matching the `ReceiveMessage` method!"
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5209",
+			"type": "string"
+		},
+		{
+			"key": "customerToken",
+			"value": "YOUR_CUSTOMER_JWT_TOKEN",
+			"type": "string"
+		},
+		{
+			"key": "salesToken",
+			"value": "YOUR_SALES_JWT_TOKEN",
+			"type": "string"
+		},
+		{
+			"key": "conversationId",
+			"value": "e8d77a28-bc4a-4e20-96f3-3c97db39a1ab",
+			"type": "string"
+		}
+	]
+}
