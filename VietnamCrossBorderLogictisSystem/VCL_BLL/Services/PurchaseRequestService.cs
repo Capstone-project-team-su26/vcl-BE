@@ -208,23 +208,29 @@ namespace VCL_BLL.Services
                 .Take(pageSize)
                 .ToList();
 
-            // 5. Map sang DTO (kèm tên Customer và số lượng sản phẩm)
+            // 5. Map sang DTO (kèm tên người nhận và danh sách sản phẩm tóm tắt)
             var resultItems = pagedRequests.Select(r =>
             {
-                var customerInfo = r.CustomerId.HasValue
-                    ? allCustomers.FirstOrDefault(c => c.Id == r.CustomerId.Value)
-                    : null;
+                var products = allItems
+                    .Where(i => i.PurchaseRequestId == r.Id)
+                    .Select(i => new PurchaseRequestListProductDto
+                    {
+                        ProductName = i.ProductName,
+                        Quantity = i.Quantity
+                    })
+                    .ToList();
 
                 return new PurchaseRequestListItemDto
                 {
                     PurchaseRequestId = r.Id,
                     PurchaseCode = r.PurchaseCode ?? string.Empty,
                     CustomerId = r.CustomerId,
-                    CustomerName = customerInfo?.FullName ?? string.Empty,
-                    ItemCount = allItems.Count(i => i.PurchaseRequestId == r.Id),
+                    ReceiverName = r.ReceiverName ?? string.Empty,
+                    ItemCount = products.Count,
                     Status = r.Status ?? string.Empty,
                     GeneralNote = r.GeneralNote,
-                    CreatedAt = r.CreatedAt ?? DateTime.MinValue
+                    CreatedAt = r.CreatedAt ?? DateTime.MinValue,
+                    Items = products
                 };
             }).ToList();
 
