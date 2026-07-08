@@ -51,8 +51,6 @@ namespace VCL_BLL.Services
                 p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase)
                 && (
                     string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", request.Route, StringComparison.OrdinalIgnoreCase) ||
-                    (string.Equals(p.OriginCountry, "CN", StringComparison.OrdinalIgnoreCase) && string.Equals(p.DestinationCountry, "VN", StringComparison.OrdinalIgnoreCase) && string.Equals(request.Route, "TQ-VN", StringComparison.OrdinalIgnoreCase)) ||
-                    (string.Equals(p.OriginCountry, "China", StringComparison.OrdinalIgnoreCase) && string.Equals(p.DestinationCountry, "Vietnam", StringComparison.OrdinalIgnoreCase) && string.Equals(request.Route, "TQ-VN", StringComparison.OrdinalIgnoreCase)) ||
                     string.Equals(p.OriginCountry, request.Route, StringComparison.OrdinalIgnoreCase)
                 ));
 
@@ -179,8 +177,6 @@ namespace VCL_BLL.Services
                 p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase)
                 && (
                     string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", request.Route, StringComparison.OrdinalIgnoreCase) ||
-                    (string.Equals(p.OriginCountry, "CN", StringComparison.OrdinalIgnoreCase) && string.Equals(p.DestinationCountry, "VN", StringComparison.OrdinalIgnoreCase) && string.Equals(request.Route, "TQ-VN", StringComparison.OrdinalIgnoreCase)) ||
-                    (string.Equals(p.OriginCountry, "China", StringComparison.OrdinalIgnoreCase) && string.Equals(p.DestinationCountry, "Vietnam", StringComparison.OrdinalIgnoreCase) && string.Equals(request.Route, "TQ-VN", StringComparison.OrdinalIgnoreCase)) ||
                     string.Equals(p.OriginCountry, request.Route, StringComparison.OrdinalIgnoreCase)
                 ));
 

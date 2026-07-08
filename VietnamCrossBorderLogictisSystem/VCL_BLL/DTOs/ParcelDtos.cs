@@ -112,6 +112,44 @@ namespace VCL_BLL.DTOs
         public string BinCode { get; set; } = string.Empty;
     }
 
+    /// <summary>
+    /// Một sản phẩm khai báo trong kiện (dùng cho tra cứu kiện của Customer - VCL-90).
+    /// </summary>
+    public class CustomerParcelItemDto
+    {
+        public string ProductName { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal? DeclaredValue { get; set; }
+    }
+
+    /// <summary>
+    /// Kiện hàng thuộc yêu cầu ký gửi của Customer (VCL-90).
+    /// </summary>
+    public class CustomerParcelDto
+    {
+        public Guid ParcelId { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public Guid? ConsignmentId { get; set; }
+        public string ConsignmentCode { get; set; } = string.Empty;
+        public string PackageStatus { get; set; } = string.Empty;
+
+        public decimal? ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+        /// <summary>Trọng lượng quy đổi.</summary>
+        public decimal? VolumetricWeight { get; set; }
+        public decimal? ChargeableWeight { get; set; }
+
+        public DateTime? CheckInTime { get; set; }
+        public DateTime? PutAwayTime { get; set; }
+
+        /// <summary>Ghi chú của sale (từ yêu cầu ký gửi).</summary>
+        public string? SaleNote { get; set; }
+
+        public List<CustomerParcelItemDto> Items { get; set; } = new();
+    }
+
     public class ParcelPutAwayResponse
     {
         public string PackageCode { get; set; } = string.Empty;

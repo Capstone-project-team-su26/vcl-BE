@@ -126,6 +126,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/orders/consignments/statuses` | Public | Danh sách toàn bộ trạng thái yêu cầu ký gửi (code + label) |
 | `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
 | `POST` | `/api/international-shipments` | Staff / Operations | Tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED |
+| `GET` | `/api/customer/parcels` | Customer | Customer tra cứu kiện hàng thuộc yêu cầu ký gửi của mình |
 | `GET` | `/api/carriers` | Admin | Lấy danh sách tất cả các đơn vị vận chuyển |
 | `GET` | `/api/carriers/active` | Authenticated | Lấy danh sách các đơn vị vận chuyển đang hoạt động |
 | `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
@@ -4163,6 +4164,87 @@ interface InternationalShipmentResponseDto {
   status: string;
   wroRequests: { wroRequestId: string; wroCode: string }[];
   parcels: { parcelId: string; packageCode: string; weight?: number | null }[];
+}
+```
+
+---
+
+## 32. Customer tra cứu kiện hàng (Customer Parcels)
+
+Customer xem danh sách kiện hàng thuộc yêu cầu ký gửi của mình sau khi kho đã check-in (`RECEIVED`) hoặc nhập vị trí (`STORED`). Chỉ trả về kiện thuộc Customer đang đăng nhập.
+
+```http
+GET /api/customer/parcels?consignmentCode=VCL-2026...&searchCode=PCL-2026
+Authorization: Bearer {accessToken}
+```
+
+**Query params (đều tùy chọn):**
+
+| Name | Type | Mô tả |
+|---|---|---|
+| `consignmentCode` | `string` | Lọc theo mã yêu cầu ký gửi |
+| `searchCode` | `string` | Tìm theo mã kiện hàng (`packageCode`) |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Lấy danh sách kiện hàng thành công.",
+  "data": [
+    {
+      "parcelId": "d5e243d7-...",
+      "packageCode": "PCL-20260701-1234",
+      "consignmentId": "e14b21a7-...",
+      "consignmentCode": "VCL-20260701-5678",
+      "packageStatus": "STORED",
+      "actualWeight": 1.5,
+      "length": 30,
+      "width": 20,
+      "height": 15,
+      "volumetricWeight": 1.8,
+      "chargeableWeight": 1.8,
+      "checkInTime": "2026-07-01T09:00:00Z",
+      "putAwayTime": "2026-07-01T10:30:00Z",
+      "saleNote": "Hàng dễ vỡ",
+      "items": [
+        { "productName": "Loa Bluetooth", "quantity": 4, "declaredValue": 800000 }
+      ]
+    }
+  ]
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ trả về kiện đã check-in (`RECEIVED`) hoặc đã nhập vị trí (`STORED`); `putAwayTime` chỉ có khi đã `STORED`.
+- Trả về `data: []` nếu Customer chưa có kiện nào được check-in (không phải lỗi).
+- Nếu lọc bằng `consignmentCode` của yêu cầu **không thuộc** Customer → trả `403`.
+- `saleNote` lấy từ ghi chú của yêu cầu ký gửi; `items` là danh sách sản phẩm khai báo của yêu cầu (tên, số lượng, giá trị).
+
+**TypeScript interface:**
+
+```typescript
+interface CustomerParcelItemDto {
+  productName: string;
+  quantity: number;
+  declaredValue?: number | null;
+}
+
+interface CustomerParcelDto {
+  parcelId: string;
+  packageCode: string;
+  consignmentId?: string | null;
+  consignmentCode: string;
+  packageStatus: string;
+  actualWeight?: number | null;
+  length?: number | null;
+  width?: number | null;
+  height?: number | null;
+  volumetricWeight?: number | null;
+  chargeableWeight?: number | null;
+  checkInTime?: string | null;
+  putAwayTime?: string | null;
+  saleNote?: string | null;
+  items: CustomerParcelItemDto[];
 }
 ```
 

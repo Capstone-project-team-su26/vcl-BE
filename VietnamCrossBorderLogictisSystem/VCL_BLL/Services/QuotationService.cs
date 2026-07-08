@@ -37,6 +37,18 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
+        /// Nhận diện phương án vận chuyển nhanh (Express) — hỗ trợ cả tên tiếng Anh ("Express")
+        /// lẫn tiếng Việt ("Hỏa Tốc"). Dùng cho các mức giá/phí mặc định khi ServicePricing chưa có Price.
+        /// </summary>
+        private static bool IsExpressServiceType(string consignmentType)
+        {
+            if (string.IsNullOrWhiteSpace(consignmentType)) return false;
+            var s = consignmentType.Trim();
+            return s.Contains("Express", StringComparison.OrdinalIgnoreCase)
+                || s.Contains("Hỏa Tốc", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Lấy cân nhỏ nhất (minimum weight) cấu hình trong PricingRules cho matched pricing, mặc định là 1.0kg.
         /// </summary>
         private decimal GetMinimumWeight(IEnumerable<PricingRule> activeRules, ServicePricing matchedPricing)
@@ -161,9 +173,7 @@ namespace VCL_BLL.Services
                     string.IsNullOrWhiteSpace(route) ||
                     string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route, StringComparison.OrdinalIgnoreCase) ||
                     (p.OriginCountry != null && route.Contains(p.OriginCountry, StringComparison.OrdinalIgnoreCase)) ||
-                    (p.DestinationCountry != null && route.Contains(p.DestinationCountry, StringComparison.OrdinalIgnoreCase)) ||
-                    (string.Equals(p.OriginCountry, "CN", StringComparison.OrdinalIgnoreCase) && route.Contains("TQ", StringComparison.OrdinalIgnoreCase)) ||
-                    (string.Equals(p.OriginCountry, "China", StringComparison.OrdinalIgnoreCase) && route.Contains("TQ", StringComparison.OrdinalIgnoreCase))
+                    (p.DestinationCountry != null && route.Contains(p.DestinationCountry, StringComparison.OrdinalIgnoreCase))
                 );
 
             if (matchedPricing == null)
@@ -196,7 +206,7 @@ namespace VCL_BLL.Services
             }
             else
             {
-                var freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                var freightRate = IsExpressServiceType(consignmentType)
                     ? DefaultExpressRate
                     : DefaultStandardRate;
                 estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
@@ -218,7 +228,7 @@ namespace VCL_BLL.Services
             }
             else
             {
-                decimal baseServiceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                decimal baseServiceFee = IsExpressServiceType(consignmentType)
                     ? ExpressServiceFee
                     : StandardServiceFee;
 
@@ -416,7 +426,7 @@ namespace VCL_BLL.Services
                 return pricing.Price.Value;
 
             // Fallback: giá mặc định
-            return string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+            return IsExpressServiceType(consignmentType)
                 ? DefaultExpressRate
                 : DefaultStandardRate;
         }
@@ -426,7 +436,7 @@ namespace VCL_BLL.Services
         /// </summary>
         private static decimal GetServiceFee(string consignmentType)
         {
-            return string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+            return IsExpressServiceType(consignmentType)
                 ? ExpressServiceFee
                 : StandardServiceFee;
         }
@@ -612,7 +622,7 @@ namespace VCL_BLL.Services
             }
             else
             {
-                var freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                var freightRate = IsExpressServiceType(consignmentType)
                     ? DefaultExpressRate
                     : DefaultStandardRate;
                 estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
@@ -634,7 +644,7 @@ namespace VCL_BLL.Services
             }
             else
             {
-                decimal baseServiceFee = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                decimal baseServiceFee = IsExpressServiceType(consignmentType)
                     ? ExpressServiceFee
                     : StandardServiceFee;
 
@@ -818,7 +828,7 @@ namespace VCL_BLL.Services
             }
             else
             {
-                freightRate = string.Equals(consignmentType, "Express", StringComparison.OrdinalIgnoreCase)
+                freightRate = IsExpressServiceType(consignmentType)
                     ? DefaultExpressRate
                     : DefaultStandardRate;
             }
