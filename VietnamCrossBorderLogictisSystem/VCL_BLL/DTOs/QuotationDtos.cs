@@ -80,7 +80,7 @@ namespace VCL_BLL.DTOs
     {
         public Guid? WarehouseId { get; set; }
         public Guid? ServicePricingId { get; set; }
-        public string ServiceType { get; set; }
+        public string? ServiceType { get; set; }
         public decimal? WeightKg { get; set; }
         public decimal? VolumeM3 { get; set; }
         public int? PackageCount { get; set; }
@@ -92,12 +92,12 @@ namespace VCL_BLL.DTOs
     public class QuotationDetailsDto
     {
         public Guid? ServicePricingId { get; set; }
-        public string ServiceType { get; set; }
-        public string OriginCountry { get; set; }
-        public string DestinationCountry { get; set; }
-        public string UnitType { get; set; }
+        public string? ServiceType { get; set; }
+        public string? OriginCountry { get; set; }
+        public string? DestinationCountry { get; set; }
+        public string? UnitType { get; set; }
         public decimal? UnitPrice { get; set; }
-        public string Currency { get; set; }
+        public string? Currency { get; set; }
         public decimal? TotalWeight { get; set; }
         public decimal? TotalVolume { get; set; }
         public decimal? VolumetricWeight { get; set; }

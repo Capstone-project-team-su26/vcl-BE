@@ -18,7 +18,7 @@ $adminLoginBody = @{
 try {
     $adminResponse = Invoke-RestMethod -Uri "$baseUrl/api/Auth/login" -Method Post -Body $adminLoginBody -ContentType "application/json"
     $adminToken = $adminResponse.token
-    Write-Host "   Admin Login SUCCESS. Token: $($adminToken.Substring(0, 15))..."
+    Write-Host "   Admin Login SUCCESS. Token: $($adminToken.Substring(0, 15))...."
 } catch {
     Write-Error "   Admin Login FAILED: $_"
     exit 1
@@ -34,7 +34,7 @@ $customerLoginBody = @{
 try {
     $customerResponse = Invoke-RestMethod -Uri "$baseUrl/api/Auth/login" -Method Post -Body $customerLoginBody -ContentType "application/json"
     $customerToken = $customerResponse.token
-    Write-Host "   Customer Login SUCCESS. Token: $($customerToken.Substring(0, 15))..."
+    Write-Host "   Customer Login SUCCESS. Token: $($customerToken.Substring(0, 15))...."
 } catch {
     Write-Error "   Customer Login FAILED: $_"
     exit 1
