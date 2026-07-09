@@ -93,6 +93,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<PurchaseQuotationItem> PurchaseQuotationItems { get; set; }
 
+    public virtual DbSet<PurchaseOrder> PurchaseOrders { get; set; }
+
+    public virtual DbSet<PurchaseOrderItem> PurchaseOrderItems { get; set; }
+
     public virtual DbSet<ShipmentWroRequest> ShipmentWroRequests { get; set; }
 
     public virtual DbSet<ShipmentParcel> ShipmentParcels { get; set; }
@@ -1438,6 +1442,50 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.PurchaseQuotationId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("FK_PURCHASE_QUOTATION_ITEM_QUOTATION");
+        });
+
+        modelBuilder.Entity<PurchaseOrder>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PURCHASE_ORDERS");
+            entity.ToTable("PURCHASE_ORDERS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.PurchaseRequestId).HasColumnName("purchase_request_id");
+            entity.Property(e => e.PurchaseQuotationId).HasColumnName("purchase_quotation_id");
+            entity.Property(e => e.PurchaseOrderCode).HasMaxLength(100).HasColumnName("purchase_order_code");
+            entity.Property(e => e.SupplierName).HasMaxLength(255).HasColumnName("supplier_name");
+            entity.Property(e => e.PurchaseNote).HasMaxLength(1000).HasColumnName("purchase_note");
+            entity.Property(e => e.TotalAmount).HasColumnType("decimal(18, 2)").HasColumnName("total_amount");
+            entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");
+            entity.Property(e => e.StatusNote).HasMaxLength(1000).HasColumnName("status_note");
+            entity.Property(e => e.CreatedBy).HasColumnName("created_by");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedBy).HasColumnName("updated_by");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(d => d.PurchaseRequest).WithMany()
+                .HasForeignKey(d => d.PurchaseRequestId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PURCHASE_ORDER_REQUEST");
+        });
+
+        modelBuilder.Entity<PurchaseOrderItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PURCHASE_ORDER_ITEMS");
+            entity.ToTable("PURCHASE_ORDER_ITEMS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.PurchaseOrderId).HasColumnName("purchase_order_id");
+            entity.Property(e => e.PurchaseRequestItemId).HasColumnName("purchase_request_item_id");
+            entity.Property(e => e.ProductName).HasMaxLength(255).HasColumnName("product_name");
+            entity.Property(e => e.UnitPrice).HasColumnType("decimal(18, 2)").HasColumnName("unit_price");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.LineTotal).HasColumnType("decimal(18, 2)").HasColumnName("line_total");
+
+            entity.HasOne(d => d.PurchaseOrder).WithMany(p => p.PurchaseOrderItems)
+                .HasForeignKey(d => d.PurchaseOrderId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PURCHASE_ORDER_ITEM_ORDER");
         });
 
         modelBuilder.Entity<PurchaseRequest>(entity =>

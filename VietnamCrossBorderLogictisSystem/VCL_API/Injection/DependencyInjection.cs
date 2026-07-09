@@ -43,6 +43,7 @@ namespace VCL_API.Injection
             services.AddScoped<IFileUploadService, CloudinaryFileUploadService>();
             services.AddScoped<IConsolidationService, ConsolidationService>();
             services.AddScoped<IPurchaseRequestService, PurchaseRequestService>();
+            services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
             services.AddScoped<IProductTypeService, ProductTypeService>();
             services.AddScoped<IInternationalShipmentService, InternationalShipmentService>();
             services.AddScoped<IShippingMethodService, ShippingMethodService>();
