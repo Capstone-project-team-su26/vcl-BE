@@ -769,6 +769,62 @@ namespace VCL_BLL.Services
             };
         }
 
+        public async Task<PublicTrackingResponse> TrackConsignmentByCodeAsync(string code)
+        {
+            // 1. Validate mã đầu vào (400 nếu rỗng)
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                throw new ArgumentException("Vui lòng cung cấp mã vận đơn để tra cứu.");
+            }
+
+            var trimmedCode = code.Trim();
+
+            // 2. Tìm đơn ký gửi theo mã vận đơn (404 nếu không có)
+            var allOrders = await _unitOfWork.Repository<Order>().GetAllAsync();
+            var order = allOrders.FirstOrDefault(o =>
+                !string.IsNullOrEmpty(o.ConsignmentCode)
+                && string.Equals(o.ConsignmentCode, trimmedCode, StringComparison.OrdinalIgnoreCase));
+            if (order == null)
+            {
+                throw new NotFoundException($"Không tìm thấy đơn hàng với mã vận đơn: {trimmedCode}");
+            }
+
+            // 3. Lấy nhãn trạng thái hiển thị
+            var statusLabel = GetConsignmentStatuses()
+                .FirstOrDefault(s => string.Equals(s.Code, order.Status, StringComparison.OrdinalIgnoreCase))
+                ?.Label ?? order.Status ?? string.Empty;
+
+            // 4. Số mặt hàng + danh sách kiện hàng (chỉ dữ liệu trạng thái, không lộ thông tin nhạy cảm)
+            var allItems = await _unitOfWork.Repository<OrderItem>().GetAllAsync();
+            var itemCount = allItems.Count(i => i.OrderId == order.Id);
+
+            var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
+            var parcels = allParcels
+                .Where(p => p.ConsignmentId == order.Id)
+                .OrderBy(p => p.CheckInTime)
+                .Select(p => new PublicTrackingParcelDto
+                {
+                    PackageCode = p.PackageCode ?? string.Empty,
+                    PackageStatus = p.PackageStatus ?? string.Empty,
+                    CheckInTime = p.CheckInTime,
+                    PutAwayTime = p.PutAwayTime
+                })
+                .ToList();
+
+            return new PublicTrackingResponse
+            {
+                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                ConsignmentType = order.ConsignmentType,
+                Route = order.Route,
+                Status = order.Status ?? string.Empty,
+                StatusLabel = statusLabel,
+                ReceiverName = order.ReceiverName,
+                ItemCount = itemCount,
+                CreatedAt = order.CreatedAt,
+                Parcels = parcels
+            };
+        }
+
         /// <summary>
         /// Sinh mã ký gửi (ConsignmentCode) duy nhất phía BE theo định dạng "VCL-{yyyyMMddHHmmss}-{6 số ngẫu nhiên}".
         /// </summary>
