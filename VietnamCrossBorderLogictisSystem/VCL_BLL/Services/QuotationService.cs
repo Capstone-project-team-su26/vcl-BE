@@ -523,7 +523,10 @@ namespace VCL_BLL.Services
                 CreatedAt = now,
                 ExpiredAt = quotation.ExpiredAt,
                 Items = itemDetails,
-                AdditionalFees = quotationFees.Select(f => MapToFeeResponseDto(f, activeRules.ToDictionary(r => r.Id, r => r), orderItems.Sum(item => item.Quantity ?? 1))).ToList()
+                AdditionalFees = quotationFees
+                    .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                    .Select(f => MapToFeeResponseDto(f, activeRules.ToDictionary(r => r.Id, r => r), orderItems.Sum(item => item.Quantity ?? 1)))
+                    .ToList()
             };
         }
 
@@ -909,7 +912,10 @@ namespace VCL_BLL.Services
 
             var activeRulesDict = activeRules.ToDictionary(r => r.Id, r => r);
             var totalQty = orderItems.Sum(item => item.Quantity ?? 1);
-            var additionalFees = quotationFees.Select(f => MapToFeeResponseDto(f, activeRulesDict, totalQty)).ToList();
+            var additionalFees = quotationFees
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Select(f => MapToFeeResponseDto(f, activeRulesDict, totalQty))
+                .ToList();
 
             return new EstimateQuotationResponse
             {
@@ -1339,46 +1345,19 @@ namespace VCL_BLL.Services
             var allFees = await feeRepo.GetAllAsync();
             var fees = allFees.Where(f => f.QuotationId == quotation.Id).ToList();
 
-            var existingRuleIds = fees
-                .Where(f => f.PricingRuleId.HasValue)
-                .Select(f => f.PricingRuleId!.Value)
-                .ToHashSet();
-
-            foreach (var rule in activeRules)
-            {
-                if (rule.ServicePricingId.HasValue && quotation.ServicePricingId.HasValue && rule.ServicePricingId.Value != quotation.ServicePricingId.Value)
-                {
-                    continue;
-                }
-
-                if (!existingRuleIds.Contains(rule.Id))
-                {
-                    fees.Add(new QuotationFee
-                    {
-                        Id = Guid.Empty,
-                        QuotationId = quotation.Id,
-                        PricingRuleId = rule.Id,
-                        FeeName = rule.RuleName,
-                        FeeType = "SURCHARGE",
-                        CalculationType = rule.CalculationType,
-                        Value = rule.Value,
-                        Amount = 0m,
-                        Note = rule.Description,
-                        CreatedAt = DateTime.UtcNow
-                    });
-                }
-            }
-
             var itemRepo = _unitOfWork.Repository<OrderItem>();
             var allItems = await itemRepo.GetAllAsync();
             var orderItems = allItems.Where(i => i.OrderId == order.Id).ToList();
             var packageCount = orderItems.Sum(item => item.Quantity ?? 1);
 
-            var feeDtos = fees.Select(f => MapToFeeResponseDto(f, ruleMap, packageCount)).ToList();
+            var feeDtos = fees
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Select(f => MapToFeeResponseDto(f, ruleMap, packageCount))
+                .ToList();
 
-            var additionalSurchargesAmount = feeDtos
-                .Where(dto => string.Equals(dto.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) && dto.Enabled)
-                .Sum(dto => dto.Amount);
+            var additionalSurchargesAmount = fees
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) && (f.Amount > 0 || f.PricingRuleId.HasValue)) // keep original logic or check enabled/amount
+                .Sum(f => f.Amount);
 
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m)
                                    + (quotation.ServiceFee ?? 0m)

@@ -572,13 +572,13 @@ Response `200 OK`:
     "additionalFees": [
       {
         "id": "f5e4d3c2-...",
-        "pricingRuleId": null,
-        "feeName": "Cước vận chuyển quốc tế",
-        "feeType": "MAIN_SERVICE",
-        "calculationType": "PER_KG",
-        "value": 50000.00,
-        "amount": 150000.00,
-        "note": "Cước vận chuyển quốc tế dựa trên cân nặng tính cước 3 kg",
+        "pricingRuleId": "b1c2d3e4-...",
+        "feeName": "Phí đóng khung gỗ gia cố",
+        "feeType": "SURCHARGE",
+        "calculationType": "FIXED",
+        "value": 80000.00,
+        "amount": 80000.00,
+        "note": "Đóng gỗ gia cố cho hàng dễ vỡ",
         "createdAt": "2026-06-15T12:00:00Z"
       }
     ]
