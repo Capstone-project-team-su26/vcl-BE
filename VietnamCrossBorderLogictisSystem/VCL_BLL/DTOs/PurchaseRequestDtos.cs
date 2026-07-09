@@ -225,4 +225,87 @@ namespace VCL_BLL.DTOs
         public DateTime CreatedAt { get; set; }
         public List<PurchaseRequestListProductDto> Items { get; set; } = new();
     }
+
+    public class CreatePurchaseOrderDto
+    {
+        /// <summary>Nhà cung cấp (nếu có).</summary>
+        public string? SupplierName { get; set; }
+
+        /// <summary>Ghi chú mua hàng (nếu có).</summary>
+        public string? PurchaseNote { get; set; }
+    }
+
+    public class PurchaseOrderItemResponseDto
+    {
+        public Guid OrderItemId { get; set; }
+        public Guid PurchaseRequestItemId { get; set; }
+        public string? ProductName { get; set; }
+        public decimal UnitPrice { get; set; }
+        public int Quantity { get; set; }
+        public decimal LineTotal { get; set; }
+    }
+
+    public class PurchaseOrderResponseDto
+    {
+        public Guid PurchaseOrderId { get; set; }
+        public string PurchaseOrderCode { get; set; } = string.Empty;
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public Guid? PurchaseQuotationId { get; set; }
+        public string? SupplierName { get; set; }
+        public string? PurchaseNote { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? StatusNote { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+        public List<PurchaseOrderItemResponseDto> Items { get; set; } = new();
+    }
+
+    public class UpdatePurchaseOrderStatusRequestDto
+    {
+        [Required(ErrorMessage = "Trạng thái không được để trống.")]
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>Ghi chú xử lý (nếu có).</summary>
+        public string? StatusNote { get; set; }
+    }
+
+    public class UpdatePurchaseOrderStatusResponseDto
+    {
+        public Guid PurchaseOrderId { get; set; }
+        public string PurchaseOrderCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? StatusNote { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class ConfirmQuotationAndPayRequestDto
+    {
+        /// <summary>URL FE để payOS chuyển hướng khi thanh toán thành công (nếu bỏ trống dùng cấu hình mặc định).</summary>
+        public string? ReturnUrl { get; set; }
+
+        /// <summary>URL FE để payOS chuyển hướng khi khách hủy thanh toán (nếu bỏ trống dùng cấu hình mặc định).</summary>
+        public string? CancelUrl { get; set; }
+    }
+
+    public class ConfirmQuotationAndPayResponseDto
+    {
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public string RequestStatus { get; set; } = string.Empty;
+
+        public Guid QuotationId { get; set; }
+        public string QuotationStatus { get; set; } = string.Empty;
+
+        public Guid PaymentId { get; set; }
+        public long OrderCode { get; set; }
+        public decimal Amount { get; set; }
+        public string PaymentMethod { get; set; } = string.Empty;
+        public string PaymentStatus { get; set; } = string.Empty;
+
+        /// <summary>Link thanh toán payOS để FE điều hướng khách hàng.</summary>
+        public string CheckoutUrl { get; set; } = string.Empty;
+        public string? PaymentLinkId { get; set; }
+    }
 }

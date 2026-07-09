@@ -1,0 +1,212 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
+using VCL_BLL.DTOs;
+using VCL_BLL.Exceptions;
+using VCL_BLL.Interface;
+using VCL_DLL.Interface;
+using VCL_DLL.Models;
+
+namespace VCL_BLL.Services
+{
+    public class PurchasePaymentService : IPurchasePaymentService
+    {
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IPayOsService _payOsService;
+        private readonly IConfiguration _configuration;
+
+        public PurchasePaymentService(IUnitOfWork unitOfWork, IPayOsService payOsService, IConfiguration configuration)
+        {
+            _unitOfWork = unitOfWork;
+            _payOsService = payOsService;
+            _configuration = configuration;
+        }
+
+        public async Task<ConfirmQuotationAndPayResponseDto> ConfirmQuotationAndPayAsync(
+            Guid requestId, Guid userId, string userRole, ConfirmQuotationAndPayRequestDto request)
+        {
+            request ??= new ConfirmQuotationAndPayRequestDto();
+
+            // 1. Phân quyền: chỉ Customer được xác nhận báo giá của mình
+            if (!string.Equals(userRole, "Customer", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new UnauthorizedAccessException("Chỉ khách hàng mới được xác nhận báo giá mua hộ.");
+            }
+
+            // 2. Tìm yêu cầu mua hộ (404 nếu không có)
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId);
+            if (purchaseRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+            }
+
+            // 3. Kiểm tra quyền sở hữu: yêu cầu phải thuộc về Customer đang đăng nhập
+            var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+            var customer = customers.FirstOrDefault(c => c.UserId == userId);
+            if (customer == null || purchaseRequest.CustomerId != customer.Id)
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền thao tác trên yêu cầu mua hộ này.");
+            }
+
+            // 4. Tìm báo giá đang chờ khách xác nhận
+            var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
+            var allQuotations = await quotationRepo.GetAllAsync();
+            var quotation = allQuotations
+                .Where(q => q.PurchaseRequestId == requestId)
+                .OrderByDescending(q => q.CreatedAt)
+                .FirstOrDefault();
+
+            if (quotation == null)
+            {
+                throw new NotFoundException("Không tìm thấy báo giá cho yêu cầu mua hộ này.");
+            }
+
+            var quotationStatus = quotation.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (quotationStatus != "PENDING_CUSTOMER_CONFIRMATION")
+            {
+                throw new ArgumentException(
+                    $"Báo giá không còn ở trạng thái chờ xác nhận (hiện tại: {quotation.Status}). Không thể xác nhận lại.");
+            }
+
+            // 5. Sinh mã đơn hàng payOS duy nhất
+            var paymentRepo = _unitOfWork.Repository<PurchasePayment>();
+            var allPayments = await paymentRepo.GetAllAsync();
+            long orderCode = await GenerateUniqueOrderCode(allPayments);
+
+            // 6. Tạo link thanh toán payOS
+            var amountInt = (int)Math.Round(quotation.TotalAmount, MidpointRounding.AwayFromZero);
+            var purchaseCode = purchaseRequest.PurchaseCode ?? string.Empty;
+            var description = BuildDescription(purchaseCode);
+            var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
+            var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
+
+            var items = new List<PayOsItem>
+            {
+                new PayOsItem(BuildItemName(purchaseCode), 1, amountInt)
+            };
+
+            PayOsPaymentLink link = await _payOsService.CreatePaymentLinkAsync(
+                orderCode, amountInt, description, returnUrl, cancelUrl, items);
+
+            // 7. Lưu khoản thanh toán ở trạng thái PENDING
+            var payment = new PurchasePayment
+            {
+                Id = Guid.NewGuid(),
+                PurchaseRequestId = requestId,
+                PurchaseQuotationId = quotation.Id,
+                OrderCode = orderCode,
+                Amount = quotation.TotalAmount,
+                PaymentMethod = "PAYOS",
+                Status = "PENDING",
+                PaymentLinkId = link.PaymentLinkId,
+                CheckoutUrl = link.CheckoutUrl,
+                CreatedAt = DateTime.UtcNow
+            };
+            await paymentRepo.AddAsync(payment);
+
+            // 8. Cập nhật trạng thái báo giá và yêu cầu mua hộ
+            quotation.Status = "ACCEPTED";
+            quotationRepo.Update(quotation);
+
+            purchaseRequest.Status = "WAITING_PAYMENT";
+            requestRepo.Update(purchaseRequest);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return new ConfirmQuotationAndPayResponseDto
+            {
+                PurchaseRequestId = requestId,
+                PurchaseCode = purchaseCode,
+                RequestStatus = purchaseRequest.Status,
+                QuotationId = quotation.Id,
+                QuotationStatus = quotation.Status,
+                PaymentId = payment.Id,
+                OrderCode = payment.OrderCode,
+                Amount = payment.Amount,
+                PaymentMethod = payment.PaymentMethod,
+                PaymentStatus = payment.Status,
+                CheckoutUrl = payment.CheckoutUrl,
+                PaymentLinkId = payment.PaymentLinkId
+            };
+        }
+
+        public async Task<bool> HandlePayOsWebhookAsync(string rawJsonBody)
+        {
+            // 1. Xác thực chữ ký + parse dữ liệu (ném lỗi nếu chữ ký sai)
+            var result = _payOsService.VerifyWebhook(rawJsonBody);
+
+            // 2. Tìm khoản thanh toán theo orderCode
+            var paymentRepo = _unitOfWork.Repository<PurchasePayment>();
+            var allPayments = await paymentRepo.GetAllAsync();
+            var payment = allPayments.FirstOrDefault(p => p.OrderCode == result.OrderCode);
+            if (payment == null)
+            {
+                // Có thể là webhook test của payOS (orderCode không thuộc hệ thống) -> bỏ qua nhưng vẫn ack
+                return false;
+            }
+
+            // 3. Bỏ qua nếu đã xử lý xong (idempotent)
+            if (string.Equals(payment.Status, "PAID", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!result.Success)
+            {
+                return false;
+            }
+
+            // 4. Cập nhật thanh toán thành công + đẩy yêu cầu mua hộ sang PAID
+            payment.Status = "PAID";
+            payment.PaidAt = DateTime.UtcNow;
+            payment.TransactionCode = result.Reference;
+            paymentRepo.Update(payment);
+
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(payment.PurchaseRequestId);
+            if (purchaseRequest != null)
+            {
+                purchaseRequest.Status = "PAID";
+                requestRepo.Update(purchaseRequest);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+            return true;
+        }
+
+        private static async Task<long> GenerateUniqueOrderCode(IEnumerable<PurchasePayment> existing)
+        {
+            await Task.CompletedTask;
+            var used = new HashSet<long>(existing.Select(p => p.OrderCode));
+            var random = new Random();
+            long code;
+            do
+            {
+                // yyMMddHHmmss (12 số) + 2 số ngẫu nhiên -> nằm dưới giới hạn số nguyên an toàn của payOS
+                var baseCode = long.Parse(DateTime.UtcNow.ToString("yyMMddHHmmss"));
+                code = baseCode * 100 + random.Next(0, 100);
+            } while (used.Contains(code));
+            return code;
+        }
+
+        private static string BuildDescription(string purchaseCode)
+        {
+            var desc = string.IsNullOrWhiteSpace(purchaseCode) ? "Thanh toan mua ho" : $"TT {purchaseCode}";
+            // payOS giới hạn mô tả tối đa 25 ký tự
+            return desc.Length > 25 ? desc.Substring(0, 25) : desc;
+        }
+
+        private static string BuildItemName(string purchaseCode)
+        {
+            return string.IsNullOrWhiteSpace(purchaseCode) ? "Đơn mua hộ" : $"Mua hộ {purchaseCode}";
+        }
+
+        private static string FirstNonEmpty(params string?[] values)
+        {
+            return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
+        }
+    }
+}
