@@ -31,7 +31,15 @@ namespace VCL_BLL.Services
             _clientId = configuration["PayOS:ClientId"] ?? string.Empty;
             _apiKey = configuration["PayOS:ApiKey"] ?? string.Empty;
             _checksumKey = configuration["PayOS:ChecksumKey"] ?? string.Empty;
+        }
 
+        /// <summary>
+        /// Kiểm tra config payOS trước khi gọi API thật.
+        /// KHÔNG kiểm tra trong constructor để tránh làm hỏng DI của mọi controller
+        /// phụ thuộc service này khi môi trường deploy chưa cấu hình payOS.
+        /// </summary>
+        private void EnsureConfigured()
+        {
             if (string.IsNullOrWhiteSpace(_clientId) ||
                 string.IsNullOrWhiteSpace(_apiKey) ||
                 string.IsNullOrWhiteSpace(_checksumKey))
@@ -49,6 +57,8 @@ namespace VCL_BLL.Services
             string cancelUrl,
             IEnumerable<PayOsItem> items)
         {
+            EnsureConfigured();
+
             // 1. Chữ ký: HMAC-SHA256 trên chuỗi các trường bắt buộc, sắp xếp theo alphabet
             var signatureRaw =
                 $"amount={amount}&cancelUrl={cancelUrl}&description={description}&orderCode={orderCode}&returnUrl={returnUrl}";
@@ -104,6 +114,8 @@ namespace VCL_BLL.Services
 
         public PayOsWebhookResult VerifyWebhook(string rawJsonBody)
         {
+            EnsureConfigured();
+
             if (string.IsNullOrWhiteSpace(rawJsonBody))
                 throw new ArgumentException("Nội dung webhook payOS rỗng.");
 
