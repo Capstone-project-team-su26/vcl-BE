@@ -765,6 +765,13 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.TransactionCode)
                 .HasMaxLength(100)
                 .HasColumnName("transaction_code");
+            entity.Property(e => e.OrderCode).HasColumnName("order_code");
+            entity.Property(e => e.CheckoutUrl)
+                .HasMaxLength(1000)
+                .HasColumnName("checkout_url");
+            entity.Property(e => e.PaymentLinkId)
+                .HasMaxLength(100)
+                .HasColumnName("payment_link_id");
 
             entity.HasOne(d => d.Invoice).WithMany(p => p.Payments)
                 .HasForeignKey(d => d.InvoiceId)
