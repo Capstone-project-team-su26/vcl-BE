@@ -36,7 +36,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"email\": \"admin@vcl.com\",\n    \"password\": \"Password123\"\n}"
+							"raw": "{\n    \"email\": \"{{adminEmail}}\",\n    \"password\": \"{{adminPassword}}\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/Auth/login",
@@ -79,7 +79,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"email\": \"customer@vcl.com\",\n    \"password\": \"Password123\"\n}"
+							"raw": "{\n    \"email\": \"{{customerEmail}}\",\n    \"password\": \"{{customerPassword}}\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/Auth/login",
@@ -283,7 +283,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"purchaseFee\": 50000,\n    \"shippingFee\": 150000,\n    \"note\": \"Báo giá chính thức kèm phí kiểm đếm & bảo hiểm\",\n    \"items\": [\n        {\n            \"purchaseRequestItemId\": \"00000000-0000-0000-0000-000000000000\",\n            \"unitPrice\": 180000\n        }\n    ],\n    \"additionalFees\": [\n        {\n            \"pricingRuleId\": \"{{pricingRuleId}}\",\n            \"feeName\": \"Phí kiểm đếm hàng hóa mua hộ\",\n            \"feeType\": \"SURCHARGE\",\n            \"amount\": 25000,\n            \"note\": \"Kiểm đếm chi tiết số lượng sản phẩm\"\n        },\n        {\n            \"pricingRuleId\": null,\n            \"feeName\": \"Phí xử lý đặc biệt\",\n            \"feeType\": \"SURCHARGE\",\n            \"amount\": 40000,\n            \"note\": \"Đóng gói chống sốc\"\n        }\n    ]\n}"
+							"raw": "{\n    \"purchaseFee\": 50000,\n    \"shippingFee\": 150000,\n    \"note\": \"Báo giá chính thức kèm phí kiểm đếm & bảo hiểm\",\n    \"items\": [\n        {\n            \"purchaseRequestItemId\": \"{{purchaseRequestItemId}}\",\n            \"unitPrice\": 180000\n        }\n    ],\n    \"additionalFees\": [\n        {\n            \"pricingRuleId\": \"{{pricingRuleId}}\",\n            \"feeName\": \"Phí kiểm đếm hàng hóa mua hộ\",\n            \"feeType\": \"SURCHARGE\",\n            \"amount\": 25000,\n            \"note\": \"Kiểm đếm chi tiết số lượng sản phẩm\"\n        },\n        {\n            \"pricingRuleId\": null,\n            \"feeName\": \"Phí xử lý đặc biệt\",\n            \"feeType\": \"SURCHARGE\",\n            \"amount\": 40000,\n            \"note\": \"Đóng gói chống sốc\"\n        }\n    ]\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/quotation",
@@ -385,6 +385,31 @@
 		{
 			"key": "purchaseRequestId",
 			"value": "00000000-0000-0000-0000-000000000000",
+			"type": "string"
+		},
+		{
+			"key": "purchaseRequestItemId",
+			"value": "00000000-0000-0000-0000-000000000000",
+			"type": "string"
+		},
+		{
+			"key": "adminEmail",
+			"value": "admin@test.com",
+			"type": "string"
+		},
+		{
+			"key": "adminPassword",
+			"value": "Admin123",
+			"type": "string"
+		},
+		{
+			"key": "customerEmail",
+			"value": "customer@test.com",
+			"type": "string"
+		},
+		{
+			"key": "customerPassword",
+			"value": "Customer123",
 			"type": "string"
 		}
 	]
