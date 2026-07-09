@@ -368,16 +368,17 @@ namespace VCL_BLL.Services
                         }
                     }
 
+                    decimal surchargeAmount = 0m;
                     if (isApplicable)
                     {
-                        decimal surchargeAmount = 0m;
                         if (string.Equals(rule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
                         {
                             surchargeAmount = rule.Value;
                         }
                         else if (string.Equals(rule.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
                         {
-                            surchargeAmount = totalDeclaredValue * (rule.Value / 100m);
+                            var baseAmount = totalDeclaredValue > 0 ? totalDeclaredValue : estimatedFreightCharge;
+                            surchargeAmount = baseAmount * (rule.Value / 100m);
                         }
                         else if (string.Equals(rule.CalculationType, "PER_KG", StringComparison.OrdinalIgnoreCase))
                         {
@@ -404,23 +405,21 @@ namespace VCL_BLL.Services
                         }
 
                         totalSurcharges += surchargeAmount;
-
-                        if (surchargeAmount > 0)
-                        {
-                            quotationFees.Add(new QuotationFee
-                            {
-                                Id = Guid.NewGuid(),
-                                PricingRuleId = rule.Id,
-                                FeeName = rule.RuleName,
-                                FeeType = "SURCHARGE",
-                                CalculationType = rule.CalculationType,
-                                Value = rule.Value,
-                                Amount = surchargeAmount,
-                                Note = rule.Description,
-                                CreatedAt = now
-                            });
-                        }
                     }
+
+                    // Luôn add để lưu trữ vào DB (Enabled = false nếu Amount = 0)
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        PricingRuleId = rule.Id,
+                        FeeName = rule.RuleName,
+                        FeeType = "SURCHARGE",
+                        CalculationType = rule.CalculationType,
+                        Value = rule.Value,
+                        Amount = surchargeAmount,
+                        Note = rule.Description,
+                        CreatedAt = now
+                    });
                 }
 
                 serviceFee = baseServiceFee + totalSurcharges;
@@ -495,18 +494,7 @@ namespace VCL_BLL.Services
                 CreatedAt = now,
                 ExpiredAt = quotation.ExpiredAt,
                 Items = itemDetails,
-                AdditionalFees = quotationFees.Select(f => new QuotationFeeResponseDto
-                {
-                    Id = f.Id,
-                    PricingRuleId = f.PricingRuleId,
-                    FeeName = f.FeeName,
-                    FeeType = f.FeeType,
-                    CalculationType = f.CalculationType,
-                    Value = f.Value,
-                    Amount = f.Amount,
-                    Note = f.Note,
-                    CreatedAt = f.CreatedAt
-                }).ToList()
+                AdditionalFees = quotationFees.Select(f => MapToFeeResponseDto(f, activeRules.ToDictionary(r => r.Id, r => r), orderItems.Sum(item => item.Quantity ?? 1))).ToList()
             };
         }
 
@@ -739,12 +727,12 @@ namespace VCL_BLL.Services
             bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
                                  string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
 
-            var additionalFees = new List<QuotationFeeResponseDto>();
+            var quotationFees = new List<QuotationFee>();
             var now = DateTime.UtcNow;
 
             if (estimatedFreightCharge > 0)
             {
-                additionalFees.Add(new QuotationFeeResponseDto
+                quotationFees.Add(new QuotationFee
                 {
                     Id = Guid.Empty,
                     FeeName = "Cước vận chuyển quốc tế",
@@ -774,7 +762,7 @@ namespace VCL_BLL.Services
 
                 if (domesticShippingFee > 0)
                 {
-                    additionalFees.Add(new QuotationFeeResponseDto
+                    quotationFees.Add(new QuotationFee
                     {
                         Id = Guid.Empty,
                         PricingRuleId = domesticRule?.Id,
@@ -794,7 +782,7 @@ namespace VCL_BLL.Services
                     ? ExpressServiceFee
                     : StandardServiceFee;
 
-                additionalFees.Add(new QuotationFeeResponseDto
+                quotationFees.Add(new QuotationFee
                 {
                     Id = Guid.Empty,
                     FeeName = IsExpressServiceType(consignmentType) ? "Phí dịch vụ Hỏa Tốc" : "Phí dịch vụ Chuẩn",
@@ -839,34 +827,34 @@ namespace VCL_BLL.Services
 
                     bool isApplicable = rule.IsRequired ? isConditionMet : false;
 
+                    decimal surchargeAmount = 0m;
                     if (isApplicable)
                     {
-                        decimal surchargeAmount = 0m;
                         if (string.Equals(rule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
                             surchargeAmount = rule.Value;
                         else if (string.Equals(rule.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
-                            surchargeAmount = totalDeclaredValue * (rule.Value / 100m);
+                        {
+                            var baseAmount = totalDeclaredValue > 0 ? totalDeclaredValue : estimatedFreightCharge;
+                            surchargeAmount = baseAmount * (rule.Value / 100m);
+                        }
                         else if (string.Equals(rule.CalculationType, "PER_KG", StringComparison.OrdinalIgnoreCase))
                             surchargeAmount = chargeableWeight * rule.Value;
 
                         totalSurcharges += surchargeAmount;
-
-                        if (surchargeAmount > 0)
-                        {
-                            additionalFees.Add(new QuotationFeeResponseDto
-                            {
-                                Id = Guid.Empty,
-                                PricingRuleId = rule.Id,
-                                FeeName = rule.RuleName,
-                                FeeType = "SURCHARGE",
-                                CalculationType = rule.CalculationType,
-                                Value = rule.Value,
-                                Amount = surchargeAmount,
-                                Note = rule.Description,
-                                CreatedAt = now
-                            });
-                        }
                     }
+
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.Empty,
+                        PricingRuleId = rule.Id,
+                        FeeName = rule.RuleName,
+                        FeeType = "SURCHARGE",
+                        CalculationType = rule.CalculationType,
+                        Value = rule.Value,
+                        Amount = surchargeAmount,
+                        Note = rule.Description,
+                        CreatedAt = now
+                    });
                 }
 
                 serviceFee = baseServiceFee + totalSurcharges;
@@ -875,7 +863,7 @@ namespace VCL_BLL.Services
 
                 if (taxAndDuty > 0)
                 {
-                    additionalFees.Add(new QuotationFeeResponseDto
+                    quotationFees.Add(new QuotationFee
                     {
                         Id = Guid.Empty,
                         FeeName = "Thuế & phí hải quan tạm tính",
@@ -888,6 +876,10 @@ namespace VCL_BLL.Services
                     });
                 }
             }
+
+            var activeRulesDict = activeRules.ToDictionary(r => r.Id, r => r);
+            var totalQty = orderItems.Sum(item => item.Quantity ?? 1);
+            var additionalFees = quotationFees.Select(f => MapToFeeResponseDto(f, activeRulesDict, totalQty)).ToList();
 
             return new EstimateQuotationResponse
             {
@@ -1104,35 +1096,32 @@ namespace VCL_BLL.Services
             {
                 foreach (var feeDto in request.Quotation.AdditionalFees)
                 {
-                    if (feeDto.Enabled && feeDto.Amount > 0)
+                    PricingRule rule = null;
+                    if (feeDto.FeeId.HasValue)
                     {
-                        PricingRule rule = null;
-                        if (feeDto.FeeId.HasValue)
+                        rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(feeDto.FeeId.Value);
+                        if (rule == null)
                         {
-                            rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(feeDto.FeeId.Value);
-                            if (rule == null)
-                            {
-                                throw new ArgumentException($"Không tìm thấy quy định phí với ID: {feeDto.FeeId.Value}");
-                            }
-                            if (!string.Equals(rule.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
-                            {
-                                throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
-                            }
+                            throw new ArgumentException($"Không tìm thấy quy định phí với ID: {feeDto.FeeId.Value}");
                         }
-
-                        quotationFees.Add(new QuotationFee
+                        if (!string.Equals(rule.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
                         {
-                            Id = Guid.NewGuid(),
-                            PricingRuleId = feeDto.FeeId,
-                            FeeName = feeDto.Label ?? rule?.RuleName ?? "Phụ phí bổ sung",
-                            FeeType = "SURCHARGE",
-                            CalculationType = rule?.CalculationType ?? "FIXED",
-                            Value = rule?.Value ?? feeDto.Amount,
-                            Amount = feeDto.Amount,
-                            Note = rule?.Description ?? "Phụ phí bổ sung được áp dụng",
-                            CreatedAt = now
-                        });
+                            throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
+                        }
                     }
+
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        PricingRuleId = feeDto.FeeId,
+                        FeeName = feeDto.Label ?? rule?.RuleName ?? "Phụ phí bổ sung",
+                        FeeType = "SURCHARGE",
+                        CalculationType = rule?.CalculationType ?? "FIXED",
+                        Value = rule?.Value ?? (feeDto.Amount > 0 ? feeDto.Amount : 0m),
+                        Amount = feeDto.Enabled ? feeDto.Amount : 0m,
+                        Note = rule?.Description ?? "Phụ phí bổ sung",
+                        CreatedAt = now
+                    });
                 }
             }
 
@@ -1307,18 +1296,15 @@ namespace VCL_BLL.Services
             var allFees = await feeRepo.GetAllAsync();
             var fees = allFees.Where(f => f.QuotationId == quotation.Id).ToList();
 
-            var feeDtos = fees.Select(f => new QuotationFeeResponseDto
-            {
-                Id = f.Id,
-                PricingRuleId = f.PricingRuleId,
-                FeeName = f.FeeName,
-                FeeType = f.FeeType,
-                CalculationType = f.CalculationType,
-                Value = f.Value,
-                Amount = f.Amount,
-                Note = f.Note,
-                CreatedAt = f.CreatedAt
-            }).ToList();
+            var rules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
+            var ruleMap = rules.ToDictionary(r => r.Id, r => r);
+
+            var itemRepo = _unitOfWork.Repository<OrderItem>();
+            var allItems = await itemRepo.GetAllAsync();
+            var orderItems = allItems.Where(i => i.OrderId == order.Id).ToList();
+            var packageCount = orderItems.Sum(item => item.Quantity ?? 1);
+
+            var feeDtos = fees.Select(f => MapToFeeResponseDto(f, ruleMap, packageCount)).ToList();
 
             return new QuotationDetailResponse
             {
@@ -1340,6 +1326,93 @@ namespace VCL_BLL.Services
                 SalesNote = null,
                 AdditionalFees = feeDtos
             };
+        }
+
+        private QuotationFeeResponseDto MapToFeeResponseDto(QuotationFee f, Dictionary<Guid, PricingRule> ruleMap, int packageCount)
+        {
+            var dto = new QuotationFeeResponseDto
+            {
+                Id = f.Id,
+                PricingRuleId = f.PricingRuleId,
+                FeeId = f.PricingRuleId ?? f.Id,
+                FeeName = f.FeeName,
+                Label = f.FeeName,
+                FeeType = f.FeeType,
+                CalculationType = f.CalculationType,
+                FeeCalculationType = (f.CalculationType ?? string.Empty).ToUpper(),
+                Value = f.Value,
+                UnitPrice = f.Value,
+                Amount = f.Amount,
+                Note = f.Note,
+                CreatedAt = f.CreatedAt
+            };
+
+            // Mặc định cho Enabled và IsRequired
+            if (string.Equals(f.FeeType, "MAIN_SERVICE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(f.FeeType, "TAX", StringComparison.OrdinalIgnoreCase))
+            {
+                dto.Enabled = true;
+                dto.IsRequired = true;
+            }
+            else
+            {
+                dto.Enabled = f.Amount > 0;
+                dto.IsRequired = false;
+            }
+
+            // Gán Code và IsRequired từ Rule
+            PricingRule rule = null;
+            if (f.PricingRuleId.HasValue && ruleMap.TryGetValue(f.PricingRuleId.Value, out rule))
+            {
+                dto.Code = rule.RuleCode ?? f.FeeType;
+                dto.IsRequired = rule.IsRequired;
+                if (rule.IsRequired)
+                {
+                    dto.Enabled = true;
+                }
+            }
+            else
+            {
+                dto.Code = f.FeeType;
+            }
+
+            // Gán Quantity
+            if (string.Equals(dto.FeeCalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
+            {
+                dto.Quantity = null;
+            }
+            else // FIXED, PER_KG, PER_CBM, PER_PRODUCT
+            {
+                if (string.Equals(dto.FeeCalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
+                {
+                    dto.Quantity = packageCount > 0 ? packageCount : 1;
+                }
+                else
+                {
+                    dto.Quantity = 1;
+                }
+            }
+
+            // Gán UnitNoun
+            if (string.Equals(dto.Code, "WOOD_CRATE", StringComparison.OrdinalIgnoreCase) ||
+                (f.FeeName ?? string.Empty).Contains("thùng gỗ", StringComparison.OrdinalIgnoreCase) ||
+                (f.FeeName ?? string.Empty).Contains("đóng gỗ", StringComparison.OrdinalIgnoreCase))
+            {
+                dto.UnitNoun = "kiện";
+            }
+            else if (string.Equals(dto.Code, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
+                     (f.FeeName ?? string.Empty).Contains("kiểm", StringComparison.OrdinalIgnoreCase))
+            {
+                dto.UnitNoun = "lần";
+            }
+            else
+            {
+                dto.UnitNoun = string.Equals(dto.FeeCalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase) ? null : "kiện";
+            }
+
+            return dto;
         }
 
     }

@@ -127,11 +127,24 @@ namespace VCL_BLL.DTOs
     {
         public Guid Id { get; set; }
         public Guid? PricingRuleId { get; set; }
+        
+        // Contract properties:
+        public Guid? FeeId { get; set; }
+        public string Code { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+        public string FeeCalculationType { get; set; } = string.Empty;
+        public decimal UnitPrice { get; set; }
+        public int? Quantity { get; set; }
+        public decimal Amount { get; set; }
+        public bool Enabled { get; set; }
+        public bool IsRequired { get; set; }
+        public string? UnitNoun { get; set; }
+
+        // Legacy properties (retained for backward compatibility):
         public string FeeName { get; set; } = string.Empty;
         public string FeeType { get; set; } = string.Empty;
         public string CalculationType { get; set; } = string.Empty;
         public decimal Value { get; set; }
-        public decimal Amount { get; set; }
         public string? Note { get; set; }
         public DateTime CreatedAt { get; set; }
     }
