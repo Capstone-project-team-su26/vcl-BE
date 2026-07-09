@@ -97,6 +97,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<PurchaseOrderItem> PurchaseOrderItems { get; set; }
 
+    public virtual DbSet<PurchasePayment> PurchasePayments { get; set; }
+
     public virtual DbSet<ShipmentWroRequest> ShipmentWroRequests { get; set; }
 
     public virtual DbSet<ShipmentParcel> ShipmentParcels { get; set; }
@@ -1488,6 +1490,30 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.PurchaseOrderId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("FK_PURCHASE_ORDER_ITEM_ORDER");
+        });
+
+        modelBuilder.Entity<PurchasePayment>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PURCHASE_PAYMENTS");
+            entity.ToTable("PURCHASE_PAYMENTS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.PurchaseRequestId).HasColumnName("purchase_request_id");
+            entity.Property(e => e.PurchaseQuotationId).HasColumnName("purchase_quotation_id");
+            entity.Property(e => e.OrderCode).HasColumnName("order_code");
+            entity.Property(e => e.Amount).HasColumnType("decimal(18, 2)").HasColumnName("amount");
+            entity.Property(e => e.PaymentMethod).HasMaxLength(50).HasColumnName("payment_method");
+            entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");
+            entity.Property(e => e.PaymentLinkId).HasMaxLength(100).HasColumnName("payment_link_id");
+            entity.Property(e => e.CheckoutUrl).HasMaxLength(1000).HasColumnName("checkout_url");
+            entity.Property(e => e.TransactionCode).HasMaxLength(100).HasColumnName("transaction_code");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.PaidAt).HasColumnName("paid_at");
+
+            entity.HasOne(d => d.PurchaseQuotation).WithMany()
+                .HasForeignKey(d => d.PurchaseQuotationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PURCHASE_PAYMENT_QUOTATION");
         });
 
         modelBuilder.Entity<PurchaseRequest>(entity =>

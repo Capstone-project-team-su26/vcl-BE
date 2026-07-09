@@ -251,4 +251,33 @@ namespace VCL_BLL.DTOs
         public string? StatusNote { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
+
+    public class ConfirmQuotationAndPayRequestDto
+    {
+        /// <summary>URL FE để payOS chuyển hướng khi thanh toán thành công (nếu bỏ trống dùng cấu hình mặc định).</summary>
+        public string? ReturnUrl { get; set; }
+
+        /// <summary>URL FE để payOS chuyển hướng khi khách hủy thanh toán (nếu bỏ trống dùng cấu hình mặc định).</summary>
+        public string? CancelUrl { get; set; }
+    }
+
+    public class ConfirmQuotationAndPayResponseDto
+    {
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public string RequestStatus { get; set; } = string.Empty;
+
+        public Guid QuotationId { get; set; }
+        public string QuotationStatus { get; set; } = string.Empty;
+
+        public Guid PaymentId { get; set; }
+        public long OrderCode { get; set; }
+        public decimal Amount { get; set; }
+        public string PaymentMethod { get; set; } = string.Empty;
+        public string PaymentStatus { get; set; } = string.Empty;
+
+        /// <summary>Link thanh toán payOS để FE điều hướng khách hàng.</summary>
+        public string CheckoutUrl { get; set; } = string.Empty;
+        public string? PaymentLinkId { get; set; }
+    }
 }

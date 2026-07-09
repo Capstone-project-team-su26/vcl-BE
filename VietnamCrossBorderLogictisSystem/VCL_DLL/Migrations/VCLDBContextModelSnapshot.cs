@@ -1547,6 +1547,73 @@ namespace VCL_DLL.Migrations
                     b.ToTable("PURCHASE_ORDER_ITEMS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.PurchasePayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("CheckoutUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("checkout_url");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<long>("OrderCode")
+                        .HasColumnType("bigint")
+                        .HasColumnName("order_code");
+
+                    b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("paid_at");
+
+                    b.Property<string>("PaymentLinkId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("payment_link_id");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("payment_method");
+
+                    b.Property<Guid>("PurchaseQuotationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("purchase_quotation_id");
+
+                    b.Property<Guid>("PurchaseRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("purchase_request_id");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TransactionCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("transaction_code");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PURCHASE_PAYMENTS");
+
+                    b.HasIndex("PurchaseQuotationId");
+
+                    b.ToTable("PURCHASE_PAYMENTS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.PurchaseQuotation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2986,6 +3053,18 @@ namespace VCL_DLL.Migrations
                         .HasConstraintName("FK_PURCHASE_ORDER_ITEM_ORDER");
 
                     b.Navigation("PurchaseOrder");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PurchasePayment", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.PurchaseQuotation", "PurchaseQuotation")
+                        .WithMany()
+                        .HasForeignKey("PurchaseQuotationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_PURCHASE_PAYMENT_QUOTATION");
+
+                    b.Navigation("PurchaseQuotation");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.PurchaseQuotation", b =>
