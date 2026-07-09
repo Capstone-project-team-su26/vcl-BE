@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
@@ -13,6 +14,7 @@ namespace VCL_BLL.Services
     public class QuotationService : IQuotationService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IConfiguration _configuration;
 
         // Giá mặc định khi không tìm thấy ServicePricing trong DB (VND/kg)
         private const decimal DefaultExpressRate = 50000m;
@@ -25,15 +27,41 @@ namespace VCL_BLL.Services
         // Tỷ lệ thuế tạm tính trên tổng declared value
         private const decimal TaxRate = 0.10m;
 
-        // Hệ số quy đổi thể tích → cân nặng (tiêu chuẩn IATA)
-        private const decimal VolumetricDivisor = 5000m;
-
         // Báo giá tạm tính có hiệu lực 7 ngày
         private const int QuotationValidDays = 7;
 
-        public QuotationService(IUnitOfWork unitOfWork)
+        public QuotationService(IUnitOfWork unitOfWork, IConfiguration configuration)
         {
             _unitOfWork = unitOfWork;
+            _configuration = configuration;
+        }
+
+        /// <summary>
+        /// Lấy hệ số quy đổi thể tích từ activeRules (VOLUMETRIC_DIVISOR),
+        /// hoặc từ file cấu hình (PricingSettings:VolumetricDivisor),
+        /// hoặc mặc định là 5000.
+        /// </summary>
+        private decimal GetVolumetricDivisor(IEnumerable<PricingRule> activeRules)
+        {
+            var rule = activeRules.FirstOrDefault(r =>
+                string.Equals(r.RuleCode, "VOLUMETRIC_DIVISOR", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.RuleType, "VOLUMETRIC_DIVISOR", StringComparison.OrdinalIgnoreCase));
+
+            if (rule != null && rule.Value > 0)
+            {
+                return rule.Value;
+            }
+
+            if (_configuration != null)
+            {
+                var configValStr = _configuration["PricingSettings:VolumetricDivisor"];
+                if (decimal.TryParse(configValStr, out var configVal) && configVal > 0)
+                {
+                    return configVal;
+                }
+            }
+
+            return 5000m;
         }
 
         /// <summary>
@@ -194,7 +222,8 @@ namespace VCL_BLL.Services
                 .ToList();
 
             // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
-            var volumetricWeight = totalVolume / VolumetricDivisor;
+            var divisor = GetVolumetricDivisor(activeRules);
+            var volumetricWeight = totalVolume / divisor;
             var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
             var chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
 
@@ -702,7 +731,8 @@ namespace VCL_BLL.Services
                 .ToList();
 
             // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
-            var volumetricWeight = totalVolume / VolumetricDivisor;
+            var divisor = GetVolumetricDivisor(activeRules);
+            var volumetricWeight = totalVolume / divisor;
             var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
             var chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
 
@@ -949,6 +979,8 @@ namespace VCL_BLL.Services
                 .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
+            var divisor = GetVolumetricDivisor(activeRules);
+
             // Calculate actual measured data from warehouse parcels
             decimal totalActualWeight = 0m;
             decimal totalVolumetricWeight = 0m;
@@ -964,7 +996,7 @@ namespace VCL_BLL.Services
             {
                 totalActualWeight = parcels.Sum(p => p.ActualWeight ?? 0m);
                 totalVolumetricWeight = parcels.Sum(p => p.VolumetricWeight ?? 
-                    (((p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m)) / VolumetricDivisor));
+                    (((p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m)) / divisor));
                 totalVolumeCm3 = parcels.Sum(p => (p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m));
 
                 var parcelIds = parcels.Select(p => p.Id).ToList();
@@ -995,7 +1027,7 @@ namespace VCL_BLL.Services
                 {
                     totalVolumeCm3 = orderItems.Sum(item => (item.Length ?? 0m) * (item.Width ?? 0m) * (item.Height ?? 0m));
                 }
-                totalVolumetricWeight = totalVolumeCm3 / VolumetricDivisor;
+                totalVolumetricWeight = totalVolumeCm3 / divisor;
 
                 domesticShippingFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
             }
@@ -1285,22 +1317,27 @@ namespace VCL_BLL.Services
             if (quotation == null)
                 throw new NotFoundException("Đơn hàng chưa có báo giá nào. Vui lòng liên hệ nhân viên hỗ trợ.");
 
+            // Fetch rules first to get VolumetricDivisor
+            var rules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
+            var ruleMap = rules.ToDictionary(r => r.Id, r => r);
+
+            var allActiveRules = rules
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
             // Tính VolumetricWeight từ tổng thể tích đơn hàng (TotalVolume lưu theo m³)
-            var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) * 1_000_000m / VolumetricDivisor, 2);
+            var divisor = GetVolumetricDivisor(allActiveRules);
+            var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) * 1_000_000m / divisor, 2);
+
+            // Bổ sung các PricingRule đang hoạt động nếu chưa có trong DB của báo giá này
+            var activeRules = allActiveRules
+                .Where(r => !string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
             // Fetch associated quotation fees
             var feeRepo = _unitOfWork.Repository<QuotationFee>();
             var allFees = await feeRepo.GetAllAsync();
             var fees = allFees.Where(f => f.QuotationId == quotation.Id).ToList();
-
-            var rules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
-            var ruleMap = rules.ToDictionary(r => r.Id, r => r);
-
-            // Bổ sung các PricingRule đang hoạt động nếu chưa có trong DB của báo giá này
-            var activeRules = rules
-                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
-                .Where(r => !string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
-                .ToList();
 
             var existingRuleIds = fees
                 .Where(f => f.PricingRuleId.HasValue)

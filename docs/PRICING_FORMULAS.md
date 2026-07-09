@@ -21,13 +21,17 @@ Hệ thống hỗ trợ 2 loại hình tính giá khác nhau dựa trên trườ
 
 Trọng lượng thể tích được nhân với **số lượng (`Quantity`)** của từng dòng sản phẩm để ra cân tổng thể tích chính xác:
 
-$$\text{Cân quy đổi thể tích (kg)} = \sum_{item} \left( \frac{\text{Dài (cm)} \times \text{Rộng (cm)} \times \text{Cao (cm)}}{5000} \times \text{Quantity} \right)$$
+$$\text{Cân quy đổi thể tích (kg)} = \sum_{item} \left( \frac{\text{Dài (cm)} \times \text{Rộng (cm)} \times \text{Cao (cm)}}{\text{Hệ số quy đổi thể tích}} \times \text{Quantity} \right)$$
+
+*Trong đó, **Hệ số quy đổi thể tích (Volumetric Divisor)** được cấu hình động trên hệ thống (mặc định là `5000` theo tiêu chuẩn IATA, có thể điều chỉnh linh hoạt qua database hoặc file cấu hình).*
 
 ### 2.2. Khi báo giá thủ công bằng Thể tích tổng (`VolumeM3` tính bằng $m^3$)
 
-Hệ thống tự động quy đổi đơn vị mét khối ($m^3$) sang centimet khối ($cm^3$) trước khi chia cho hệ số 5000:
+Hệ thống tự động quy đổi đơn vị mét khối ($m^3$) sang centimet khối ($cm^3$) trước khi chia cho Hệ số quy đổi thể tích:
 
-$$\text{Cân quy đổi thể tích (kg)} = \frac{\text{VolumeM3} \times 1.000.000}{5000} = \text{VolumeM3} \times 200$$
+$$\text{Cân quy đổi thể tích (kg)} = \frac{\text{VolumeM3} \times 1.000.000}{\text{Hệ số quy đổi thể tích}}$$
+
+*(Nếu Hệ số quy đổi thể tích được cấu hình là `5000`, công thức thu gọn sẽ là $\text{VolumeM3} \times 200$).*
 
 ---
 

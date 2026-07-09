@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
@@ -13,11 +14,43 @@ namespace VCL_BLL.Services
     public class ParcelService : IParcelService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private const decimal VolumetricDivisor = 5000m;
+        private readonly IConfiguration _configuration;
 
-        public ParcelService(IUnitOfWork unitOfWork)
+        public ParcelService(IUnitOfWork unitOfWork, IConfiguration configuration)
         {
             _unitOfWork = unitOfWork;
+            _configuration = configuration;
+        }
+
+        /// <summary>
+        /// Lấy hệ số quy đổi thể tích từ activeRules (VOLUMETRIC_DIVISOR),
+        /// hoặc từ file cấu hình (PricingSettings:VolumetricDivisor),
+        /// hoặc mặc định là 5000.
+        /// </summary>
+        private async Task<decimal> GetVolumetricDivisorAsync()
+        {
+            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
+            var allRules = await pricingRuleRepo.GetAllAsync();
+            var rule = allRules.FirstOrDefault(r =>
+                string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) &&
+                (string.Equals(r.RuleCode, "VOLUMETRIC_DIVISOR", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(r.RuleType, "VOLUMETRIC_DIVISOR", StringComparison.OrdinalIgnoreCase)));
+
+            if (rule != null && rule.Value > 0)
+            {
+                return rule.Value;
+            }
+
+            if (_configuration != null)
+            {
+                var configValStr = _configuration["PricingSettings:VolumetricDivisor"];
+                if (decimal.TryParse(configValStr, out var configVal) && configVal > 0)
+                {
+                    return configVal;
+                }
+            }
+
+            return 5000m;
         }
 
         public async Task<ParcelCheckInResponse> CheckInParcelAsync(ParcelCheckInRequest request)
@@ -71,7 +104,8 @@ namespace VCL_BLL.Services
             if (request.Length.HasValue && request.Width.HasValue && request.Height.HasValue &&
                 request.Length.Value > 0 && request.Width.Value > 0 && request.Height.Value > 0)
             {
-                volumetricWeight = (request.Length.Value * request.Width.Value * request.Height.Value) / VolumetricDivisor;
+                var divisor = await GetVolumetricDivisorAsync();
+                volumetricWeight = (request.Length.Value * request.Width.Value * request.Height.Value) / divisor;
             }
 
             // 6. Tính chargeable weight
