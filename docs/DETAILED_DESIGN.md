@@ -12,7 +12,47 @@ Toàn bộ yêu cầu xử lý từ giao diện người dùng (hoặc thiết b
 
 ---
 
-### 3.1.1 Class Diagram
+### 3.1.1 Use Case Diagram
+
+Sơ đồ Use Case phân hệ WMS mô tả các hoạt động nghiệp vụ tại kho của Nhân viên kho (quét barcode check-in, gán vị trí bin, đóng bao consolidation) và luồng cập nhật vận chuyển của Tài xế.
+
+```mermaid
+graph LR
+    %% Definition of Actors
+    Staff(("👤<br/>Warehouse Staff")):::actor
+    Driver(("👤<br/>Driver")):::actor
+
+    %% System Boundary
+    subgraph WMS ["WMS System"]
+        UC_CheckIn([Scan Parcel Check-in]):::usecase
+        UC_PendingPutaway([View Pending Put-away]):::usecase
+        UC_PutAway([Assign Bin Storage - Put-away]):::usecase
+        UC_Consolidate([Consolidate & Bag Parcels]):::usecase
+        UC_Shipment([Create Shipment & Manifest]):::usecase
+        UC_WRO([Create Release Request - WRO]):::usecase
+        UC_Inventory([Record Available Inventory]):::usecase
+        UC_DriverUpdate([Update Delivery Status]):::usecase
+    end
+
+    %% Styles Definition
+    classDef usecase fill:#FFFDE7,stroke:#FBC02D,stroke-width:1.5px,color:#000;
+    classDef actor fill:#F5F5F5,stroke:#9E9E9E,stroke-width:1.5px,color:#000;
+
+    %% Connections (Associations)
+    Staff --- UC_CheckIn
+    Staff --- UC_PendingPutaway
+    Staff --- UC_PutAway
+    Staff --- UC_Consolidate
+    Staff --- UC_Shipment
+    Staff --- UC_WRO
+    Staff --- UC_Inventory
+
+    UC_DriverUpdate --- Driver
+```
+
+---
+
+### 3.1.2 Class Diagram
 
 Sơ đồ lớp dưới đây thể hiện cấu trúc phân lớp của phân hệ WMS, bao gồm các Controller (`ParcelController`, `BinController`, `ShipmentController`), các Service tương ứng xử lý nghiệp vụ, `IUnitOfWork` quản lý transaction, và các Entity/Model đại diện cho bảng dữ liệu.
 
@@ -196,7 +236,7 @@ classDiagram
 
 ---
 
-### 3.1.2 Sequence Diagram: Receiving Parcels into Origin Warehouse
+### 3.1.3 Sequence Diagram: Receiving Parcels into Origin Warehouse
 
 Quy trình tiếp nhận kiện hàng thực tế tại kho nguồn (Inbound Check-in). Nhân viên kho (Warehouse Staff) quét mã gửi hàng (Consignment Code) để phê duyệt và khởi tạo kiện hàng trong hệ thống.
 
@@ -277,7 +317,7 @@ sequenceDiagram
 
 ---
 
-### 3.1.3 Sequence Diagram: Inventory Bin Assignment Workflow
+### 3.1.4 Sequence Diagram: Inventory Bin Assignment Workflow
 
 Quy trình nhập vị trí kho (Put-Away). Sau khi kiểm tra thực tế, nhân viên kho quét vị trí vật lý (Bin) để lưu trữ kiện hàng. Hệ thống xác thực cấu trúc phân cấp và kiểm tra thể tích, tải trọng khả dụng trước khi gán vị trí.
 
@@ -370,7 +410,7 @@ sequenceDiagram
 
 ---
 
-### 3.1.4 Sequence Diagram: Shipment Manifest Consolidation Workflow
+### 3.1.5 Sequence Diagram: Shipment Manifest Consolidation Workflow
 
 Quy trình gom hàng đóng bao (Consolidation) và xuất kho hàng loạt. Nhiều kiện hàng (Parcels) riêng lẻ được gom vào một Bao hàng tổng (MasterBox), sau đó MasterBox được gán vào Chuyến xe vận chuyển liên biên giới (Shipment).
 
@@ -465,7 +505,50 @@ sequenceDiagram
 
 Phân hệ quản lý đơn hàng ký gửi (Order & Consignment Management) đóng vai trò trung tâm trong việc xử lý các yêu cầu ký gửi hàng hóa từ khách hàng, kiểm tra tính hợp pháp của hàng hóa (Restricted Items), và cập nhật trạng thái vòng đời của đơn hàng.
 
-### 3.2.1 Class Diagram
+### 3.2.1 Use Case Diagram
+
+Sơ đồ Use Case phân hệ Order & Consignment mô tả luồng tạo và xử lý yêu cầu ký gửi hàng hóa xuyên biên giới giữa Khách hàng, Nhân viên kinh doanh (Sales) và Nhân viên kho.
+
+```mermaid
+graph LR
+    %% Definition of Actors
+    Customer(("👤<br/>Customer")):::actor
+    Sale(("👤<br/>Sales Executive")):::actor
+    Staff(("👤<br/>Warehouse Staff")):::actor
+
+    %% System Boundary
+    subgraph OrderConsignment ["Order & Consignment Management System"]
+        UC_CreateOrder([Create Consignment Request]):::usecase
+        UC_SalesCreate([Sales Create Consignment]):::usecase
+        UC_ViewOrder([View Consignments & Details]):::usecase
+        UC_CancelOrder([Cancel Consignment Request]):::usecase
+        UC_VerifyOrder([Verify & Update Status]):::usecase
+        UC_Chat([SignalR Chat Support]):::usecase
+        UC_Purchase([Create Purchase Request]):::usecase
+    end
+
+    %% Styles Definition
+    classDef usecase fill:#FFFDE7,stroke:#FBC02D,stroke-width:1.5px,color:#000;
+    classDef actor fill:#F5F5F5,stroke:#9E9E9E,stroke-width:1.5px,color:#000;
+
+    %% Connections (Associations)
+    Customer --- UC_CreateOrder
+    Customer --- UC_ViewOrder
+    Customer --- UC_CancelOrder
+    Customer --- UC_Chat
+    Customer --- UC_Purchase
+
+    Sale --- UC_SalesCreate
+    Sale --- UC_ViewOrder
+    Sale --- UC_Chat
+
+    UC_VerifyOrder --- Staff
+    UC_ViewOrder --- Staff
+```
+
+---
+
+### 3.2.2 Class Diagram
 
 ```mermaid
 classDiagram
@@ -551,7 +634,7 @@ classDiagram
 
 ---
 
-### 3.2.2 Sequence Diagram: Creating Consignment Request
+### 3.2.3 Sequence Diagram: Creating Consignment Request
 
 Quy trình Khách hàng khởi tạo yêu cầu ký gửi trên hệ thống. Hệ thống tự động xác thực các sản phẩm so với danh sách hàng cấm (Restricted/Banned Items) trước khi tạo đơn và sinh báo giá tạm tính.
 
@@ -670,7 +753,7 @@ sequenceDiagram
 
 ---
 
-### 3.2.3 Sequence Diagram: Consignment Verification & Status Update
+### 3.2.4 Sequence Diagram: Consignment Verification & Status Update
 
 Quy trình nhân viên bộ phận nghiệp vụ (Staff/Admin) xem xét và phê duyệt (Duyệt/Từ chối) yêu cầu ký gửi sau khi rà soát chứng từ hoặc tờ khai.
 
@@ -755,7 +838,43 @@ sequenceDiagram
 
 Phân hệ quản lý Báo giá & Bảng giá tự động tính toán chi phí vận chuyển dựa trên các thuộc tính vật lý (thể tích, trọng lượng) của kiện hàng, phương thức vận chuyển (Express/Consolidation), và tuyến đường địa lý (Route).
 
-### 3.3.1 Class Diagram
+### 3.3.1 Use Case Diagram
+
+Sơ đồ Use Case phân hệ Quotation & Pricing mô tả luồng tính toán báo giá tự động cho khách hàng và các chức năng cấu hình biểu phí của Admin.
+
+```mermaid
+graph LR
+    %% Definition of Actors
+    Customer(("👤<br/>Customer")):::actor
+    Admin(("👤<br/>Admin")):::actor
+
+    %% System Boundary
+    subgraph PricingQuotation ["Quotation & Pricing System"]
+        UC_Estimate([Get Automated Quotation Estimate]):::usecase
+        UC_Accept([Accept/Confirm Quotation]):::usecase
+        UC_PricingRules([Manage Pricing Rules]):::usecase
+        UC_ServicePricing([Manage Service Pricing]):::usecase
+        UC_Carrier([Manage Carriers]):::usecase
+        UC_Restricted([Manage Restricted Items]):::usecase
+    end
+
+    %% Styles Definition
+    classDef usecase fill:#FFFDE7,stroke:#FBC02D,stroke-width:1.5px,color:#000;
+    classDef actor fill:#F5F5F5,stroke:#9E9E9E,stroke-width:1.5px,color:#000;
+
+    %% Connections (Associations)
+    Customer --- UC_Estimate
+    Customer --- UC_Accept
+
+    UC_PricingRules --- Admin
+    UC_ServicePricing --- Admin
+    UC_Carrier --- Admin
+    UC_Restricted --- Admin
+```
+
+---
+
+### 3.3.2 Class Diagram
 
 ```mermaid
 classDiagram
@@ -855,7 +974,7 @@ classDiagram
 
 ---
 
-### 3.3.2 Sequence Diagram: Automated Quotation Estimation
+### 3.3.3 Sequence Diagram: Automated Quotation Estimation
 
 Quy trình tự động tính toán báo giá ước tính (Estimate) khi khách hàng gửi đơn ký gửi thành công.
 
@@ -953,7 +1072,7 @@ sequenceDiagram
 
 ---
 
-### 3.3.3 Sequence Diagram: Customer Accepting Quotation
+### 3.3.4 Sequence Diagram: Customer Accepting Quotation
 
 Quy trình khách hàng phê duyệt báo giá từ giao diện Frontend. Sau khi chấp nhận báo giá, trạng thái đơn hàng tự động chuyển sang trạng thái chờ nhận hàng tại kho (Waiting for Parcel).
 
@@ -1050,7 +1169,52 @@ sequenceDiagram
 
 Phân hệ xác thực bảo mật (Authentication) và quản lý người dùng chịu trách nhiệm đăng ký tài khoản, gửi và xác thực OTP qua Email, đăng nhập và cấp mã Token JWT.
 
-### 3.4.1 Class Diagram
+### 3.4.1 Use Case Diagram
+
+Sơ đồ Use Case phân hệ Authentication & User Management mô tả các chức năng từ đăng ký, đăng nhập của Khách hàng/Nhân viên đến các hoạt động quản trị tài khoản của Admin.
+
+```mermaid
+graph LR
+    %% Definition of Actors
+    Guest(("👤<br/>Guest / Visitor")):::actor
+    User(("👤<br/>Authenticated User")):::actor
+    Admin(("👤<br/>Admin")):::actor
+
+    %% System Boundary
+    subgraph AuthUser ["Authentication & User Management System"]
+        UC_Reg([Register Customer Account]):::usecase
+        UC_Verify([Verify OTP via Email]):::usecase
+        UC_Login([Login & Generate JWT]):::usecase
+        UC_Profile([View & Update Profile]):::usecase
+        UC_Pass([Change / Reset Password]):::usecase
+        UC_CreateEmp([Admin Create Employee Account]):::usecase
+        UC_Lock([Admin Lock / Unlock Account]):::usecase
+        UC_Role([Admin Update User Role]):::usecase
+        UC_ListUsers([Admin View Users List]):::usecase
+    end
+
+    %% Styles Definition
+    classDef usecase fill:#FFFDE7,stroke:#FBC02D,stroke-width:1.5px,color:#000;
+    classDef actor fill:#F5F5F5,stroke:#9E9E9E,stroke-width:1.5px,color:#000;
+
+    %% Connections (Associations)
+    Guest --- UC_Reg
+    Guest --- UC_Verify
+    Guest --- UC_Login
+
+    User --- UC_Login
+    User --- UC_Profile
+    User --- UC_Pass
+
+    UC_CreateEmp --- Admin
+    UC_Lock --- Admin
+    UC_Role --- Admin
+    UC_ListUsers --- Admin
+```
+
+---
+
+### 3.4.2 Class Diagram
 
 ```mermaid
 classDiagram
@@ -1166,7 +1330,7 @@ classDiagram
 
 ---
 
-### 3.4.2 Sequence Diagram: Customer Registration & OTP Verification
+### 3.4.3 Sequence Diagram: Customer Registration & OTP Verification
 
 Quy trình đăng ký tài khoản cho Khách hàng. Để kích hoạt tài khoản, khách hàng phải xác nhận mã OTP gửi qua Email đăng ký.
 
@@ -1296,7 +1460,7 @@ sequenceDiagram
 
 ---
 
-### 3.4.3 Sequence Diagram: Login & JWT Generation
+### 3.4.4 Sequence Diagram: Login & JWT Generation
 
 Quy trình đăng nhập hệ thống và tạo Token JWT cấp cho máy trạm.
 
@@ -1347,4 +1511,165 @@ sequenceDiagram
     deactivate AC
     UI -->> User: 9: Redirect to Dashboard
     deactivate UI
+```
+
+---
+
+### 3.4.5 Sequence Diagram: Employee Creation by Admin
+
+Quy trình Admin tạo tài khoản nhân viên nội bộ (Staff, Sale, Driver...) thông qua giao diện quản trị.
+
+```mermaid
+sequenceDiagram
+    actor Admin as Admin
+    participant UI as &laquo;User Interface&raquo;<br/>:Admin Portal
+    participant UC as &laquo;Controller&raquo;<br/>:UserController
+    participant US as &laquo;Service&raquo;<br/>:UserService
+    participant UOW as &laquo;UnitOfWork&raquo;<br/>:IUnitOfWork
+    participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
+    participant DB as &laquo;Database&raquo;<br/>:SQL Server
+
+    Admin ->> UI: 1: Enter employee details & click Create
+    activate UI
+    UI ->> UC: 2: POST /api/User (Email, Password, FullName, Phone, Role) [Authorize(Roles="Admin")]
+    activate UC
+    UC ->> US: 3: CreateEmployeeAsync(request)
+    activate US
+
+    US ->> UOW: 4: Repository~User~()
+    activate UOW
+    UOW -->> US: 4.1: userRepo
+    deactivate UOW
+
+    US ->> Repo: 5: GetAllAsync()
+    activate Repo
+    Repo ->> DB: 5.1: SELECT * FROM Users
+    activate DB
+    DB -->> Repo: 5.2: Users list
+    deactivate DB
+    Repo -->> US: 5.3: users
+    deactivate Repo
+
+    Note over US: Check if request.Role is 'Admin' (throw ArgumentException).<br/>Check if Email is already used (throw InvalidOperationException).<br/>Hash password.<br/>Create User (UserType = 'Employee', Status = 'Active').
+
+    alt [Role is Admin or Email already exists]
+        US -->> UC: 6: Throw Exception
+        UC -->> UI: 6.1: 400 BadRequest / 409 Conflict
+        UI -->> Admin: 6.2: Show error message
+    else [Validation Success]
+        US ->> Repo: 7: AddAsync(new User)
+        activate Repo
+        Repo -->> US: 7.1: Done
+        deactivate Repo
+
+        US ->> UOW: 8: SaveChangesAsync()
+        activate UOW
+        UOW ->> DB: 8.1: INSERT User
+        activate DB
+        DB -->> UOW: 8.2: Success
+        deactivate DB
+        UOW -->> US: 8.3: Done
+        deactivate UOW
+
+        US -->> UC: 9: Return userId
+        deactivate US
+        UC -->> UI: 10: 201 CreatedAtAction (GetUserById)
+        deactivate UC
+        UI -->> Admin: 11: Show employee creation success
+        deactivate UI
+    end
+```
+
+---
+
+### 3.4.6 Sequence Diagram: Lock/Unlock User Account
+
+Quy trình Admin khóa hoặc mở khóa tài khoản người dùng trong hệ thống.
+
+```mermaid
+sequenceDiagram
+    actor Admin as Admin
+    participant UI as &laquo;User Interface&raquo;<br/>:Admin Portal
+    participant UC as &laquo;Controller&raquo;<br/>:UserController
+    participant US as &laquo;Service&raquo;<br/>:UserService
+    participant UOW as &laquo;UnitOfWork&raquo;<br/>:IUnitOfWork
+    participant Repo as &laquo;Repository&raquo;<br/>:IGenericRepository
+    participant DB as &laquo;Database&raquo;<br/>:SQL Server
+
+    Admin ->> UI: 1: Click Lock / Unlock User Account
+    activate UI
+
+    alt [Lock User Account]
+        UI ->> UC: 2: PUT /api/User/{id}/lock [Authorize(Roles="Admin")]
+        activate UC
+        UC ->> US: 3: LockUserAsync(userId)
+        activate US
+
+        US ->> Repo: 4: GetUserOrThrowAsync(userId)
+        activate Repo
+        Repo ->> DB: 4.1: SELECT * FROM Users WHERE Id = userId
+        activate DB
+        DB -->> Repo: 4.2: user
+        deactivate DB
+        Repo -->> US: 4.3: user
+        deactivate Repo
+
+        Note over US: Set user.Status = 'Locked'
+        US ->> Repo: 5: Update(user)
+        activate Repo
+        Repo -->> US: 5.1: Done
+        deactivate Repo
+
+        US ->> UOW: 6: SaveChangesAsync()
+        activate UOW
+        UOW ->> DB: 6.1: UPDATE Users SET Status = 'Locked'
+        activate DB
+        DB -->> UOW: 6.2: Success
+        deactivate DB
+        UOW -->> US: 6.3: Done
+        deactivate UOW
+
+        US -->> UC: 7: Done
+        deactivate US
+        UC -->> UI: 8: 200 OK (Account Locked)
+        deactivate UC
+        UI -->> Admin: 9: Show locking success
+
+    else [Unlock User Account]
+        UI ->> UC: 10: PUT /api/User/{id}/unlock [Authorize(Roles="Admin")]
+        activate UC
+        UC ->> US: 11: UnlockUserAsync(userId)
+        activate US
+
+        US ->> Repo: 12: GetUserOrThrowAsync(userId)
+        activate Repo
+        Repo ->> DB: 12.1: SELECT * FROM Users WHERE Id = userId
+        activate DB
+        DB -->> Repo: 12.2: user
+        deactivate DB
+        Repo -->> US: 12.3: user
+        deactivate Repo
+
+        Note over US: Set user.Status = 'Active'
+        US ->> Repo: 13: Update(user)
+        activate Repo
+        Repo -->> US: 13.1: Done
+        deactivate Repo
+
+        US ->> UOW: 14: SaveChangesAsync()
+        activate UOW
+        UOW ->> DB: 14.1: UPDATE Users SET Status = 'Active'
+        activate DB
+        DB -->> UOW: 14.2: Success
+        deactivate DB
+        UOW -->> US: 14.3: Done
+        deactivate UOW
+
+        US -->> UC: 15: Done
+        deactivate US
+        UC -->> UI: 16: 200 OK (Account Unlocked)
+        deactivate UC
+        UI -->> Admin: 17: Show unlocking success
+        deactivate UI
+    end
 ```

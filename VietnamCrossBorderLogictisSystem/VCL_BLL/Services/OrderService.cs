@@ -451,6 +451,18 @@ namespace VCL_BLL.Services
                 var service = latestQuotation.ServiceFee ?? 0m;
                 var tax = latestQuotation.TaxAndDuty ?? 0m;
 
+                var feeRepo = _unitOfWork.Repository<QuotationFee>();
+                var allFees = await feeRepo.GetAllAsync();
+                var fees = allFees.Where(f => f.QuotationId == latestQuotation.Id).ToList();
+
+                var rules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
+                var ruleMap = rules.ToDictionary(r => r.Id, r => r);
+
+                var additionalSurchargesAmount = fees
+                    .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase)
+                                && (f.Amount > 0 || (f.PricingRuleId.HasValue && ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
+                    .Sum(f => f.Amount);
+
                 quotationSummary = new ConsignmentQuotationSummary
                 {
                     QuotationId = latestQuotation.Id,
@@ -460,7 +472,7 @@ namespace VCL_BLL.Services
                     ServiceFee = latestQuotation.ServiceFee,
                     TaxAndDuty = latestQuotation.TaxAndDuty,
                     TotalVolume = latestQuotation.TotalVolume,
-                    TotalEstimatedCost = freight + service + tax,
+                    TotalEstimatedCost = freight + service + tax + additionalSurchargesAmount,
                     CreatedAt = latestQuotation.CreatedAt,
                     ExpiredAt = latestQuotation.ExpiredAt
                 };
