@@ -1299,6 +1299,42 @@ namespace VCL_BLL.Services
             var rules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
             var ruleMap = rules.ToDictionary(r => r.Id, r => r);
 
+            // Bổ sung các PricingRule đang hoạt động nếu chưa có trong DB của báo giá này
+            var activeRules = rules
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .Where(r => !string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var existingRuleIds = fees
+                .Where(f => f.PricingRuleId.HasValue)
+                .Select(f => f.PricingRuleId!.Value)
+                .ToHashSet();
+
+            foreach (var rule in activeRules)
+            {
+                if (rule.ServicePricingId.HasValue && quotation.ServicePricingId.HasValue && rule.ServicePricingId.Value != quotation.ServicePricingId.Value)
+                {
+                    continue;
+                }
+
+                if (!existingRuleIds.Contains(rule.Id))
+                {
+                    fees.Add(new QuotationFee
+                    {
+                        Id = Guid.Empty,
+                        QuotationId = quotation.Id,
+                        PricingRuleId = rule.Id,
+                        FeeName = rule.RuleName,
+                        FeeType = "SURCHARGE",
+                        CalculationType = rule.CalculationType,
+                        Value = rule.Value,
+                        Amount = 0m,
+                        Note = rule.Description,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
             var itemRepo = _unitOfWork.Repository<OrderItem>();
             var allItems = await itemRepo.GetAllAsync();
             var orderItems = allItems.Where(i => i.OrderId == order.Id).ToList();
