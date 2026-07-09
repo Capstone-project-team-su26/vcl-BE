@@ -21,5 +21,14 @@ public partial class Payment
 
     public DateTime? PaidAt { get; set; }
 
+    /// <summary>Mã đơn hàng gửi sang payOS (số nguyên, duy nhất) - dùng để đối chiếu webhook.</summary>
+    public long? OrderCode { get; set; }
+
+    /// <summary>URL trang thanh toán payOS để FE điều hướng khách hàng.</summary>
+    public string CheckoutUrl { get; set; }
+
+    /// <summary>Id link thanh toán do payOS trả về.</summary>
+    public string PaymentLinkId { get; set; }
+
     public virtual Invoice Invoice { get; set; }
 }

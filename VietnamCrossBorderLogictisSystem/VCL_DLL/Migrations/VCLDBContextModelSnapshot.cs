@@ -1136,13 +1136,27 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("amount");
 
+                    b.Property<string>("CheckoutUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("checkout_url");
+
                     b.Property<Guid?>("InvoiceId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("invoice_id");
 
+                    b.Property<long?>("OrderCode")
+                        .HasColumnType("bigint")
+                        .HasColumnName("order_code");
+
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("paid_at");
+
+                    b.Property<string>("PaymentLinkId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("payment_link_id");
 
                     b.Property<string>("PaymentMethod")
                         .HasMaxLength(50)

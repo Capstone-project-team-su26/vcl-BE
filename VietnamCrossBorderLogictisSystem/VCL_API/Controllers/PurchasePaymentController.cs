@@ -14,10 +14,14 @@ namespace VCL_API.Controllers
     public class PurchasePaymentController : ControllerBase
     {
         private readonly IPurchasePaymentService _purchasePaymentService;
+        private readonly IConsignmentPaymentService _consignmentPaymentService;
 
-        public PurchasePaymentController(IPurchasePaymentService purchasePaymentService)
+        public PurchasePaymentController(
+            IPurchasePaymentService purchasePaymentService,
+            IConsignmentPaymentService consignmentPaymentService)
         {
             _purchasePaymentService = purchasePaymentService;
+            _consignmentPaymentService = consignmentPaymentService;
         }
 
         /// <summary>
@@ -73,7 +77,13 @@ namespace VCL_API.Controllers
 
             try
             {
+                // payOS chỉ có một webhook URL cho cả 2 loại thanh toán:
+                // thử khớp thanh toán mua hộ trước, nếu không thuộc thì thử thanh toán ký gửi.
                 var handled = await _purchasePaymentService.HandlePayOsWebhookAsync(rawBody);
+                if (!handled)
+                {
+                    handled = await _consignmentPaymentService.HandlePayOsWebhookAsync(rawBody);
+                }
                 // Luôn trả 200 để payOS ngừng gửi lại; kèm cờ đã ghi nhận hay chưa
                 return Ok(new { success = true, handled });
             }

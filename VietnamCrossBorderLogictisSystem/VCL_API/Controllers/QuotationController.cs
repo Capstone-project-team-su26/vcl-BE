@@ -14,10 +14,12 @@ namespace VCL_API.Controllers
     public class QuotationController : ControllerBase
     {
         private readonly IQuotationService _quotationService;
+        private readonly IConsignmentPaymentService _consignmentPaymentService;
 
-        public QuotationController(IQuotationService quotationService)
+        public QuotationController(IQuotationService quotationService, IConsignmentPaymentService consignmentPaymentService)
         {
             _quotationService = quotationService;
+            _consignmentPaymentService = consignmentPaymentService;
         }
 
         /// <summary>
@@ -192,6 +194,44 @@ namespace VCL_API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Khách hàng xác nhận báo giá ký gửi và tạo thanh toán (payOS). Trả về link thanh toán cho FE.
+        /// </summary>
+        [HttpPut("api/quotations/{quotationId}/confirm-and-pay")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> ConfirmQuotationAndPay(Guid quotationId, [FromBody] ConfirmQuotationPaymentRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            try
+            {
+                var result = await _consignmentPaymentService.ConfirmQuotationAndPayAsync(quotationId, userId, request);
+                return Ok(new { message = "Xác nhận báo giá và tạo thanh toán thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
         /// <summary>
         /// Khách hàng xem thông tin báo giá mới nhất của đơn hàng.
         /// Trả về báo giá ở trạng thái SENT, PENDING, DRAFT hoặc ACCEPTED.
