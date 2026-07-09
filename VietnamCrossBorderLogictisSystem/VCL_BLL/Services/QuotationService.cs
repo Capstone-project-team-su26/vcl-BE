@@ -1287,9 +1287,6 @@ namespace VCL_BLL.Services
 
             // Tính VolumetricWeight từ tổng thể tích đơn hàng (TotalVolume lưu theo m³)
             var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) * 1_000_000m / VolumetricDivisor, 2);
-            var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m)
-                                   + (quotation.ServiceFee ?? 0m)
-                                   + (quotation.TaxAndDuty ?? 0m);
 
             // Fetch associated quotation fees
             var feeRepo = _unitOfWork.Repository<QuotationFee>();
@@ -1341,6 +1338,15 @@ namespace VCL_BLL.Services
             var packageCount = orderItems.Sum(item => item.Quantity ?? 1);
 
             var feeDtos = fees.Select(f => MapToFeeResponseDto(f, ruleMap, packageCount)).ToList();
+
+            var additionalSurchargesAmount = feeDtos
+                .Where(dto => string.Equals(dto.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) && dto.Enabled)
+                .Sum(dto => dto.Amount);
+
+            var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m)
+                                   + (quotation.ServiceFee ?? 0m)
+                                   + (quotation.TaxAndDuty ?? 0m)
+                                   + additionalSurchargesAmount;
 
             return new QuotationDetailResponse
             {
