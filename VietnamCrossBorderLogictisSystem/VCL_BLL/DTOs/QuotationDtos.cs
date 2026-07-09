@@ -173,6 +173,9 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; } = string.Empty;
         public string ConsignmentType { get; set; } = string.Empty;
 
+        /// <summary>Mã ký gửi</summary>
+        public string? ConsignmentCode { get; set; }
+
         /// <summary>Tổng cân nặng thực tế (kg)</summary>
         public decimal TotalWeight { get; set; }
 

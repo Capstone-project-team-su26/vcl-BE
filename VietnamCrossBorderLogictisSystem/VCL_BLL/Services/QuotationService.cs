@@ -1355,6 +1355,7 @@ namespace VCL_BLL.Services
                 QuoteType = quotation.QuoteType ?? string.Empty,
                 Status = quotation.Status ?? string.Empty,
                 ConsignmentType = order.ConsignmentType ?? string.Empty,
+                ConsignmentCode = order.ConsignmentCode,
                 TotalWeight = order.TotalWeight ?? 0m,
                 TotalVolume = order.TotalVolume ?? 0m,
                 VolumetricWeight = volumetricWeight,

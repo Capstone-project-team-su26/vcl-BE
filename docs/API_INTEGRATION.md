@@ -70,6 +70,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/User/profile` | Authenticated | Lấy thông tin cá nhân của người dùng đang đăng nhập |
 | `PUT` | `/api/User/profile` | Authenticated | Cập nhật thông tin cá nhân của người dùng đang đăng nhập |
 | `POST` | `/api/orders/{orderId}/quotation/estimate` | Authenticated | Tạo báo giá tạm tính cho đơn ký gửi |
+| `GET` | `/api/orders/{orderId}/quotation` | Authenticated | Khách hàng xem thông tin báo giá mới nhất |
 | `PUT` | `/api/quotations/{quotationId}/accept` | Authenticated | Khách hàng xác nhận báo giá tạm tính |
 | `PUT` | `/api/orders/consignments/{orderId}/status` | Staff | Staff cập nhật trạng thái yêu cầu ký gửi |
 | `GET` | `/api/orders/consignments` | Authenticated | Lấy danh sách yêu cầu ký gửi |
@@ -601,6 +602,49 @@ Response `200 OK`:
 - Cập nhật Quotation → `ACCEPTED`, Order → `WAITING_FOR_PARCEL`.
 - Mỗi lần gọi API sẽ tạo mới một Quotation record (không cập nhật cái cũ).
 - API cũng cập nhật `totalWeight` và `totalVolume` trên Order.
+
+## 9.5. Xem báo giá mới nhất của đơn hàng (Get Latest Quotation)
+
+Khách hàng xem thông tin báo giá mới nhất của đơn hàng. Trả về báo giá ở trạng thái `SENT`, `PENDING`, `DRAFT` hoặc `ACCEPTED`.
+
+```http
+GET /api/orders/{orderId}/quotation
+Authorization: Bearer {token}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `orderId` | `Guid` | ID của đơn hàng ký gửi |
+
+### Response thành công (200 OK)
+
+```json
+{
+  "message": "Lấy thông tin báo giá thành công.",
+  "data": {
+    "quotationId": "a1b2c3d4-...",
+    "orderId": "e5f6g7h8-...",
+    "quoteType": "ESTIMATE",
+    "status": "SENT",
+    "consignmentType": "Express",
+    "consignmentCode": "VCL-20260616120000-123456",
+    "totalWeight": 2.50,
+    "totalVolume": 15000.00,
+    "volumetricWeight": 3.00,
+    "chargeableWeight": 3.00,
+    "estimatedFreightCharge": 150000.00,
+    "serviceFee": 50000.00,
+    "taxAndDuty": 50000.00,
+    "totalEstimatedCost": 250000.00,
+    "createdAt": "2026-06-15T12:00:00Z",
+    "expiredAt": "2026-06-22T12:00:00Z",
+    "salesNote": null,
+    "additionalFees": []
+  }
+}
+```
 
 ## 10. Xác nhận báo giá tạm tính (Accept Quotation)
 
@@ -1524,6 +1568,31 @@ export interface OrderItemDetail {
 
 export interface QuotationDataResponse extends MessageResponse {
   data: EstimateQuotationResponse;
+}
+
+export interface QuotationDetailResponse {
+  quotationId: string;
+  orderId: string;
+  quoteType: string;
+  status: string;
+  consignmentType: string;
+  consignmentCode: string | null;
+  totalWeight: number;
+  totalVolume: number;
+  volumetricWeight: number;
+  chargeableWeight: number;
+  estimatedFreightCharge: number;
+  serviceFee: number;
+  taxAndDuty: number;
+  totalEstimatedCost: number;
+  createdAt: string;
+  expiredAt: string | null;
+  salesNote: string | null;
+  additionalFees: QuotationFeeResponseDto[];
+}
+
+export interface QuotationDetailDataResponse extends MessageResponse {
+  data: QuotationDetailResponse;
 }
 
 export interface AcceptQuotationResponse {
@@ -4985,7 +5054,7 @@ interface UpdateAdditionalServiceFeeRequestDto {
 | `/forgot-password` | `POST /api/Auth/forgot-password` |
 | `/reset-password` | `POST /api/Auth/reset-password` |
 | `/admin/users/create` | `POST /api/Auth/admin/register` |
-| `/orders/{id}/quotation` | `POST /api/orders/{orderId}/quotation/estimate` |
+| `/orders/{id}/quotation` | `GET /api/orders/{orderId}/quotation`, `POST /api/orders/{orderId}/quotation/estimate` |
 | `/quotations/{id}/accept` | `PUT /api/quotations/{quotationId}/accept` |
 | `/orders/{id}/status` | `PUT /api/orders/consignments/{orderId}/status` |
 | `/orders/consignments` | `GET /api/orders/consignments` |
