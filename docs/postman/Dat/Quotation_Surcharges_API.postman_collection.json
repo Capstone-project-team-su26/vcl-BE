@@ -1,0 +1,391 @@
+{
+	"info": {
+		"_postman_id": "a9e8b7c6-d5e4-3f2g-1h0j-k987654321ab",
+		"name": "VCL - Quotation Surcharges & Additional Fees",
+		"description": "Postman Collection for testing Quotation Surcharges and Additional Fees for both Consignment (Ký gửi) and Purchase Requests (Mua hộ) in the VCL system.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Login Admin / Staff",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.globals.set(\"accessToken\", jsonData.token);",
+									"    console.log(\"Saved accessToken: \" + jsonData.token.substring(0, 20) + \"...\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@vcl.com\",\n    \"password\": \"Password123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login Customer",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.globals.set(\"customerToken\", jsonData.token);",
+									"    console.log(\"Saved customerToken: \" + jsonData.token.substring(0, 20) + \"...\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"customer@vcl.com\",\n    \"password\": \"Password123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Consignment Quotation Fees (Ký gửi)",
+			"item": [
+				{
+					"name": "1. Estimate Quotation (Consignment)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Has additionalFees breakdown\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"additionalFees\");",
+									"    pm.expect(jsonData.data.additionalFees).to.be.an(\"array\");",
+									"});",
+									"if (jsonData.data && jsonData.data.additionalFees.length > 0) {",
+									"    var rule = jsonData.data.additionalFees.find(f => f.pricingRuleId !== null);",
+									"    if (rule) {",
+									"        pm.globals.set(\"pricingRuleId\", rule.pricingRuleId);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/orders/{{orderId}}/quotation/estimate",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"{{orderId}}",
+								"quotation",
+								"estimate"
+							]
+						},
+						"description": "Tạo báo giá tạm tính (ESTIMATE) cho đơn hàng ký gửi và tự động lưu chi tiết phụ phí tính toán được vào bảng QUOTATION_FEES."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Get Quotation Details",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Includes additionalFees breakdown\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"additionalFees\");",
+									"    pm.expect(jsonData.data.additionalFees).to.be.an(\"array\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/orders/{{orderId}}/quotation",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"{{orderId}}",
+								"quotation"
+							]
+						},
+						"description": "Lấy thông tin báo giá mới nhất kèm theo danh sách bóc tách chi tiết các loại phí từ bảng QUOTATION_FEES."
+					},
+					"response": []
+				},
+				{
+					"name": "3. Send Official Quotation (with custom surcharges)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"serviceType\": \"Express\",\n    \"weightKg\": 5.5,\n    \"volumeM3\": 0.02,\n    \"declaredValue\": 2500000,\n    \"quotation\": {\n        \"estimatedFreightCharge\": 275000,\n        \"serviceFee\": 50000,\n        \"totalEstimatedCost\": 325000,\n        \"additionalFees\": [\n            {\n                \"feeId\": \"{{pricingRuleId}}\",\n                \"label\": \"Phí đóng khung gỗ gia cố\",\n                \"amount\": 80000,\n                \"enabled\": true\n            },\n            {\n                \"feeId\": null,\n                \"label\": \"Phụ phí cồng kềnh đặc biệt\",\n                \"amount\": 30000,\n                \"enabled\": true\n            }\n        ]\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/orders/{{orderId}}/quotation/send",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"{{orderId}}",
+								"quotation",
+								"send"
+							]
+						},
+						"description": "Nhân viên gửi báo giá chính thức (OFFICIAL), áp dụng thêm các phụ phí tùy chọn hoặc phụ phí tùy chỉnh thủ công. Hệ thống sẽ lưu chi tiết này vào bảng QUOTATION_FEES."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Purchase Request Quotation Fees (Mua hộ)",
+			"item": [
+				{
+					"name": "1. Create Purchase Request Quotation (with surcharges)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 201\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Includes additionalFees in response\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"additionalFees\");",
+									"    pm.expect(jsonData.data.additionalFees).to.be.an(\"array\");",
+									"    pm.expect(jsonData.data.additionalFees.length).to.be.above(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{accessToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"purchaseFee\": 50000,\n    \"shippingFee\": 150000,\n    \"note\": \"Báo giá chính thức kèm phí kiểm đếm & bảo hiểm\",\n    \"items\": [\n        {\n            \"purchaseRequestItemId\": \"00000000-0000-0000-0000-000000000000\",\n            \"unitPrice\": 180000\n        }\n    ],\n    \"additionalFees\": [\n        {\n            \"pricingRuleId\": \"{{pricingRuleId}}\",\n            \"feeName\": \"Phí kiểm đếm hàng hóa mua hộ\",\n            \"feeType\": \"SURCHARGE\",\n            \"amount\": 25000,\n            \"note\": \"Kiểm đếm chi tiết số lượng sản phẩm\"\n        },\n        {\n            \"pricingRuleId\": null,\n            \"feeName\": \"Phí xử lý đặc biệt\",\n            \"feeType\": \"SURCHARGE\",\n            \"amount\": 40000,\n            \"note\": \"Đóng gói chống sốc\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/quotation",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"purchase-requests",
+								"{{purchaseRequestId}}",
+								"quotation"
+							]
+						},
+						"description": "Nhân viên tạo báo giá mua hộ (Purchase Request Quotation) kèm các khoản phụ phí bổ sung tùy chọn. Hệ thống tự động tính toán tổng tiền và lưu phụ phí vào QUOTATION_FEES."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Get Purchase Request Details (with Quotation & Fees)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Has quotation object\", function () {",
+									"    pm.expect(jsonData.data).to.have.property(\"quotation\");",
+									"    pm.expect(jsonData.data.quotation).to.not.be.null;",
+									"});",
+									"pm.test(\"Quotation has additionalFees list\", function () {",
+									"    pm.expect(jsonData.data.quotation).to.have.property(\"additionalFees\");",
+									"    pm.expect(jsonData.data.quotation.additionalFees).to.be.an(\"array\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"purchase-requests",
+								"{{purchaseRequestId}}"
+							]
+						},
+						"description": "Xem chi tiết thông tin yêu cầu mua hộ, kèm theo thông tin báo giá đã tạo và danh sách bóc tách chi tiết phụ phí đi kèm báo giá đó."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5209",
+			"type": "string"
+		},
+		{
+			"key": "orderId",
+			"value": "00000000-0000-0000-0000-000000000000",
+			"type": "string"
+		},
+		{
+			"key": "purchaseRequestId",
+			"value": "00000000-0000-0000-0000-000000000000",
+			"type": "string"
+		}
+	]
+}
