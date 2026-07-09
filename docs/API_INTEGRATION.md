@@ -151,6 +151,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/carriers` | Admin | Tạo mới một đơn vị vận chuyển |
 | `PUT` | `/api/carriers/{carrierId}` | Admin | Cập nhật thông tin đơn vị vận chuyển |
 | `DELETE` | `/api/carriers/{carrierId}` | Admin | Xóa đơn vị vận chuyển |
+| `GET` | `/api/additional-service-fees` | Admin | Xem danh sách cấu hình phí dịch vụ bổ sung |
+| `GET` | `/api/additional-service-fees/{id}` | Admin | Chi tiết một cấu hình phí dịch vụ bổ sung |
+| `POST` | `/api/additional-service-fees` | Admin | Tạo mới cấu hình phí dịch vụ bổ sung |
+| `PUT` | `/api/additional-service-fees/{id}` | Admin | Cập nhật cấu hình phí dịch vụ bổ sung |
+| `DELETE` | `/api/additional-service-fees/{id}` | Admin | Xóa cấu hình phí dịch vụ bổ sung |
 
 
 ## 4. Đăng ký khách hàng
@@ -4779,6 +4784,113 @@ Authorization: Bearer {saleToken}
 
 ---
 
+## 37. Quản lý cấu hình phí dịch vụ bổ sung (Additional Service Fees)
+
+Cho phép Admin quản lý các loại phí dịch vụ bổ sung (phí bảo hiểm hàng hóa, phí đóng thùng gỗ, phí gia cố kiện hàng, phí kiểm hàng, phí lưu kho, phí xử lý đặc biệt...). Chỉ **Admin** mới được phép thao tác.
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/api/additional-service-fees?activeOnly={bool}` | Xem danh sách phí dịch vụ bổ sung |
+| `GET` | `/api/additional-service-fees/{id}` | Lấy chi tiết phí dịch vụ bổ sung |
+| `POST` | `/api/additional-service-fees` | Tạo cấu hình phí dịch vụ bổ sung mới |
+| `PUT` | `/api/additional-service-fees/{id}` | Cập nhật cấu hình phí dịch vụ bổ sung |
+| `DELETE` | `/api/additional-service-fees/{id}` | Xóa cấu hình phí dịch vụ bổ sung |
+
+**Tạo cấu hình phí dịch vụ bổ sung mới (POST):**
+
+```http
+POST /api/additional-service-fees
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+```
+
+```json
+{
+  "feeName": "Phí đóng thùng gỗ",
+  "feeCode": "WOOD_CRATE",
+  "calculationType": "FIXED",
+  "value": 150000.0,
+  "unit": "VND",
+  "isActive": true,
+  "description": "Phí đóng thùng gỗ bảo vệ kiện hàng dễ vỡ"
+}
+```
+
+- `calculationType` có giá trị `FIXED` (cố định) hoặc `PERCENTAGE` (phần trăm).
+- Không cho phép tạo trùng `feeCode` (trả về lỗi `400`).
+- Nếu dữ liệu không hợp lệ (ví dụ value < 0) trả về lỗi `400`.
+
+**Cập nhật cấu hình phí dịch vụ bổ sung (PUT):**
+
+```http
+PUT /api/additional-service-fees/{id}
+Authorization: Bearer {adminToken}
+Content-Type: application/json
+```
+
+```json
+{
+  "feeName": "Phí đóng thùng gỗ",
+  "feeCode": "WOOD_CRATE",
+  "calculationType": "FIXED",
+  "value": 180000.0,
+  "unit": "VND",
+  "isActive": true,
+  "description": "Cập nhật giá phí đóng thùng gỗ"
+}
+```
+
+- Không tìm thấy ID phí dịch vụ -> trả về lỗi `404`.
+
+**Xóa cấu hình phí dịch vụ bổ sung (DELETE):**
+
+```http
+DELETE /api/additional-service-fees/{id}
+Authorization: Bearer {adminToken}
+```
+
+- Xóa cứng cấu hình phí. Trả về `200 OK` trên thành công.
+- Không tìm thấy ID phí dịch vụ -> trả về lỗi `404`.
+
+**TypeScript interfaces:**
+
+```typescript
+interface AdditionalServiceFeeResponseDto {
+  id: string;
+  feeName: string;
+  feeCode: string;
+  calculationType: string;
+  value: number;
+  unit: string | null;
+  isActive: boolean;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+interface CreateAdditionalServiceFeeRequestDto {
+  feeName: string;
+  feeCode: string;
+  calculationType: string;
+  value: number;
+  unit?: string | null;
+  isActive?: boolean;
+  description?: string | null;
+}
+
+interface UpdateAdditionalServiceFeeRequestDto {
+  feeName: string;
+  feeCode: string;
+  calculationType: string;
+  value: number;
+  unit?: string | null;
+  isActive: boolean;
+  description?: string | null;
+}
+```
+
+---
+
 ## 26. Lưu ý tích hợp FE
 
 - Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
@@ -4829,6 +4941,9 @@ Authorization: Bearer {saleToken}
 | `/admin/carriers` | `GET /api/carriers` |
 | `/admin/carriers/create` | `POST /api/carriers` |
 | `/admin/carriers/{id}/edit` | `PUT /api/carriers/{id}` |
+| `/admin/additional-service-fees` | `GET /api/additional-service-fees` |
+| `/admin/additional-service-fees/create` | `POST /api/additional-service-fees` |
+| `/admin/additional-service-fees/{id}/edit` | `PUT /api/additional-service-fees/{id}` |
 | `/customer/chat` | `GET /api/conversations`, `POST /api/conversations` |
 | `/customer/chat/{id}` | `GET /api/conversations/{id}`, `POST /api/conversations/{id}/messages`, `PUT /api/conversations/{id}/read` |
 | `/sales/chat` | `GET /api/conversations` |
