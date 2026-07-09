@@ -567,6 +567,19 @@ Response `200 OK`:
         "declaredValue": 500000.00,
         "itemVolume": 600.00
       }
+    ],
+    "additionalFees": [
+      {
+        "id": "f5e4d3c2-...",
+        "pricingRuleId": null,
+        "feeName": "Cước vận chuyển quốc tế",
+        "feeType": "MAIN_SERVICE",
+        "calculationType": "PER_KG",
+        "value": 50000.00,
+        "amount": 150000.00,
+        "note": "Cước vận chuyển quốc tế dựa trên cân nặng tính cước 3 kg",
+        "createdAt": "2026-06-15T12:00:00Z"
+      }
     ]
   }
 }
@@ -1483,6 +1496,19 @@ export interface EstimateQuotationResponse {
   createdAt: string;
   expiredAt: string | null;
   items: OrderItemDetail[];
+  additionalFees: QuotationFeeResponseDto[];
+}
+
+export interface QuotationFeeResponseDto {
+  id: string;
+  pricingRuleId: string | null;
+  feeName: string;
+  feeType: string;
+  calculationType: string;
+  value: number;
+  amount: number;
+  note: string | null;
+  createdAt: string;
 }
 
 export interface OrderItemDetail {
@@ -3673,7 +3699,7 @@ interface UpdatePurchaseRequestStatusResponseDto {
 
 ### 29.4. Staff tạo báo giá mua hộ
 
-Staff/Sales tạo báo giá cho một yêu cầu mua hộ. Mỗi sản phẩm nhập đơn giá (`unitPrice`), số lượng lấy theo yêu cầu; hệ thống tính `lineTotal = unitPrice × quantity`, `productsSubtotal = Σ lineTotal`, và `totalAmount = productsSubtotal + purchaseFee + shippingFee`.
+Staff/Sales tạo báo giá cho một yêu cầu mua hộ. Mỗi sản phẩm nhập đơn giá (`unitPrice`), số lượng lấy theo yêu cầu; hệ thống tính `lineTotal = unitPrice × quantity`, `productsSubtotal = Σ lineTotal`, và `totalAmount = productsSubtotal + purchaseFee + shippingFee + Σ additionalFees.amount`.
 
 ```http
 POST /api/purchase-requests/{requestId}/quotation
@@ -3687,6 +3713,9 @@ Content-Type: application/json
   "items": [
     { "purchaseRequestItemId": "0ebcd2a8-...", "unitPrice": 200000 },
     { "purchaseRequestItemId": "f7743c57-...", "unitPrice": 150000 }
+  ],
+  "additionalFees": [
+    { "pricingRuleId": "a1b2c3d4-...", "feeName": "Phí bảo hiểm", "feeType": "SURCHARGE", "amount": 15000, "note": "Phí bảo hiểm hàng hóa" }
   ]
 }
 ```
@@ -3701,6 +3730,12 @@ Content-Type: application/json
 | `items` | **Có** | Tối thiểu 1 sản phẩm |
 | `items[].purchaseRequestItemId` | **Có** | Phải là item thuộc yêu cầu này |
 | `items[].unitPrice` | **Có** | Đơn giá sản phẩm (>= 0) |
+| `additionalFees` | Không | Danh sách phụ phí bổ sung áp dụng |
+| `additionalFees[].pricingRuleId` | Không | ID của quy luật tính giá (PricingRule) nếu có |
+| `additionalFees[].feeName` | Không | Tên phụ phí |
+| `additionalFees[].feeType` | Không | Loại phụ phí |
+| `additionalFees[].amount` | **Có** | Số tiền phụ phí (>= 0) |
+| `additionalFees[].note` | Không | Ghi chú phụ phí |
 
 **Response thành công (201 Created):**
 
@@ -3714,13 +3749,26 @@ Content-Type: application/json
     "productsSubtotal": 900000,
     "purchaseFee": 50000,
     "shippingFee": 120000,
-    "totalAmount": 1070000,
+    "totalAmount": 1085000,
     "note": "Báo giá đợt 1",
     "status": "PENDING_CUSTOMER_CONFIRMATION",
     "createdAt": "2026-07-08T07:20:00Z",
     "items": [
       { "quotationItemId": "...", "purchaseRequestItemId": "0ebcd2a8-...", "productName": "Tai nghe", "unitPrice": 200000, "quantity": 3, "lineTotal": 600000 },
       { "quotationItemId": "...", "purchaseRequestItemId": "f7743c57-...", "productName": "Chuột", "unitPrice": 150000, "quantity": 2, "lineTotal": 300000 }
+    ],
+    "additionalFees": [
+      {
+        "id": "f5e4d3c2-...",
+        "pricingRuleId": "a1b2c3d4-...",
+        "feeName": "Phí bảo hiểm",
+        "feeType": "SURCHARGE",
+        "calculationType": "FIXED",
+        "value": 15000,
+        "amount": 15000,
+        "note": "Phí bảo hiểm hàng hóa",
+        "createdAt": "2026-07-08T07:20:00Z"
+      }
     ]
   }
 }
@@ -3750,11 +3798,20 @@ interface CreatePurchaseQuotationItemDto {
   unitPrice: number;
 }
 
+interface PurchaseQuotationAdditionalFeeDto {
+  pricingRuleId?: string | null;
+  feeName?: string | null;
+  feeType?: string | null;
+  amount: number;
+  note?: string | null;
+}
+
 interface CreatePurchaseQuotationDto {
   purchaseFee: number;
   shippingFee: number;
   note?: string | null;
   items: CreatePurchaseQuotationItemDto[];
+  additionalFees?: PurchaseQuotationAdditionalFeeDto[];
 }
 
 interface PurchaseQuotationItemResponseDto {
@@ -3764,6 +3821,18 @@ interface PurchaseQuotationItemResponseDto {
   unitPrice: number;
   quantity: number;
   lineTotal: number;
+}
+
+interface PurchaseQuotationAdditionalFeeResponseDto {
+  id: string;
+  pricingRuleId: string | null;
+  feeName: string;
+  feeType: string;
+  calculationType: string;
+  value: number;
+  amount: number;
+  note: string | null;
+  createdAt: string;
 }
 
 interface PurchaseQuotationResponseDto {
@@ -3778,6 +3847,7 @@ interface PurchaseQuotationResponseDto {
   status: string;
   createdAt: string;
   items: PurchaseQuotationItemResponseDto[];
+  additionalFees: PurchaseQuotationAdditionalFeeResponseDto[];
 }
 ```
 

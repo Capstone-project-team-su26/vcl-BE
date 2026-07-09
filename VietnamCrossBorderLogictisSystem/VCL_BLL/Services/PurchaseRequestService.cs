@@ -304,6 +304,64 @@ namespace VCL_BLL.Services
                 ImageUrl = i.ImageUrl
             }).ToList();
 
+            // 4.1 Lấy báo giá liên quan nếu có
+            PurchaseQuotationResponseDto? quotationDto = null;
+            var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
+            var allQuotations = await quotationRepo.GetAllAsync();
+            var quotation = allQuotations
+                .FirstOrDefault(q => q.PurchaseRequestId == requestId);
+
+            if (quotation != null)
+            {
+                var quotationItemRepo = _unitOfWork.Repository<PurchaseQuotationItem>();
+                var allQuoItems = await quotationItemRepo.GetAllAsync();
+                var quoItems = allQuoItems.Where(qi => qi.PurchaseQuotationId == quotation.Id).ToList();
+
+                var itemMap = relatedItems.ToDictionary(i => i.Id);
+                var quotationItemDtos = quoItems.Select(qi => new PurchaseQuotationItemResponseDto
+                {
+                    QuotationItemId = qi.Id,
+                    PurchaseRequestItemId = qi.PurchaseRequestItemId,
+                    ProductName = itemMap.ContainsKey(qi.PurchaseRequestItemId) ? itemMap[qi.PurchaseRequestItemId].ProductName : string.Empty,
+                    UnitPrice = qi.UnitPrice,
+                    Quantity = qi.Quantity,
+                    LineTotal = qi.LineTotal
+                }).ToList();
+
+                var feeRepo = _unitOfWork.Repository<QuotationFee>();
+                var allFees = await feeRepo.GetAllAsync();
+                var fees = allFees.Where(f => f.PurchaseQuotationId == quotation.Id).ToList();
+
+                var feeDtos = fees.Select(f => new PurchaseQuotationAdditionalFeeResponseDto
+                {
+                    Id = f.Id,
+                    PricingRuleId = f.PricingRuleId,
+                    FeeName = f.FeeName,
+                    FeeType = f.FeeType,
+                    CalculationType = f.CalculationType,
+                    Value = f.Value,
+                    Amount = f.Amount,
+                    Note = f.Note,
+                    CreatedAt = f.CreatedAt
+                }).ToList();
+
+                quotationDto = new PurchaseQuotationResponseDto
+                {
+                    QuotationId = quotation.Id,
+                    PurchaseRequestId = requestId,
+                    PurchaseCode = request.PurchaseCode ?? string.Empty,
+                    ProductsSubtotal = quotation.ProductsSubtotal,
+                    PurchaseFee = quotation.PurchaseFee,
+                    ShippingFee = quotation.ShippingFee,
+                    TotalAmount = quotation.TotalAmount,
+                    Note = quotation.Note,
+                    Status = quotation.Status,
+                    CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
+                    Items = quotationItemDtos,
+                    AdditionalFees = feeDtos
+                };
+            }
+
             return new PurchaseRequestDetailResponseDto
             {
                 PurchaseRequestId = request.Id,
@@ -322,7 +380,8 @@ namespace VCL_BLL.Services
                 Reason = request.Reason,
                 CreatedAt = request.CreatedAt ?? DateTime.MinValue,
                 TotalQuantity = relatedItems.Sum(i => i.Quantity),
-                Items = itemDtos
+                Items = itemDtos,
+                Quotation = quotationDto
             };
         }
 
@@ -493,10 +552,90 @@ namespace VCL_BLL.Services
                 });
             }
 
+            var quotationFees = new List<QuotationFee>();
+            decimal totalAdditionalFees = 0m;
+
+            if (request.AdditionalFees != null && request.AdditionalFees.Any())
+            {
+                foreach (var feeDto in request.AdditionalFees)
+                {
+                    if (feeDto.Amount < 0)
+                    {
+                        throw new ArgumentException("Số tiền phụ phí không được âm.");
+                    }
+
+                    PricingRule rule = null;
+                    if (feeDto.PricingRuleId.HasValue)
+                    {
+                        rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(feeDto.PricingRuleId.Value);
+                        if (rule == null)
+                        {
+                            throw new ArgumentException($"Không tìm thấy quy định phí với ID: {feeDto.PricingRuleId.Value}");
+                        }
+                        if (!string.Equals(rule.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
+                        }
+                    }
+
+                    totalAdditionalFees += feeDto.Amount;
+
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        PricingRuleId = feeDto.PricingRuleId,
+                        FeeName = feeDto.FeeName ?? rule?.RuleName ?? "Phụ phí",
+                        FeeType = feeDto.FeeType ?? rule?.RuleType ?? "SURCHARGE",
+                        CalculationType = rule?.CalculationType ?? "FIXED",
+                        Value = rule?.Value ?? feeDto.Amount,
+                        Amount = feeDto.Amount,
+                        Note = feeDto.Note ?? rule?.Description ?? "Phụ phí mua hộ",
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            if (request.PurchaseFee > 0)
+            {
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = "Phí mua hộ",
+                    FeeType = "SERVICE_FEE",
+                    CalculationType = "FIXED",
+                    Value = request.PurchaseFee,
+                    Amount = request.PurchaseFee,
+                    Note = "Phí dịch vụ mua hộ",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            if (request.ShippingFee > 0)
+            {
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = "Phí vận chuyển",
+                    FeeType = "MAIN_SERVICE",
+                    CalculationType = "FIXED",
+                    Value = request.ShippingFee,
+                    Amount = request.ShippingFee,
+                    Note = "Phí vận chuyển quốc tế / nội địa cho mua hộ",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
             // 7. Tính tổng tiền báo giá
             quotation.ProductsSubtotal = productsSubtotal;
-            quotation.TotalAmount = productsSubtotal + request.PurchaseFee + request.ShippingFee;
+            quotation.TotalAmount = productsSubtotal + request.PurchaseFee + request.ShippingFee + totalAdditionalFees;
             await quotationRepo.AddAsync(quotation);
+
+            // Save Quotation Fees to DB
+            foreach (var qf in quotationFees)
+            {
+                qf.PurchaseQuotationId = quotation.Id;
+                await _unitOfWork.Repository<QuotationFee>().AddAsync(qf);
+            }
 
             // 8. Cập nhật trạng thái yêu cầu mua hộ sang QUOTED
             purchaseRequest.Status = "QUOTED";
@@ -516,7 +655,19 @@ namespace VCL_BLL.Services
                 Note = quotation.Note,
                 Status = quotation.Status,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
-                Items = itemDtos
+                Items = itemDtos,
+                AdditionalFees = quotationFees.Where(f => f.PricingRuleId.HasValue || (f.FeeType != "SERVICE_FEE" && f.FeeType != "MAIN_SERVICE")).Select(f => new PurchaseQuotationAdditionalFeeResponseDto
+                {
+                    Id = f.Id,
+                    PricingRuleId = f.PricingRuleId,
+                    FeeName = f.FeeName,
+                    FeeType = f.FeeType,
+                    CalculationType = f.CalculationType,
+                    Value = f.Value,
+                    Amount = f.Amount,
+                    Note = f.Note,
+                    CreatedAt = f.CreatedAt
+                }).ToList()
             };
         }
     }

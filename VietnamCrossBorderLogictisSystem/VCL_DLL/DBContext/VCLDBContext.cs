@@ -51,6 +51,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<Quotation> Quotations { get; set; }
 
+    public virtual DbSet<QuotationFee> QuotationFees { get; set; }
+
     public virtual DbSet<RestrictedItem> RestrictedItems { get; set; }
 
     public virtual DbSet<PricingRule> PricingRules { get; set; }
@@ -802,6 +804,7 @@ public partial class VCLDBContext : DbContext
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("total_volume");
             entity.Property(e => e.WroId).HasColumnName("wro_id");
+            entity.Property(e => e.ServicePricingId).HasColumnName("service_pricing_id");
 
             entity.HasOne(d => d.Order).WithMany(p => p.Quotations)
                 .HasForeignKey(d => d.OrderId)
@@ -810,6 +813,71 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.Wro).WithMany(p => p.Quotations)
                 .HasForeignKey(d => d.WroId)
                 .HasConstraintName("FK_QUOTE_WRO");
+
+            entity.HasOne(d => d.ServicePricing).WithMany()
+                .HasForeignKey(d => d.ServicePricingId)
+                .HasConstraintName("FK_QUOTE_SERVICE_PRICING");
+        });
+
+        modelBuilder.Entity<QuotationFee>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_QUOTATION_FEES");
+
+            entity.ToTable("QUOTATION_FEES");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("(newid())")
+                .HasColumnName("id");
+
+            entity.Property(e => e.QuotationId).HasColumnName("quotation_id");
+            entity.Property(e => e.PurchaseQuotationId).HasColumnName("purchase_quotation_id");
+            entity.Property(e => e.PricingRuleId).HasColumnName("pricing_rule_id");
+
+            entity.Property(e => e.FeeName)
+                .IsRequired()
+                .HasMaxLength(250)
+                .HasColumnName("fee_name");
+
+            entity.Property(e => e.FeeType)
+                .IsRequired()
+                .HasMaxLength(50)
+                .HasColumnName("fee_type");
+
+            entity.Property(e => e.CalculationType)
+                .IsRequired()
+                .HasMaxLength(50)
+                .HasColumnName("calculation_type");
+
+            entity.Property(e => e.Value)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("value");
+
+            entity.Property(e => e.Amount)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("amount");
+
+            entity.Property(e => e.Note)
+                .HasMaxLength(1000)
+                .HasColumnName("note");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Quotation).WithMany(p => p.QuotationFees)
+                .HasForeignKey(d => d.QuotationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_QF_QUOTE");
+
+            entity.HasOne(d => d.PurchaseQuotation).WithMany(p => p.QuotationFees)
+                .HasForeignKey(d => d.PurchaseQuotationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_QF_PURCHASE_QUOTE");
+
+            entity.HasOne(d => d.PricingRule).WithMany()
+                .HasForeignKey(d => d.PricingRuleId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_QF_PRICING_RULE");
         });
 
         modelBuilder.Entity<RestrictedItem>(entity =>
