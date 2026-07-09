@@ -1272,6 +1272,10 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
+            entity.Property(e => e.Region)
+                .HasMaxLength(50)
+                .HasColumnName("region")
+                .HasConversion<string>();
             entity.Property(e => e.UserType)
                 .HasMaxLength(50)
                 .HasColumnName("user_type");

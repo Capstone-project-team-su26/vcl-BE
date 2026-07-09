@@ -244,20 +244,29 @@ namespace VCL_BLL.Services
                 throw new UnauthorizedAccessException("Tai khoan chua duoc xac thuc.");
             }
 
+            var role = user.Role ?? string.Empty;
+            var region = user.Region?.ToString() ?? string.Empty;
+
+            // Hỗ trợ tương thích ngược (Backward compatibility) cho các tài khoản cũ
+            if (string.Equals(role, "WarehouseVN", StringComparison.OrdinalIgnoreCase))
+            {
+                role = "WarehouseStaff";
+                region = "VN";
+            }
+            else if (string.Equals(role, "WarehouseTQ", StringComparison.OrdinalIgnoreCase))
+            {
+                role = "WarehouseStaff";
+                region = "TQ";
+            }
+
             var authClaims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.FullName ?? string.Empty),
                 new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
-                new Claim(ClaimTypes.Role, user.Role ?? string.Empty)
+                new Claim(ClaimTypes.Role, role),
+                new Claim("region", region)
             };
-
-            // Tự động map thêm role WarehouseStaff nếu người dùng có role WarehouseVN hoặc WarehouseTQ để tương thích với Backend
-            if (string.Equals(user.Role, "WarehouseVN", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(user.Role, "WarehouseTQ", StringComparison.OrdinalIgnoreCase))
-            {
-                authClaims.Add(new Claim(ClaimTypes.Role, "WarehouseStaff"));
-            }
 
             var token = JwtHelperWrapper.CreateToken(authClaims, _configuration);
             var tokenString = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
@@ -268,7 +277,8 @@ namespace VCL_BLL.Services
                 ExpiresAt = token.ValidTo,
                 UserId = user.Id,
                 FullName = user.FullName,
-                Role = user.Role
+                Role = role,
+                Region = region
             };
         }
 

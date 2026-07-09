@@ -2,6 +2,7 @@
 #nullable disable
 using System;
 using System.Collections.Generic;
+using VCL_DLL.Enums;
 
 namespace VCL_DLL.Models;
 
@@ -22,6 +23,8 @@ public partial class User
     public string UserType { get; set; }
 
     public string Status { get; set; }
+
+    public RegionCode? Region { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 

@@ -48,5 +48,6 @@ namespace VCL_BLL.DTOs
         public Guid UserId { get; set; }
         public string FullName { get; set; }
         public string Role { get; set; }
+        public string Region { get; set; } = string.Empty;
     }
 }

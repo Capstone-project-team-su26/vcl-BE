@@ -2512,6 +2512,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("phone");
 
+                    b.Property<string>("Region")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("region");
+
                     b.Property<int>("ResetPasswordFailedAttempts")
                         .HasColumnType("int");
 
