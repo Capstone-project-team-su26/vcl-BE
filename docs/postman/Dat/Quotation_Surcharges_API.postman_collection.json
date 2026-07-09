@@ -132,8 +132,21 @@
 							{
 								"key": "Authorization",
 								"value": "Bearer {{accessToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
 							}
 						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"serviceType\": null,\n    \"weightKg\": null,\n    \"volumeM3\": null,\n    \"declaredValue\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
 						"url": {
 							"raw": "{{baseUrl}}/api/orders/{{orderId}}/quotation/estimate",
 							"host": [
