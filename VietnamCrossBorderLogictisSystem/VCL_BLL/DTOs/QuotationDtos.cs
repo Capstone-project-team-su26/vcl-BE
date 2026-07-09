@@ -117,8 +117,8 @@ namespace VCL_BLL.DTOs
     public class AdditionalFeeDto
     {
         public Guid? FeeId { get; set; }
-        public string Code { get; set; }
-        public string Label { get; set; }
+        public string? Code { get; set; }
+        public string? Label { get; set; }
         public decimal Amount { get; set; }
         public bool Enabled { get; set; }
     }
