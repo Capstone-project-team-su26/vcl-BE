@@ -107,6 +107,7 @@ namespace VCL_BLL.DTOs
         public DateTime CreatedAt { get; set; }
         public int TotalQuantity { get; set; }
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
+        public PurchaseQuotationResponseDto? Quotation { get; set; }
     }
 
     public class UpdatePurchaseRequestStatusRequestDto
@@ -136,6 +137,30 @@ namespace VCL_BLL.DTOs
         public decimal UnitPrice { get; set; }
     }
 
+    public class PurchaseQuotationAdditionalFeeDto
+    {
+        public Guid? PricingRuleId { get; set; }
+        public string FeeName { get; set; } = string.Empty;
+        public string FeeType { get; set; } = "SURCHARGE";
+        public string CalculationType { get; set; } = "FIXED";
+        public decimal Value { get; set; }
+        public decimal Amount { get; set; }
+        public string? Note { get; set; }
+    }
+
+    public class PurchaseQuotationAdditionalFeeResponseDto
+    {
+        public Guid Id { get; set; }
+        public Guid? PricingRuleId { get; set; }
+        public string FeeName { get; set; } = string.Empty;
+        public string FeeType { get; set; } = string.Empty;
+        public string CalculationType { get; set; } = string.Empty;
+        public decimal Value { get; set; }
+        public decimal Amount { get; set; }
+        public string? Note { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
     public class CreatePurchaseQuotationDto
     {
         /// <summary>Phí mua hộ.</summary>
@@ -152,6 +177,8 @@ namespace VCL_BLL.DTOs
         [Required]
         [MinLength(1, ErrorMessage = "Báo giá phải có ít nhất một sản phẩm.")]
         public List<CreatePurchaseQuotationItemDto> Items { get; set; } = new();
+
+        public List<PurchaseQuotationAdditionalFeeDto> AdditionalFees { get; set; } = new();
     }
 
     public class PurchaseQuotationItemResponseDto
@@ -177,6 +204,7 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public List<PurchaseQuotationItemResponseDto> Items { get; set; } = new();
+        public List<PurchaseQuotationAdditionalFeeResponseDto> AdditionalFees { get; set; } = new();
     }
 
     public class PurchaseRequestListProductDto

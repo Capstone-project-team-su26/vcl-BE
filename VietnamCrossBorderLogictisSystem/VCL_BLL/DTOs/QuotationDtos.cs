@@ -43,6 +43,8 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Chi tiết từng sản phẩm trong đơn hàng</summary>
         public List<OrderItemDetail> Items { get; set; } = new();
+
+        public List<QuotationFeeResponseDto> AdditionalFees { get; set; } = new();
     }
 
     /// <summary>
@@ -121,6 +123,19 @@ namespace VCL_BLL.DTOs
         public bool Enabled { get; set; }
     }
 
+    public class QuotationFeeResponseDto
+    {
+        public Guid Id { get; set; }
+        public Guid? PricingRuleId { get; set; }
+        public string FeeName { get; set; } = string.Empty;
+        public string FeeType { get; set; } = string.Empty;
+        public string CalculationType { get; set; } = string.Empty;
+        public decimal Value { get; set; }
+        public decimal Amount { get; set; }
+        public string? Note { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
     public class QuotationActionResponse
     {
         public string Message { get; set; } = string.Empty;
@@ -177,5 +192,7 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Ghi chú của nhân viên sales</summary>
         public string? SalesNote { get; set; }
+
+        public List<QuotationFeeResponseDto> AdditionalFees { get; set; } = new();
     }
 }

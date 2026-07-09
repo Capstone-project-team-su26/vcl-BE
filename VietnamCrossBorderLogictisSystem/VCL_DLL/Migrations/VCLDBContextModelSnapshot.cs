@@ -1701,6 +1701,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("service_fee");
 
+                    b.Property<Guid?>("ServicePricingId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("service_pricing_id");
+
                     b.Property<string>("Status")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
@@ -1723,9 +1727,80 @@ namespace VCL_DLL.Migrations
 
                     b.HasIndex("OrderId");
 
+                    b.HasIndex("ServicePricingId");
+
                     b.HasIndex("WroId");
 
                     b.ToTable("QUOTATIONS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.QuotationFee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("CalculationType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("calculation_type");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("FeeName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)")
+                        .HasColumnName("fee_name");
+
+                    b.Property<string>("FeeType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("fee_type");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("PricingRuleId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("pricing_rule_id");
+
+                    b.Property<Guid?>("PurchaseQuotationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("purchase_quotation_id");
+
+                    b.Property<Guid?>("QuotationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("quotation_id");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id")
+                        .HasName("PK_QUOTATION_FEES");
+
+                    b.HasIndex("PricingRuleId");
+
+                    b.HasIndex("PurchaseQuotationId");
+
+                    b.HasIndex("QuotationId");
+
+                    b.ToTable("QUOTATION_FEES", (string)null);
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.RestrictedItem", b =>
@@ -2912,6 +2987,11 @@ namespace VCL_DLL.Migrations
                         .HasForeignKey("OrderId")
                         .HasConstraintName("FK_QUOTE_ORDER");
 
+                    b.HasOne("VCL_DLL.Models.ServicePricing", "ServicePricing")
+                        .WithMany()
+                        .HasForeignKey("ServicePricingId")
+                        .HasConstraintName("FK_QUOTE_SERVICE_PRICING");
+
                     b.HasOne("VCL_DLL.Models.WroRequest", "Wro")
                         .WithMany("Quotations")
                         .HasForeignKey("WroId")
@@ -2919,7 +2999,36 @@ namespace VCL_DLL.Migrations
 
                     b.Navigation("Order");
 
+                    b.Navigation("ServicePricing");
+
                     b.Navigation("Wro");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.QuotationFee", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.PricingRule", "PricingRule")
+                        .WithMany()
+                        .HasForeignKey("PricingRuleId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_QF_PRICING_RULE");
+
+                    b.HasOne("VCL_DLL.Models.PurchaseQuotation", "PurchaseQuotation")
+                        .WithMany("QuotationFees")
+                        .HasForeignKey("PurchaseQuotationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("FK_QF_PURCHASE_QUOTE");
+
+                    b.HasOne("VCL_DLL.Models.Quotation", "Quotation")
+                        .WithMany("QuotationFees")
+                        .HasForeignKey("QuotationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("FK_QF_QUOTE");
+
+                    b.Navigation("PricingRule");
+
+                    b.Navigation("PurchaseQuotation");
+
+                    b.Navigation("Quotation");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.ServicePricing", b =>
@@ -3244,6 +3353,8 @@ namespace VCL_DLL.Migrations
             modelBuilder.Entity("VCL_DLL.Models.PurchaseQuotation", b =>
                 {
                     b.Navigation("PurchaseQuotationItems");
+
+                    b.Navigation("QuotationFees");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.PurchaseRequest", b =>
@@ -3254,6 +3365,8 @@ namespace VCL_DLL.Migrations
             modelBuilder.Entity("VCL_DLL.Models.Quotation", b =>
                 {
                     b.Navigation("Invoices");
+
+                    b.Navigation("QuotationFees");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Shelf", b =>
