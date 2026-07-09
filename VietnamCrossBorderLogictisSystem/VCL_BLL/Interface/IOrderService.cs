@@ -17,5 +17,6 @@ namespace VCL_BLL.Interface
         Task<List<string>> GetConsignmentRoutesAsync();
         Task<List<string>> GetShippingOptionsAsync(string? route);
         List<ConsignmentStatusDto> GetConsignmentStatuses();
+        Task<PublicTrackingResponse> TrackConsignmentByCodeAsync(string code);
     }
 }

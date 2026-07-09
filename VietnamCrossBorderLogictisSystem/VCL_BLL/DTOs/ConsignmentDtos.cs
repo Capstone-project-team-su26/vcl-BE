@@ -262,4 +262,30 @@ namespace VCL_BLL.DTOs
         [MinLength(1, ErrorMessage = "Yêu cầu ký gửi phải có ít nhất một mặt hàng.")]
         public List<ConsignmentItemRequest> Items { get; set; } = new();
     }
+
+    /// <summary>
+    /// Thông tin tra cứu công khai một đơn ký gửi theo mã vận đơn (không yêu cầu đăng nhập).
+    /// Chỉ trả về dữ liệu trạng thái, không lộ thông tin nhạy cảm của khách hàng.
+    /// </summary>
+    public class PublicTrackingResponse
+    {
+        public string ConsignmentCode { get; set; } = string.Empty;
+        public string? ConsignmentType { get; set; }
+        public string? Route { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string StatusLabel { get; set; } = string.Empty;
+        public string? ReceiverName { get; set; }
+        public int ItemCount { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public List<PublicTrackingParcelDto> Parcels { get; set; } = new();
+    }
+
+    /// <summary>Trạng thái một kiện hàng thuộc đơn ký gửi trong kết quả tra cứu công khai.</summary>
+    public class PublicTrackingParcelDto
+    {
+        public string PackageCode { get; set; } = string.Empty;
+        public string PackageStatus { get; set; } = string.Empty;
+        public DateTime? CheckInTime { get; set; }
+        public DateTime? PutAwayTime { get; set; }
+    }
 }
