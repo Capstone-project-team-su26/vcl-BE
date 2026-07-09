@@ -252,6 +252,13 @@ namespace VCL_BLL.Services
                 new Claim(ClaimTypes.Role, user.Role ?? string.Empty)
             };
 
+            // Tự động map thêm role WarehouseStaff nếu người dùng có role WarehouseVN hoặc WarehouseTQ để tương thích với Backend
+            if (string.Equals(user.Role, "WarehouseVN", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(user.Role, "WarehouseTQ", StringComparison.OrdinalIgnoreCase))
+            {
+                authClaims.Add(new Claim(ClaimTypes.Role, "WarehouseStaff"));
+            }
+
             var token = JwtHelperWrapper.CreateToken(authClaims, _configuration);
             var tokenString = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
 
