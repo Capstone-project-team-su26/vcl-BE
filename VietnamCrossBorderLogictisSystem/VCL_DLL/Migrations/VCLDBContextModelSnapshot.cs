@@ -22,6 +22,72 @@ namespace VCL_DLL.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("VCL_DLL.Models.AdditionalServiceFee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("CalculationType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("calculation_type");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("FeeCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("fee_code");
+
+                    b.Property<string>("FeeName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)")
+                        .HasColumnName("fee_name");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("unit");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id")
+                        .HasName("PK_ADDITIONAL_SERVICE_FEES");
+
+                    b.HasIndex("FeeCode")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_ADDITIONAL_SERVICE_FEE_CODE");
+
+                    b.ToTable("ADDITIONAL_SERVICE_FEES", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Bin", b =>
                 {
                     b.Property<Guid>("Id")

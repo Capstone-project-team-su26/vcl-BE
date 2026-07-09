@@ -107,6 +107,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<Message> Messages { get; set; }
 
+    public virtual DbSet<AdditionalServiceFee> AdditionalServiceFees { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DeliveryAddress>(entity =>
@@ -1669,6 +1671,26 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.ConversationId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("FK_MSG_CONV");
+        });
+
+        modelBuilder.Entity<AdditionalServiceFee>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_ADDITIONAL_SERVICE_FEES");
+
+            entity.ToTable("ADDITIONAL_SERVICE_FEES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.FeeName).IsRequired().HasMaxLength(150).HasColumnName("fee_name");
+            entity.Property(e => e.FeeCode).IsRequired().HasMaxLength(50).HasColumnName("fee_code");
+            entity.Property(e => e.CalculationType).IsRequired().HasMaxLength(50).HasColumnName("calculation_type");
+            entity.Property(e => e.Value).HasColumnType("decimal(18, 2)").HasColumnName("value");
+            entity.Property(e => e.Unit).HasMaxLength(50).HasColumnName("unit");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.Description).HasMaxLength(1000).HasColumnName("description");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.FeeCode).IsUnique().HasDatabaseName("UQ_ADDITIONAL_SERVICE_FEE_CODE");
         });
 
         OnModelCreatingPartial(modelBuilder);

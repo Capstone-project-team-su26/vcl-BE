@@ -1,0 +1,440 @@
+{
+	"info": {
+		"_postman_id": "c1a2d3e4-f567-890a-bcde-f123456789ab",
+		"name": "VCL - Additional Service Fees",
+		"description": "Postman Collection for testing Additional Service Fees (Quản lý cấu hình phí dịch vụ bổ sung) endpoints in the Vietnam Cross-Border Logistics (VCL) system.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Login Admin",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.environment.set(\"accessToken\", jsonData.token);",
+									"    pm.globals.set(\"accessToken\", jsonData.token);",
+									"    console.log(\"Saved accessToken: \" + jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@vcl.com\",\n    \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						},
+						"description": "Authenticate as Admin to obtain access token."
+					},
+					"response": []
+				},
+				{
+					"name": "Login Customer",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.token) {",
+									"    pm.environment.set(\"accessToken\", jsonData.token);",
+									"    pm.globals.set(\"accessToken\", jsonData.token);",
+									"    console.log(\"Saved accessToken: \" + jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"customer@vcl.com\",\n    \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						},
+						"description": "Authenticate as Customer to test role authorization (should return 403 Forbidden on Admin endpoints)."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Additional Service Fees",
+			"item": [
+				{
+					"name": "Get All Additional Service Fees (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/additional-service-fees?activeOnly=false",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"additional-service-fees"
+							],
+							"query": [
+								{
+									"key": "activeOnly",
+									"value": "false"
+								}
+							]
+						},
+						"description": "Get all configured additional service fees."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Active Additional Service Fees (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/additional-service-fees?activeOnly=true",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"additional-service-fees"
+							],
+							"query": [
+								{
+									"key": "activeOnly",
+									"value": "true"
+								}
+							]
+						},
+						"description": "Get active additional service fees only."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Additional Service Fee (Admin Only)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.data && jsonData.data.id) {",
+									"    pm.globals.set(\"additionalServiceFeeId\", jsonData.data.id);",
+									"    console.log(\"Saved additionalServiceFeeId: \" + jsonData.data.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"feeName\": \"Phí đóng thùng gỗ\",\n    \"feeCode\": \"WOOD_CRATE\",\n    \"calculationType\": \"FIXED\",\n    \"value\": 150000.0,\n    \"unit\": \"VND\",\n    \"isActive\": true,\n    \"description\": \"Phí đóng thùng gỗ bảo vệ kiện hàng dễ vỡ\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/additional-service-fees",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"additional-service-fees"
+							]
+						},
+						"description": "Create a new additional service fee."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Duplicate Fee Code - Expect 400 (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"feeName\": \"Phí đóng thùng gỗ trùng\",\n    \"feeCode\": \"WOOD_CRATE\",\n    \"calculationType\": \"PERCENTAGE\",\n    \"value\": 5.0,\n    \"unit\": \"%\",\n    \"isActive\": true,\n    \"description\": \"Tạo trùng mã code để test validation\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/additional-service-fees",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"additional-service-fees"
+							]
+						},
+						"description": "Attempt to create a fee with duplicate feeCode. Expect 400 Bad Request."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Invalid Value - Expect 400 (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"feeName\": \"Phí lỗi\",\n    \"feeCode\": \"INVALID_FEE\",\n    \"calculationType\": \"FIXED\",\n    \"value\": -100.0,\n    \"unit\": \"VND\",\n    \"isActive\": true,\n    \"description\": \"Test giá trị phí âm\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/additional-service-fees",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"additional-service-fees"
+							]
+						},
+						"description": "Attempt to create a fee with negative value. Expect 400 Bad Request."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Additional Service Fee Detail (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/additional-service-fees/{{additionalServiceFeeId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"additional-service-fees",
+								"{{additionalServiceFeeId}}"
+							]
+						},
+						"description": "Get detailed config of a fee by ID."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Additional Service Fee (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"feeName\": \"Phí đóng thùng gỗ (Updated)\",\n    \"feeCode\": \"WOOD_CRATE\",\n    \"calculationType\": \"FIXED\",\n    \"value\": 180000.0,\n    \"unit\": \"VND\",\n    \"isActive\": false,\n    \"description\": \"Cập nhật giá đóng thùng và vô hiệu hóa để thử nghiệm\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/additional-service-fees/{{additionalServiceFeeId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"additional-service-fees",
+								"{{additionalServiceFeeId}}"
+							]
+						},
+						"description": "Update config details of a fee."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Additional Service Fee (Admin Only)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/additional-service-fees/{{additionalServiceFeeId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"additional-service-fees",
+								"{{additionalServiceFeeId}}"
+							]
+						},
+						"description": "Remove the configured fee by ID."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7237",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
