@@ -245,7 +245,7 @@ namespace VCL_BLL.Services
                 totalEstimatedCost = estimatedFreightCharge + serviceFee;
 
                 var domesticRule = activeRules.FirstOrDefault(r =>
-                    (r.ServicePricingId == matchedPricing.Id || r.ServicePricingId == null) &&
+                    (r.ServicePricingId == matchedPricing?.Id || r.ServicePricingId == null) &&
                     (string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(r.ConditionType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
@@ -765,7 +765,7 @@ namespace VCL_BLL.Services
                 totalEstimatedCost = estimatedFreightCharge + serviceFee;
 
                 var domesticRule = activeRules.FirstOrDefault(r =>
-                    (r.ServicePricingId == matchedPricing.Id || r.ServicePricingId == null) &&
+                    (r.ServicePricingId == matchedPricing?.Id || r.ServicePricingId == null) &&
                     (string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(r.ConditionType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
