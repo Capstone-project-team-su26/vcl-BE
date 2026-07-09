@@ -29,4 +29,6 @@ public partial class PurchaseQuotation
     public virtual PurchaseRequest PurchaseRequest { get; set; }
 
     public virtual ICollection<PurchaseQuotationItem> PurchaseQuotationItems { get; set; } = new List<PurchaseQuotationItem>();
+
+    public virtual ICollection<QuotationFee> QuotationFees { get; set; } = new List<QuotationFee>();
 }

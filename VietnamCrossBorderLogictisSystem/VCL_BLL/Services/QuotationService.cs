@@ -219,18 +219,72 @@ namespace VCL_BLL.Services
             bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
                                  string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
 
+            var quotationFees = new List<QuotationFee>();
+            var now = DateTime.UtcNow;
+
+            if (estimatedFreightCharge > 0)
+            {
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = "Cước vận chuyển quốc tế",
+                    FeeType = "MAIN_SERVICE",
+                    CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
+                    Value = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate),
+                    Amount = estimatedFreightCharge,
+                    Note = $"Cước vận chuyển quốc tế dựa trên cân nặng tính cước {Math.Round(chargeableWeight, 2)} kg",
+                    CreatedAt = now
+                });
+            }
+
             if (isConsignment)
             {
                 var domesticShippingFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
                 serviceFee = domesticShippingFee;
                 taxAndDuty = 0m;
                 totalEstimatedCost = estimatedFreightCharge + serviceFee;
+
+                var domesticRule = activeRules.FirstOrDefault(r =>
+                    (r.ServicePricingId == matchedPricing?.Id || r.ServicePricingId == null) &&
+                    (string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.ConditionType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     r.RuleName.Contains("nội địa", StringComparison.OrdinalIgnoreCase))
+                );
+
+                if (domesticShippingFee > 0)
+                {
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        PricingRuleId = domesticRule?.Id,
+                        FeeName = domesticRule?.RuleName ?? "Phí vận chuyển nội địa",
+                        FeeType = "DOMESTIC_FEE",
+                        CalculationType = domesticRule?.CalculationType ?? "FIXED",
+                        Value = domesticRule?.Value ?? domesticShippingFee,
+                        Amount = domesticShippingFee,
+                        Note = domesticRule?.Description ?? "Phí vận chuyển nội địa ước tính",
+                        CreatedAt = now
+                    });
+                }
             }
             else
             {
                 decimal baseServiceFee = IsExpressServiceType(consignmentType)
                     ? ExpressServiceFee
                     : StandardServiceFee;
+
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = IsExpressServiceType(consignmentType) ? "Phí dịch vụ Hỏa Tốc" : "Phí dịch vụ Chuẩn",
+                    FeeType = "SERVICE_FEE",
+                    CalculationType = "FIXED",
+                    Value = baseServiceFee,
+                    Amount = baseServiceFee,
+                    Note = "Phí dịch vụ cơ bản",
+                    CreatedAt = now
+                });
 
                 decimal totalSurcharges = 0m;
                 foreach (var rule in activeRules)
@@ -350,16 +404,46 @@ namespace VCL_BLL.Services
                         }
 
                         totalSurcharges += surchargeAmount;
+
+                        if (surchargeAmount > 0)
+                        {
+                            quotationFees.Add(new QuotationFee
+                            {
+                                Id = Guid.NewGuid(),
+                                PricingRuleId = rule.Id,
+                                FeeName = rule.RuleName,
+                                FeeType = "SURCHARGE",
+                                CalculationType = rule.CalculationType,
+                                Value = rule.Value,
+                                Amount = surchargeAmount,
+                                Note = rule.Description,
+                                CreatedAt = now
+                            });
+                        }
                     }
                 }
 
                 serviceFee = baseServiceFee + totalSurcharges;
                 taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
                 totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
+
+                if (taxAndDuty > 0)
+                {
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        FeeName = "Thuế & phí hải quan tạm tính",
+                        FeeType = "TAX",
+                        CalculationType = "PERCENTAGE",
+                        Value = TaxRate * 100m,
+                        Amount = taxAndDuty,
+                        Note = "10% giá trị khai báo hàng hóa",
+                        CreatedAt = now
+                    });
+                }
             }
 
             // 7. Tạo Quotation record trong DB
-            var now = DateTime.UtcNow;
             var quotation = new Quotation
             {
                 Id = Guid.NewGuid(),
@@ -371,11 +455,19 @@ namespace VCL_BLL.Services
                 TaxAndDuty = taxAndDuty,
                 TotalVolume = totalVolume / 1000000m,
                 CreatedAt = now,
-                ExpiredAt = now.AddDays(QuotationValidDays)
+                ExpiredAt = now.AddDays(QuotationValidDays),
+                ServicePricingId = matchedPricing?.Id
             };
 
             var quotationRepo = _unitOfWork.Repository<Quotation>();
             await quotationRepo.AddAsync(quotation);
+
+            // Save Quotation Fees to DB
+            foreach (var qf in quotationFees)
+            {
+                qf.QuotationId = quotation.Id;
+                await _unitOfWork.Repository<QuotationFee>().AddAsync(qf);
+            }
 
             // Cập nhật tổng cân nặng & thể tích trên Order
             order.TotalWeight = totalWeight;
@@ -402,7 +494,19 @@ namespace VCL_BLL.Services
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = now,
                 ExpiredAt = quotation.ExpiredAt,
-                Items = itemDetails
+                Items = itemDetails,
+                AdditionalFees = quotationFees.Select(f => new QuotationFeeResponseDto
+                {
+                    Id = f.Id,
+                    PricingRuleId = f.PricingRuleId,
+                    FeeName = f.FeeName,
+                    FeeType = f.FeeType,
+                    CalculationType = f.CalculationType,
+                    Value = f.Value,
+                    Amount = f.Amount,
+                    Note = f.Note,
+                    CreatedAt = f.CreatedAt
+                }).ToList()
             };
         }
 
@@ -635,18 +739,72 @@ namespace VCL_BLL.Services
             bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
                                  string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
 
+            var additionalFees = new List<QuotationFeeResponseDto>();
+            var now = DateTime.UtcNow;
+
+            if (estimatedFreightCharge > 0)
+            {
+                additionalFees.Add(new QuotationFeeResponseDto
+                {
+                    Id = Guid.Empty,
+                    FeeName = "Cước vận chuyển quốc tế",
+                    FeeType = "MAIN_SERVICE",
+                    CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
+                    Value = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate),
+                    Amount = estimatedFreightCharge,
+                    Note = $"Cước vận chuyển quốc tế dựa trên cân nặng tính cước {Math.Round(chargeableWeight, 2)} kg",
+                    CreatedAt = now
+                });
+            }
+
             if (isConsignment)
             {
                 var domesticShippingFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
                 serviceFee = domesticShippingFee;
                 taxAndDuty = 0m;
                 totalEstimatedCost = estimatedFreightCharge + serviceFee;
+
+                var domesticRule = activeRules.FirstOrDefault(r =>
+                    (r.ServicePricingId == matchedPricing?.Id || r.ServicePricingId == null) &&
+                    (string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.ConditionType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     r.RuleName.Contains("nội địa", StringComparison.OrdinalIgnoreCase))
+                );
+
+                if (domesticShippingFee > 0)
+                {
+                    additionalFees.Add(new QuotationFeeResponseDto
+                    {
+                        Id = Guid.Empty,
+                        PricingRuleId = domesticRule?.Id,
+                        FeeName = domesticRule?.RuleName ?? "Phí vận chuyển nội địa",
+                        FeeType = "DOMESTIC_FEE",
+                        CalculationType = domesticRule?.CalculationType ?? "FIXED",
+                        Value = domesticRule?.Value ?? domesticShippingFee,
+                        Amount = domesticShippingFee,
+                        Note = domesticRule?.Description ?? "Phí vận chuyển nội địa ước tính",
+                        CreatedAt = now
+                    });
+                }
             }
             else
             {
                 decimal baseServiceFee = IsExpressServiceType(consignmentType)
                     ? ExpressServiceFee
                     : StandardServiceFee;
+
+                additionalFees.Add(new QuotationFeeResponseDto
+                {
+                    Id = Guid.Empty,
+                    FeeName = IsExpressServiceType(consignmentType) ? "Phí dịch vụ Hỏa Tốc" : "Phí dịch vụ Chuẩn",
+                    FeeType = "SERVICE_FEE",
+                    CalculationType = "FIXED",
+                    Value = baseServiceFee,
+                    Amount = baseServiceFee,
+                    Note = "Phí dịch vụ cơ bản",
+                    CreatedAt = now
+                });
 
                 decimal totalSurcharges = 0m;
                 foreach (var rule in activeRules)
@@ -692,12 +850,43 @@ namespace VCL_BLL.Services
                             surchargeAmount = chargeableWeight * rule.Value;
 
                         totalSurcharges += surchargeAmount;
+
+                        if (surchargeAmount > 0)
+                        {
+                            additionalFees.Add(new QuotationFeeResponseDto
+                            {
+                                Id = Guid.Empty,
+                                PricingRuleId = rule.Id,
+                                FeeName = rule.RuleName,
+                                FeeType = "SURCHARGE",
+                                CalculationType = rule.CalculationType,
+                                Value = rule.Value,
+                                Amount = surchargeAmount,
+                                Note = rule.Description,
+                                CreatedAt = now
+                            });
+                        }
                     }
                 }
 
                 serviceFee = baseServiceFee + totalSurcharges;
                 taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
                 totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
+
+                if (taxAndDuty > 0)
+                {
+                    additionalFees.Add(new QuotationFeeResponseDto
+                    {
+                        Id = Guid.Empty,
+                        FeeName = "Thuế & phí hải quan tạm tính",
+                        FeeType = "TAX",
+                        CalculationType = "PERCENTAGE",
+                        Value = TaxRate * 100m,
+                        Amount = taxAndDuty,
+                        Note = "10% giá trị khai báo hàng hóa",
+                        CreatedAt = now
+                    });
+                }
             }
 
             return new EstimateQuotationResponse
@@ -717,7 +906,8 @@ namespace VCL_BLL.Services
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = DateTime.UtcNow,
                 ExpiredAt = DateTime.UtcNow.AddDays(QuotationValidDays),
-                Items = itemDetails
+                Items = itemDetails,
+                AdditionalFees = additionalFees
             };
         }
 
@@ -860,6 +1050,92 @@ namespace VCL_BLL.Services
             }
 
             var now = DateTime.UtcNow;
+            var quotationFees = new List<QuotationFee>();
+
+            // Save main freight charge
+            if (estimatedFreightCharge > 0)
+            {
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = "Cước vận chuyển quốc tế",
+                    FeeType = "MAIN_SERVICE",
+                    CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
+                    Value = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate),
+                    Amount = estimatedFreightCharge,
+                    Note = $"Cước vận chuyển quốc tế chính thức",
+                    CreatedAt = now
+                });
+            }
+
+            // Save tax and duty
+            if (taxAndDuty > 0)
+            {
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = "Thuế & phí hải quan tạm tính",
+                    FeeType = "TAX",
+                    CalculationType = "PERCENTAGE",
+                    Value = TaxRate * 100m,
+                    Amount = taxAndDuty,
+                    Note = "10% giá trị khai báo hàng hóa",
+                    CreatedAt = now
+                });
+            }
+
+            // Save service fee
+            if (serviceFee > 0)
+            {
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = isConsignment ? "Phí vận chuyển nội địa" : "Phí dịch vụ cơ bản",
+                    FeeType = isConsignment ? "DOMESTIC_FEE" : "SERVICE_FEE",
+                    CalculationType = "FIXED",
+                    Value = serviceFee,
+                    Amount = serviceFee,
+                    Note = isConsignment ? "Phí vận chuyển nội địa chính thức" : "Phí dịch vụ cơ bản chính thức",
+                    CreatedAt = now
+                });
+            }
+
+            if (request.Quotation != null && request.Quotation.AdditionalFees != null)
+            {
+                foreach (var feeDto in request.Quotation.AdditionalFees)
+                {
+                    if (feeDto.Enabled && feeDto.Amount > 0)
+                    {
+                        PricingRule rule = null;
+                        if (feeDto.FeeId.HasValue)
+                        {
+                            rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(feeDto.FeeId.Value);
+                            if (rule == null)
+                            {
+                                throw new ArgumentException($"Không tìm thấy quy định phí với ID: {feeDto.FeeId.Value}");
+                            }
+                            if (!string.Equals(rule.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                            {
+                                throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
+                            }
+                        }
+
+                        quotationFees.Add(new QuotationFee
+                        {
+                            Id = Guid.NewGuid(),
+                            PricingRuleId = feeDto.FeeId,
+                            FeeName = feeDto.Label ?? rule?.RuleName ?? "Phụ phí bổ sung",
+                            FeeType = "SURCHARGE",
+                            CalculationType = rule?.CalculationType ?? "FIXED",
+                            Value = rule?.Value ?? feeDto.Amount,
+                            Amount = feeDto.Amount,
+                            Note = rule?.Description ?? "Phụ phí bổ sung được áp dụng",
+                            CreatedAt = now
+                        });
+                    }
+                }
+            }
+
             var quotation = new Quotation
             {
                 Id = Guid.NewGuid(),
@@ -871,11 +1147,18 @@ namespace VCL_BLL.Services
                 TaxAndDuty = taxAndDuty,
                 TotalVolume = totalVolumeCm3 / 1000000m,
                 CreatedAt = now,
-                ExpiredAt = now.AddDays(QuotationValidDays)
+                ExpiredAt = now.AddDays(QuotationValidDays),
+                ServicePricingId = matchedPricing?.Id
             };
 
             var quotationRepo = _unitOfWork.Repository<Quotation>();
             await quotationRepo.AddAsync(quotation);
+
+            foreach (var qf in quotationFees)
+            {
+                qf.QuotationId = quotation.Id;
+                await _unitOfWork.Repository<QuotationFee>().AddAsync(qf);
+            }
 
             order.Status = "QUOTATION_SENT";
             order.TotalWeight = totalActualWeight > 0m ? totalActualWeight : order.TotalWeight;
@@ -1019,6 +1302,24 @@ namespace VCL_BLL.Services
                                    + (quotation.ServiceFee ?? 0m)
                                    + (quotation.TaxAndDuty ?? 0m);
 
+            // Fetch associated quotation fees
+            var feeRepo = _unitOfWork.Repository<QuotationFee>();
+            var allFees = await feeRepo.GetAllAsync();
+            var fees = allFees.Where(f => f.QuotationId == quotation.Id).ToList();
+
+            var feeDtos = fees.Select(f => new QuotationFeeResponseDto
+            {
+                Id = f.Id,
+                PricingRuleId = f.PricingRuleId,
+                FeeName = f.FeeName,
+                FeeType = f.FeeType,
+                CalculationType = f.CalculationType,
+                Value = f.Value,
+                Amount = f.Amount,
+                Note = f.Note,
+                CreatedAt = f.CreatedAt
+            }).ToList();
+
             return new QuotationDetailResponse
             {
                 QuotationId = quotation.Id,
@@ -1036,7 +1337,8 @@ namespace VCL_BLL.Services
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 ExpiredAt = quotation.ExpiredAt,
-                SalesNote = null
+                SalesNote = null,
+                AdditionalFees = feeDtos
             };
         }
 
