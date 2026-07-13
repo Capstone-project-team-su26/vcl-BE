@@ -174,8 +174,8 @@ namespace VCL_BLL.Services
                 Length = request.Length,
                 Width = request.Width,
                 Height = request.Height,
-                VolumetricWeight = volumetricWeight.HasValue ? Math.Round(volumetricWeight.Value, 2) : null,
-                ChargeableWeight = Math.Round(chargeableWeight, 2),
+                VolumetricWeight = volumetricWeight.HasValue ? Math.Round(volumetricWeight.Value, 4) : null,
+                ChargeableWeight = Math.Round(chargeableWeight, 4),
                 PackageStatus = parcel.PackageStatus,
                 DeclaredItems = orderItems.Select(item => new DeclaredItemDto
                 {
@@ -250,8 +250,8 @@ namespace VCL_BLL.Services
                 Length = parcel.Length,
                 Width = parcel.Width,
                 Height = parcel.Height,
-                VolumetricWeight = parcel.VolumetricWeight.HasValue ? Math.Round(parcel.VolumetricWeight.Value, 2) : null,
-                ChargeableWeight = parcel.ChargeableWeight.HasValue ? Math.Round(parcel.ChargeableWeight.Value, 2) : null,
+                VolumetricWeight = parcel.VolumetricWeight.HasValue ? Math.Round(parcel.VolumetricWeight.Value, 4) : null,
+                ChargeableWeight = parcel.ChargeableWeight.HasValue ? Math.Round(parcel.ChargeableWeight.Value, 4) : null,
                 CheckInTime = parcel.CheckInTime,
                 PutAwayTime = parcel.PutAwayTime,
                 StorageLocation = location
@@ -324,8 +324,8 @@ namespace VCL_BLL.Services
                     Length = p.Length,
                     Width = p.Width,
                     Height = p.Height,
-                    VolumetricWeight = p.VolumetricWeight.HasValue ? Math.Round(p.VolumetricWeight.Value, 2) : null,
-                    ChargeableWeight = p.ChargeableWeight.HasValue ? Math.Round(p.ChargeableWeight.Value, 2) : null,
+                    VolumetricWeight = p.VolumetricWeight.HasValue ? Math.Round(p.VolumetricWeight.Value, 4) : null,
+                    ChargeableWeight = p.ChargeableWeight.HasValue ? Math.Round(p.ChargeableWeight.Value, 4) : null,
                     PackageStatus = p.PackageStatus ?? string.Empty,
                     CheckInTime = p.CheckInTime
                 };
