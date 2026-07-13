@@ -761,7 +761,7 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("status");
 
                     b.Property<decimal?>("TotalVolume")
-                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnType("decimal(18, 6)")
                         .HasColumnName("total_volume");
 
                     b.Property<decimal?>("TotalWeight")
@@ -943,7 +943,7 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("status");
 
                     b.Property<decimal?>("TotalVolume")
-                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnType("decimal(18, 6)")
                         .HasColumnName("total_volume");
 
                     b.Property<decimal?>("TotalWeight")
@@ -1908,7 +1908,7 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("tax_and_duty");
 
                     b.Property<decimal?>("TotalVolume")
-                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnType("decimal(18, 6)")
                         .HasColumnName("total_volume");
 
                     b.Property<Guid?>("WroId")

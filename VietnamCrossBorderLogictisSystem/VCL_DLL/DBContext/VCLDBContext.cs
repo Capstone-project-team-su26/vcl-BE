@@ -492,7 +492,7 @@ public partial class VCLDBContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("status");
             entity.Property(e => e.TotalVolume)
-                .HasColumnType("decimal(18, 2)")
+                .HasColumnType("decimal(18, 6)")
                 .HasColumnName("total_volume");
             entity.Property(e => e.TotalWeight)
                 .HasColumnType("decimal(18, 2)")
@@ -614,7 +614,7 @@ public partial class VCLDBContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("status");
             entity.Property(e => e.TotalVolume)
-                .HasColumnType("decimal(18, 2)")
+                .HasColumnType("decimal(18, 6)")
                 .HasColumnName("total_volume");
             entity.Property(e => e.TotalWeight)
                 .HasColumnType("decimal(18, 2)")
@@ -808,7 +808,7 @@ public partial class VCLDBContext : DbContext
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("tax_and_duty");
             entity.Property(e => e.TotalVolume)
-                .HasColumnType("decimal(18, 2)")
+                .HasColumnType("decimal(18, 6)")
                 .HasColumnName("total_volume");
             entity.Property(e => e.WroId).HasColumnName("wro_id");
             entity.Property(e => e.ServicePricingId).HasColumnName("service_pricing_id");
