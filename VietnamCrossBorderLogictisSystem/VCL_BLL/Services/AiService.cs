@@ -17,6 +17,11 @@ public class AiService : IAiService
 {
     private readonly IUnitOfWork _unitOfWork;
 
+    private static PredictionEngine<PutAwayModelInput, PutAwayModelPrediction>? _cachedPredEngine;
+    private static string[] _cachedBinIdLabels = Array.Empty<string>();
+    private static int _cachedHistoryHash = -1;
+    private static readonly object _modelLock = new object();
+
     public AiService(IUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
@@ -143,26 +148,44 @@ public class AiService : IAiService
 
         try
         {
-            var mlContext = new MLContext(seed: 42);
-            var trainingDataView = mlContext.Data.LoadFromEnumerable(trainingData);
+            PredictionEngine<PutAwayModelInput, PutAwayModelPrediction> predEngine;
+            string[] binIdLabels;
 
-            // Pipeline huấn luyện ML.NET
-            var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", nameof(PutAwayModelInput.BinId))
-                .Append(mlContext.Transforms.Categorical.OneHotEncoding("CategoryEncoded", nameof(PutAwayModelInput.Category)))
-                .Append(mlContext.Transforms.Concatenate("Features", nameof(PutAwayModelInput.Weight), nameof(PutAwayModelInput.Volume), "CategoryEncoded"))
-                .Append(mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy("Label", "Features"))
-                .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+            lock (_modelLock)
+            {
+                int currentHash = trainingData.Count;
+                foreach (var item in trainingData)
+                {
+                    currentHash = HashCode.Combine(currentHash, item.BinId, item.Weight, item.Volume, item.Category);
+                }
 
-            var mlModel = pipeline.Fit(trainingDataView);
+                if (_cachedPredEngine == null || currentHash != _cachedHistoryHash)
+                {
+                    var mlContext = new MLContext(seed: 42);
+                    var trainingDataView = mlContext.Data.LoadFromEnumerable(trainingData);
 
-            // Đọc danh sách nhãn BinId đã ánh xạ sang chỉ số của mảng Score
-            VBuffer<ReadOnlyMemory<char>> keys = default;
-            var labelColumn = mlModel.Transform(trainingDataView).Schema["Label"];
-            labelColumn.GetKeyValues(ref keys);
-            var binIdLabels = keys.DenseValues().Select(x => x.ToString()).ToArray();
+                    // Pipeline huấn luyện ML.NET
+                    var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", nameof(PutAwayModelInput.BinId))
+                        .Append(mlContext.Transforms.Categorical.OneHotEncoding("CategoryEncoded", nameof(PutAwayModelInput.Category)))
+                        .Append(mlContext.Transforms.Concatenate("Features", nameof(PutAwayModelInput.Weight), nameof(PutAwayModelInput.Volume), "CategoryEncoded"))
+                        .Append(mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy("Label", "Features"))
+                        .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
 
-            // Tạo engine dự báo
-            var predEngine = mlContext.Model.CreatePredictionEngine<PutAwayModelInput, PutAwayModelPrediction>(mlModel);
+                    var mlModel = pipeline.Fit(trainingDataView);
+
+                    // Đọc danh sách nhãn BinId đã ánh xạ sang chỉ số của mảng Score
+                    VBuffer<ReadOnlyMemory<char>> keys = default;
+                    var labelColumn = mlModel.Transform(trainingDataView).Schema["Label"];
+                    labelColumn.GetKeyValues(ref keys);
+                    
+                    _cachedBinIdLabels = keys.DenseValues().Select(x => x.ToString()).ToArray();
+                    _cachedPredEngine = mlContext.Model.CreatePredictionEngine<PutAwayModelInput, PutAwayModelPrediction>(mlModel);
+                    _cachedHistoryHash = currentHash;
+                }
+
+                predEngine = _cachedPredEngine;
+                binIdLabels = _cachedBinIdLabels;
+            }
 
             var modelInput = new PutAwayModelInput
             {
