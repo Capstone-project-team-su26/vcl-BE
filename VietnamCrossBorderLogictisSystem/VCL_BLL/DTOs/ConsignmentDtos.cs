@@ -24,6 +24,7 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; } = string.Empty;
         public string? OrderType { get; set; }
         public decimal? TotalWeight { get; set; }
+        /// <summary>Tổng thể tích (cm³)</summary>
         public decimal? TotalVolume { get; set; }
         public string? Note { get; set; }
         public string? Route { get; set; }
@@ -71,6 +72,7 @@ namespace VCL_BLL.DTOs
         public decimal? EstimatedFreightCharge { get; set; }
         public decimal? ServiceFee { get; set; }
         public decimal? TaxAndDuty { get; set; }
+        /// <summary>Tổng thể tích (cm³)</summary>
         public decimal? TotalVolume { get; set; }
         public decimal TotalEstimatedCost { get; set; }
         public DateTime? CreatedAt { get; set; }

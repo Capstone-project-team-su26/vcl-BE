@@ -179,7 +179,7 @@ namespace VCL_BLL.DTOs
         /// <summary>Tổng cân nặng thực tế (kg)</summary>
         public decimal TotalWeight { get; set; }
 
-        /// <summary>Tổng thể tích (m³)</summary>
+        /// <summary>Tổng thể tích (cm³)</summary>
         public decimal TotalVolume { get; set; }
 
         /// <summary>Cân nặng quy đổi thể tích (kg)</summary>

@@ -23,6 +23,7 @@ namespace VCL_BLL.DTOs
         public string ConsignmentType { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public decimal? TotalWeight { get; set; }
+        /// <summary>Tổng thể tích (cm³)</summary>
         public decimal? TotalVolume { get; set; }
         public string? Route { get; set; }
         public string? ReceiverName { get; set; }
