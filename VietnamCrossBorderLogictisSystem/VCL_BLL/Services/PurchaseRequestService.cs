@@ -540,8 +540,16 @@ namespace VCL_BLL.Services
                     throw new ArgumentException($"Sản phẩm '{reqItem.ProductName}' phải có thông tin phân loại sản phẩm (ProductType).");
                 }
 
-                var category = categories.FirstOrDefault(c => 
-                    string.Equals(c.Name?.Trim(), reqItem.ProductType?.Trim(), StringComparison.OrdinalIgnoreCase));
+                ProductType category = null;
+                if (Guid.TryParse(reqItem.ProductType.Trim(), out var guidId))
+                {
+                    category = categories.FirstOrDefault(c => c.Id == guidId);
+                }
+                else
+                {
+                    category = categories.FirstOrDefault(c => 
+                        string.Equals(c.Name?.Trim(), reqItem.ProductType?.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
 
                 if (category == null || !category.ImportTaxRate.HasValue)
                 {

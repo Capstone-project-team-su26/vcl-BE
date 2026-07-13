@@ -1813,8 +1813,16 @@ namespace VCL_BLL.Services
                     throw new ArgumentException("Mặt hàng phải có thông tin phân loại sản phẩm (ProductType).");
                 }
 
-                var category = categories.FirstOrDefault(c =>
-                    string.Equals(c.Name?.Trim(), item.ProductType?.Trim(), StringComparison.OrdinalIgnoreCase));
+                ProductType category = null;
+                if (Guid.TryParse(item.ProductType.Trim(), out var guidId))
+                {
+                    category = categories.FirstOrDefault(c => c.Id == guidId);
+                }
+                else
+                {
+                    category = categories.FirstOrDefault(c =>
+                        string.Equals(c.Name?.Trim(), item.ProductType?.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
 
                 if (category == null || !category.ImportTaxRate.HasValue)
                 {
