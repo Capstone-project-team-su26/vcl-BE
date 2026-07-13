@@ -26,6 +26,8 @@ namespace VCL_BLL.DTOs
         public decimal? TotalWeight { get; set; }
         /// <summary>Tổng thể tích (cm³)</summary>
         public decimal? TotalVolume { get; set; }
+        /// <summary>Tổng thể tích (m³)</summary>
+        public decimal? TotalVolumeM3 { get; set; }
         public string? Note { get; set; }
         public string? Route { get; set; }
         public string? ReceiverName { get; set; }
@@ -77,6 +79,8 @@ namespace VCL_BLL.DTOs
         public decimal? TaxAndDuty { get; set; }
         /// <summary>Tổng thể tích (cm³)</summary>
         public decimal? TotalVolume { get; set; }
+        /// <summary>Tổng thể tích (m³)</summary>
+        public decimal? TotalVolumeM3 { get; set; }
         public decimal TotalEstimatedCost { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? ExpiredAt { get; set; }

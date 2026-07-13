@@ -491,6 +491,7 @@ namespace VCL_BLL.Services
                     ServiceFee = latestQuotation.ServiceFee,
                     TaxAndDuty = latestQuotation.TaxAndDuty,
                     TotalVolume = latestQuotation.TotalVolume,
+                    TotalVolumeM3 = latestQuotation.TotalVolume / 1000000m,
                     TotalEstimatedCost = freight + service + tax + additionalSurchargesAmount,
                     CreatedAt = latestQuotation.CreatedAt,
                     ExpiredAt = latestQuotation.ExpiredAt
@@ -506,6 +507,7 @@ namespace VCL_BLL.Services
                 OrderType = order.OrderType,
                 TotalWeight = order.TotalWeight,
                 TotalVolume = order.TotalVolume,
+                TotalVolumeM3 = order.TotalVolume / 1000000m,
                 Note = order.Note,
                 Route = order.Route,
                 ReceiverName = order.ReceiverName,
@@ -762,6 +764,7 @@ namespace VCL_BLL.Services
                     Status = o.Status ?? string.Empty,
                     TotalWeight = o.TotalWeight,
                     TotalVolume = o.TotalVolume,
+                    TotalVolumeM3 = o.TotalVolume / 1000000m,
                     Route = o.Route,
                     ReceiverName = o.ReceiverName,
                     ReceiverPhone = o.ReceiverPhone,

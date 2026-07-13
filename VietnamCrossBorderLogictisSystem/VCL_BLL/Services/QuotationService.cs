@@ -162,7 +162,7 @@ namespace VCL_BLL.Services
                 var itemVolume = itemLength * itemWidth * itemHeight;
                 var itemDeclaredValue = item.DeclaredValue ?? 0m;
 
-                totalWeight += itemWeight;
+                totalWeight += itemWeight * qty;
                 totalVolume += itemVolume * qty;
                 totalDeclaredValue += itemDeclaredValue * qty;
 
@@ -535,6 +535,7 @@ namespace VCL_BLL.Services
                 Status = quotation.Status,
                 TotalWeight = totalWeight,
                 TotalVolume = totalVolume,
+                TotalVolumeM3 = totalVolume / 1000000m,
                 VolumetricWeight = Math.Round(volumetricWeight, 4),
                 ChargeableWeight = Math.Round(chargeableWeight, 4),
                 EstimatedFreightCharge = estimatedFreightCharge,
@@ -977,6 +978,7 @@ namespace VCL_BLL.Services
                 Status = "DRAFT",
                 TotalWeight = totalWeight,
                 TotalVolume = totalVolume,
+                TotalVolumeM3 = totalVolume / 1000000m,
                 VolumetricWeight = Math.Round(volumetricWeight, 4),
                 ChargeableWeight = Math.Round(chargeableWeight, 4),
                 EstimatedFreightCharge = estimatedFreightCharge,
@@ -1295,6 +1297,7 @@ namespace VCL_BLL.Services
                     Status = order.Status,
                     ConsignmentType = order.ConsignmentType,
                     TotalVolume = order.TotalVolume,
+                    TotalVolumeM3 = order.TotalVolume / 1000000m,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
                     CreatedAt = order.CreatedAt
@@ -1341,6 +1344,7 @@ namespace VCL_BLL.Services
                     Status = order.Status,
                     ConsignmentType = order.ConsignmentType,
                     TotalVolume = order.TotalVolume,
+                    TotalVolumeM3 = order.TotalVolume / 1000000m,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
                     CreatedAt = order.CreatedAt
@@ -1382,6 +1386,7 @@ namespace VCL_BLL.Services
                     Status = order.Status,
                     ConsignmentType = order.ConsignmentType,
                     TotalVolume = order.TotalVolume,
+                    TotalVolumeM3 = order.TotalVolume / 1000000m,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
                     CreatedAt = order.CreatedAt
@@ -1424,6 +1429,31 @@ namespace VCL_BLL.Services
             // Tính VolumetricWeight từ tổng thể tích đơn hàng (TotalVolume lưu theo cm³)
             var divisor = GetVolumetricDivisor(allActiveRules);
             var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) / divisor, 4);
+
+            var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
+            var allPricings = await servicePricingRepo.GetAllAsync();
+            var consignmentType = order.ConsignmentType ?? "Express";
+            var route = order.Route;
+            var matchedPricing = allPricings
+                .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
+                .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                .OrderByDescending(p => p.EffectiveDate)
+                .FirstOrDefault(p =>
+                    string.IsNullOrWhiteSpace(route) ||
+                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route, StringComparison.OrdinalIgnoreCase) ||
+                    (p.OriginCountry != null && route.Contains(p.OriginCountry, StringComparison.OrdinalIgnoreCase)) ||
+                    (p.DestinationCountry != null && route.Contains(p.DestinationCountry, StringComparison.OrdinalIgnoreCase))
+                );
+            if (matchedPricing == null)
+            {
+                matchedPricing = allPricings
+                    .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
+                    .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                    .OrderByDescending(p => p.EffectiveDate)
+                    .FirstOrDefault();
+            }
+
+            var minimumWeight = GetMinimumWeight(allActiveRules, matchedPricing);
 
             // Bổ sung các PricingRule đang hoạt động nếu chưa có trong DB của báo giá này
             var activeRules = allActiveRules
@@ -1494,8 +1524,9 @@ namespace VCL_BLL.Services
                 ConsignmentCode = order.ConsignmentCode,
                 TotalWeight = order.TotalWeight ?? 0m,
                 TotalVolume = order.TotalVolume ?? 0m,
+                TotalVolumeM3 = (order.TotalVolume ?? 0m) / 1000000m,
                 VolumetricWeight = volumetricWeight,
-                ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, volumetricWeight),
+                ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, Math.Max(volumetricWeight, minimumWeight)),
                 EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,
                 ServiceFee = quotation.ServiceFee ?? 0m,
                 TaxAndDuty = quotation.TaxAndDuty ?? 0m,
@@ -1540,6 +1571,31 @@ namespace VCL_BLL.Services
                 .ToList();
 
             var divisor = GetVolumetricDivisor(allActiveRules);
+            
+            var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
+            var allPricings = await servicePricingRepo.GetAllAsync();
+            var consignmentType = order.ConsignmentType ?? "Express";
+            var route = order.Route;
+            var matchedPricing = allPricings
+                .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
+                .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                .OrderByDescending(p => p.EffectiveDate)
+                .FirstOrDefault(p =>
+                    string.IsNullOrWhiteSpace(route) ||
+                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route, StringComparison.OrdinalIgnoreCase) ||
+                    (p.OriginCountry != null && route.Contains(p.OriginCountry, StringComparison.OrdinalIgnoreCase)) ||
+                    (p.DestinationCountry != null && route.Contains(p.DestinationCountry, StringComparison.OrdinalIgnoreCase))
+                );
+            if (matchedPricing == null)
+            {
+                matchedPricing = allPricings
+                    .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
+                    .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                    .OrderByDescending(p => p.EffectiveDate)
+                    .FirstOrDefault();
+            }
+
+            var minimumWeight = GetMinimumWeight(allActiveRules, matchedPricing);
             var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) / divisor, 4);
 
             var activeRules = allActiveRules
@@ -1611,8 +1667,9 @@ namespace VCL_BLL.Services
                 ConsignmentCode = order.ConsignmentCode,
                 TotalWeight = order.TotalWeight ?? 0m,
                 TotalVolume = order.TotalVolume ?? 0m,
+                TotalVolumeM3 = (order.TotalVolume ?? 0m) / 1000000m,
                 VolumetricWeight = volumetricWeight,
-                ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, volumetricWeight),
+                ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, Math.Max(volumetricWeight, minimumWeight)),
                 EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,
                 ServiceFee = quotation.ServiceFee ?? 0m,
                 TaxAndDuty = quotation.TaxAndDuty ?? 0m,

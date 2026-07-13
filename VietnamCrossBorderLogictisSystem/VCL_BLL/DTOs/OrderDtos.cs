@@ -25,6 +25,8 @@ namespace VCL_BLL.DTOs
         public decimal? TotalWeight { get; set; }
         /// <summary>Tổng thể tích (cm³)</summary>
         public decimal? TotalVolume { get; set; }
+        /// <summary>Tổng thể tích (m³)</summary>
+        public decimal? TotalVolumeM3 { get; set; }
         public string? Route { get; set; }
         public string? ReceiverName { get; set; }
         public string? ReceiverPhone { get; set; }
