@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.ML;
+using Microsoft.ML.Data;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
@@ -16,13 +16,10 @@ namespace VCL_BLL.Services;
 public class AiService : IAiService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IConfiguration _configuration;
-    private static readonly HttpClient _httpClient = new HttpClient();
 
-    public AiService(IUnitOfWork unitOfWork, IConfiguration configuration)
+    public AiService(IUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
-        _configuration = configuration;
     }
 
     public async Task<PutawaySuggestionResponseDto> GetPutawaySuggestionsAsync(PutawaySuggestionRequest request)
@@ -79,7 +76,7 @@ public class AiService : IAiService
             parcelWeight = parcel.ActualWeight.Value;
         }
 
-        // 4. Lấy danh sách layout items hợp lệ của kho và Bin hoạt động
+        // 4. Lấy danh sách layout items hợp lệ của kho và các Bin hoạt động
         var layoutRepo = _unitOfWork.Repository<WarehouseLocationLayout>();
         var allLayouts = await layoutRepo.GetAllAsync();
         var validLayouts = allLayouts.Where(l => l.WarehouseId == request.WarehouseId &&
@@ -98,68 +95,97 @@ public class AiService : IAiService
                                                   string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
                                       .ToList();
 
-        // 5. Cố gắng gọi Python AI Service để lấy phân bố xác suất
-        var predictions = new List<PythonPrediction>();
-        bool isPythonServiceCalled = false;
-
-        try
+        // 5. Xác định Category của kiện hàng để làm đầu vào mô hình
+        string category = "General";
+        if (parcel.ConsignmentId.HasValue)
         {
-            string aiServiceUrl = _configuration["AiServiceUrl"] ?? "http://localhost:8000";
-            
-            // Tìm category từ OrderItem (nếu có)
-            string category = "General";
-            if (parcel.ConsignmentId.HasValue)
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            var orderItems = await orderItemRepo.GetAllAsync();
+            var item = orderItems.FirstOrDefault(oi => oi.OrderId == parcel.ConsignmentId.Value);
+            if (item != null && !string.IsNullOrEmpty(item.ProductName))
             {
-                var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-                var orderItems = await orderItemRepo.GetAllAsync();
-                var item = orderItems.FirstOrDefault(oi => oi.OrderId == parcel.ConsignmentId.Value);
-                if (item != null && !string.IsNullOrEmpty(item.ProductName))
-                {
-                    category = item.ProductName;
-                }
-            }
-
-            var predictRequest = new PythonPredictRequest
-            {
-                Weight = (double)parcelWeight,
-                Volume = (double)parcelVolume,
-                Category = category
-            };
-
-            var httpResponse = await _httpClient.PostAsJsonAsync($"{aiServiceUrl}/predict_proba", predictRequest);
-            if (httpResponse.IsSuccessStatusCode)
-            {
-                var aiResult = await httpResponse.Content.ReadFromJsonAsync<PythonAiResponse>();
-                if (aiResult != null && aiResult.Predictions != null)
-                {
-                    predictions = aiResult.Predictions;
-                    isPythonServiceCalled = true;
-                }
+                category = item.ProductName;
             }
         }
-        catch (Exception ex)
+
+        // 6. Lấy lịch sử xếp dỡ và huấn luyện mô hình ML.NET in-process
+        var historyRepo = _unitOfWork.Repository<PutAwayHistory>();
+        var histories = await historyRepo.GetAllAsync();
+
+        var trainingData = histories.Select(h => new PutAwayModelInput
         {
-            // Log warning hoặc chi tiết lỗi
-            Console.WriteLine($"[AI Service Warning] Không thể kết nối với Python AI Service: {ex.Message}");
+            Weight = (float)h.ParcelWeight,
+            Volume = (float)h.Volume,
+            Category = h.Category,
+            BinId = h.BinId.ToString()
+        }).ToList();
+
+        var distinctBinsInHistory = trainingData.Select(x => x.BinId).Distinct().ToList();
+
+        // Bảo đảm có ít nhất 2 nhãn phân loại khác nhau để ML.NET phân loại
+        if (distinctBinsInHistory.Count < 2)
+        {
+            var activeBinIds = activeBins.Keys.Select(k => k.ToString()).ToList();
+            if (activeBinIds.Count >= 2)
+            {
+                trainingData.Add(new PutAwayModelInput { Weight = 5.0f, Volume = 0.01f, Category = "Fragile", BinId = activeBinIds[0] });
+                trainingData.Add(new PutAwayModelInput { Weight = 1.0f, Volume = 0.002f, Category = "Shoes", BinId = activeBinIds[1] });
+            }
+            else if (activeBinIds.Count == 1)
+            {
+                trainingData.Add(new PutAwayModelInput { Weight = 5.0f, Volume = 0.01f, Category = "Fragile", BinId = activeBinIds[0] });
+                trainingData.Add(new PutAwayModelInput { Weight = 1.0f, Volume = 0.001f, Category = "Dummy", BinId = Guid.Empty.ToString() });
+            }
         }
 
         var suggestions = new List<SuggestedLocationDto>();
         bool preferredZoneHasAvailable = false;
 
-        if (isPythonServiceCalled && predictions.Any())
+        try
         {
-            // A. Dùng kết quả từ AI Model Python
-            foreach (var pred in predictions)
+            var mlContext = new MLContext(seed: 42);
+            var trainingDataView = mlContext.Data.LoadFromEnumerable(trainingData);
+
+            // Pipeline huấn luyện ML.NET
+            var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", nameof(PutAwayModelInput.BinId))
+                .Append(mlContext.Transforms.Categorical.OneHotEncoding("CategoryEncoded", nameof(PutAwayModelInput.Category)))
+                .Append(mlContext.Transforms.Concatenate("Features", nameof(PutAwayModelInput.Weight), nameof(PutAwayModelInput.Volume), "CategoryEncoded"))
+                .Append(mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy("Label", "Features"))
+                .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+
+            var mlModel = pipeline.Fit(trainingDataView);
+
+            // Đọc danh sách nhãn BinId đã ánh xạ sang chỉ số của mảng Score
+            VBuffer<ReadOnlyMemory<char>> keys = default;
+            var labelColumn = mlModel.Transform(trainingDataView).Schema["Label"];
+            labelColumn.GetKeyValues(ref keys);
+            var binIdLabels = keys.DenseValues().Select(x => x.ToString()).ToArray();
+
+            // Tạo engine dự báo
+            var predEngine = mlContext.Model.CreatePredictionEngine<PutAwayModelInput, PutAwayModelPrediction>(mlModel);
+
+            var modelInput = new PutAwayModelInput
             {
-                if (!Guid.TryParse(pred.BinId, out var binGuid))
+                Weight = (float)parcelWeight,
+                Volume = (float)parcelVolume,
+                Category = category
+            };
+
+            var prediction = predEngine.Predict(modelInput);
+
+            // Đọc phân phối xác suất
+            for (int i = 0; i < prediction.Score.Length; i++)
+            {
+                string binIdStr = binIdLabels[i];
+                if (!Guid.TryParse(binIdStr, out var binGuid) || binGuid == Guid.Empty)
                     continue;
 
-                // Tìm layout item tương ứng với Bin
+                // Tìm vị trí ô sơ đồ trong kho
                 var layout = validLayouts.FirstOrDefault(l => l.BinId == binGuid);
                 if (layout == null || !activeBins.TryGetValue(binGuid, out var bin))
                     continue;
 
-                // Kiểm tra thể tích khả dụng
+                // A. Kiểm tra thể tích khả dụng
                 decimal availableVolume = decimal.MaxValue;
                 if (bin.MaxVolume.HasValue)
                 {
@@ -168,7 +194,7 @@ public class AiService : IAiService
                         continue;
                 }
 
-                // Kiểm tra tải trọng khả dụng
+                // B. Kiểm tra tải trọng khả dụng
                 decimal availableWeight = decimal.MaxValue;
                 var parcelsInBin = storedParcels.Where(p => p.BinId == bin.Id).ToList();
                 decimal currentWeightInBin = parcelsInBin.Sum(p => p.ActualWeight ?? 0m);
@@ -180,8 +206,14 @@ public class AiService : IAiService
                         continue;
                 }
 
-                if (request.PreferredZoneId.HasValue && layout.ZoneId == request.PreferredZoneId.Value)
+                decimal probability = (decimal)prediction.Score[i];
+                string reason = $"AI (ML.NET SDCA Maximum Entropy) dự đoán với xác suất là {probability * 100:0.0}% dựa trên lịch sử xếp dỡ.";
+
+                bool isPreferred = request.PreferredZoneId.HasValue && layout.ZoneId == request.PreferredZoneId.Value;
+                if (isPreferred)
                 {
+                    probability += 0.1m;
+                    reason = $"Vị trí thuộc khu vực ưu tiên và được AI đánh giá xác suất tin cậy {(decimal)prediction.Score[i] * 100:0.0}%.";
                     preferredZoneHasAvailable = true;
                 }
 
@@ -193,22 +225,21 @@ public class AiService : IAiService
                     ShelfId = layout.ShelfId,
                     BinId = layout.BinId,
                     DisplayLabel = layout.DisplayLabel,
-                    ConfidenceScore = pred.Probability,
-                    Reason = $"AI dự đoán với xác suất khớp là {pred.Probability * 100:0.0}% dựa trên lịch sử xếp dỡ."
+                    ConfidenceScore = Math.Min(1.0m, probability),
+                    Reason = reason
                 });
             }
         }
-        else
+        catch (Exception ex)
         {
-            // B. Fallback: Sử dụng mô hình chấm điểm Heuristic nội bộ của C#
-            response.Warnings.Add("Dịch vụ AI Python chưa hoạt động. Đang đề xuất dựa trên mô hình thuật toán dự phòng.");
-
+            response.Warnings.Add($"Không thể chạy mô hình AI ML.NET: {ex.Message}. Đang chuyển sang đề xuất dự phòng.");
+            
+            // Fallback sang Heuristic nếu mô hình lỗi
             foreach (var layout in validLayouts)
             {
                 if (!layout.BinId.HasValue || !activeBins.TryGetValue(layout.BinId.Value, out var bin))
                     continue;
 
-                // Kiểm tra thể tích khả dụng
                 decimal availableVolume = decimal.MaxValue;
                 if (bin.MaxVolume.HasValue)
                 {
@@ -217,7 +248,6 @@ public class AiService : IAiService
                         continue;
                 }
 
-                // Kiểm tra tải trọng khả dụng
                 decimal availableWeight = decimal.MaxValue;
                 var parcelsInBin = storedParcels.Where(p => p.BinId == bin.Id).ToList();
                 decimal currentWeightInBin = parcelsInBin.Sum(p => p.ActualWeight ?? 0m);
@@ -257,13 +287,13 @@ public class AiService : IAiService
             }
         }
 
-        // 6. Thêm cảnh báo nếu khu vực ưu tiên không có chỗ
+        // 7. Thêm cảnh báo nếu khu vực ưu tiên không có chỗ
         if (request.PreferredZoneId.HasValue && !preferredZoneHasAvailable)
         {
             response.Warnings.Add("Khu vực yêu cầu (preferredZoneId) không có vị trí trống hoặc khả dụng. Đã đề xuất các khu vực khác.");
         }
 
-        // 7. Sắp xếp giảm dần theo ConfidenceScore và lấy Top 5
+        // 8. Sắp xếp giảm dần theo ConfidenceScore và lấy Top 5
         response.SuggestedLocations = suggestions
             .OrderByDescending(s => s.ConfidenceScore)
             .Take(5)
@@ -276,22 +306,4 @@ public class AiService : IAiService
 
         return response;
     }
-}
-
-public class PythonPredictRequest
-{
-    public double Weight { get; set; }
-    public double Volume { get; set; }
-    public string Category { get; set; } = string.Empty;
-}
-
-public class PythonAiResponse
-{
-    public List<PythonPrediction> Predictions { get; set; } = new();
-}
-
-public class PythonPrediction
-{
-    public string BinId { get; set; } = string.Empty;
-    public decimal Probability { get; set; }
 }
