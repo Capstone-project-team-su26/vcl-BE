@@ -21,6 +21,10 @@ public partial class Quotation
 
     public decimal? TaxAndDuty { get; set; }
 
+    public decimal? Vat { get; set; }
+
+    public decimal? ImportTax { get; set; }
+
     public decimal? TotalVolume { get; set; }
 
     public decimal? ServiceFee { get; set; }

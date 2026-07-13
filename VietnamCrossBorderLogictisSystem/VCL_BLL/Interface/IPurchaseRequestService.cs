@@ -11,5 +11,6 @@ namespace VCL_BLL.Interface
         Task<PurchaseRequestDetailResponseDto> GetPurchaseRequestDetailAsync(Guid requestId, Guid? userId, string userRole);
         Task<UpdatePurchaseRequestStatusResponseDto> UpdatePurchaseRequestStatusAsync(Guid requestId, Guid userId, string userRole, UpdatePurchaseRequestStatusRequestDto request);
         Task<PurchaseQuotationResponseDto> CreatePurchaseQuotationAsync(Guid requestId, Guid userId, string userRole, CreatePurchaseQuotationDto request);
+        Task<PurchaseQuotationResponseDto> GetPurchaseQuotationByRequestIdAsync(Guid requestId);
     }
 }

@@ -1374,6 +1374,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("(getutcdate())");
 
+                    b.Property<decimal?>("ImportTaxRate")
+                        .HasColumnType("decimal(18, 4)")
+                        .HasColumnName("import_tax_rate");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -1395,6 +1399,7 @@ namespace VCL_DLL.Migrations
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000001"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            ImportTaxRate = 0.10m,
                             IsActive = true,
                             Name = "Điện tử"
                         },
@@ -1402,6 +1407,7 @@ namespace VCL_DLL.Migrations
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000002"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            ImportTaxRate = 0.08m,
                             IsActive = true,
                             Name = "Quần áo"
                         },
@@ -1409,6 +1415,7 @@ namespace VCL_DLL.Migrations
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000003"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            ImportTaxRate = 0.10m,
                             IsActive = true,
                             Name = "Mỹ phẩm"
                         },
@@ -1416,6 +1423,7 @@ namespace VCL_DLL.Migrations
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000004"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            ImportTaxRate = 0.05m,
                             IsActive = true,
                             Name = "Phụ kiện"
                         },
@@ -1423,6 +1431,7 @@ namespace VCL_DLL.Migrations
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000005"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            ImportTaxRate = 0.05m,
                             IsActive = true,
                             Name = "Thực phẩm"
                         },
@@ -1430,6 +1439,7 @@ namespace VCL_DLL.Migrations
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000006"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            ImportTaxRate = 0.05m,
                             IsActive = true,
                             Name = "Sách"
                         },
@@ -1437,6 +1447,7 @@ namespace VCL_DLL.Migrations
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000007"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            ImportTaxRate = 0.05m,
                             IsActive = true,
                             Name = "Đồ chơi"
                         },
@@ -1444,6 +1455,7 @@ namespace VCL_DLL.Migrations
                         {
                             Id = new Guid("11111111-0000-0000-0000-000000000008"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            ImportTaxRate = 0.08m,
                             IsActive = true,
                             Name = "Đồ gia dụng"
                         });
@@ -1646,6 +1658,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("created_by");
 
+                    b.Property<decimal?>("ImportTax")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("import_tax");
+
                     b.Property<string>("Note")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
@@ -1675,6 +1691,10 @@ namespace VCL_DLL.Migrations
                     b.Property<decimal>("TotalAmount")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("total_amount");
+
+                    b.Property<decimal?>("Vat")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("vat");
 
                     b.HasKey("Id")
                         .HasName("PK_PURCHASE_QUOTATIONS");
@@ -1881,6 +1901,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("expired_at");
 
+                    b.Property<decimal?>("ImportTax")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("import_tax");
+
                     b.Property<Guid?>("OrderId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("order_id");
@@ -1910,6 +1934,10 @@ namespace VCL_DLL.Migrations
                     b.Property<decimal?>("TotalVolume")
                         .HasColumnType("decimal(18, 6)")
                         .HasColumnName("total_volume");
+
+                    b.Property<decimal?>("Vat")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("vat");
 
                     b.Property<Guid?>("WroId")
                         .HasColumnType("uniqueidentifier")

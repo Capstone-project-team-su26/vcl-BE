@@ -16,6 +16,10 @@ public partial class PurchaseQuotation
 
     public decimal ShippingFee { get; set; }
 
+    public decimal? Vat { get; set; }
+
+    public decimal? ImportTax { get; set; }
+
     public decimal TotalAmount { get; set; }
 
     public string Note { get; set; }

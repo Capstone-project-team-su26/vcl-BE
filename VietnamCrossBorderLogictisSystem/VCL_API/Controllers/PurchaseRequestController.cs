@@ -217,5 +217,26 @@ namespace VCL_API.Controllers
                 return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Lấy báo giá hiện tại của một yêu cầu mua hộ
+        /// </summary>
+        [HttpGet("{requestId}/quotation")]
+        public async Task<IActionResult> GetPurchaseQuotation(Guid requestId)
+        {
+            try
+            {
+                var result = await _purchaseRequestService.GetPurchaseQuotationByRequestIdAsync(requestId);
+                return Ok(new { message = "Lấy báo giá mua hộ thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
     }
 }

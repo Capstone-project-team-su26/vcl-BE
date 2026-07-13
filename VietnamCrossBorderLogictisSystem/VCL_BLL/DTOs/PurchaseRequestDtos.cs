@@ -199,6 +199,8 @@ namespace VCL_BLL.DTOs
         public decimal ProductsSubtotal { get; set; }
         public decimal PurchaseFee { get; set; }
         public decimal ShippingFee { get; set; }
+        public decimal Vat { get; set; }
+        public decimal ImportTax { get; set; }
         public decimal TotalAmount { get; set; }
         public string? Note { get; set; }
         public string Status { get; set; } = string.Empty;

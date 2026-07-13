@@ -11,5 +11,7 @@ public partial class ProductType
 
     public bool IsActive { get; set; }
 
+    public decimal? ImportTaxRate { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 }
