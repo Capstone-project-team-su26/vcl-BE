@@ -75,6 +75,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<WarehouseZone> WarehouseZones { get; set; }
 
+    public virtual DbSet<WarehouseLocationLayout> WarehouseLocationLayouts { get; set; }
+
     public virtual DbSet<WroItem> WroItems { get; set; }
 
     public virtual DbSet<WroRequest> WroRequests { get; set; }
@@ -1337,6 +1339,84 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.IsActive)
                 .HasDefaultValue(true)
                 .HasColumnName("is_active");
+        });
+
+        modelBuilder.Entity<WarehouseLocationLayout>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_WAREHOUSE_LOCATION_LAYOUTS");
+
+            entity.ToTable("WAREHOUSE_LOCATION_LAYOUTS");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("(newid())")
+                .HasColumnName("id");
+
+            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.ZoneId).HasColumnName("zone_id");
+            entity.Property(e => e.ShelfId).HasColumnName("shelf_id");
+            entity.Property(e => e.BinId).HasColumnName("bin_id");
+
+            entity.Property(e => e.RowIndex).HasColumnName("row_index");
+            entity.Property(e => e.ColumnIndex).HasColumnName("column_index");
+
+            entity.Property(e => e.DisplayLabel)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasColumnName("display_label");
+
+            entity.Property(e => e.LayoutType)
+                .IsRequired()
+                .HasMaxLength(50)
+                .HasDefaultValue("BIN")
+                .HasColumnName("layout_type");
+
+            entity.Property(e => e.Status)
+                .IsRequired()
+                .HasMaxLength(50)
+                .HasDefaultValue("ACTIVE")
+                .HasColumnName("status");
+
+            entity.Property(e => e.Width).HasColumnName("width");
+            entity.Property(e => e.Height).HasColumnName("height");
+
+            entity.Property(e => e.ColorCode)
+                .HasMaxLength(50)
+                .HasColumnName("color_code");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            // Unique index for coordinates inside one warehouse
+            entity.HasIndex(e => new { e.WarehouseId, e.RowIndex, e.ColumnIndex })
+                .IsUnique()
+                .HasDatabaseName("UQ_WH_LAYOUT_COORDS");
+
+            entity.HasOne(d => d.Warehouse)
+                .WithMany()
+                .HasForeignKey(d => d.WarehouseId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_WH_LAYOUT_WH");
+
+            entity.HasOne(d => d.Zone)
+                .WithMany()
+                .HasForeignKey(d => d.ZoneId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_WH_LAYOUT_ZONE");
+
+            entity.HasOne(d => d.Shelf)
+                .WithMany()
+                .HasForeignKey(d => d.ShelfId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_WH_LAYOUT_SHELF");
+
+            entity.HasOne(d => d.Bin)
+                .WithMany()
+                .HasForeignKey(d => d.BinId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_WH_LAYOUT_BIN");
         });
 
         modelBuilder.Entity<WarehouseReceivingNote>(entity =>
