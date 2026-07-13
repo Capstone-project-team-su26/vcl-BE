@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
@@ -13,10 +16,13 @@ namespace VCL_BLL.Services;
 public class AiService : IAiService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IConfiguration _configuration;
+    private static readonly HttpClient _httpClient = new HttpClient();
 
-    public AiService(IUnitOfWork unitOfWork)
+    public AiService(IUnitOfWork unitOfWork, IConfiguration configuration)
     {
         _unitOfWork = unitOfWork;
+        _configuration = configuration;
     }
 
     public async Task<PutawaySuggestionResponseDto> GetPutawaySuggestionsAsync(PutawaySuggestionRequest request)
@@ -64,7 +70,7 @@ public class AiService : IAiService
             parcelWeight = parcel.ActualWeight.Value;
         }
 
-        // 4. Lấy danh sách layout items hợp lệ của kho
+        // 4. Lấy danh sách layout items hợp lệ của kho và Bin hoạt động
         var layoutRepo = _unitOfWork.Repository<WarehouseLocationLayout>();
         var allLayouts = await layoutRepo.GetAllAsync();
         var validLayouts = allLayouts.Where(l => l.WarehouseId == request.WarehouseId &&
@@ -83,79 +89,172 @@ public class AiService : IAiService
                                                   string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
                                       .ToList();
 
+        // 5. Cố gắng gọi Python AI Service để lấy phân bố xác suất
+        var predictions = new List<PythonPrediction>();
+        bool isPythonServiceCalled = false;
+
+        try
+        {
+            string aiServiceUrl = _configuration["AiServiceUrl"] ?? "http://localhost:8000";
+            
+            // Tìm category từ OrderItem (nếu có)
+            string category = "General";
+            if (parcel.ConsignmentId.HasValue)
+            {
+                var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+                var orderItems = await orderItemRepo.GetAllAsync();
+                var item = orderItems.FirstOrDefault(oi => oi.OrderId == parcel.ConsignmentId.Value);
+                if (item != null && !string.IsNullOrEmpty(item.ProductName))
+                {
+                    category = item.ProductName;
+                }
+            }
+
+            var predictRequest = new PythonPredictRequest
+            {
+                Weight = (double)parcelWeight,
+                Volume = (double)parcelVolume,
+                Category = category
+            };
+
+            var httpResponse = await _httpClient.PostAsJsonAsync($"{aiServiceUrl}/predict_proba", predictRequest);
+            if (httpResponse.IsSuccessStatusCode)
+            {
+                var aiResult = await httpResponse.Content.ReadFromJsonAsync<PythonAiResponse>();
+                if (aiResult != null && aiResult.Predictions != null)
+                {
+                    predictions = aiResult.Predictions;
+                    isPythonServiceCalled = true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log warning hoặc chi tiết lỗi
+            Console.WriteLine($"[AI Service Warning] Không thể kết nối với Python AI Service: {ex.Message}");
+        }
+
         var suggestions = new List<SuggestedLocationDto>();
         bool preferredZoneHasAvailable = false;
 
-        foreach (var layout in validLayouts)
+        if (isPythonServiceCalled && predictions.Any())
         {
-            if (!layout.BinId.HasValue || !activeBins.TryGetValue(layout.BinId.Value, out var bin))
+            // A. Dùng kết quả từ AI Model Python
+            foreach (var pred in predictions)
             {
-                continue; // Skip layout items not linked to an active Bin
-            }
+                if (!Guid.TryParse(pred.BinId, out var binGuid))
+                    continue;
 
-            // A. Kiểm tra thể tích khả dụng
-            decimal availableVolume = decimal.MaxValue;
-            if (bin.MaxVolume.HasValue)
-            {
-                availableVolume = Math.Max(0m, bin.MaxVolume.Value - (bin.CurrentVolume ?? 0m));
-                if (hasDimensions && parcelVolume > availableVolume)
+                // Tìm layout item tương ứng với Bin
+                var layout = validLayouts.FirstOrDefault(l => l.BinId == binGuid);
+                if (layout == null || !activeBins.TryGetValue(binGuid, out var bin))
+                    continue;
+
+                // Kiểm tra thể tích khả dụng
+                decimal availableVolume = decimal.MaxValue;
+                if (bin.MaxVolume.HasValue)
                 {
-                    continue; // Không đủ thể tích
+                    availableVolume = Math.Max(0m, bin.MaxVolume.Value - (bin.CurrentVolume ?? 0m));
+                    if (hasDimensions && parcelVolume > availableVolume)
+                        continue;
                 }
-            }
 
-            // B. Kiểm tra tải trọng khả dụng
-            decimal availableWeight = decimal.MaxValue;
-            var parcelsInBin = storedParcels.Where(p => p.BinId == bin.Id).ToList();
-            decimal currentWeightInBin = parcelsInBin.Sum(p => p.ActualWeight ?? 0m);
+                // Kiểm tra tải trọng khả dụng
+                decimal availableWeight = decimal.MaxValue;
+                var parcelsInBin = storedParcels.Where(p => p.BinId == bin.Id).ToList();
+                decimal currentWeightInBin = parcelsInBin.Sum(p => p.ActualWeight ?? 0m);
 
-            if (bin.MaxWeight.HasValue)
-            {
-                availableWeight = Math.Max(0m, bin.MaxWeight.Value - currentWeightInBin);
-                if (parcelWeight > 0 && parcelWeight > availableWeight)
+                if (bin.MaxWeight.HasValue)
                 {
-                    continue; // Không đủ tải trọng
+                    availableWeight = Math.Max(0m, bin.MaxWeight.Value - currentWeightInBin);
+                    if (parcelWeight > 0 && parcelWeight > availableWeight)
+                        continue;
                 }
+
+                if (request.PreferredZoneId.HasValue && layout.ZoneId == request.PreferredZoneId.Value)
+                {
+                    preferredZoneHasAvailable = true;
+                }
+
+                suggestions.Add(new SuggestedLocationDto
+                {
+                    LocationId = layout.Id,
+                    WarehouseId = layout.WarehouseId,
+                    ZoneId = layout.ZoneId,
+                    ShelfId = layout.ShelfId,
+                    BinId = layout.BinId,
+                    DisplayLabel = layout.DisplayLabel,
+                    ConfidenceScore = pred.Probability,
+                    Reason = $"AI dự đoán với xác suất khớp là {pred.Probability * 100:0.0}% dựa trên lịch sử xếp dỡ."
+                });
             }
+        }
+        else
+        {
+            // B. Fallback: Sử dụng mô hình chấm điểm Heuristic nội bộ của C#
+            response.Warnings.Add("Dịch vụ AI Python chưa hoạt động. Đang đề xuất dựa trên mô hình thuật toán dự phòng.");
 
-            // C. Xác định xem ô có trống hoàn toàn không
-            bool isEntirelyEmpty = (bin.CurrentVolume ?? 0m) == 0m && parcelsInBin.Count == 0;
-
-            // D. Tính Confidence Score
-            decimal confidenceScore = isEntirelyEmpty ? 0.9m : 0.7m;
-            string reason = isEntirelyEmpty ? "Vị trí trống hoàn toàn." : "Vị trí còn đủ sức chứa khả dụng.";
-
-            // E. Ưu tiên khu vực mong muốn (Preferred Zone)
-            bool isPreferred = request.PreferredZoneId.HasValue && layout.ZoneId == request.PreferredZoneId.Value;
-            if (isPreferred)
+            foreach (var layout in validLayouts)
             {
-                confidenceScore += 0.1m;
-                reason = isEntirelyEmpty
-                    ? "Vị trí trống hoàn toàn và thuộc khu vực ưu tiên của bạn."
-                    : "Vị trí thuộc khu vực ưu tiên, còn đủ sức chứa khả dụng.";
-                preferredZoneHasAvailable = true;
+                if (!layout.BinId.HasValue || !activeBins.TryGetValue(layout.BinId.Value, out var bin))
+                    continue;
+
+                // Kiểm tra thể tích khả dụng
+                decimal availableVolume = decimal.MaxValue;
+                if (bin.MaxVolume.HasValue)
+                {
+                    availableVolume = Math.Max(0m, bin.MaxVolume.Value - (bin.CurrentVolume ?? 0m));
+                    if (hasDimensions && parcelVolume > availableVolume)
+                        continue;
+                }
+
+                // Kiểm tra tải trọng khả dụng
+                decimal availableWeight = decimal.MaxValue;
+                var parcelsInBin = storedParcels.Where(p => p.BinId == bin.Id).ToList();
+                decimal currentWeightInBin = parcelsInBin.Sum(p => p.ActualWeight ?? 0m);
+
+                if (bin.MaxWeight.HasValue)
+                {
+                    availableWeight = Math.Max(0m, bin.MaxWeight.Value - currentWeightInBin);
+                    if (parcelWeight > 0 && parcelWeight > availableWeight)
+                        continue;
+                }
+
+                bool isEntirelyEmpty = (bin.CurrentVolume ?? 0m) == 0m && parcelsInBin.Count == 0;
+                decimal confidenceScore = isEntirelyEmpty ? 0.9m : 0.7m;
+                string reason = isEntirelyEmpty ? "Vị trí trống hoàn toàn." : "Vị trí còn đủ sức chứa khả dụng.";
+
+                bool isPreferred = request.PreferredZoneId.HasValue && layout.ZoneId == request.PreferredZoneId.Value;
+                if (isPreferred)
+                {
+                    confidenceScore += 0.1m;
+                    reason = isEntirelyEmpty
+                        ? "Vị trí trống hoàn toàn và thuộc khu vực ưu tiên của bạn."
+                        : "Vị trí thuộc khu vực ưu tiên, còn đủ sức chứa khả dụng.";
+                    preferredZoneHasAvailable = true;
+                }
+
+                suggestions.Add(new SuggestedLocationDto
+                {
+                    LocationId = layout.Id,
+                    WarehouseId = layout.WarehouseId,
+                    ZoneId = layout.ZoneId,
+                    ShelfId = layout.ShelfId,
+                    BinId = layout.BinId,
+                    DisplayLabel = layout.DisplayLabel,
+                    ConfidenceScore = Math.Min(1.0m, confidenceScore),
+                    Reason = reason
+                });
             }
-
-            suggestions.Add(new SuggestedLocationDto
-            {
-                LocationId = layout.Id,
-                WarehouseId = layout.WarehouseId,
-                ZoneId = layout.ZoneId,
-                ShelfId = layout.ShelfId,
-                BinId = layout.BinId,
-                DisplayLabel = layout.DisplayLabel,
-                ConfidenceScore = Math.Min(1.0m, confidenceScore),
-                Reason = reason
-            });
         }
 
-        // 5. Thêm cảnh báo nếu khu vực ưu tiên không có chỗ
+        // 6. Thêm cảnh báo nếu khu vực ưu tiên không có chỗ
         if (request.PreferredZoneId.HasValue && !preferredZoneHasAvailable)
         {
             response.Warnings.Add("Khu vực yêu cầu (preferredZoneId) không có vị trí trống hoặc khả dụng. Đã đề xuất các khu vực khác.");
         }
 
-        // 6. Sắp xếp giảm dần theo ConfidenceScore và lấy Top 5
+        // 7. Sắp xếp giảm dần theo ConfidenceScore và lấy Top 5
         response.SuggestedLocations = suggestions
             .OrderByDescending(s => s.ConfidenceScore)
             .Take(5)
@@ -168,4 +267,22 @@ public class AiService : IAiService
 
         return response;
     }
+}
+
+public class PythonPredictRequest
+{
+    public double Weight { get; set; }
+    public double Volume { get; set; }
+    public string Category { get; set; } = string.Empty;
+}
+
+public class PythonAiResponse
+{
+    public List<PythonPrediction> Predictions { get; set; } = new();
+}
+
+public class PythonPrediction
+{
+    public string BinId { get; set; } = string.Empty;
+    public decimal Probability { get; set; }
 }

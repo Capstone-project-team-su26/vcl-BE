@@ -1879,6 +1879,94 @@ namespace VCL_DLL.Migrations
                     b.ToTable("PURCHASE_REQUEST_ITEMS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.PutAwayHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid>("BinId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("bin_id");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("category");
+
+                    b.Property<DateTime>("ChosenAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("chosen_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<decimal>("ParcelWeight")
+                        .HasColumnType("decimal(18, 6)")
+                        .HasColumnName("parcel_weight");
+
+                    b.Property<Guid>("ShelfId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("shelf_id");
+
+                    b.Property<decimal>("Volume")
+                        .HasColumnType("decimal(18, 6)")
+                        .HasColumnName("volume");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_id");
+
+                    b.Property<Guid>("ZoneId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("zone_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PUT_AWAY_HISTORIES");
+
+                    b.ToTable("PUT_AWAY_HISTORIES", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("f1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c"),
+                            BinId = new Guid("33333333-3333-3333-3333-333333333333"),
+                            Category = "Shoes",
+                            ChosenAt = new DateTime(2026, 6, 20, 10, 0, 0, 0, DateTimeKind.Utc),
+                            ParcelWeight = 12.0m,
+                            ShelfId = new Guid("22222222-2222-2222-2222-222222222222"),
+                            Volume = 0.08m,
+                            WarehouseId = new Guid("df34760c-0c3e-48ad-bdd6-3a30a4ec402a"),
+                            ZoneId = new Guid("11111111-1111-1111-1111-111111111111")
+                        },
+                        new
+                        {
+                            Id = new Guid("f2a3b4c5-d6e7-5f8a-9b0c-1d2e3f4a5b6c"),
+                            BinId = new Guid("33333333-3333-3333-3333-333333333333"),
+                            Category = "Electronics",
+                            ChosenAt = new DateTime(2026, 6, 20, 10, 5, 0, 0, DateTimeKind.Utc),
+                            ParcelWeight = 30.0m,
+                            ShelfId = new Guid("22222222-2222-2222-2222-222222222222"),
+                            Volume = 0.15m,
+                            WarehouseId = new Guid("df34760c-0c3e-48ad-bdd6-3a30a4ec402a"),
+                            ZoneId = new Guid("11111111-1111-1111-1111-111111111111")
+                        },
+                        new
+                        {
+                            Id = new Guid("f3a4b5c6-d7e8-6f9a-0b1c-2d3e4f5a6b7c"),
+                            BinId = new Guid("33333333-3333-3333-3333-333333333333"),
+                            Category = "Fragile",
+                            ChosenAt = new DateTime(2026, 6, 20, 10, 10, 0, 0, DateTimeKind.Utc),
+                            ParcelWeight = 8.0m,
+                            ShelfId = new Guid("22222222-2222-2222-2222-222222222222"),
+                            Volume = 0.03m,
+                            WarehouseId = new Guid("df34760c-0c3e-48ad-bdd6-3a30a4ec402a"),
+                            ZoneId = new Guid("11111111-1111-1111-1111-111111111111")
+                        });
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Quotation", b =>
                 {
                     b.Property<Guid>("Id")

@@ -77,6 +77,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<WarehouseLocationLayout> WarehouseLocationLayouts { get; set; }
 
+    public virtual DbSet<PutAwayHistory> PutAwayHistories { get; set; }
+
     public virtual DbSet<WroItem> WroItems { get; set; }
 
     public virtual DbSet<WroRequest> WroRequests { get; set; }
@@ -1417,6 +1419,78 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.BinId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("FK_WH_LAYOUT_BIN");
+        });
+
+        modelBuilder.Entity<PutAwayHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PUT_AWAY_HISTORIES");
+
+            entity.ToTable("PUT_AWAY_HISTORIES");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("(newid())")
+                .HasColumnName("id");
+
+            entity.Property(e => e.ParcelWeight)
+                .HasColumnType("decimal(18, 6)")
+                .HasColumnName("parcel_weight");
+
+            entity.Property(e => e.Volume)
+                .HasColumnType("decimal(18, 6)")
+                .HasColumnName("volume");
+
+            entity.Property(e => e.Category)
+                .IsRequired()
+                .HasMaxLength(100)
+                .HasColumnName("category");
+
+            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.ZoneId).HasColumnName("zone_id");
+            entity.Property(e => e.ShelfId).HasColumnName("shelf_id");
+            entity.Property(e => e.BinId).HasColumnName("bin_id");
+
+            entity.Property(e => e.ChosenAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("chosen_at");
+
+            entity.HasData(
+                new PutAwayHistory
+                {
+                    Id = Guid.Parse("f1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c"),
+                    ParcelWeight = 12.0m,
+                    Volume = 0.08m,
+                    Category = "Shoes",
+                    WarehouseId = Guid.Parse("df34760c-0c3e-48ad-bdd6-3a30a4ec402a"),
+                    ZoneId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                    ShelfId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                    BinId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                    ChosenAt = new DateTime(2026, 6, 20, 10, 0, 0, DateTimeKind.Utc)
+                },
+                new PutAwayHistory
+                {
+                    Id = Guid.Parse("f2a3b4c5-d6e7-5f8a-9b0c-1d2e3f4a5b6c"),
+                    ParcelWeight = 30.0m,
+                    Volume = 0.15m,
+                    Category = "Electronics",
+                    WarehouseId = Guid.Parse("df34760c-0c3e-48ad-bdd6-3a30a4ec402a"),
+                    ZoneId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                    ShelfId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                    BinId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                    ChosenAt = new DateTime(2026, 6, 20, 10, 5, 0, DateTimeKind.Utc)
+                },
+                new PutAwayHistory
+                {
+                    Id = Guid.Parse("f3a4b5c6-d7e8-6f9a-0b1c-2d3e4f5a6b7c"),
+                    ParcelWeight = 8.0m,
+                    Volume = 0.03m,
+                    Category = "Fragile",
+                    WarehouseId = Guid.Parse("df34760c-0c3e-48ad-bdd6-3a30a4ec402a"),
+                    ZoneId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                    ShelfId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                    BinId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                    ChosenAt = new DateTime(2026, 6, 20, 10, 10, 0, DateTimeKind.Utc)
+                }
+            );
         });
 
         modelBuilder.Entity<WarehouseReceivingNote>(entity =>
