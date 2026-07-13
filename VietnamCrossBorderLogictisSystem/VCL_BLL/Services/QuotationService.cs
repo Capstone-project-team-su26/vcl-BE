@@ -481,7 +481,7 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = estimatedFreightCharge,
                 ServiceFee = serviceFee,
                 TaxAndDuty = taxAndDuty,
-                TotalVolume = totalVolume / 1000000m,
+                TotalVolume = totalVolume,
                 CreatedAt = now,
                 ExpiredAt = now.AddDays(QuotationValidDays),
                 ServicePricingId = matchedPricing?.Id
@@ -499,7 +499,7 @@ namespace VCL_BLL.Services
 
             // Cập nhật tổng cân nặng & thể tích trên Order
             order.TotalWeight = totalWeight;
-            order.TotalVolume = totalVolume / 1000000m;
+            order.TotalVolume = totalVolume;
             orderRepo.Update(order);
 
             await _unitOfWork.SaveChangesAsync();
@@ -1027,7 +1027,7 @@ namespace VCL_BLL.Services
                 }
                 else if (order.TotalVolume.HasValue)
                 {
-                    totalVolumeCm3 = order.TotalVolume.Value * 1000000m;
+                    totalVolumeCm3 = order.TotalVolume.Value;
                 }
                 else
                 {
@@ -1172,7 +1172,7 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = estimatedFreightCharge,
                 ServiceFee = serviceFee,
                 TaxAndDuty = taxAndDuty,
-                TotalVolume = totalVolumeCm3 / 1000000m,
+                TotalVolume = totalVolumeCm3,
                 CreatedAt = now,
                 ExpiredAt = now.AddDays(QuotationValidDays),
                 ServicePricingId = matchedPricing?.Id
@@ -1189,7 +1189,7 @@ namespace VCL_BLL.Services
 
             order.Status = "QUOTATION_SENT";
             order.TotalWeight = totalActualWeight > 0m ? totalActualWeight : order.TotalWeight;
-            order.TotalVolume = totalVolumeCm3 > 0m ? totalVolumeCm3 / 1000000m : order.TotalVolume;
+            order.TotalVolume = totalVolumeCm3 > 0m ? totalVolumeCm3 : order.TotalVolume;
             orderRepo.Update(order);
 
             await _unitOfWork.SaveChangesAsync();
@@ -1204,7 +1204,7 @@ namespace VCL_BLL.Services
                     ConsignmentCode = order.ConsignmentCode,
                     Status = order.Status,
                     ConsignmentType = order.ConsignmentType,
-                    TotalVolume = order.TotalVolume.HasValue ? order.TotalVolume.Value * 1000000m : null,
+                    TotalVolume = order.TotalVolume,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
                     CreatedAt = order.CreatedAt
@@ -1250,7 +1250,7 @@ namespace VCL_BLL.Services
                     ConsignmentCode = order.ConsignmentCode,
                     Status = order.Status,
                     ConsignmentType = order.ConsignmentType,
-                    TotalVolume = order.TotalVolume.HasValue ? order.TotalVolume.Value * 1000000m : null,
+                    TotalVolume = order.TotalVolume,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
                     CreatedAt = order.CreatedAt
@@ -1291,7 +1291,7 @@ namespace VCL_BLL.Services
                     ConsignmentCode = order.ConsignmentCode,
                     Status = order.Status,
                     ConsignmentType = order.ConsignmentType,
-                    TotalVolume = order.TotalVolume.HasValue ? order.TotalVolume.Value * 1000000m : null,
+                    TotalVolume = order.TotalVolume,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
                     CreatedAt = order.CreatedAt
@@ -1331,9 +1331,9 @@ namespace VCL_BLL.Services
                 .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            // Tính VolumetricWeight từ tổng thể tích đơn hàng (TotalVolume lưu theo m³)
+            // Tính VolumetricWeight từ tổng thể tích đơn hàng (TotalVolume lưu theo cm³)
             var divisor = GetVolumetricDivisor(allActiveRules);
-            var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) * 1_000_000m / divisor, 2);
+            var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) / divisor, 4);
 
             // Bổ sung các PricingRule đang hoạt động nếu chưa có trong DB của báo giá này
             var activeRules = allActiveRules
@@ -1373,7 +1373,7 @@ namespace VCL_BLL.Services
                 ConsignmentType = order.ConsignmentType ?? string.Empty,
                 ConsignmentCode = order.ConsignmentCode,
                 TotalWeight = order.TotalWeight ?? 0m,
-                TotalVolume = (order.TotalVolume ?? 0m) * 1000000m,
+                TotalVolume = order.TotalVolume ?? 0m,
                 VolumetricWeight = volumetricWeight,
                 ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, volumetricWeight),
                 EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,

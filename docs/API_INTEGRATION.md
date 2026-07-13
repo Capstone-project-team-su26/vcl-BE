@@ -3302,7 +3302,7 @@ Trả về chi tiết MasterBox đã tạo cùng danh sách đơn hàng và ki�
   "id": "e2a3b4c5-5717-4562-b3fc-2c963f66afa6",
   "masterCode": "MBX-SPECIAL-001",
   "totalWeight": 15.50,
-  "totalVolume": 0.085000,
+  "totalVolume": 85000.00,
   "status": "CONSOLIDATED",
   "shipmentId": null,
   "orders": [

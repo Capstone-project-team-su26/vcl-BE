@@ -74,7 +74,7 @@ namespace VCL_BLL.Services
                 MasterCode = masterCode,
                 Status = string.IsNullOrWhiteSpace(request.Status) ? "CONSOLIDATED" : request.Status.Trim(),
                 TotalWeight = parcelsToConsolidate.Sum(p => p.ActualWeight ?? p.ChargeableWeight ?? 0m),
-                TotalVolume = totalVolumeCm3 / 1000000m
+                TotalVolume = totalVolumeCm3
             };
 
             await masterBoxRepo.AddAsync(masterBox);
@@ -313,7 +313,7 @@ namespace VCL_BLL.Services
                     }
 
                     var totalVolumeCm3 = parcelsToConsolidate.Sum(p => (p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m));
-                    masterBox.TotalVolume = totalVolumeCm3 / 1000000m;
+                    masterBox.TotalVolume = totalVolumeCm3;
                     masterBox.TotalWeight = parcelsToConsolidate.Sum(p => p.ActualWeight ?? p.ChargeableWeight ?? 0m);
                 }
                 else
@@ -326,7 +326,7 @@ namespace VCL_BLL.Services
             {
                 var currentParcels = allParcels.Where(p => p.MasterBoxId == id).ToList();
                 var totalVolumeCm3 = currentParcels.Sum(p => (p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m));
-                masterBox.TotalVolume = totalVolumeCm3 / 1000000m;
+                masterBox.TotalVolume = totalVolumeCm3;
                 masterBox.TotalWeight = currentParcels.Sum(p => p.ActualWeight ?? p.ChargeableWeight ?? 0m);
             }
 
