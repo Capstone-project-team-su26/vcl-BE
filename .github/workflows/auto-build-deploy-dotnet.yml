@@ -43,7 +43,4 @@ jobs:
             --restart always \
             -e ConnectionStrings__DefaultConnection="${{ secrets.CONNECTIONSTRING }}" \
             -e JWT__SecretKey="${{ secrets.JWT_SECRET_KEY }}" \
-            -e PayOS__ClientId="${{ secrets.PAYOS_CLIENT_ID }}" \
-            -e PayOS__ApiKey="${{ secrets.PAYOS_API_KEY }}" \
-            -e PayOS__ChecksumKey="${{ secrets.PAYOS_CHECKSUM_KEY }}" \
             -p $DOCKER_PORT:$APP_PORT $IMAGE_NAME:v1
