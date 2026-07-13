@@ -29,6 +29,15 @@ public class AiService : IAiService
     {
         var response = new PutawaySuggestionResponseDto();
 
+        if (request.ParcelId == Guid.Empty)
+        {
+            throw new ArgumentException("Mã kiện hàng (parcelId) không hợp lệ.");
+        }
+        if (request.WarehouseId == Guid.Empty)
+        {
+            throw new ArgumentException("Mã kho hàng (warehouseId) không hợp lệ.");
+        }
+
         // 1. Kiểm tra Parcel
         var parcelRepo = _unitOfWork.Repository<Parcel>();
         var parcel = await parcelRepo.GetByIdAsync(request.ParcelId);
