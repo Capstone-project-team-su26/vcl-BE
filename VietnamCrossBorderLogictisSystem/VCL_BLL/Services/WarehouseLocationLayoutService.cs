@@ -352,4 +352,98 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
         await _unitOfWork.SaveChangesAsync();
         return true;
     }
+
+    public async Task<List<WarehouseZoneLayoutDto>> GetHierarchicalLayoutAsync(Guid warehouseId, string userRole)
+    {
+        EnsureReadAccess(userRole);
+
+        var warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(warehouseId);
+        if (warehouse == null)
+        {
+            throw new NotFoundException($"Không tìm thấy kho hàng với ID: {warehouseId}");
+        }
+
+        var allLayouts = await _unitOfWork.Repository<WarehouseLocationLayout>().GetAllAsync();
+        var warehouseLayouts = allLayouts.Where(l => l.WarehouseId == warehouseId).ToList();
+
+        var allZones = await _unitOfWork.Repository<WarehouseZone>().GetAllAsync();
+        var warehouseZones = allZones.Where(z => z.WarehouseId == warehouseId).ToList();
+
+        var allShelves = await _unitOfWork.Repository<Shelf>().GetAllAsync();
+        var zoneIds = warehouseZones.Select(z => z.Id).ToHashSet();
+        var warehouseShelves = allShelves.Where(s => s.ZoneId.HasValue && zoneIds.Contains(s.ZoneId.Value)).ToList();
+
+        var allBins = await _unitOfWork.Repository<Bin>().GetAllAsync();
+        var warehouseBins = allBins.Where(b => b.WarehouseId == warehouseId).ToList();
+
+        var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
+        var storedParcels = allParcels.Where(p => p.BinId.HasValue &&
+                                                  string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
+                                      .ToList();
+
+        var result = new List<WarehouseZoneLayoutDto>();
+
+        foreach (var zone in warehouseZones)
+        {
+            var zoneLayout = warehouseLayouts.FirstOrDefault(l => string.Equals(l.LayoutType, "ZONE", StringComparison.OrdinalIgnoreCase) && l.ZoneId == zone.Id);
+
+            var zoneDto = new WarehouseZoneLayoutDto
+            {
+                ZoneId = zone.Id,
+                ZoneCode = zone.ZoneCode ?? string.Empty,
+                ZoneName = zone.ZoneName ?? string.Empty,
+                ZoneType = zone.ZoneType ?? string.Empty,
+                RowIndex = zoneLayout?.RowIndex,
+                ColumnIndex = zoneLayout?.ColumnIndex,
+                Width = zoneLayout?.Width,
+                Height = zoneLayout?.Height,
+                Status = zone.Status ?? "Active",
+                Shelves = new List<ShelfLayoutDto>()
+            };
+
+            var zoneShelves = warehouseShelves.Where(s => s.ZoneId == zone.Id).ToList();
+            foreach (var shelf in zoneShelves)
+            {
+                var shelfLayout = warehouseLayouts.FirstOrDefault(l => string.Equals(l.LayoutType, "SHELF", StringComparison.OrdinalIgnoreCase) && l.ShelfId == shelf.Id);
+
+                var shelfDto = new ShelfLayoutDto
+                {
+                    ShelfId = shelf.Id,
+                    ShelfCode = shelf.ShelfCode ?? string.Empty,
+                    RowIndex = shelfLayout?.RowIndex,
+                    ColumnIndex = shelfLayout?.ColumnIndex,
+                    Bins = new List<BinLayoutDto>()
+                };
+
+                var shelfBins = warehouseBins.Where(b => b.ShelfId == shelf.Id).ToList();
+                foreach (var bin in shelfBins)
+                {
+                    var binLayout = warehouseLayouts.FirstOrDefault(l => string.Equals(l.LayoutType, "BIN", StringComparison.OrdinalIgnoreCase) && l.BinId == bin.Id);
+
+                    decimal currentWeight = storedParcels.Where(p => p.BinId == bin.Id).Sum(p => p.ActualWeight ?? 0m);
+
+                    var binDto = new BinLayoutDto
+                    {
+                        BinId = bin.Id,
+                        BinCode = bin.BinCode ?? string.Empty,
+                        RowIndex = binLayout?.RowIndex,
+                        ColumnIndex = binLayout?.ColumnIndex,
+                        Status = binLayout?.Status ?? (bin.IsActive ? "ACTIVE" : "INACTIVE"),
+                        CurrentVolume = bin.CurrentVolume,
+                        MaxVolume = bin.MaxVolume,
+                        CurrentWeight = currentWeight,
+                        MaxWeight = bin.MaxWeight
+                    };
+
+                    shelfDto.Bins.Add(binDto);
+                }
+
+                zoneDto.Shelves.Add(shelfDto);
+            }
+
+            result.Add(zoneDto);
+        }
+
+        return result;
+    }
 }

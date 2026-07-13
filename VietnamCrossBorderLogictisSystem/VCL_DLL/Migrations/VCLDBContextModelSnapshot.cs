@@ -2888,14 +2888,31 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("(newid())");
 
+                    b.Property<string>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Active")
+                        .HasColumnName("status");
+
                     b.Property<Guid?>("WarehouseId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("warehouse_id");
+
+                    b.Property<string>("ZoneCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("zone_code");
 
                     b.Property<string>("ZoneName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("zone_name");
+
+                    b.Property<string>("ZoneType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("zone_type");
 
                     b.HasKey("Id")
                         .HasName("PK__WAREHOUS__3213E83F216F8248");

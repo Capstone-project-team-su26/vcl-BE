@@ -11,4 +11,5 @@ public interface IWarehouseLocationLayoutService
     Task<WarehouseLocationLayoutDto> CreateLayoutAsync(Guid warehouseId, string userRole, CreateWarehouseLocationLayoutDto dto);
     Task<WarehouseLocationLayoutDto> UpdateLayoutAsync(Guid warehouseId, Guid layoutId, string userRole, UpdateWarehouseLocationLayoutDto dto);
     Task<bool> DeleteLayoutAsync(Guid warehouseId, Guid layoutId, string userRole);
+    Task<List<WarehouseZoneLayoutDto>> GetHierarchicalLayoutAsync(Guid warehouseId, string userRole);
 }

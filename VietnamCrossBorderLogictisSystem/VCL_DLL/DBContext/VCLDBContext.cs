@@ -1542,6 +1542,16 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ZoneName)
                 .HasMaxLength(255)
                 .HasColumnName("zone_name");
+            entity.Property(e => e.ZoneCode)
+                .HasMaxLength(100)
+                .HasColumnName("zone_code");
+            entity.Property(e => e.ZoneType)
+                .HasMaxLength(100)
+                .HasColumnName("zone_type");
+            entity.Property(e => e.Status)
+                .HasMaxLength(50)
+                .HasDefaultValue("Active")
+                .HasColumnName("status");
 
             entity.HasOne(d => d.Warehouse).WithMany(p => p.WarehouseZones)
                 .HasForeignKey(d => d.WarehouseId)

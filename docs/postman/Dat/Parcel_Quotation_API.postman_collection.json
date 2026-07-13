@@ -327,6 +327,38 @@
 					"response": []
 				},
 				{
+					"name": "Lấy sơ đồ layout kho theo zone",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouses/{{warehouseId}}/layout/zones",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouses",
+								"{{warehouseId}}",
+								"layout",
+								"zones"
+							]
+						},
+						"description": "Lấy thông tin sơ đồ kho phân nhóm phân tầng theo từng Zone (Khu vực)."
+					},
+					"response": []
+				},
+				{
 					"name": "Tạo vị trí sơ đồ kho",
 					"event": [
 						{
