@@ -105,7 +105,7 @@ namespace VCL_BLL.Services
                 request.Length.Value > 0 && request.Width.Value > 0 && request.Height.Value > 0)
             {
                 var divisor = await GetVolumetricDivisorAsync();
-                volumetricWeight = (request.Length.Value * request.Width.Value * request.Height.Value) / divisor;
+                volumetricWeight = Math.Round((request.Length.Value * request.Width.Value * request.Height.Value) / divisor, 4);
             }
 
             // 6. Tính chargeable weight
@@ -114,6 +114,7 @@ namespace VCL_BLL.Services
             {
                 chargeableWeight = Math.Max(request.ActualWeight, volumetricWeight.Value);
             }
+            chargeableWeight = Math.Round(chargeableWeight, 4);
 
             // 7. Tạo Parcel mới và cập nhật trạng thái Parcel thành RECEIVED
             var parcel = new Parcel

@@ -701,7 +701,7 @@ public partial class VCLDBContext : DbContext
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("actual_weight");
             entity.Property(e => e.ChargeableWeight)
-                .HasColumnType("decimal(18, 2)")
+                .HasColumnType("decimal(18, 4)")
                 .HasColumnName("chargeable_weight");
             entity.Property(e => e.ConsignmentId).HasColumnName("consignment_id");
             entity.Property(e => e.Height)
@@ -718,7 +718,7 @@ public partial class VCLDBContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("package_status");
             entity.Property(e => e.VolumetricWeight)
-                .HasColumnType("decimal(18, 2)")
+                .HasColumnType("decimal(18, 4)")
                 .HasColumnName("volumetric_weight");
             entity.Property(e => e.Width)
                 .HasColumnType("decimal(18, 2)")

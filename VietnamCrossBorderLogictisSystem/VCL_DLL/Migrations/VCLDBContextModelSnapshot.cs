@@ -1067,7 +1067,7 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("bin_id");
 
                     b.Property<decimal?>("ChargeableWeight")
-                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnType("decimal(18, 4)")
                         .HasColumnName("chargeable_weight");
 
                     b.Property<DateTime?>("CheckInTime")
@@ -1105,7 +1105,7 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("put_away_time");
 
                     b.Property<decimal?>("VolumetricWeight")
-                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnType("decimal(18, 4)")
                         .HasColumnName("volumetric_weight");
 
                     b.Property<decimal?>("Width")
