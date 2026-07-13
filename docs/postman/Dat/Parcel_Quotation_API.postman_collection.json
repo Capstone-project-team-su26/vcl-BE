@@ -215,6 +215,82 @@
 					"response": []
 				}
 			]
+		},
+		{
+			"name": "Purchase Request Quotation",
+			"item": [
+				{
+					"name": "Tạo báo giá mua hộ",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{accessToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"purchaseFee\": 50000.0,\n    \"shippingFee\": 120000.0,\n    \"note\": \"Báo giá dịch vụ mua hộ\",\n    \"items\": [\n        {\n            \"purchaseRequestItemId\": \"c3d4e5f6-c3d4-c3d4-c3d4-c3d4e5f6a7b8\",\n            \"unitPrice\": 250000.0\n        }\n    ],\n    \"additionalFees\": []\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/quotation",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"purchase-requests",
+								"{{purchaseRequestId}}",
+								"quotation"
+							]
+						},
+						"description": "Staff/Sales tạo báo giá chính thức cho yêu cầu mua hộ, tự động tính VAT 8% và Thuế nhập khẩu theo từng loại sản phẩm."
+					},
+					"response": []
+				},
+				{
+					"name": "Lấy báo giá mua hộ theo Request ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{customerToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/purchase-requests/{{purchaseRequestId}}/quotation",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"purchase-requests",
+								"{{purchaseRequestId}}",
+								"quotation"
+							]
+						},
+						"description": "Xem thông tin báo giá mua hộ hiện tại dựa trên ID yêu cầu mua hộ."
+					},
+					"response": []
+				}
+			]
 		}
 	],
 	"event": [
@@ -251,6 +327,11 @@
 		{
 			"key": "quotationId",
 			"value": "a1b2c3d4-a1b2-a1b2-a1b2-a1b2c3d4e5f6",
+			"type": "string"
+		},
+		{
+			"key": "purchaseRequestId",
+			"value": "b2c3d4e5-b2c3-b2c3-b2c3-b2c3d4e5f6g7",
 			"type": "string"
 		}
 	]

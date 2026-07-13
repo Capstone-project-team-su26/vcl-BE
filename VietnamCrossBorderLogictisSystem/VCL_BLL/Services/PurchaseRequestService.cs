@@ -353,6 +353,8 @@ namespace VCL_BLL.Services
                     ProductsSubtotal = quotation.ProductsSubtotal,
                     PurchaseFee = quotation.PurchaseFee,
                     ShippingFee = quotation.ShippingFee,
+                    Vat = quotation.Vat ?? 0m,
+                    ImportTax = quotation.ImportTax ?? 0m,
                     TotalAmount = quotation.TotalAmount,
                     Note = quotation.Note,
                     Status = quotation.Status,
@@ -520,15 +522,57 @@ namespace VCL_BLL.Services
                 CreatedAt = DateTime.UtcNow
             };
 
+            var categories = await _unitOfWork.Repository<ProductType>().GetAllAsync();
             var quotationItemRepo = _unitOfWork.Repository<PurchaseQuotationItem>();
             var itemDtos = new List<PurchaseQuotationItemResponseDto>();
             decimal productsSubtotal = 0m;
+            decimal importTax = 0m;
+            var itemTaxFees = new List<QuotationFee>();
 
             foreach (var line in request.Items)
             {
                 var reqItem = requestItemMap[line.PurchaseRequestItemId];
                 var lineTotal = line.UnitPrice * reqItem.Quantity;
                 productsSubtotal += lineTotal;
+
+                if (string.IsNullOrWhiteSpace(reqItem.ProductType))
+                {
+                    throw new ArgumentException($"Sản phẩm '{reqItem.ProductName}' phải có thông tin phân loại sản phẩm (ProductType).");
+                }
+
+                ProductType category = null;
+                if (Guid.TryParse(reqItem.ProductType.Trim(), out var guidId))
+                {
+                    category = categories.FirstOrDefault(c => c.Id == guidId);
+                }
+                else
+                {
+                    category = categories.FirstOrDefault(c => 
+                        string.Equals(c.Name?.Trim(), reqItem.ProductType?.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (category == null || !category.ImportTaxRate.HasValue)
+                {
+                    throw new ArgumentException($"Loại hàng '{reqItem.ProductType}' chưa được cấu hình thuế nhập khẩu hợp lệ.");
+                }
+
+                var itemImportTax = Math.Round(lineTotal * category.ImportTaxRate.Value, 2);
+                importTax += itemImportTax;
+
+                if (itemImportTax > 0)
+                {
+                    itemTaxFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        FeeName = $"Thuế nhập khẩu - {category.Name}",
+                        FeeType = "TAX",
+                        CalculationType = "PERCENTAGE",
+                        Value = category.ImportTaxRate.Value * 100m,
+                        Amount = itemImportTax,
+                        Note = $"Thuế nhập khẩu {category.ImportTaxRate.Value * 100m}% cho mặt hàng {reqItem.ProductName ?? "không tên"}",
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
 
                 var quotationItem = new PurchaseQuotationItem
                 {
@@ -626,8 +670,28 @@ namespace VCL_BLL.Services
             }
 
             // 7. Tính tổng tiền báo giá
+            decimal vatAmount = Math.Round((request.PurchaseFee + request.ShippingFee + totalAdditionalFees) * 0.08m, 2);
+            if (vatAmount > 0)
+            {
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = "Thuế giá trị gia tăng (VAT 8%)",
+                    FeeType = "TAX",
+                    CalculationType = "PERCENTAGE",
+                    Value = 8m,
+                    Amount = vatAmount,
+                    Note = "8% phí dịch vụ mua hộ",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            quotationFees.AddRange(itemTaxFees);
+
             quotation.ProductsSubtotal = productsSubtotal;
-            quotation.TotalAmount = productsSubtotal + request.PurchaseFee + request.ShippingFee + totalAdditionalFees;
+            quotation.Vat = vatAmount;
+            quotation.ImportTax = importTax;
+            quotation.TotalAmount = productsSubtotal + request.PurchaseFee + request.ShippingFee + totalAdditionalFees + vatAmount + importTax;
             await quotationRepo.AddAsync(quotation);
 
             // Save Quotation Fees to DB
@@ -651,6 +715,8 @@ namespace VCL_BLL.Services
                 ProductsSubtotal = quotation.ProductsSubtotal,
                 PurchaseFee = quotation.PurchaseFee,
                 ShippingFee = quotation.ShippingFee,
+                Vat = vatAmount,
+                ImportTax = importTax,
                 TotalAmount = quotation.TotalAmount,
                 Note = quotation.Note,
                 Status = quotation.Status,
@@ -668,6 +734,78 @@ namespace VCL_BLL.Services
                     Note = f.Note,
                     CreatedAt = f.CreatedAt
                 }).ToList()
+            };
+        }
+
+        public async Task<PurchaseQuotationResponseDto> GetPurchaseQuotationByRequestIdAsync(Guid requestId)
+        {
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId);
+            if (purchaseRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+            }
+
+            var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
+            var allQuotations = await quotationRepo.GetAllAsync();
+            var quotation = allQuotations.FirstOrDefault(q => q.PurchaseRequestId == requestId);
+            if (quotation == null)
+            {
+                throw new NotFoundException("Yêu cầu mua hộ chưa được tạo báo giá.");
+            }
+
+            var quotationItemRepo = _unitOfWork.Repository<PurchaseQuotationItem>();
+            var allQuoItems = await quotationItemRepo.GetAllAsync();
+            var quoItems = allQuoItems.Where(qi => qi.PurchaseQuotationId == quotation.Id).ToList();
+
+            var reqItemRepo = _unitOfWork.Repository<PurchaseRequestItem>();
+            var allReqItems = await reqItemRepo.GetAllAsync();
+            var reqItems = allReqItems.Where(ri => ri.PurchaseRequestId == requestId).ToList();
+            var itemMap = reqItems.ToDictionary(i => i.Id);
+
+            var itemDtos = quoItems.Select(qi => new PurchaseQuotationItemResponseDto
+            {
+                QuotationItemId = qi.Id,
+                PurchaseRequestItemId = qi.PurchaseRequestItemId,
+                ProductName = itemMap.ContainsKey(qi.PurchaseRequestItemId) ? itemMap[qi.PurchaseRequestItemId].ProductName : string.Empty,
+                UnitPrice = qi.UnitPrice,
+                Quantity = qi.Quantity,
+                LineTotal = qi.LineTotal
+            }).ToList();
+
+            var feeRepo = _unitOfWork.Repository<QuotationFee>();
+            var allFees = await feeRepo.GetAllAsync();
+            var fees = allFees.Where(f => f.PurchaseQuotationId == quotation.Id).ToList();
+
+            var feeDtos = fees.Select(f => new PurchaseQuotationAdditionalFeeResponseDto
+            {
+                Id = f.Id,
+                PricingRuleId = f.PricingRuleId,
+                FeeName = f.FeeName,
+                FeeType = f.FeeType,
+                CalculationType = f.CalculationType,
+                Value = f.Value,
+                Amount = f.Amount,
+                Note = f.Note,
+                CreatedAt = f.CreatedAt
+            }).ToList();
+
+            return new PurchaseQuotationResponseDto
+            {
+                QuotationId = quotation.Id,
+                PurchaseRequestId = requestId,
+                PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
+                ProductsSubtotal = quotation.ProductsSubtotal,
+                PurchaseFee = quotation.PurchaseFee,
+                ShippingFee = quotation.ShippingFee,
+                Vat = quotation.Vat ?? 0m,
+                ImportTax = quotation.ImportTax ?? 0m,
+                TotalAmount = quotation.TotalAmount,
+                Note = quotation.Note,
+                Status = quotation.Status,
+                CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
+                Items = itemDtos,
+                AdditionalFees = feeDtos.Where(f => f.PricingRuleId.HasValue || (f.FeeType != "SERVICE_FEE" && f.FeeType != "MAIN_SERVICE")).ToList()
             };
         }
     }

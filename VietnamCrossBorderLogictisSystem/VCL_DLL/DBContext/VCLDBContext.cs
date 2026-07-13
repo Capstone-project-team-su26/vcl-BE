@@ -807,6 +807,12 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.TaxAndDuty)
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("tax_and_duty");
+            entity.Property(e => e.Vat)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("vat");
+            entity.Property(e => e.ImportTax)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("import_tax");
             entity.Property(e => e.TotalVolume)
                 .HasColumnType("decimal(18, 6)")
                 .HasColumnName("total_volume");
@@ -1493,16 +1499,20 @@ public partial class VCLDBContext : DbContext
                 .HasDefaultValueSql("(getutcdate())")
                 .HasColumnName("created_at");
 
+            entity.Property(e => e.ImportTaxRate)
+                .HasColumnType("decimal(18, 4)")
+                .HasColumnName("import_tax_rate");
+
             // Seed các loại hàng phổ biến cho dropdown (FE feedback Phong)
             entity.HasData(
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000001"), Name = "Điện tử", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000002"), Name = "Quần áo", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000003"), Name = "Mỹ phẩm", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000004"), Name = "Phụ kiện", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000005"), Name = "Thực phẩm", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000006"), Name = "Sách", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000007"), Name = "Đồ chơi", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
-                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000008"), Name = "Đồ gia dụng", IsActive = true, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000001"), Name = "Điện tử", IsActive = true, ImportTaxRate = 0.10m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000002"), Name = "Quần áo", IsActive = true, ImportTaxRate = 0.08m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000003"), Name = "Mỹ phẩm", IsActive = true, ImportTaxRate = 0.10m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000004"), Name = "Phụ kiện", IsActive = true, ImportTaxRate = 0.05m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000005"), Name = "Thực phẩm", IsActive = true, ImportTaxRate = 0.05m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000006"), Name = "Sách", IsActive = true, ImportTaxRate = 0.05m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000007"), Name = "Đồ chơi", IsActive = true, ImportTaxRate = 0.05m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+                new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000008"), Name = "Đồ gia dụng", IsActive = true, ImportTaxRate = 0.08m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
             );
         });
 
@@ -1516,6 +1526,8 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ProductsSubtotal).HasColumnType("decimal(18, 2)").HasColumnName("products_subtotal");
             entity.Property(e => e.PurchaseFee).HasColumnType("decimal(18, 2)").HasColumnName("purchase_fee");
             entity.Property(e => e.ShippingFee).HasColumnType("decimal(18, 2)").HasColumnName("shipping_fee");
+            entity.Property(e => e.Vat).HasColumnType("decimal(18, 2)").HasColumnName("vat");
+            entity.Property(e => e.ImportTax).HasColumnType("decimal(18, 2)").HasColumnName("import_tax");
             entity.Property(e => e.TotalAmount).HasColumnType("decimal(18, 2)").HasColumnName("total_amount");
             entity.Property(e => e.Note).HasMaxLength(1000).HasColumnName("note");
             entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");

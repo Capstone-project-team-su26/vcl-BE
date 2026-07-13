@@ -35,6 +35,10 @@ namespace VCL_BLL.DTOs
         /// <summary>Thuế & phí hải quan tạm tính</summary>
         public decimal TaxAndDuty { get; set; }
 
+        public decimal Vat { get; set; }
+
+        public decimal ImportTax { get; set; }
+
         /// <summary>Tổng chi phí dự kiến = FreightCharge + ServiceFee + TaxAndDuty</summary>
         public decimal TotalEstimatedCost { get; set; }
 
@@ -118,6 +122,8 @@ namespace VCL_BLL.DTOs
         public decimal? EstimatedFreightCharge { get; set; }
         public decimal? ServiceFee { get; set; }
         public decimal? TotalEstimatedCost { get; set; }
+        public decimal? Vat { get; set; }
+        public decimal? ImportTax { get; set; }
         public string? SalesNote { get; set; }
     }
 
@@ -208,6 +214,10 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Thuế & phí hải quan tạm tính</summary>
         public decimal TaxAndDuty { get; set; }
+
+        public decimal Vat { get; set; }
+
+        public decimal ImportTax { get; set; }
 
         /// <summary>Tổng chi phí</summary>
         public decimal TotalEstimatedCost { get; set; }

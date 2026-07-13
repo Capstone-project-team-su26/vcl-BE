@@ -480,24 +480,15 @@ namespace VCL_BLL.Services
                 }
 
                 serviceFee = baseServiceFee + totalSurcharges;
-                taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
-                totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
-
-                if (taxAndDuty > 0)
-                {
-                    quotationFees.Add(new QuotationFee
-                    {
-                        Id = Guid.NewGuid(),
-                        FeeName = "Thuế & phí hải quan tạm tính",
-                        FeeType = "TAX",
-                        CalculationType = "PERCENTAGE",
-                        Value = TaxRate * 100m,
-                        Amount = taxAndDuty,
-                        Note = "10% giá trị khai báo hàng hóa",
-                        CreatedAt = now
-                    });
-                }
             }
+
+            var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now);
+            decimal vatAmount = taxResult.VatAmount;
+            decimal importTax = taxResult.ImportTax;
+            taxAndDuty = importTax + vatAmount;
+            totalEstimatedCost = estimatedFreightCharge + serviceFee + vatAmount + importTax;
+
+            quotationFees.AddRange(taxResult.TaxFees);
 
             // 7. Tạo Quotation record trong DB
             var quotation = new Quotation
@@ -509,6 +500,8 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = estimatedFreightCharge,
                 ServiceFee = serviceFee,
                 TaxAndDuty = taxAndDuty,
+                Vat = vatAmount,
+                ImportTax = importTax,
                 TotalVolume = totalVolume,
                 CreatedAt = now,
                 ExpiredAt = now.AddDays(QuotationValidDays),
@@ -547,6 +540,8 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = estimatedFreightCharge,
                 ServiceFee = serviceFee,
                 TaxAndDuty = taxAndDuty,
+                Vat = vatAmount,
+                ImportTax = importTax,
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = now,
                 ExpiredAt = quotation.ExpiredAt,
@@ -951,24 +946,19 @@ namespace VCL_BLL.Services
                     });
                 }
 
-                serviceFee = baseServiceFee + totalSurcharges;
-                taxAndDuty = Math.Round(totalDeclaredValue * TaxRate, 2);
-                totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
+            }
 
-                if (taxAndDuty > 0)
-                {
-                    quotationFees.Add(new QuotationFee
-                    {
-                        Id = Guid.Empty,
-                        FeeName = "Thuế & phí hải quan tạm tính",
-                        FeeType = "TAX",
-                        CalculationType = "PERCENTAGE",
-                        Value = TaxRate * 100m,
-                        Amount = taxAndDuty,
-                        Note = "10% giá trị khai báo hàng hóa",
-                        CreatedAt = now
-                    });
-                }
+            var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now);
+            decimal vatAmount = taxResult.VatAmount;
+            decimal importTax = taxResult.ImportTax;
+            taxAndDuty = importTax + vatAmount;
+            totalEstimatedCost = estimatedFreightCharge + serviceFee + vatAmount + importTax;
+
+            // Map IDs to Guid.Empty as this is a non-persisted estimate with custom body
+            foreach (var tf in taxResult.TaxFees)
+            {
+                tf.Id = Guid.Empty;
+                quotationFees.Add(tf);
             }
 
             var activeRulesDict = activeRules.ToDictionary(r => r.Id, r => r);
@@ -992,6 +982,8 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = estimatedFreightCharge,
                 ServiceFee = serviceFee,
                 TaxAndDuty = taxAndDuty,
+                Vat = vatAmount,
+                ImportTax = importTax,
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = DateTime.UtcNow,
                 ExpiredAt = DateTime.UtcNow.AddDays(QuotationValidDays),
@@ -1073,6 +1065,10 @@ namespace VCL_BLL.Services
             }
 
             var now = DateTime.UtcNow;
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            var allItems = await orderItemRepo.GetAllAsync();
+            var orderItems = allItems.Where(i => i.OrderId == orderId).ToList();
+
             var quotationFees = new List<QuotationFee>();
 
             decimal estimatedFreightCharge = 0m;
@@ -1100,10 +1096,6 @@ namespace VCL_BLL.Services
             {
                 // Fallback to request details or items
                 totalActualWeight = request.WeightKg ?? order.TotalWeight ?? 0m;
-
-                var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-                var allItems = await orderItemRepo.GetAllAsync();
-                var orderItems = allItems.Where(i => i.OrderId == orderId).ToList();
 
                 if (request.VolumeM3.HasValue)
                 {
@@ -1153,34 +1145,62 @@ namespace VCL_BLL.Services
             if (isConsignment)
             {
                 serviceFee = domesticShippingFee;
-                taxAndDuty = 0m;
-                totalEstimatedCost = estimatedFreightCharge + serviceFee;
             }
             else
             {
                 estimatedFreightCharge = quotationDetails?.EstimatedFreightCharge ?? estimatedFreightCharge;
                 serviceFee = quotationDetails?.ServiceFee ?? domesticShippingFee;
-                taxAndDuty = quotationDetails?.TotalEstimatedCost.HasValue ?? false
-                    ? Math.Max(0m, quotationDetails.TotalEstimatedCost.Value - (quotationDetails.EstimatedFreightCharge ?? 0m) - (quotationDetails.ServiceFee ?? 0m))
-                    : 0m;
-                totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
             }
 
-            // Save tax and duty
-            if (taxAndDuty > 0)
+            decimal vatAmount = 0m;
+            decimal importTax = 0m;
+            if (quotationDetails != null)
             {
-                quotationFees.Add(new QuotationFee
-                {
-                    Id = Guid.NewGuid(),
-                    FeeName = "Thuế & phí hải quan tạm tính",
-                    FeeType = "TAX",
-                    CalculationType = "PERCENTAGE",
-                    Value = TaxRate * 100m,
-                    Amount = taxAndDuty,
-                    Note = "10% giá trị khai báo hàng hóa",
-                    CreatedAt = now
-                });
+                vatAmount = quotationDetails.Vat ?? 0m;
+                importTax = quotationDetails.ImportTax ?? 0m;
             }
+
+            if (vatAmount == 0m && importTax == 0m)
+            {
+                var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now);
+                vatAmount = taxResult.VatAmount;
+                importTax = taxResult.ImportTax;
+                quotationFees.AddRange(taxResult.TaxFees);
+            }
+            else
+            {
+                if (vatAmount > 0)
+                {
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        FeeName = "Thuế giá trị gia tăng (VAT 8%)",
+                        FeeType = "TAX",
+                        CalculationType = "PERCENTAGE",
+                        Value = 8m,
+                        Amount = vatAmount,
+                        Note = "8% phí dịch vụ logistics",
+                        CreatedAt = now
+                    });
+                }
+                if (importTax > 0)
+                {
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        FeeName = "Thuế nhập khẩu",
+                        FeeType = "TAX",
+                        CalculationType = "FIXED",
+                        Value = 0m,
+                        Amount = importTax,
+                        Note = "Thuế nhập khẩu chốt",
+                        CreatedAt = now
+                    });
+                }
+            }
+
+            taxAndDuty = importTax + vatAmount;
+            totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
 
             // Save service fee
             if (serviceFee > 0)
@@ -1240,6 +1260,8 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = estimatedFreightCharge,
                 ServiceFee = serviceFee,
                 TaxAndDuty = taxAndDuty,
+                Vat = vatAmount,
+                ImportTax = importTax,
                 TotalVolume = totalVolumeCm3,
                 CreatedAt = now,
                 ExpiredAt = now.AddDays(QuotationValidDays),
@@ -1477,6 +1499,8 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,
                 ServiceFee = quotation.ServiceFee ?? 0m,
                 TaxAndDuty = quotation.TaxAndDuty ?? 0m,
+                Vat = quotation.Vat ?? 0m,
+                ImportTax = quotation.ImportTax ?? 0m,
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 ExpiredAt = quotation.ExpiredAt,
@@ -1592,6 +1616,8 @@ namespace VCL_BLL.Services
                 EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,
                 ServiceFee = quotation.ServiceFee ?? 0m,
                 TaxAndDuty = quotation.TaxAndDuty ?? 0m,
+                Vat = quotation.Vat ?? 0m,
+                ImportTax = quotation.ImportTax ?? 0m,
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 ExpiredAt = quotation.ExpiredAt,
@@ -1770,5 +1796,75 @@ namespace VCL_BLL.Services
             return result;
         }
 
+        private async Task<(decimal ImportTax, decimal VatAmount, List<QuotationFee> TaxFees)> CalculateTaxesAsync(
+            List<OrderItem> orderItems,
+            decimal estimatedFreightCharge,
+            decimal serviceFee,
+            DateTime now)
+        {
+            var categories = await _unitOfWork.Repository<ProductType>().GetAllAsync();
+            decimal importTax = 0m;
+            var taxFees = new List<QuotationFee>();
+
+            foreach (var item in orderItems)
+            {
+                if (string.IsNullOrWhiteSpace(item.ProductType))
+                {
+                    throw new ArgumentException("Mặt hàng phải có thông tin phân loại sản phẩm (ProductType).");
+                }
+
+                ProductType category = null;
+                if (Guid.TryParse(item.ProductType.Trim(), out var guidId))
+                {
+                    category = categories.FirstOrDefault(c => c.Id == guidId);
+                }
+                else
+                {
+                    category = categories.FirstOrDefault(c =>
+                        string.Equals(c.Name?.Trim(), item.ProductType?.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (category == null || !category.ImportTaxRate.HasValue)
+                {
+                    throw new ArgumentException($"Loại hàng '{item.ProductType}' chưa được cấu hình thuế nhập khẩu hợp lệ.");
+                }
+
+                var itemImportTax = Math.Round((item.DeclaredValue ?? 0m) * category.ImportTaxRate.Value, 2);
+                importTax += itemImportTax;
+
+                if (itemImportTax > 0)
+                {
+                    taxFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        FeeName = $"Thuế nhập khẩu - {category.Name}",
+                        FeeType = "TAX",
+                        CalculationType = "PERCENTAGE",
+                        Value = category.ImportTaxRate.Value * 100m,
+                        Amount = itemImportTax,
+                        Note = $"Thuế nhập khẩu {category.ImportTaxRate.Value * 100m}% cho mặt hàng {item.ProductName ?? "không tên"}",
+                        CreatedAt = now
+                    });
+                }
+            }
+
+            decimal vatAmount = Math.Round((estimatedFreightCharge + serviceFee) * 0.08m, 2);
+            if (vatAmount > 0)
+            {
+                taxFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = "Thuế giá trị gia tăng (VAT 8%)",
+                    FeeType = "TAX",
+                    CalculationType = "PERCENTAGE",
+                    Value = 8m,
+                    Amount = vatAmount,
+                    Note = "8% phí dịch vụ logistics",
+                    CreatedAt = now
+                });
+            }
+
+            return (importTax, vatAmount, taxFees);
+        }
     }
 }

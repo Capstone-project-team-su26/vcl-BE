@@ -180,7 +180,7 @@ namespace VCL_API.Controllers
         /// Staff/Sales tạo báo giá cho một yêu cầu mua hộ
         /// </summary>
         [HttpPost("{requestId}/quotation")]
-        public async Task<IActionResult> CreatePurchaseQuotation(Guid requestId, [FromBody] CreatePurchaseQuotationDto request)
+        public async Task<IActionResult> CreatePurchaseQuotation(Guid requestId, [FromBody] CreatePurchaseQuotationDto dto)
         {
             if (!ModelState.IsValid)
             {
@@ -197,7 +197,7 @@ namespace VCL_API.Controllers
 
             try
             {
-                var result = await _purchaseRequestService.CreatePurchaseQuotationAsync(requestId, userId, userRole, request);
+                var result = await _purchaseRequestService.CreatePurchaseQuotationAsync(requestId, userId, userRole, dto);
                 return Created(string.Empty, new { message = "Tạo báo giá mua hộ thành công.", data = result });
             }
             catch (UnauthorizedAccessException ex)
@@ -211,6 +211,27 @@ namespace VCL_API.Controllers
             catch (ArgumentException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Lấy báo giá hiện tại của một yêu cầu mua hộ
+        /// </summary>
+        [HttpGet("{requestId}/quotation")]
+        public async Task<IActionResult> GetPurchaseQuotation(Guid requestId)
+        {
+            try
+            {
+                var result = await _purchaseRequestService.GetPurchaseQuotationByRequestIdAsync(requestId);
+                return Ok(new { message = "Lấy báo giá mua hộ thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (Exception ex)
             {
