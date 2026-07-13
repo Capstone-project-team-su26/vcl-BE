@@ -180,7 +180,7 @@ namespace VCL_API.Controllers
         /// Staff/Sales tạo báo giá cho một yêu cầu mua hộ
         /// </summary>
         [HttpPost("{requestId}/quotation")]
-        public async Task<IActionResult> CreatePurchaseQuotation(Guid requestId, [FromBody] CreatePurchaseQuotationDto request)
+        public async Task<IActionResult> CreatePurchaseQuotation(Guid requestId, [FromBody] CreatePurchaseQuotationDto dto)
         {
             if (!ModelState.IsValid)
             {
@@ -197,7 +197,7 @@ namespace VCL_API.Controllers
 
             try
             {
-                var result = await _purchaseRequestService.CreatePurchaseQuotationAsync(requestId, userId, userRole, request);
+                var result = await _purchaseRequestService.CreatePurchaseQuotationAsync(requestId, userId, userRole, dto);
                 return Created(string.Empty, new { message = "Tạo báo giá mua hộ thành công.", data = result });
             }
             catch (UnauthorizedAccessException ex)
