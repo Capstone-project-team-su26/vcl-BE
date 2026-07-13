@@ -44,6 +44,9 @@ namespace VCL_BLL.DTOs
         /// <summary>Chi tiết từng sản phẩm trong đơn hàng</summary>
         public List<OrderItemDetail> Items { get; set; } = new();
 
+        /// <summary>Chi tiết cước phí theo từng kiện hàng</summary>
+        public List<ParcelQuotationDetailDto> Parcels { get; set; } = new();
+
         public List<QuotationFeeResponseDto> AdditionalFees { get; set; } = new();
     }
 
@@ -151,6 +154,11 @@ namespace VCL_BLL.DTOs
         public decimal Value { get; set; }
         public string? Note { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        public Guid? ParcelId { get; set; }
+        public decimal? ChargeableWeight { get; set; }
+        public decimal? ShippingFee { get; set; }
+        public decimal? TotalAmount { get; set; }
     }
 
     public class QuotationActionResponse
@@ -214,6 +222,22 @@ namespace VCL_BLL.DTOs
         public string? SalesNote { get; set; }
 
         public List<QuotationFeeResponseDto> AdditionalFees { get; set; } = new();
+
+        /// <summary>Chi tiết cước phí theo từng kiện hàng</summary>
+        public List<ParcelQuotationDetailDto> Parcels { get; set; } = new();
+    }
+
+    public class ParcelQuotationDetailDto
+    {
+        public Guid ParcelId { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public decimal ActualWeight { get; set; }
+        public decimal Length { get; set; }
+        public decimal Width { get; set; }
+        public decimal Height { get; set; }
+        public decimal VolumetricWeight { get; set; }
+        public decimal ChargeableWeight { get; set; }
+        public decimal ShippingFee { get; set; }
     }
 
     public class ConfirmQuotationPaymentRequest

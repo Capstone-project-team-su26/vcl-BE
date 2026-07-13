@@ -581,7 +581,8 @@ Response `200 OK`:
         "note": "Đóng gỗ gia cố cho hàng dễ vỡ",
         "createdAt": "2026-06-15T12:00:00Z"
       }
-    ]
+    ],
+    "parcels": []
   }
 }
 ```
@@ -641,7 +642,98 @@ Authorization: Bearer {token}
     "createdAt": "2026-06-15T12:00:00Z",
     "expiredAt": "2026-06-22T12:00:00Z",
     "salesNote": null,
-    "additionalFees": []
+    "additionalFees": [],
+    "parcels": [
+      {
+        "parcelId": "p1b2c3d4-...",
+        "packageCode": "PKG123456",
+        "actualWeight": 1.50,
+        "length": 20.00,
+        "width": 10.00,
+        "height": 10.00,
+        "volumetricWeight": 0.40,
+        "chargeableWeight": 1.50,
+        "shippingFee": 75000.00
+      },
+      {
+        "parcelId": "p2b2c3d4-...",
+        "packageCode": "PKG123457",
+        "actualWeight": 1.00,
+        "length": 15.00,
+        "width": 10.00,
+        "height": 10.00,
+        "volumetricWeight": 0.30,
+        "chargeableWeight": 1.00,
+        "shippingFee": 50000.00
+      }
+    ]
+  }
+}
+```
+
+### 9.5. Chi tiết báo giá theo ID báo giá (Get Quotation By ID)
+
+Lấy thông tin chi tiết của một báo giá bằng ID báo giá, trả về đầy đủ các chi phí và thông tin tính cước theo từng kiện hàng (nếu có).
+
+```http
+GET /api/quotations/{quotationId}
+Authorization: Bearer {token}
+```
+
+**Path Parameters:**
+
+| Parameter | Kiểu | Mô tả |
+|---|---|---|
+| `quotationId` | `Guid` | ID của báo giá |
+
+### Response thành công (200 OK)
+
+```json
+{
+  "message": "Lấy thông tin báo giá thành công.",
+  "data": {
+    "quotationId": "a1b2c3d4-...",
+    "orderId": "e5f6g7h8-...",
+    "quoteType": "ESTIMATE",
+    "status": "SENT",
+    "consignmentType": "Express",
+    "consignmentCode": "VCL-20260616120000-123456",
+    "totalWeight": 2.50,
+    "totalVolume": 15000.00,
+    "volumetricWeight": 3.00,
+    "chargeableWeight": 3.00,
+    "estimatedFreightCharge": 150000.00,
+    "serviceFee": 50000.00,
+    "taxAndDuty": 0.00,
+    "totalEstimatedCost": 200000.00,
+    "createdAt": "2026-06-15T12:00:00Z",
+    "expiredAt": "2026-06-22T12:00:00Z",
+    "salesNote": null,
+    "additionalFees": [],
+    "parcels": [
+      {
+        "parcelId": "p1b2c3d4-...",
+        "packageCode": "PKG123456",
+        "actualWeight": 1.50,
+        "length": 20.00,
+        "width": 10.00,
+        "height": 10.00,
+        "volumetricWeight": 0.40,
+        "chargeableWeight": 1.50,
+        "shippingFee": 75000.00
+      },
+      {
+        "parcelId": "p2b2c3d4-...",
+        "packageCode": "PKG123457",
+        "actualWeight": 1.00,
+        "length": 15.00,
+        "width": 10.00,
+        "height": 10.00,
+        "volumetricWeight": 0.30,
+        "chargeableWeight": 1.00,
+        "shippingFee": 50000.00
+      }
+    ]
   }
 }
 ```

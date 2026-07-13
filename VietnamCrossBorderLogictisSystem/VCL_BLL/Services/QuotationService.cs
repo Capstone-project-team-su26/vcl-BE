@@ -223,54 +223,75 @@ namespace VCL_BLL.Services
 
             // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
             var divisor = GetVolumetricDivisor(activeRules);
-            foreach (var detail in itemDetails)
-            {
-                var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
-                var qty = item?.Quantity ?? 1;
-                detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
-                detail.Quantity = qty;
-            }
-            var volumetricWeight = totalVolume / divisor;
-            var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
-            var chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
+            var freightRate = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate);
 
-            decimal estimatedFreightCharge;
-
-            if (matchedPricing != null && matchedPricing.Price.HasValue)
-            {
-                estimatedFreightCharge = Math.Round(chargeableWeight * matchedPricing.Price.Value, 2);
-            }
-            else
-            {
-                var freightRate = IsExpressServiceType(consignmentType)
-                    ? DefaultExpressRate
-                    : DefaultStandardRate;
-                estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
-            }
-
-            decimal serviceFee;
-            decimal taxAndDuty;
-            decimal totalEstimatedCost;
-
-            bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
-                                 string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var parcels = (await parcelRepo.GetAllAsync())
+                .Where(p => p.ConsignmentId == orderId)
+                .ToList();
 
             var quotationFees = new List<QuotationFee>();
             var now = DateTime.UtcNow;
 
-            if (estimatedFreightCharge > 0)
+            var parcelCalculationDetails = new List<ParcelQuotationDetailDto>();
+
+            decimal volumetricWeight = 0m;
+            decimal chargeableWeight = 0m;
+            decimal estimatedFreightCharge = 0m;
+            decimal serviceFee = 0m;
+            decimal taxAndDuty = 0m;
+            decimal totalEstimatedCost = 0m;
+            bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
+                                 string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
+
+            if (parcels.Any())
             {
-                quotationFees.Add(new QuotationFee
+                var parcelResult = CalculateParcelFees(parcels, divisor, freightRate, now);
+                totalWeight = parcelResult.TotalWeight;
+                totalVolume = parcelResult.TotalVolume;
+                volumetricWeight = parcelResult.VolumetricWeight;
+                chargeableWeight = parcelResult.ChargeableWeight;
+                estimatedFreightCharge = parcelResult.TotalFreightCharge;
+                parcelCalculationDetails = parcelResult.ParcelDetails;
+
+                quotationFees.AddRange(parcelResult.MainServiceFees);
+            }
+            else
+            {
+                foreach (var detail in itemDetails)
                 {
-                    Id = Guid.NewGuid(),
-                    FeeName = "Cước vận chuyển quốc tế",
-                    FeeType = "MAIN_SERVICE",
-                    CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
-                    Value = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate),
-                    Amount = estimatedFreightCharge,
-                    Note = $"Cước vận chuyển quốc tế dựa trên cân nặng tính cước {Math.Round(chargeableWeight, 2)} kg",
-                    CreatedAt = now
-                });
+                    var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
+                    var qty = item?.Quantity ?? 1;
+                    detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
+                    detail.Quantity = qty;
+                }
+                volumetricWeight = totalVolume / divisor;
+                var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
+                chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
+
+                if (matchedPricing != null && matchedPricing.Price.HasValue)
+                {
+                    estimatedFreightCharge = Math.Round(chargeableWeight * matchedPricing.Price.Value, 2);
+                }
+                else
+                {
+                    estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
+                }
+
+                if (estimatedFreightCharge > 0)
+                {
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        FeeName = "Cước vận chuyển quốc tế",
+                        FeeType = "MAIN_SERVICE",
+                        CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
+                        Value = freightRate,
+                        Amount = estimatedFreightCharge,
+                        Note = $"Cước vận chuyển quốc tế dựa trên cân nặng tính cước {Math.Round(chargeableWeight, 2)} kg",
+                        CreatedAt = now
+                    });
+                }
             }
 
             if (isConsignment)
@@ -530,6 +551,7 @@ namespace VCL_BLL.Services
                 CreatedAt = now,
                 ExpiredAt = quotation.ExpiredAt,
                 Items = itemDetails,
+                Parcels = parcelCalculationDetails,
                 AdditionalFees = quotationFees
                     .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
                     .Select(f => MapToFeeResponseDto(f, activeRules.ToDictionary(r => r.Id, r => r), orderItems.Sum(item => item.Quantity ?? 1)))
@@ -742,54 +764,79 @@ namespace VCL_BLL.Services
 
             // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
             var divisor = GetVolumetricDivisor(activeRules);
-            foreach (var detail in itemDetails)
-            {
-                var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
-                var qty = item?.Quantity ?? 1;
-                detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
-                detail.Quantity = qty;
-            }
-            var volumetricWeight = totalVolume / divisor;
-            var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
-            var chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
+            var freightRate = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate);
 
-            decimal estimatedFreightCharge;
-
-            if (matchedPricing != null && matchedPricing.Price.HasValue)
-            {
-                estimatedFreightCharge = Math.Round(chargeableWeight * matchedPricing.Price.Value, 2);
-            }
-            else
-            {
-                var freightRate = IsExpressServiceType(consignmentType)
-                    ? DefaultExpressRate
-                    : DefaultStandardRate;
-                estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
-            }
-
-            decimal serviceFee;
-            decimal taxAndDuty;
-            decimal totalEstimatedCost;
-
-            bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
-                                 string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var parcels = (await parcelRepo.GetAllAsync())
+                .Where(p => p.ConsignmentId == orderId)
+                .ToList();
 
             var quotationFees = new List<QuotationFee>();
             var now = DateTime.UtcNow;
 
-            if (estimatedFreightCharge > 0)
+            var parcelCalculationDetails = new List<ParcelQuotationDetailDto>();
+
+            decimal volumetricWeight = 0m;
+            decimal chargeableWeight = 0m;
+            decimal estimatedFreightCharge = 0m;
+            decimal serviceFee = 0m;
+            decimal taxAndDuty = 0m;
+            decimal totalEstimatedCost = 0m;
+            bool isConsignment = string.IsNullOrEmpty(order.OrderType) || 
+                                 string.Equals(order.OrderType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase);
+
+            if (parcels.Any())
             {
-                quotationFees.Add(new QuotationFee
+                var parcelResult = CalculateParcelFees(parcels, divisor, freightRate, now);
+                totalWeight = parcelResult.TotalWeight;
+                totalVolume = parcelResult.TotalVolume;
+                volumetricWeight = parcelResult.VolumetricWeight;
+                chargeableWeight = parcelResult.ChargeableWeight;
+                estimatedFreightCharge = parcelResult.TotalFreightCharge;
+                parcelCalculationDetails = parcelResult.ParcelDetails;
+
+                foreach (var qf in parcelResult.MainServiceFees)
                 {
-                    Id = Guid.Empty,
-                    FeeName = "Cước vận chuyển quốc tế",
-                    FeeType = "MAIN_SERVICE",
-                    CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
-                    Value = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate),
-                    Amount = estimatedFreightCharge,
-                    Note = $"Cước vận chuyển quốc tế dựa trên cân nặng tính cước {Math.Round(chargeableWeight, 2)} kg",
-                    CreatedAt = now
-                });
+                    qf.Id = Guid.Empty;
+                    quotationFees.Add(qf);
+                }
+            }
+            else
+            {
+                foreach (var detail in itemDetails)
+                {
+                    var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
+                    var qty = item?.Quantity ?? 1;
+                    detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
+                    detail.Quantity = qty;
+                }
+                volumetricWeight = totalVolume / divisor;
+                var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
+                chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
+
+                if (matchedPricing != null && matchedPricing.Price.HasValue)
+                {
+                    estimatedFreightCharge = Math.Round(chargeableWeight * matchedPricing.Price.Value, 2);
+                }
+                else
+                {
+                    estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
+                }
+
+                if (estimatedFreightCharge > 0)
+                {
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.Empty,
+                        FeeName = "Cước vận chuyển quốc tế",
+                        FeeType = "MAIN_SERVICE",
+                        CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
+                        Value = freightRate,
+                        Amount = estimatedFreightCharge,
+                        Note = $"Cước vận chuyển quốc tế dựa trên cân nặng tính cước {Math.Round(chargeableWeight, 2)} kg",
+                        CreatedAt = now
+                    });
+                }
             }
 
             if (isConsignment)
@@ -949,6 +996,7 @@ namespace VCL_BLL.Services
                 CreatedAt = DateTime.UtcNow,
                 ExpiredAt = DateTime.UtcNow.AddDays(QuotationValidDays),
                 Items = itemDetails,
+                Parcels = parcelCalculationDetails,
                 AdditionalFees = additionalFees
             };
         }
@@ -1012,12 +1060,32 @@ namespace VCL_BLL.Services
                 .Where(p => p.ConsignmentId == orderId)
                 .ToList();
 
+            decimal freightRate;
+            if (matchedPricing != null && matchedPricing.Price.HasValue)
+            {
+                freightRate = matchedPricing.Price.Value;
+            }
+            else
+            {
+                freightRate = IsExpressServiceType(consignmentType)
+                    ? DefaultExpressRate
+                    : DefaultStandardRate;
+            }
+
+            var now = DateTime.UtcNow;
+            var quotationFees = new List<QuotationFee>();
+
+            decimal estimatedFreightCharge = 0m;
+            decimal netWeight = 0m;
+
             if (parcels.Any())
             {
-                totalActualWeight = parcels.Sum(p => p.ActualWeight ?? 0m);
-                totalVolumetricWeight = parcels.Sum(p => p.VolumetricWeight ?? 
-                    (((p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m)) / divisor));
-                totalVolumeCm3 = parcels.Sum(p => (p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m));
+                var parcelResult = CalculateParcelFees(parcels, divisor, freightRate, now);
+                totalActualWeight = parcelResult.TotalWeight;
+                totalVolumetricWeight = parcelResult.VolumetricWeight;
+                totalVolumeCm3 = parcelResult.TotalVolume;
+                estimatedFreightCharge = parcelResult.TotalFreightCharge;
+                netWeight = parcelResult.ChargeableWeight;
 
                 var parcelIds = parcels.Select(p => p.Id).ToList();
                 var waybillRepo = _unitOfWork.Repository<DomesticWaybill>();
@@ -1025,6 +1093,8 @@ namespace VCL_BLL.Services
                 domesticShippingFee = allWaybills
                     .Where(w => w.ParcelId.HasValue && parcelIds.Contains(w.ParcelId.Value))
                     .Sum(w => w.DeliveryFee ?? 0m);
+
+                quotationFees.AddRange(parcelResult.MainServiceFees);
             }
             else
             {
@@ -1050,24 +1120,28 @@ namespace VCL_BLL.Services
                 totalVolumetricWeight = totalVolumeCm3 / divisor;
 
                 domesticShippingFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
+
+                var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
+                netWeight = Math.Max(totalActualWeight, Math.Max(totalVolumetricWeight, minimumWeight));
+
+                estimatedFreightCharge = Math.Round(netWeight * freightRate, 2);
+
+                if (estimatedFreightCharge > 0)
+                {
+                    quotationFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        FeeName = "Cước vận chuyển quốc tế",
+                        FeeType = "MAIN_SERVICE",
+                        CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
+                        Value = freightRate,
+                        Amount = estimatedFreightCharge,
+                        Note = $"Cước vận chuyển quốc tế chính thức",
+                        CreatedAt = now
+                    });
+                }
             }
 
-            var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
-            var netWeight = Math.Max(totalActualWeight, Math.Max(totalVolumetricWeight, minimumWeight));
-
-            decimal freightRate;
-            if (matchedPricing != null && matchedPricing.Price.HasValue)
-            {
-                freightRate = matchedPricing.Price.Value;
-            }
-            else
-            {
-                freightRate = IsExpressServiceType(consignmentType)
-                    ? DefaultExpressRate
-                    : DefaultStandardRate;
-            }
-
-            decimal estimatedFreightCharge;
             decimal serviceFee;
             decimal taxAndDuty;
             decimal totalEstimatedCost;
@@ -1078,38 +1152,18 @@ namespace VCL_BLL.Services
             var quotationDetails = request.Quotation;
             if (isConsignment)
             {
-                estimatedFreightCharge = Math.Round(netWeight * freightRate, 2);
                 serviceFee = domesticShippingFee;
                 taxAndDuty = 0m;
                 totalEstimatedCost = estimatedFreightCharge + serviceFee;
             }
             else
             {
-                estimatedFreightCharge = quotationDetails?.EstimatedFreightCharge ?? 0m;
-                serviceFee = quotationDetails?.ServiceFee ?? 0m;
+                estimatedFreightCharge = quotationDetails?.EstimatedFreightCharge ?? estimatedFreightCharge;
+                serviceFee = quotationDetails?.ServiceFee ?? domesticShippingFee;
                 taxAndDuty = quotationDetails?.TotalEstimatedCost.HasValue ?? false
                     ? Math.Max(0m, quotationDetails.TotalEstimatedCost.Value - (quotationDetails.EstimatedFreightCharge ?? 0m) - (quotationDetails.ServiceFee ?? 0m))
                     : 0m;
                 totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
-            }
-
-            var now = DateTime.UtcNow;
-            var quotationFees = new List<QuotationFee>();
-
-            // Save main freight charge
-            if (estimatedFreightCharge > 0)
-            {
-                quotationFees.Add(new QuotationFee
-                {
-                    Id = Guid.NewGuid(),
-                    FeeName = "Cước vận chuyển quốc tế",
-                    FeeType = "MAIN_SERVICE",
-                    CalculationType = matchedPricing != null ? "PER_KG" : "FIXED",
-                    Value = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate),
-                    Amount = estimatedFreightCharge,
-                    Note = $"Cước vận chuyển quốc tế chính thức",
-                    CreatedAt = now
-                });
             }
 
             // Save tax and duty
@@ -1378,6 +1432,36 @@ namespace VCL_BLL.Services
                                    + (quotation.TaxAndDuty ?? 0m)
                                    + additionalSurchargesAmount;
 
+            var parcelDetails = new List<ParcelQuotationDetailDto>();
+            var mainServiceFees = fees.Where(f => string.Equals(f.FeeType, "MAIN_SERVICE", StringComparison.OrdinalIgnoreCase) && f.ParcelId.HasValue).ToList();
+            if (mainServiceFees.Any())
+            {
+                var parcelRepo = _unitOfWork.Repository<Parcel>();
+                var parcelIds = mainServiceFees.Select(f => f.ParcelId!.Value).ToList();
+                var associatedParcels = (await parcelRepo.GetAllAsync())
+                    .Where(p => parcelIds.Contains(p.Id))
+                    .ToDictionary(p => p.Id, p => p);
+
+                foreach (var fee in mainServiceFees)
+                {
+                    if (associatedParcels.TryGetValue(fee.ParcelId!.Value, out var parcel))
+                    {
+                        parcelDetails.Add(new ParcelQuotationDetailDto
+                        {
+                            ParcelId = parcel.Id,
+                            PackageCode = parcel.PackageCode ?? string.Empty,
+                            ActualWeight = parcel.ActualWeight ?? 0m,
+                            Length = parcel.Length ?? 0m,
+                            Width = parcel.Width ?? 0m,
+                            Height = parcel.Height ?? 0m,
+                            VolumetricWeight = parcel.VolumetricWeight ?? 0m,
+                            ChargeableWeight = fee.ChargeableWeight ?? parcel.ChargeableWeight ?? 0m,
+                            ShippingFee = fee.Amount
+                        });
+                    }
+                }
+            }
+
             return new QuotationDetailResponse
             {
                 QuotationId = quotation.Id,
@@ -1397,7 +1481,123 @@ namespace VCL_BLL.Services
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 ExpiredAt = quotation.ExpiredAt,
                 SalesNote = null,
-                AdditionalFees = feeDtos
+                AdditionalFees = feeDtos,
+                Parcels = parcelDetails
+            };
+        }
+
+        /// <inheritdoc/>
+        public async Task<QuotationDetailResponse> GetQuotationByIdAsync(Guid quotationId)
+        {
+            // 1. Tìm Quotation
+            var quotationRepo = _unitOfWork.Repository<Quotation>();
+            var quotation = await quotationRepo.GetByIdAsync(quotationId);
+            if (quotation == null)
+                throw new NotFoundException($"Không tìm thấy báo giá với ID: {quotationId}");
+
+            // 2. Tìm Order
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(quotation.OrderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng liên quan đến báo giá.");
+
+            // 3. Lấy Route & Khách hàng
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customer = order.CustomerId.HasValue
+                ? await customerRepo.GetByIdAsync(order.CustomerId.Value)
+                : null;
+            var customerCountry = customer?.Country;
+
+            // 4. Lấy cấu hình hệ thống (Pricing rules, Volumetric Divisor)
+            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
+            var allRules = await pricingRuleRepo.GetAllAsync();
+            var allActiveRules = allRules
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var divisor = GetVolumetricDivisor(allActiveRules);
+            var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) / divisor, 4);
+
+            var activeRules = allActiveRules
+                .Where(r => !string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var ruleMap = activeRules.ToDictionary(r => r.Id, r => r);
+
+            // Fetch associated quotation fees
+            var feeRepo = _unitOfWork.Repository<QuotationFee>();
+            var allFees = await feeRepo.GetAllAsync();
+            var fees = allFees.Where(f => f.QuotationId == quotation.Id).ToList();
+
+            var itemRepo = _unitOfWork.Repository<OrderItem>();
+            var allItems = await itemRepo.GetAllAsync();
+            var orderItems = allItems.Where(i => i.OrderId == order.Id).ToList();
+            var packageCount = orderItems.Sum(item => item.Quantity ?? 1);
+
+            var feeDtos = fees
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Select(f => MapToFeeResponseDto(f, ruleMap, packageCount))
+                .ToList();
+
+            var additionalSurchargesAmount = fees
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) && (f.Amount > 0 || f.PricingRuleId.HasValue))
+                .Sum(f => f.Amount);
+
+            var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m)
+                                   + (quotation.ServiceFee ?? 0m)
+                                   + (quotation.TaxAndDuty ?? 0m)
+                                   + additionalSurchargesAmount;
+
+            var parcelDetails = new List<ParcelQuotationDetailDto>();
+            var mainServiceFees = fees.Where(f => string.Equals(f.FeeType, "MAIN_SERVICE", StringComparison.OrdinalIgnoreCase) && f.ParcelId.HasValue).ToList();
+            if (mainServiceFees.Any())
+            {
+                var parcelRepo = _unitOfWork.Repository<Parcel>();
+                var parcelIds = mainServiceFees.Select(f => f.ParcelId!.Value).ToList();
+                var associatedParcels = (await parcelRepo.GetAllAsync())
+                    .Where(p => parcelIds.Contains(p.Id))
+                    .ToDictionary(p => p.Id, p => p);
+
+                foreach (var fee in mainServiceFees)
+                {
+                    if (associatedParcels.TryGetValue(fee.ParcelId!.Value, out var parcel))
+                    {
+                        parcelDetails.Add(new ParcelQuotationDetailDto
+                        {
+                            ParcelId = parcel.Id,
+                            PackageCode = parcel.PackageCode ?? string.Empty,
+                            ActualWeight = parcel.ActualWeight ?? 0m,
+                            Length = parcel.Length ?? 0m,
+                            Width = parcel.Width ?? 0m,
+                            Height = parcel.Height ?? 0m,
+                            VolumetricWeight = parcel.VolumetricWeight ?? 0m,
+                            ChargeableWeight = fee.ChargeableWeight ?? parcel.ChargeableWeight ?? 0m,
+                            ShippingFee = fee.Amount
+                        });
+                    }
+                }
+            }
+
+            return new QuotationDetailResponse
+            {
+                QuotationId = quotation.Id,
+                OrderId = order.Id,
+                QuoteType = quotation.QuoteType ?? string.Empty,
+                Status = quotation.Status ?? string.Empty,
+                ConsignmentType = order.ConsignmentType ?? string.Empty,
+                ConsignmentCode = order.ConsignmentCode,
+                TotalWeight = order.TotalWeight ?? 0m,
+                TotalVolume = order.TotalVolume ?? 0m,
+                VolumetricWeight = volumetricWeight,
+                ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, volumetricWeight),
+                EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,
+                ServiceFee = quotation.ServiceFee ?? 0m,
+                TaxAndDuty = quotation.TaxAndDuty ?? 0m,
+                TotalEstimatedCost = totalEstimatedCost,
+                CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
+                ExpiredAt = quotation.ExpiredAt,
+                SalesNote = null,
+                AdditionalFees = feeDtos,
+                Parcels = parcelDetails
             };
         }
 
@@ -1417,7 +1617,11 @@ namespace VCL_BLL.Services
                 UnitPrice = f.Value,
                 Amount = f.Amount,
                 Note = f.Note,
-                CreatedAt = f.CreatedAt
+                CreatedAt = f.CreatedAt,
+                ParcelId = f.ParcelId,
+                ChargeableWeight = f.ChargeableWeight,
+                ShippingFee = f.ShippingFee,
+                TotalAmount = f.TotalAmount
             };
 
             // Mặc định cho Enabled và IsRequired
@@ -1486,6 +1690,84 @@ namespace VCL_BLL.Services
             }
 
             return dto;
+        }
+
+        private class ParcelCalculationResult
+        {
+            public List<ParcelQuotationDetailDto> ParcelDetails { get; set; } = new();
+            public List<QuotationFee> MainServiceFees { get; set; } = new();
+            public decimal TotalWeight { get; set; }
+            public decimal TotalVolume { get; set; }
+            public decimal VolumetricWeight { get; set; }
+            public decimal ChargeableWeight { get; set; }
+            public decimal TotalFreightCharge { get; set; }
+        }
+
+        private ParcelCalculationResult CalculateParcelFees(
+            List<Parcel> parcels, 
+            decimal divisor, 
+            decimal freightRate, 
+            DateTime now)
+        {
+            var result = new ParcelCalculationResult();
+
+            foreach (var p in parcels)
+            {
+                if (!p.ActualWeight.HasValue || p.ActualWeight.Value <= 0 ||
+                    !p.Length.HasValue || p.Length.Value <= 0 ||
+                    !p.Width.HasValue || p.Width.Value <= 0 ||
+                    !p.Height.HasValue || p.Height.Value <= 0)
+                {
+                    throw new ArgumentException($"Kiện hàng '{p.PackageCode}' thiếu trọng lượng hoặc kích thước cần thiết để tính phí.");
+                }
+
+                var actualWeight = p.ActualWeight.Value;
+                var length = p.Length.Value;
+                var width = p.Width.Value;
+                var height = p.Height.Value;
+                
+                var volume = length * width * height;
+                var volumetricWeight = Math.Round(volume / divisor, 4);
+                var chargeableWeight = Math.Max(actualWeight, volumetricWeight);
+                var shippingFee = Math.Round(chargeableWeight * freightRate, 2);
+
+                result.TotalWeight += actualWeight;
+                result.TotalVolume += volume;
+                result.VolumetricWeight += volumetricWeight;
+                result.ChargeableWeight += chargeableWeight;
+                result.TotalFreightCharge += shippingFee;
+
+                result.ParcelDetails.Add(new ParcelQuotationDetailDto
+                {
+                    ParcelId = p.Id,
+                    PackageCode = p.PackageCode ?? string.Empty,
+                    ActualWeight = actualWeight,
+                    Length = length,
+                    Width = width,
+                    Height = height,
+                    VolumetricWeight = volumetricWeight,
+                    ChargeableWeight = chargeableWeight,
+                    ShippingFee = shippingFee
+                });
+
+                result.MainServiceFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = $"Cước vận chuyển kiện {p.PackageCode}",
+                    FeeType = "MAIN_SERVICE",
+                    CalculationType = "PER_KG",
+                    Value = freightRate,
+                    Amount = shippingFee,
+                    ParcelId = p.Id,
+                    ChargeableWeight = chargeableWeight,
+                    ShippingFee = shippingFee,
+                    TotalAmount = shippingFee,
+                    Note = $"Cước vận chuyển kiện {p.PackageCode} (Cân nặng tính cước: {Math.Round(chargeableWeight, 2)} kg)",
+                    CreatedAt = now
+                });
+            }
+
+            return result;
         }
 
     }

@@ -1945,6 +1945,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("calculation_type");
 
+                    b.Property<decimal?>("ChargeableWeight")
+                        .HasColumnType("decimal(18, 4)")
+                        .HasColumnName("chargeable_weight");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -1968,6 +1972,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("note");
 
+                    b.Property<Guid?>("ParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parcel_id");
+
                     b.Property<Guid?>("PricingRuleId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("pricing_rule_id");
@@ -1980,12 +1988,22 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("quotation_id");
 
+                    b.Property<decimal?>("ShippingFee")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("shipping_fee");
+
+                    b.Property<decimal?>("TotalAmount")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("total_amount");
+
                     b.Property<decimal>("Value")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("value");
 
                     b.HasKey("Id")
                         .HasName("PK_QUOTATION_FEES");
+
+                    b.HasIndex("ParcelId");
 
                     b.HasIndex("PricingRuleId");
 
@@ -3240,6 +3258,12 @@ namespace VCL_DLL.Migrations
 
             modelBuilder.Entity("VCL_DLL.Models.QuotationFee", b =>
                 {
+                    b.HasOne("VCL_DLL.Models.Parcel", "Parcel")
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_QF_PARCEL");
+
                     b.HasOne("VCL_DLL.Models.PricingRule", "PricingRule")
                         .WithMany()
                         .HasForeignKey("PricingRuleId")
@@ -3257,6 +3281,8 @@ namespace VCL_DLL.Migrations
                         .HasForeignKey("QuotationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .HasConstraintName("FK_QF_QUOTE");
+
+                    b.Navigation("Parcel");
 
                     b.Navigation("PricingRule");
 
