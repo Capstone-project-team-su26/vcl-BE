@@ -2648,6 +2648,99 @@ namespace VCL_DLL.Migrations
                     b.ToTable("WAREHOUSES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseLocationLayout", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid?>("BinId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("bin_id");
+
+                    b.Property<string>("ColorCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("color_code");
+
+                    b.Property<int>("ColumnIndex")
+                        .HasColumnType("int")
+                        .HasColumnName("column_index");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("DisplayLabel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("display_label");
+
+                    b.Property<int?>("Height")
+                        .HasColumnType("int")
+                        .HasColumnName("height");
+
+                    b.Property<string>("LayoutType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("BIN")
+                        .HasColumnName("layout_type");
+
+                    b.Property<int>("RowIndex")
+                        .HasColumnType("int")
+                        .HasColumnName("row_index");
+
+                    b.Property<Guid?>("ShelfId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("shelf_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("ACTIVE")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_id");
+
+                    b.Property<int?>("Width")
+                        .HasColumnType("int")
+                        .HasColumnName("width");
+
+                    b.Property<Guid?>("ZoneId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("zone_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_WAREHOUSE_LOCATION_LAYOUTS");
+
+                    b.HasIndex("BinId");
+
+                    b.HasIndex("ShelfId");
+
+                    b.HasIndex("ZoneId");
+
+                    b.HasIndex("WarehouseId", "RowIndex", "ColumnIndex")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_WH_LAYOUT_COORDS");
+
+                    b.ToTable("WAREHOUSE_LOCATION_LAYOUTS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.WarehouseReceivingNote", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3473,6 +3566,42 @@ namespace VCL_DLL.Migrations
                         .HasConstraintName("FK_TRACK_SHIP");
 
                     b.Navigation("Shipment");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseLocationLayout", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Bin", "Bin")
+                        .WithMany()
+                        .HasForeignKey("BinId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_WH_LAYOUT_BIN");
+
+                    b.HasOne("VCL_DLL.Models.Shelf", "Shelf")
+                        .WithMany()
+                        .HasForeignKey("ShelfId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_WH_LAYOUT_SHELF");
+
+                    b.HasOne("VCL_DLL.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_WH_LAYOUT_WH");
+
+                    b.HasOne("VCL_DLL.Models.WarehouseZone", "Zone")
+                        .WithMany()
+                        .HasForeignKey("ZoneId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_WH_LAYOUT_ZONE");
+
+                    b.Navigation("Bin");
+
+                    b.Navigation("Shelf");
+
+                    b.Navigation("Warehouse");
+
+                    b.Navigation("Zone");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.WarehouseReceivingNote", b =>
