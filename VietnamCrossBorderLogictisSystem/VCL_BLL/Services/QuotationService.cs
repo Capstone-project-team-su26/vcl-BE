@@ -223,6 +223,13 @@ namespace VCL_BLL.Services
 
             // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
             var divisor = GetVolumetricDivisor(activeRules);
+            foreach (var detail in itemDetails)
+            {
+                var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
+                var qty = item?.Quantity ?? 1;
+                detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
+                detail.Quantity = qty;
+            }
             var volumetricWeight = totalVolume / divisor;
             var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
             var chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));
@@ -735,6 +742,13 @@ namespace VCL_BLL.Services
 
             // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
             var divisor = GetVolumetricDivisor(activeRules);
+            foreach (var detail in itemDetails)
+            {
+                var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
+                var qty = item?.Quantity ?? 1;
+                detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
+                detail.Quantity = qty;
+            }
             var volumetricWeight = totalVolume / divisor;
             var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
             var chargeableWeight = Math.Max(totalWeight, Math.Max(volumetricWeight, minimumWeight));

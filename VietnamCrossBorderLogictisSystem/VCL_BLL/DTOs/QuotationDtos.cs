@@ -54,6 +54,7 @@ namespace VCL_BLL.DTOs
     {
         public Guid Id { get; set; }
         public string ProductName { get; set; } = string.Empty;
+        public int? Quantity { get; set; }
         public decimal? Weight { get; set; }
         public decimal? Length { get; set; }
         public decimal? Width { get; set; }
@@ -62,6 +63,9 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Thể tích item = Length × Width × Height (cm³)</summary>
         public decimal ItemVolume { get; set; }
+
+        /// <summary>Cân nặng quy đổi của dòng sản phẩm = ItemVolume * Quantity / Divisor</summary>
+        public decimal? VolumetricWeight { get; set; }
     }
 
     /// <summary>

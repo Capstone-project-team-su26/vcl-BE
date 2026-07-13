@@ -62,6 +62,9 @@ namespace VCL_BLL.DTOs
         public decimal? DeclaredValue { get; set; }
         public string? ReferenceUrl { get; set; }
         public string? DomesticTrackingCode { get; set; }
+
+        /// <summary>Cân nặng quy đổi của dòng sản phẩm = Length × Width × Height × Quantity / 5000</summary>
+        public decimal? VolumetricWeight { get; set; }
     }
 
     public class ConsignmentQuotationSummary

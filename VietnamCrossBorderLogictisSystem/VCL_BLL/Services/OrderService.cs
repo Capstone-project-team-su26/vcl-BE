@@ -418,21 +418,40 @@ namespace VCL_BLL.Services
             // Mặt hàng thuộc đơn
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
             var allItems = await orderItemRepo.GetAllAsync();
+
+            var divisorSection = _configuration.GetSection("PricingSettings:VolumetricDivisor");
+            var divisor = divisorSection.Exists() && decimal.TryParse(divisorSection.Value, out var div) ? div : 5000m;
+
             var items = allItems
                 .Where(i => i.OrderId == orderId)
-                .Select(i => new ConsignmentItemDetail
+                .Select(i =>
                 {
-                    Id = i.Id,
-                    ProductName = i.ProductName,
-                    ProductType = i.ProductType,
-                    Quantity = i.Quantity,
-                    Weight = i.Weight,
-                    Width = i.Width,
-                    Height = i.Height,
-                    Length = i.Length,
-                    DeclaredValue = i.DeclaredValue,
-                    ReferenceUrl = i.ReferenceUrl,
-                    DomesticTrackingCode = i.DomesticTrackingCode
+                    var qty = i.Quantity ?? 1;
+                    var itemLength = i.Length ?? 0m;
+                    var itemWidth = i.Width ?? 0m;
+                    var itemHeight = i.Height ?? 0m;
+                    var itemVolume = itemLength * itemWidth * itemHeight;
+                    decimal? volumetricWeight = null;
+                    if (itemLength > 0 && itemWidth > 0 && itemHeight > 0)
+                    {
+                        volumetricWeight = Math.Round((itemVolume * qty) / divisor, 4);
+                    }
+
+                    return new ConsignmentItemDetail
+                    {
+                        Id = i.Id,
+                        ProductName = i.ProductName,
+                        ProductType = i.ProductType,
+                        Quantity = i.Quantity,
+                        Weight = i.Weight,
+                        Width = i.Width,
+                        Height = i.Height,
+                        Length = i.Length,
+                        DeclaredValue = i.DeclaredValue,
+                        ReferenceUrl = i.ReferenceUrl,
+                        DomesticTrackingCode = i.DomesticTrackingCode,
+                        VolumetricWeight = volumetricWeight
+                    };
                 })
                 .ToList();
 
