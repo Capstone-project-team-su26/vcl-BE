@@ -871,6 +871,20 @@ public partial class VCLDBContext : DbContext
                 .HasDefaultValueSql("(getutcdate())")
                 .HasColumnName("created_at");
 
+            entity.Property(e => e.ParcelId).HasColumnName("parcel_id");
+
+            entity.Property(e => e.ChargeableWeight)
+                .HasColumnType("decimal(18, 4)")
+                .HasColumnName("chargeable_weight");
+
+            entity.Property(e => e.ShippingFee)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("shipping_fee");
+
+            entity.Property(e => e.TotalAmount)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("total_amount");
+
             entity.HasOne(d => d.Quotation).WithMany(p => p.QuotationFees)
                 .HasForeignKey(d => d.QuotationId)
                 .OnDelete(DeleteBehavior.Cascade)
@@ -885,6 +899,11 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.PricingRuleId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("FK_QF_PRICING_RULE");
+
+            entity.HasOne(d => d.Parcel).WithMany()
+                .HasForeignKey(d => d.ParcelId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_QF_PARCEL");
         });
 
         modelBuilder.Entity<RestrictedItem>(entity =>

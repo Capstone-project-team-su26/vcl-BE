@@ -47,5 +47,11 @@ namespace VCL_BLL.Interface
         /// </summary>
         /// <param name="orderId">ID của đơn hàng</param>
         Task<QuotationDetailResponse> GetQuotationByOrderIdAsync(Guid orderId);
+
+        /// <summary>
+        /// Lấy thông tin báo giá theo ID báo giá.
+        /// </summary>
+        /// <param name="quotationId">ID của báo giá</param>
+        Task<QuotationDetailResponse> GetQuotationByIdAsync(Guid quotationId);
     }
 }

@@ -256,5 +256,29 @@ namespace VCL_API.Controllers
                 return NotFound(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Xem thông tin báo giá theo ID báo giá.
+        /// </summary>
+        [HttpGet("api/quotations/{quotationId}")]
+        [ProducesResponseType(typeof(QuotationDetailResponse), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetQuotationById(Guid quotationId)
+        {
+            try
+            {
+                var result = await _quotationService.GetQuotationByIdAsync(quotationId);
+                return Ok(new
+                {
+                    message = "Lấy thông tin báo giá thành công.",
+                    data = result
+                });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
     }
 }

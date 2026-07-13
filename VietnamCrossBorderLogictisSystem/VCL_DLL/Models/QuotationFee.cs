@@ -26,10 +26,20 @@ namespace VCL_DLL.Models
 
         public DateTime CreatedAt { get; set; }
 
+        public Guid? ParcelId { get; set; }
+
+        public decimal? ChargeableWeight { get; set; }
+
+        public decimal? ShippingFee { get; set; }
+
+        public decimal? TotalAmount { get; set; }
+
         public virtual Quotation? Quotation { get; set; }
 
         public virtual PurchaseQuotation? PurchaseQuotation { get; set; }
 
         public virtual PricingRule? PricingRule { get; set; }
+
+        public virtual Parcel? Parcel { get; set; }
     }
 }
