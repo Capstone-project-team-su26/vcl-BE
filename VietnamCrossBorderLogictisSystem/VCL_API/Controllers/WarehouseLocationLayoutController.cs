@@ -177,4 +177,32 @@ public class WarehouseLocationLayoutController : ControllerBase
             return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Lấy trạng thái sơ đồ kho theo tồn kho thực tế
+    /// GET /api/warehouses/{warehouseId}/layout/status
+    /// </summary>
+    [HttpGet("status")]
+    public async Task<IActionResult> GetLayoutStatus(Guid warehouseId)
+    {
+        var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+        try
+        {
+            var result = await _layoutService.GetLayoutStatusByWarehouseIdAsync(warehouseId, userRole);
+            return Ok(new { message = "Lấy trạng thái sơ đồ kho thành công.", data = result });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, new { message = ex.Message });
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+        }
+    }
 }

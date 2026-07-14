@@ -446,4 +446,141 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
 
         return result;
     }
+
+    public async Task<List<WarehouseLayoutStatusDto>> GetLayoutStatusByWarehouseIdAsync(Guid warehouseId, string userRole)
+    {
+        EnsureReadAccess(userRole);
+
+        // 1. Kiểm tra kho tồn tại
+        var warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(warehouseId);
+        if (warehouse == null)
+        {
+            throw new NotFoundException($"Không tìm thấy kho hàng với ID: {warehouseId}");
+        }
+
+        // 2. Lấy sơ đồ layout của kho
+        var allLayouts = await _unitOfWork.Repository<WarehouseLocationLayout>().GetAllAsync();
+        var warehouseLayouts = allLayouts
+            .Where(l => l.WarehouseId == warehouseId)
+            .OrderBy(l => l.RowIndex)
+            .ThenBy(l => l.ColumnIndex)
+            .ToList();
+
+        // 3. Lấy thông tin các Bin trong kho
+        var allBins = await _unitOfWork.Repository<Bin>().GetAllAsync();
+        var warehouseBins = allBins.Where(b => b.WarehouseId == warehouseId).ToList();
+        var binMap = warehouseBins.ToDictionary(b => b.Id);
+
+        // 4. Lấy tất cả Parcel có trạng thái STORED trong kho
+        var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
+        var storedParcels = allParcels
+            .Where(p => p.BinId.HasValue && string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // Gom nhóm Parcels theo BinId để tăng hiệu năng tìm kiếm
+        var parcelsByBin = storedParcels
+            .GroupBy(p => p.BinId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = new List<WarehouseLayoutStatusDto>();
+
+        foreach (var layout in warehouseLayouts)
+        {
+            var dto = new WarehouseLayoutStatusDto
+            {
+                WarehouseId = layout.WarehouseId,
+                LayoutId = layout.Id,
+                ZoneId = layout.ZoneId,
+                ShelfId = layout.ShelfId,
+                BinId = layout.BinId,
+                DisplayLabel = layout.DisplayLabel ?? string.Empty,
+                RowIndex = layout.RowIndex,
+                ColumnIndex = layout.ColumnIndex,
+                CurrentItemCount = 0,
+                CurrentWeight = 0m,
+                MaxItemCount = null,
+                MaxWeight = null,
+                UtilizationRate = null,
+                ParcelIds = new List<Guid>()
+            };
+
+            // Nếu vị trí là một Ô chứa (Bin)
+            if (layout.BinId.HasValue && binMap.TryGetValue(layout.BinId.Value, out var bin))
+            {
+                // Lấy danh sách kiện hàng đang lưu tại Bin này
+                var binParcels = parcelsByBin.ContainsKey(bin.Id) ? parcelsByBin[bin.Id] : new List<Parcel>();
+
+                dto.CurrentItemCount = binParcels.Count;
+                dto.CurrentWeight = binParcels.Sum(p => p.ActualWeight ?? 0m);
+                dto.MaxWeight = bin.MaxWeight;
+                dto.ParcelIds = binParcels.Select(p => p.Id).ToList();
+
+                // Tính toán UtilizationRate dựa trên MaxWeight hoặc MaxVolume
+                decimal weightUtilization = 0m;
+                if (bin.MaxWeight.HasValue && bin.MaxWeight.Value > 0)
+                {
+                    weightUtilization = dto.CurrentWeight / bin.MaxWeight.Value;
+                }
+
+                decimal volumeUtilization = 0m;
+                if (bin.MaxVolume.HasValue && bin.MaxVolume.Value > 0)
+                {
+                    decimal currentVolume = binParcels.Sum(p => (p.Length ?? 0m) * (p.Width ?? 0m) * (p.Height ?? 0m));
+                    volumeUtilization = currentVolume / bin.MaxVolume.Value;
+                }
+
+                decimal maxUtilization = Math.Max(weightUtilization, volumeUtilization);
+                dto.UtilizationRate = maxUtilization;
+
+                // Xác định trạng thái của vị trí
+                if (string.Equals(layout.Status, "INACTIVE", StringComparison.OrdinalIgnoreCase) || !bin.IsActive)
+                {
+                    dto.Status = "INACTIVE";
+                }
+                else if (string.Equals(layout.Status, "LOCKED", StringComparison.OrdinalIgnoreCase))
+                {
+                    dto.Status = "LOCKED";
+                }
+                else if (maxUtilization >= 1.0m)
+                {
+                    dto.Status = "FULL";
+                }
+                else if (dto.CurrentItemCount > 0)
+                {
+                    dto.Status = "OCCUPIED";
+                }
+                else
+                {
+                    dto.Status = "AVAILABLE";
+                }
+            }
+            else
+            {
+                // Đối với các phần tử layout không phải Bin (ví dụ: Zone, Shelf hoặc lối đi, tường...)
+                if (string.Equals(layout.Status, "INACTIVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    dto.Status = "INACTIVE";
+                }
+                else if (string.Equals(layout.Status, "LOCKED", StringComparison.OrdinalIgnoreCase))
+                {
+                    dto.Status = "LOCKED";
+                }
+                else
+                {
+                    dto.Status = "AVAILABLE";
+                }
+            }
+
+            // Ẩn thông tin nhạy cảm cho Warehouse Staff hoặc Staff chung
+            if (string.Equals(userRole, "Warehouse Staff", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(userRole, "Staff", StringComparison.OrdinalIgnoreCase))
+            {
+                dto.ParcelIds = null;
+            }
+
+            result.Add(dto);
+        }
+
+        return result;
+    }
 }

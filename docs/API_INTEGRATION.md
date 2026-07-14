@@ -5122,6 +5122,80 @@ interface UpdateAdditionalServiceFeeRequestDto {
 
 ---
 
+## 38. Quản lý sơ đồ kho trực quan & Trạng thái tồn kho thực tế
+
+Hỗ trợ các API quản lý vị trí sơ đồ kho (layout) và lấy trạng thái thực tế dựa trên tồn kho và tải trọng hiện có.
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/warehouses/{warehouseId}/layout` | Authenticated | Lấy danh sách thô tất cả các ô tọa độ layout kho |
+| `GET` | `/api/warehouses/{warehouseId}/layout/zones` | Authenticated | Lấy sơ đồ layout phân tầng theo từng Zone, Shelf, Bin |
+| `GET` | `/api/warehouses/{warehouseId}/layout/status` | Authenticated | Lấy trạng thái thực tế của sơ đồ kho theo tồn kho thực tế |
+
+**Lấy trạng thái sơ đồ kho theo tồn kho thực tế (GET):**
+
+```http
+GET /api/warehouses/{warehouseId}/layout/status
+Authorization: Bearer {accessToken}
+```
+
+**Phản hồi mẫu:**
+
+```json
+{
+  "message": "Lấy trạng thái sơ đồ kho thành công.",
+  "data": [
+    {
+      "warehouseId": "73d725ea-0f81-423f-bbf2-dfcebcfceea8",
+      "layoutId": "bc111bcf-168a-4d76-8051-db3a47b19811",
+      "zoneId": "73030e46-e56c-4861-adcd-57fca3c0bbf1",
+      "shelfId": "a4d8ff21-c23f-488f-9bc1-db92b8d960cc",
+      "binId": "b1b0f512-b91c-4b3d-9dce-091a039be412",
+      "displayLabel": "Khu A - Kệ 1 - Ô 2",
+      "rowIndex": 0,
+      "columnIndex": 1,
+      "status": "OCCUPIED",
+      "currentItemCount": 2,
+      "currentWeight": 15.5,
+      "maxItemCount": null,
+      "maxWeight": 100.0,
+      "utilizationRate": 0.155,
+      "parcelIds": [
+        "1132b4f9-dbac-4fc1-a9f8-b3d9cbb281ff",
+        "28ac9bb1-39d2-43bb-a5a4-cbf8cf129aff"
+      ]
+    }
+  ]
+}
+```
+
+*Lưu ý về phân quyền & dữ liệu nhạy cảm:*
+- Đối với **Warehouse Staff** hoặc **Staff**, danh sách `parcelIds` sẽ được ẩn (`null`) nhằm tránh tiết lộ thông tin nhạy cảm của các kiện hàng.
+
+**TypeScript Interfaces:**
+
+```typescript
+interface WarehouseLayoutStatusDto {
+  warehouseId: string;
+  layoutId: string;
+  zoneId: string | null;
+  shelfId: string | null;
+  binId: string | null;
+  displayLabel: string;
+  rowIndex: number;
+  columnIndex: number;
+  status: 'AVAILABLE' | 'OCCUPIED' | 'FULL' | 'LOCKED' | 'INACTIVE';
+  currentItemCount: number;
+  currentWeight: number;
+  maxItemCount: number | null;
+  maxWeight: number | null;
+  utilizationRate: number | null;
+  parcelIds: string[] | null;
+}
+```
+
+---
+
 ## 26. Lưu ý tích hợp FE
 
 - Backend đã cấu hình CORS. Whitelisted origins bao gồm: `https://vcl.zushin.io.vn`, `https://vietnamlogictic.vercel.app`, `https://vcl-forntend.vercel.app`, và `localhost`.
