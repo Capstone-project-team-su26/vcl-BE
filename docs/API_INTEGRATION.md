@@ -5124,7 +5124,7 @@ interface UpdateAdditionalServiceFeeRequestDto {
 
 ## 26. Lưu ý tích hợp FE
 
-- Backend hiện chưa cấu hình CORS. FE chạy khác origin có thể cần proxy hoặc BE whitelist origin.
+- Backend đã cấu hình CORS. Whitelisted origins bao gồm: `https://vcl.zushin.io.vn`, `https://vietnamlogictic.vercel.app`, `https://vcl-forntend.vercel.app`, và `localhost`.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
 - OTP đặt lại mật khẩu hết hạn sau **5 phút** (khác với OTP đăng ký cũng 5 phút).
 - FE nên disable nút gửi lại OTP đặt lại mật khẩu trong 60 giây (giống luồng đăng ký).
