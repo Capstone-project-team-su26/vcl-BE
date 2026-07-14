@@ -23,6 +23,7 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
     {
         if (!string.Equals(userRole, "Admin", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "Operations", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(userRole, "WarehouseStaff", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "Warehouse Staff", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "Staff", StringComparison.OrdinalIgnoreCase))
         {
@@ -572,7 +573,8 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
             }
 
             // Ẩn thông tin nhạy cảm cho Warehouse Staff hoặc Staff chung
-            if (string.Equals(userRole, "Warehouse Staff", StringComparison.OrdinalIgnoreCase) ||
+            if (string.Equals(userRole, "WarehouseStaff", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(userRole, "Warehouse Staff", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(userRole, "Staff", StringComparison.OrdinalIgnoreCase))
             {
                 dto.ParcelIds = null;
