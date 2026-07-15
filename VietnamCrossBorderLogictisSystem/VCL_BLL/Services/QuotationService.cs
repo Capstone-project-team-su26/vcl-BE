@@ -664,7 +664,8 @@ namespace VCL_BLL.Services
             decimal totalVolume = 0m;
             if (request.VolumeM3.HasValue)
             {
-                totalVolume = request.VolumeM3.Value * 1000000m; // Convert m³ to cm³
+                // Convert m³ to cm³. If the input value is already > 1000, we assume it is already in cm³
+                totalVolume = request.VolumeM3.Value > 1000m ? request.VolumeM3.Value : request.VolumeM3.Value * 1000000m;
             }
             decimal totalDeclaredValue = request.DeclaredValue ?? 0m;
 
@@ -1101,7 +1102,8 @@ namespace VCL_BLL.Services
 
                 if (request.VolumeM3.HasValue)
                 {
-                    totalVolumeCm3 = request.VolumeM3.Value * 1000000m;
+                    // Convert m³ to cm³. If the input value is already > 1000, we assume it is already in cm³
+                    totalVolumeCm3 = request.VolumeM3.Value > 1000m ? request.VolumeM3.Value : request.VolumeM3.Value * 1000000m;
                 }
                 else if (order.TotalVolume.HasValue)
                 {
