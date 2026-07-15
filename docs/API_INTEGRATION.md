@@ -5198,7 +5198,7 @@ interface WarehouseLayoutStatusDto {
 
 ## 26. Lưu ý tích hợp FE
 
-- Backend đã cấu hình CORS. Whitelisted origins bao gồm: `https://vcl.zushin.io.vn`, `https://vietnamlogictic.vercel.app`, `https://vcl-forntend.vercel.app`, và `localhost`.
+- Backend đã cấu hình CORS. Whitelisted origins bao gồm: `https://vcl.zushin.io.vn`, `https://vietnamlogictic.vercel.app`, `https://vcl-forntend.vercel.app`, `https://logictic.site`, `http://logictic.site`, `https://www.logictic.site`, `http://www.logictic.site`, và `localhost`.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
 - OTP đặt lại mật khẩu hết hạn sau **5 phút** (khác với OTP đăng ký cũng 5 phút).
 - FE nên disable nút gửi lại OTP đặt lại mật khẩu trong 60 giây (giống luồng đăng ký).
