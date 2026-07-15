@@ -162,7 +162,7 @@ namespace VCL_BLL.Services
                 var itemVolume = itemLength * itemWidth * itemHeight;
                 var itemDeclaredValue = item.DeclaredValue ?? 0m;
 
-                totalWeight += itemWeight * qty;
+                totalWeight += itemWeight;
                 totalVolume += itemVolume * qty;
                 totalDeclaredValue += itemDeclaredValue * qty;
 
