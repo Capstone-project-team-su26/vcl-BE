@@ -434,7 +434,7 @@ namespace VCL_BLL.Services
                     decimal? volumetricWeight = null;
                     if (itemLength > 0 && itemWidth > 0 && itemHeight > 0)
                     {
-                        volumetricWeight = Math.Round((itemVolume * qty) / divisor, 4);
+                        volumetricWeight = Math.Round(itemVolume / divisor, 4);
                     }
 
                     return new ConsignmentItemDetail
