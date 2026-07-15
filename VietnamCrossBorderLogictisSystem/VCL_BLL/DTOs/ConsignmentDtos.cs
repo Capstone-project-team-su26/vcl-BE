@@ -211,6 +211,9 @@ namespace VCL_BLL.DTOs
     {
         public Guid OrderId { get; set; }
 
+        /// <summary>Mã gửi hàng thân thiện (mã nghiệp vụ chính hiển thị cho Customer thay UUID).</summary>
+        public string ConsignmentCode { get; set; } = string.Empty;
+
         /// <summary>ID khách hàng (Customer) sở hữu đơn.</summary>
         public Guid? CustomerId { get; set; }
 
