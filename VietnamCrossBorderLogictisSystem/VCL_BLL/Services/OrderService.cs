@@ -152,6 +152,7 @@ namespace VCL_BLL.Services
             return new CreateConsignmentResponse
             {
                 OrderId = order.Id,
+                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
                 CustomerId = customer.Id,
                 UserId = customer.UserId,
                 Status = order.Status,
@@ -309,6 +310,7 @@ namespace VCL_BLL.Services
             return new CreateConsignmentResponse
             {
                 OrderId = order.Id,
+                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
                 CustomerId = customer.Id,
                 UserId = customer.UserId,
                 Status = order.Status,
