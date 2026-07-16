@@ -912,6 +912,19 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("order_type");
 
+                    b.Property<string>("PaymentConfirmationNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("payment_confirmation_note");
+
+                    b.Property<DateTime?>("PaymentConfirmedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("payment_confirmed_at");
+
+                    b.Property<Guid?>("PaymentConfirmedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("payment_confirmed_by_id");
+
                     b.Property<string>("ReceiverAddress")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("receiver_address");

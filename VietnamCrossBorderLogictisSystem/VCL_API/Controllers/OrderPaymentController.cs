@@ -88,6 +88,42 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Sale xác nhận đơn ký gửi đã thanh toán (chỉ khi khoản thanh toán đã SUCCESS).
+        /// Sau khi xác nhận, đơn đủ điều kiện để Sale tạo/gửi phiếu tiếp nhận kho.
+        /// </summary>
+        [HttpPut("api/orders/{orderId}/payment-confirmation")]
+        public async Task<IActionResult> ConfirmPayment(Guid orderId, [FromBody] ConfirmOrderPaymentRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _consignmentPaymentService.ConfirmOrderPaymentAsync(orderId, userId, userRole, request);
+                return Ok(new { message = "Xác nhận thanh toán đơn ký gửi thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Lấy lịch sử thanh toán chi tiết của đơn ký gửi (kèm thông tin Customer, báo giá,
         /// từng đợt thanh toán với trạng thái PENDING/SUCCESS/FAILED/CANCELED). Customer/Sales/Admin.
         /// </summary>

@@ -614,6 +614,13 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("requires_inspection");
             entity.Property(e => e.CreatedById)
                 .HasColumnName("created_by_id");
+            entity.Property(e => e.PaymentConfirmedById)
+                .HasColumnName("payment_confirmed_by_id");
+            entity.Property(e => e.PaymentConfirmedAt)
+                .HasColumnName("payment_confirmed_at");
+            entity.Property(e => e.PaymentConfirmationNote)
+                .HasMaxLength(1000)
+                .HasColumnName("payment_confirmation_note");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
