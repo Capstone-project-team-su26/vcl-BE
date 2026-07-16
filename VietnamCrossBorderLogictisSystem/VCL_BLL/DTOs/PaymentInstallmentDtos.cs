@@ -46,6 +46,34 @@ namespace VCL_BLL.DTOs
         public string? PaymentLinkId { get; set; }
     }
 
+    // ----- VCL-209: Sale xác nhận thanh toán đơn ký gửi -----
+
+    public class ConfirmOrderPaymentRequest
+    {
+        /// <summary>Khoản thanh toán (đã SUCCESS) mà Sale đối chiếu để xác nhận.</summary>
+        [Required(ErrorMessage = "paymentId không được để trống.")]
+        public Guid PaymentId { get; set; }
+
+        /// <summary>Ghi chú xác nhận (tùy chọn).</summary>
+        public string? ConfirmationNote { get; set; }
+    }
+
+    public class ConfirmOrderPaymentResponse
+    {
+        public Guid OrderId { get; set; }
+        public string ConsignmentCode { get; set; } = string.Empty;
+        public string OrderStatus { get; set; } = string.Empty;
+
+        public Guid PaymentId { get; set; }
+
+        /// <summary>Trạng thái thanh toán đã đối chiếu, chuẩn hóa (SUCCESS).</summary>
+        public string PaymentStatus { get; set; } = string.Empty;
+
+        public Guid ConfirmedById { get; set; }
+        public DateTime ConfirmedAt { get; set; }
+        public string? ConfirmationNote { get; set; }
+    }
+
     /// <summary>Một đợt thanh toán trong lịch sử của đơn.</summary>
     public class OrderPaymentItemDto
     {

@@ -423,6 +423,59 @@ namespace VCL_BLL.Services
         }
 
         // ---------------------------------------------------------------------
+        // VCL-209: Sale xác nhận thanh toán đơn ký gửi
+        // ---------------------------------------------------------------------
+        public async Task<ConfirmOrderPaymentResponse> ConfirmOrderPaymentAsync(
+            Guid orderId, Guid userId, string userRole, ConfirmOrderPaymentRequest request)
+        {
+            if (request == null)
+                throw new ArgumentException("Thiếu dữ liệu xác nhận thanh toán.");
+
+            if (!IsSales(userRole))
+                throw new UnauthorizedAccessException("Chỉ Sale được xác nhận thanh toán đơn ký gửi.");
+
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
+
+            // Không cho xác nhận trùng
+            if (order.PaymentConfirmedAt.HasValue)
+                throw new ArgumentException("Đơn hàng đã được xác nhận thanh toán trước đó.");
+
+            // Payment phải thuộc đơn này
+            var (_, orderPayments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
+            var payment = orderPayments.FirstOrDefault(p => p.Id == request.PaymentId);
+            if (payment == null)
+                throw new NotFoundException("Không tìm thấy khoản thanh toán thuộc đơn hàng này.");
+
+            // Chỉ xác nhận nếu payment đã SUCCESS
+            if (!IsPaid(payment))
+                throw new ArgumentException(
+                    "Không thể xác nhận: khoản thanh toán chưa ở trạng thái SUCCESS (đang PENDING/FAILED/CANCELED).");
+
+            order.PaymentConfirmedById = userId;
+            order.PaymentConfirmedAt = DateTime.UtcNow;
+            order.PaymentConfirmationNote = request.ConfirmationNote;
+            order.Status = "PAYMENT_CONFIRMED";
+            orderRepo.Update(order);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return new ConfirmOrderPaymentResponse
+            {
+                OrderId = order.Id,
+                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                OrderStatus = order.Status,
+                PaymentId = payment.Id,
+                PaymentStatus = NormalizePaymentStatus(payment.PaymentStatus),
+                ConfirmedById = userId,
+                ConfirmedAt = order.PaymentConfirmedAt.Value,
+                ConfirmationNote = order.PaymentConfirmationNote
+            };
+        }
+
+        // ---------------------------------------------------------------------
         // VCL-207: Lịch sử thanh toán chi tiết (Customer + báo giá + các đợt)
         // ---------------------------------------------------------------------
         public async Task<PaymentHistoryResponse> GetPaymentHistoryAsync(Guid orderId, Guid userId, string userRole)
@@ -635,6 +688,12 @@ namespace VCL_BLL.Services
 
         private static bool IsStaff(string userRole) =>
             !string.IsNullOrWhiteSpace(userRole) && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+
+        // Chỉ Sale (và Admin) được xác nhận thanh toán.
+        private static readonly string[] SalesRoles = { "ADMIN", "SALE", "SALES" };
+
+        private static bool IsSales(string userRole) =>
+            !string.IsNullOrWhiteSpace(userRole) && SalesRoles.Contains(userRole.Trim().ToUpperInvariant());
 
         private static bool IsInstallment(Payment p, string type) =>
             string.Equals(p.InstallmentType, type, StringComparison.OrdinalIgnoreCase);

@@ -41,6 +41,15 @@ public partial class Order
 
     public DateTime? CreatedAt { get; set; }
 
+    /// <summary>Sale đã xác nhận thanh toán cho đơn (VCL-209). Người xác nhận.</summary>
+    public Guid? PaymentConfirmedById { get; set; }
+
+    /// <summary>Thời điểm Sale xác nhận thanh toán.</summary>
+    public DateTime? PaymentConfirmedAt { get; set; }
+
+    /// <summary>Ghi chú khi Sale xác nhận thanh toán.</summary>
+    public string PaymentConfirmationNote { get; set; }
+
     public virtual Company Company { get; set; }
 
     public virtual Customer Customer { get; set; }
