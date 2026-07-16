@@ -98,3 +98,23 @@ public class UpdateWarehouseLocationLayoutDto
     [StringLength(50, ErrorMessage = "Mã màu tối đa 50 ký tự.")]
     public string? ColorCode { get; set; }
 }
+
+public class WarehouseLayoutStatusDto
+{
+    public Guid WarehouseId { get; set; }
+    public Guid LayoutId { get; set; }
+    public Guid? ZoneId { get; set; }
+    public Guid? ShelfId { get; set; }
+    public Guid? BinId { get; set; }
+    public string DisplayLabel { get; set; } = string.Empty;
+    public int RowIndex { get; set; }
+    public int ColumnIndex { get; set; }
+    public string Status { get; set; } = string.Empty; // AVAILABLE, OCCUPIED, FULL, LOCKED, INACTIVE
+    public int CurrentItemCount { get; set; }
+    public decimal CurrentWeight { get; set; }
+    public int? MaxItemCount { get; set; }
+    public decimal? MaxWeight { get; set; }
+    public decimal? UtilizationRate { get; set; }
+    public List<Guid>? ParcelIds { get; set; }
+}
+

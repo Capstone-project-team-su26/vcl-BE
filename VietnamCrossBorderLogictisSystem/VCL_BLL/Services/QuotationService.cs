@@ -162,8 +162,8 @@ namespace VCL_BLL.Services
                 var itemVolume = itemLength * itemWidth * itemHeight;
                 var itemDeclaredValue = item.DeclaredValue ?? 0m;
 
-                totalWeight += itemWeight * qty;
-                totalVolume += itemVolume * qty;
+                totalWeight += itemWeight;
+                totalVolume += itemVolume;
                 totalDeclaredValue += itemDeclaredValue * qty;
 
                 itemDetails.Add(new OrderItemDetail
@@ -262,7 +262,7 @@ namespace VCL_BLL.Services
                 {
                     var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
                     var qty = item?.Quantity ?? 1;
-                    detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
+                    detail.VolumetricWeight = Math.Round(detail.ItemVolume / divisor, 4);
                     detail.Quantity = qty;
                 }
                 volumetricWeight = totalVolume / divisor;
@@ -664,7 +664,8 @@ namespace VCL_BLL.Services
             decimal totalVolume = 0m;
             if (request.VolumeM3.HasValue)
             {
-                totalVolume = request.VolumeM3.Value * 1000000m; // Convert m³ to cm³
+                // Convert m³ to cm³. If the input value is already > 1000, we assume it is already in cm³
+                totalVolume = request.VolumeM3.Value > 1000m ? request.VolumeM3.Value : request.VolumeM3.Value * 1000000m;
             }
             decimal totalDeclaredValue = request.DeclaredValue ?? 0m;
 
@@ -686,7 +687,7 @@ namespace VCL_BLL.Services
                     var itemDeclaredValue = item.DeclaredValue ?? 0m;
 
                     totalWeight += itemWeight;
-                    totalVolume += itemVolume * qty;
+                    totalVolume += itemVolume;
                     totalDeclaredValue += itemDeclaredValue * qty;
 
                     itemDetails.Add(new OrderItemDetail
@@ -803,7 +804,7 @@ namespace VCL_BLL.Services
                 {
                     var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
                     var qty = item?.Quantity ?? 1;
-                    detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
+                    detail.VolumetricWeight = Math.Round(detail.ItemVolume / divisor, 4);
                     detail.Quantity = qty;
                 }
                 volumetricWeight = totalVolume / divisor;
@@ -1101,7 +1102,8 @@ namespace VCL_BLL.Services
 
                 if (request.VolumeM3.HasValue)
                 {
-                    totalVolumeCm3 = request.VolumeM3.Value * 1000000m;
+                    // Convert m³ to cm³. If the input value is already > 1000, we assume it is already in cm³
+                    totalVolumeCm3 = request.VolumeM3.Value > 1000m ? request.VolumeM3.Value : request.VolumeM3.Value * 1000000m;
                 }
                 else if (order.TotalVolume.HasValue)
                 {

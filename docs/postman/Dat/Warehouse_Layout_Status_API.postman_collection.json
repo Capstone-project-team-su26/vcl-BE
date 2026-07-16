@@ -1,0 +1,207 @@
+{
+  "info": {
+    "name": "VCL - Warehouse Layout Status API Test Collection",
+    "description": "Bộ API test lấy trạng thái sơ đồ kho dựa trên tồn kho thực tế.\nAPI:\n- GET /api/warehouses/{warehouseId}/layout/status",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5209", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "staffToken", "value": "", "type": "string" },
+    { "key": "adminEmail", "value": "admin@vcl.com", "type": "string" },
+    { "key": "adminPassword", "value": "Admin123", "type": "string" },
+    { "key": "staffEmail", "value": "staff@employee.com", "type": "string" },
+    { "key": "staffPassword", "value": "Employee123", "type": "string" },
+    { "key": "warehouseId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0. Seed Staff & Admin",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/Test/seed-staff", "host": ["{{baseUrl}}"], "path": ["api", "Test", "seed-staff"] }
+      }
+    },
+    {
+      "name": "1. Login (Admin)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('adminToken', json.token); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "2. Login (Staff)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.token) { pm.collectionVariables.set('staffToken', json.token); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "3. Get Active Warehouses",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.data && json.data.length > 0) {",
+              "    pm.collectionVariables.set('warehouseId', json.data[0].id);",
+              "    console.log('Set warehouseId to: ' + json.data[0].id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/warehouses/active", "host": ["{{baseUrl}}"], "path": ["api", "warehouses", "active"] }
+      }
+    },
+    {
+      "name": "4. Get Layout Status (Admin / Operations)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "pm.test('Contains layout status array', function () {",
+              "    pm.expect(json.data).to.be.an('array');",
+              "});",
+              "if (json.data.length > 0) {",
+              "    pm.test('Contains sensitive parcel data for admin', function () {",
+              "        var firstItem = json.data[0];",
+              "        pm.expect(firstItem).to.have.property('parcelIds');",
+              "        pm.expect(firstItem.parcelIds).to.be.an('array');",
+              "    });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouses/{{warehouseId}}/layout/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouses", "{{warehouseId}}", "layout", "status"]
+        }
+      }
+    },
+    {
+      "name": "5. Get Layout Status (Warehouse Staff - Omit sensitive data)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var json = pm.response.json();",
+              "if (json.data.length > 0) {",
+              "    pm.test('Omit sensitive parcel data for staff', function () {",
+              "        var firstItem = json.data[0];",
+              "        pm.expect(firstItem.parcelIds).to.be.null;",
+              "    });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{staffToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouses/{{warehouseId}}/layout/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouses", "{{warehouseId}}", "layout", "status"]
+        }
+      }
+    },
+    {
+      "name": "6. Get Layout Status (Warehouse Not Found)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 404', function () { pm.response.to.have.status(404); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/warehouses/00000000-0000-0000-0000-000000000000/layout/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "warehouses", "00000000-0000-0000-0000-000000000000", "layout", "status"]
+        }
+      }
+    }
+  ]
+}
