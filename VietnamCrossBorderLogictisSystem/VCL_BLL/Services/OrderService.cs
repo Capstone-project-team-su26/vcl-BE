@@ -46,7 +46,7 @@ namespace VCL_BLL.Services
             if (string.IsNullOrWhiteSpace(request.ShippingOption))
                 throw new ArgumentException("Vui lòng chọn phương án vận chuyển (shippingOption).");
 
-            var servicePricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            var servicePricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var matchedPricing = servicePricings.FirstOrDefault(p =>
                 p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase)
                 && (
@@ -173,7 +173,7 @@ namespace VCL_BLL.Services
             if (string.IsNullOrWhiteSpace(request.ShippingOption))
                 throw new ArgumentException("Vui lòng chọn phương án vận chuyển (shippingOption).");
 
-            var servicePricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            var servicePricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var matchedPricing = servicePricings.FirstOrDefault(p =>
                 p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase)
                 && (
@@ -888,7 +888,7 @@ namespace VCL_BLL.Services
         /// </summary>
         public async Task<List<string>> GetConsignmentRoutesAsync()
         {
-            var pricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            var pricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             return pricings
                 .Where(p => !string.IsNullOrWhiteSpace(p.OriginCountry) && !string.IsNullOrWhiteSpace(p.DestinationCountry))
                 .Select(p => $"{p.OriginCountry}-{p.DestinationCountry}")
@@ -903,7 +903,7 @@ namespace VCL_BLL.Services
         /// </summary>
         public async Task<List<string>> GetShippingOptionsAsync(string? route)
         {
-            var pricings = await _unitOfWork.Repository<ServicePricing>().GetAllAsync();
+            var pricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var query = pricings.Where(p => !string.IsNullOrWhiteSpace(p.ServiceType));
 
             if (!string.IsNullOrWhiteSpace(route))

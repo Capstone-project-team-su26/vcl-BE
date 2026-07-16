@@ -191,7 +191,7 @@ namespace VCL_BLL.Services
             var route = order.Route ?? customerCountry;
 
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
             var matchedPricing = allPricings
                 .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
@@ -562,7 +562,7 @@ namespace VCL_BLL.Services
         private async Task<decimal> GetFreightRateAsync(string consignmentType)
         {
             var pricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await pricingRepo.GetAllAsync();
+            var allPricings = (await pricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
             // Tìm bảng giá khớp với ConsignmentType và còn hiệu lực
             var pricing = allPricings
@@ -734,7 +734,7 @@ namespace VCL_BLL.Services
             var route = order.Route ?? customerCountry;
 
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
             var matchedPricing = allPricings
                 .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
@@ -1017,7 +1017,7 @@ namespace VCL_BLL.Services
             var route = order.Route ?? customerCountry;
 
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
             var matchedPricing = allPricings
                 .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
@@ -1436,7 +1436,7 @@ namespace VCL_BLL.Services
             var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) / divisor, 4);
 
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var consignmentType = order.ConsignmentType ?? "Express";
             var route = order.Route;
             var matchedPricing = allPricings
@@ -1578,7 +1578,7 @@ namespace VCL_BLL.Services
             var divisor = GetVolumetricDivisor(allActiveRules);
             
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var consignmentType = order.ConsignmentType ?? "Express";
             var route = order.Route;
             var matchedPricing = allPricings

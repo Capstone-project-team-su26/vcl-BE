@@ -132,7 +132,7 @@ namespace VCL_BLL.Services
             // Check references in ServicePricing
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
             var allServicePricings = await servicePricingRepo.GetAllAsync();
-            var hasServicePricing = allServicePricings.Any(sp => sp.CarrierId == id);
+            var hasServicePricing = allServicePricings.Any(sp => sp.CarrierId == id && !sp.IsDeleted);
 
             // Check references in Shipment
             var shipmentRepo = _unitOfWork.Repository<Shipment>();

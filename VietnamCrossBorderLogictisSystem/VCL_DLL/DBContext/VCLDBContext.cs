@@ -1056,6 +1056,10 @@ public partial class VCLDBContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("unit_type");
 
+            entity.Property(e => e.IsDeleted)
+                .HasDefaultValue(false)
+                .HasColumnName("is_deleted");
+
             entity.HasOne(d => d.Carrier).WithMany(p => p.ServicePricings)
                 .HasForeignKey(d => d.CarrierId)
                 .HasConstraintName("FK_PRICING_CARRIER");
