@@ -10,7 +10,7 @@ namespace VCL_API.Controllers
 {
     [Route("api/restricted-items")]
     [ApiController]
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     public class RestrictedItemController : ControllerBase
     {
         private readonly IRestrictedItemService _restrictedItemService;
@@ -51,6 +51,7 @@ namespace VCL_API.Controllers
         /// Thêm mặt hàng cấm/hạn chế mới
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromBody] CreateRestrictedItemRequest request)
         {
             if (!ModelState.IsValid)
@@ -73,6 +74,7 @@ namespace VCL_API.Controllers
         /// Cập nhật thông tin mặt hàng cấm/hạn chế
         /// </summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateRestrictedItemRequest request)
         {
             if (!ModelState.IsValid)
@@ -99,6 +101,7 @@ namespace VCL_API.Controllers
         /// Xóa mặt hàng cấm/hạn chế
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             try

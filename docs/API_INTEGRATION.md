@@ -77,8 +77,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/orders/consignments/{orderId}` | Authenticated | Xem chi tiết một yêu cầu ký gửi |
 | `PUT` | `/api/orders/consignments/{orderId}/cancel` | Authenticated | Customer hủy yêu cầu ký gửi |
 | `POST` | `/api/staff/consignments` | Sales | Sales tạo yêu cầu ký gửi thay cho Customer |
-| `GET` | `/api/restricted-items` | Admin | Xem danh sách mặt hàng cấm/hạn chế |
-| `GET` | `/api/restricted-items/{id}` | Admin | Lấy chi tiết mặt hàng cấm/hạn chế |
+| `GET` | `/api/restricted-items` | Authenticated | Xem danh sách mặt hàng cấm/hạn chế |
+| `GET` | `/api/restricted-items/{id}` | Authenticated | Lấy chi tiết mặt hàng cấm/hạn chế |
 | `POST` | `/api/restricted-items` | Admin | Thêm mặt hàng cấm/hạn chế mới |
 | `PUT` | `/api/restricted-items/{id}` | Admin | Cập nhật thông tin/vô hiệu hóa mặt hàng |
 | `DELETE` | `/api/restricted-items/{id}` | Admin | Xóa mặt hàng cấm/hạn chế |
