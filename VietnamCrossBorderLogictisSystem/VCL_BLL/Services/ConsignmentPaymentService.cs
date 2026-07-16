@@ -120,7 +120,8 @@ namespace VCL_BLL.Services
                     PaymentMethod = "PAYOS",
                     PaymentStatus = "PAID",
                     InstallmentType = "DEPOSIT",
-                    PaidAt = DateTime.UtcNow
+                    PaidAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow
                 };
                 await paymentRepo.AddAsync(noDeposit);
                 await _unitOfWork.SaveChangesAsync();
@@ -168,7 +169,8 @@ namespace VCL_BLL.Services
                 InstallmentType = "DEPOSIT",
                 OrderCode = orderCode,
                 CheckoutUrl = linkResult.CheckoutUrl,
-                PaymentLinkId = linkResult.PaymentLinkId
+                PaymentLinkId = linkResult.PaymentLinkId,
+                CreatedAt = DateTime.UtcNow
             };
             await paymentRepo.AddAsync(deposit);
 
@@ -293,7 +295,8 @@ namespace VCL_BLL.Services
                     PaymentStatus = "PAID",
                     InstallmentType = "FINAL_PAYMENT",
                     PaidAt = DateTime.UtcNow,
-                    TransactionCode = "NO_ADDITIONAL_PAYMENT"
+                    TransactionCode = "NO_ADDITIONAL_PAYMENT",
+                    CreatedAt = DateTime.UtcNow
                 };
                 await paymentRepo.AddAsync(zeroFinal);
                 await _unitOfWork.SaveChangesAsync();
@@ -337,7 +340,8 @@ namespace VCL_BLL.Services
                 InstallmentType = "FINAL_PAYMENT",
                 OrderCode = orderCode,
                 CheckoutUrl = linkResult.CheckoutUrl,
-                PaymentLinkId = linkResult.PaymentLinkId
+                PaymentLinkId = linkResult.PaymentLinkId,
+                CreatedAt = DateTime.UtcNow
             };
             await paymentRepo.AddAsync(finalPayment);
 
@@ -415,6 +419,117 @@ namespace VCL_BLL.Services
                 TotalPaid = totalPaid,
                 Remaining = Math.Max(0m, totalBill - totalPaid),
                 Payments = items
+            };
+        }
+
+        // ---------------------------------------------------------------------
+        // VCL-207: Lịch sử thanh toán chi tiết (Customer + báo giá + các đợt)
+        // ---------------------------------------------------------------------
+        public async Task<PaymentHistoryResponse> GetPaymentHistoryAsync(Guid orderId, Guid userId, string userRole)
+        {
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
+
+            // Phân quyền: Customer chỉ xem đơn của mình; Staff/Sales/Admin xem tất cả
+            var allCustomers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+            var owner = order.CustomerId.HasValue
+                ? allCustomers.FirstOrDefault(c => c.Id == order.CustomerId.Value)
+                : null;
+
+            if (!IsStaff(userRole))
+            {
+                var me = allCustomers.FirstOrDefault(c => c.UserId == userId);
+                if (me == null || order.CustomerId != me.Id)
+                    throw new UnauthorizedAccessException("Bạn không có quyền xem lịch sử thanh toán của đơn này.");
+            }
+
+            var (invoice, payments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
+
+            // Báo giá liên quan (qua hóa đơn, hoặc báo giá ACCEPTED mới nhất của đơn)
+            PaymentHistoryQuotationDto quotationDto = null;
+            Guid? quotationId = invoice?.QuotationId;
+            if (!quotationId.HasValue)
+            {
+                var q = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
+                    .Where(x => x.OrderId == orderId)
+                    .OrderByDescending(x => x.CreatedAt)
+                    .FirstOrDefault();
+                quotationId = q?.Id;
+            }
+            if (quotationId.HasValue)
+            {
+                var quotation = await _unitOfWork.Repository<Quotation>().GetByIdAsync(quotationId.Value);
+                if (quotation != null)
+                {
+                    var quoteTotal = (quotation.EstimatedFreightCharge ?? 0m)
+                                     + (quotation.ServiceFee ?? 0m)
+                                     + (quotation.TaxAndDuty ?? 0m);
+                    quotationDto = new PaymentHistoryQuotationDto
+                    {
+                        QuotationId = quotation.Id,
+                        QuoteType = quotation.QuoteType,
+                        Status = quotation.Status,
+                        TotalAmount = quoteTotal
+                    };
+                }
+            }
+
+            var items = payments
+                .OrderBy(p => p.CreatedAt ?? p.PaidAt ?? DateTime.MaxValue)
+                .Select(p => new PaymentHistoryItemDto
+                {
+                    PaymentId = p.Id,
+                    InvoiceId = p.InvoiceId,
+                    InstallmentType = p.InstallmentType,
+                    Amount = p.Amount ?? 0m,
+                    PaymentMethod = p.PaymentMethod ?? string.Empty,
+                    Status = NormalizePaymentStatus(p.PaymentStatus),
+                    OrderCode = p.OrderCode,
+                    TransactionCode = p.TransactionCode,
+                    CheckoutUrl = p.CheckoutUrl,
+                    CreatedAt = p.CreatedAt,
+                    PaidAt = p.PaidAt,
+                    FailureReason = p.FailureReason
+                })
+                .ToList();
+
+            var totalBill = invoice?.TotalAmount ?? quotationDto?.TotalAmount ?? 0m;
+            var totalPaid = payments.Where(IsPaid).Sum(p => p.Amount ?? 0m);
+
+            return new PaymentHistoryResponse
+            {
+                OrderId = order.Id,
+                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                OrderStatus = order.Status ?? string.Empty,
+                Customer = new PaymentHistoryCustomerDto
+                {
+                    CustomerId = owner?.Id,
+                    FullName = owner?.FullName ?? string.Empty,
+                    CustomerCode = owner?.CustomerCode ?? string.Empty,
+                    Email = owner?.Email,
+                    Phone = owner?.Phone
+                },
+                Quotation = quotationDto,
+                TotalBillAmount = totalBill,
+                TotalPaid = totalPaid,
+                Remaining = Math.Max(0m, totalBill - totalPaid),
+                Payments = items
+            };
+        }
+
+        /// <summary>Chuẩn hóa trạng thái thanh toán nội bộ về vốn từ FE: PENDING | SUCCESS | FAILED | CANCELED.</summary>
+        private static string NormalizePaymentStatus(string raw)
+        {
+            var s = raw?.Trim().ToUpperInvariant() ?? string.Empty;
+            return s switch
+            {
+                "PAID" or "SUCCESS" => "SUCCESS",
+                "FAILED" => "FAILED",
+                "CANCELED" or "CANCELLED" => "CANCELED",
+                "PENDING" => "PENDING",
+                _ => s
             };
         }
 

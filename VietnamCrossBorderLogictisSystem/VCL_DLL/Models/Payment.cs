@@ -33,5 +33,11 @@ public partial class Payment
     /// <summary>Đợt thanh toán: DEPOSIT (cọc) | FINAL_PAYMENT (thanh toán cuối). Null với thanh toán 1 lần cũ.</summary>
     public string InstallmentType { get; set; }
 
+    /// <summary>Thời gian tạo khoản thanh toán.</summary>
+    public DateTime? CreatedAt { get; set; }
+
+    /// <summary>Lý do thanh toán thất bại (nếu có).</summary>
+    public string FailureReason { get; set; }
+
     public virtual Invoice Invoice { get; set; }
 }
