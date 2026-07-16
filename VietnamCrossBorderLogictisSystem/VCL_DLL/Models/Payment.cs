@@ -30,5 +30,8 @@ public partial class Payment
     /// <summary>Id link thanh toán do payOS trả về.</summary>
     public string PaymentLinkId { get; set; }
 
+    /// <summary>Đợt thanh toán: DEPOSIT (cọc) | FINAL_PAYMENT (thanh toán cuối). Null với thanh toán 1 lần cũ.</summary>
+    public string InstallmentType { get; set; }
+
     public virtual Invoice Invoice { get; set; }
 }

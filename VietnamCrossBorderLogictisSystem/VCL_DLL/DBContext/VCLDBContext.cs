@@ -776,6 +776,9 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.PaymentLinkId)
                 .HasMaxLength(100)
                 .HasColumnName("payment_link_id");
+            entity.Property(e => e.InstallmentType)
+                .HasMaxLength(30)
+                .HasColumnName("installment_type");
 
             entity.HasOne(d => d.Invoice).WithMany(p => p.Payments)
                 .HasForeignKey(d => d.InvoiceId)
