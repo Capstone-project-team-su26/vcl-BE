@@ -517,7 +517,6 @@ namespace VCL_BLL.Services
                 ReceiverAddress = order.ReceiverAddress,
                 RequiresInspection = order.RequiresInspection,
                 CreatedAt = order.CreatedAt,
-                ItemCount = items.Sum(i => i.Quantity ?? 0),
                 Customer = new ConsignmentCustomerInfo
                 {
                     CustomerId = customer?.Id,

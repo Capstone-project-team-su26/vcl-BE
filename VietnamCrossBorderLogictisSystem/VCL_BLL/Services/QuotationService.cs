@@ -667,11 +667,15 @@ namespace VCL_BLL.Services
                 // Convert m³ to cm³. If the input value is already > 1000, we assume it is already in cm³
                 totalVolume = request.VolumeM3.Value > 1000m ? request.VolumeM3.Value : request.VolumeM3.Value * 1000000m;
             }
-            decimal totalDeclaredValue = request.DeclaredValue ?? 0m;
-
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
             var allItems = await orderItemRepo.GetAllAsync();
             var orderItems = allItems.Where(i => i.OrderId == orderId).ToList();
+
+            decimal totalDeclaredValue = request.DeclaredValue ?? 0m;
+            if (totalDeclaredValue == 0m)
+            {
+                totalDeclaredValue = orderItems.Sum(item => item.DeclaredValue ?? 0m);
+            }
 
             var itemDetails = new List<OrderItemDetail>();
             if (totalWeight == 0m && totalVolume == 0m)
@@ -688,7 +692,6 @@ namespace VCL_BLL.Services
 
                     totalWeight += itemWeight;
                     totalVolume += itemVolume;
-                    totalDeclaredValue += itemDeclaredValue;
 
                     itemDetails.Add(new OrderItemDetail
                     {

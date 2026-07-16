@@ -150,8 +150,15 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy cấu hình bảng giá dịch vụ với ID: {id}");
             }
 
-            pricingRepo.Delete(p);
-            await _unitOfWork.SaveChangesAsync();
+            try
+            {
+                pricingRepo.Delete(p);
+                await _unitOfWork.SaveChangesAsync();
+            }
+            catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+            {
+                throw new ArgumentException("Không thể xóa cấu hình bảng giá này vì đang có Báo giá (Quotations) hoặc Quy định giá (Pricing Rules) liên kết với nó.");
+            }
         }
     }
 }
