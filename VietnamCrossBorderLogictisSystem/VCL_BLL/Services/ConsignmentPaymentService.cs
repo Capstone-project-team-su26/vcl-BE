@@ -17,6 +17,16 @@ namespace VCL_BLL.Services
         private readonly IPayOsService _payOsService;
         private readonly IConfiguration _configuration;
 
+        // Role nội bộ được tạo thanh toán cuối / xem lịch sử thanh toán.
+        private static readonly string[] StaffRoles =
+            { "ADMIN", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
+
+        // Tỷ lệ cọc mặc định nếu Admin chưa cấu hình DEPOSIT_RATE.
+        private const decimal DefaultDepositRate = 50m;
+
+        // Trạng thái kiện đã về kho đích - điều kiện cho phép tạo thanh toán cuối.
+        private const string ParcelReceivedAtDestination = "RECEIVED_AT_DESTINATION";
+
         public ConsignmentPaymentService(IUnitOfWork unitOfWork, IPayOsService payOsService, IConfiguration configuration)
         {
             _unitOfWork = unitOfWork;
@@ -24,34 +34,31 @@ namespace VCL_BLL.Services
             _configuration = configuration;
         }
 
+        // ---------------------------------------------------------------------
+        // ĐỢT 1: Customer xác nhận báo giá -> tạo khoản CỌC (DEPOSIT)
+        // ---------------------------------------------------------------------
         public async Task<ConfirmQuotationPaymentResponse> ConfirmQuotationAndPayAsync(
             Guid quotationId, Guid userId, ConfirmQuotationPaymentRequest request)
         {
             request ??= new ConfirmQuotationPaymentRequest();
 
-            // 1. Tìm báo giá (404 nếu không có)
             var quotationRepo = _unitOfWork.Repository<Quotation>();
             var quotation = await quotationRepo.GetByIdAsync(quotationId);
             if (quotation == null)
-            {
                 throw new NotFoundException($"Không tìm thấy báo giá với ID: {quotationId}");
-            }
 
-            // 2. Chỉ cho xác nhận báo giá còn hợp lệ (DRAFT/PENDING/WAITING_CUSTOMER_CONFIRMATION)
             var status = quotation.Status?.Trim().ToUpperInvariant() ?? string.Empty;
-            var confirmableStatuses = new[] { "DRAFT", "PENDING", "WAITING_CUSTOMER_CONFIRMATION" };
             if (status == "ACCEPTED")
                 throw new ArgumentException("Báo giá này đã được xác nhận trước đó.");
             if (status == "REJECTED" || status == "CANCELLED" || status == "EXPIRED")
                 throw new ArgumentException($"Không thể xác nhận báo giá ở trạng thái: {quotation.Status}.");
+            var confirmableStatuses = new[] { "DRAFT", "PENDING", "WAITING_CUSTOMER_CONFIRMATION" };
             if (!confirmableStatuses.Contains(status))
                 throw new ArgumentException($"Không thể xác nhận báo giá ở trạng thái: {quotation.Status}.");
 
-            // 3. Kiểm tra hết hạn
             if (quotation.ExpiredAt.HasValue && quotation.ExpiredAt.Value < DateTime.UtcNow)
                 throw new ArgumentException("Báo giá đã hết hạn. Vui lòng tạo báo giá mới.");
 
-            // 4. Kiểm tra quyền sở hữu: Order.CustomerId -> Customer.UserId == userId
             var orderRepo = _unitOfWork.Repository<Order>();
             var order = await orderRepo.GetByIdAsync(quotation.OrderId);
             if (order == null)
@@ -62,21 +69,22 @@ namespace VCL_BLL.Services
             if (customer == null || customer.UserId != userId)
                 throw new UnauthorizedAccessException("Bạn không có quyền xác nhận báo giá này.");
 
-            // 5. Tổng tiền = cước dự kiến + phí dịch vụ (đã gồm phụ phí) + thuế
+            // Tổng bill = cước + phí dịch vụ (đã gồm phụ phí) + thuế
             var totalAmount = (quotation.EstimatedFreightCharge ?? 0m)
                               + (quotation.ServiceFee ?? 0m)
                               + (quotation.TaxAndDuty ?? 0m);
             if (totalAmount <= 0m)
                 throw new ArgumentException("Tổng tiền báo giá không hợp lệ để tạo thanh toán.");
 
-            // 6. Cập nhật trạng thái báo giá + đơn hàng
+            // Tính tiền cọc theo tỷ lệ Admin cấu hình
+            var depositRate = await GetDepositRateAsync();
+            var depositAmount = Math.Round(totalAmount * depositRate / 100m, MidpointRounding.AwayFromZero);
+
+            // Cập nhật báo giá -> ACCEPTED
             quotation.Status = "ACCEPTED";
             quotationRepo.Update(quotation);
 
-            order.Status = "WAITING_PAYMENT";
-            orderRepo.Update(order);
-
-            // 7. Tạo Invoice + các dòng phí (giữ nguyên breakdown)
+            // Hóa đơn cho TOÀN BỘ bill (cọc là thanh toán một phần của hóa đơn này)
             var invoiceRepo = _unitOfWork.Repository<Invoice>();
             var invoice = new Invoice
             {
@@ -95,38 +103,77 @@ namespace VCL_BLL.Services
             await AddInvoiceItemAsync(invoiceItemRepo, invoice.Id, "SERVICE_FEE", quotation.ServiceFee, "Phí dịch vụ (đã gồm phụ phí)");
             await AddInvoiceItemAsync(invoiceItemRepo, invoice.Id, "TAX_AND_DUTY", quotation.TaxAndDuty, "Thuế và phí hải quan");
 
-            // 8. Sinh mã đơn hàng payOS duy nhất (đối chiếu ở cả PAYMENTS lẫn PURCHASE_PAYMENTS)
-            long orderCode = await GenerateUniqueOrderCodeAsync();
-
-            // 9. Tạo link thanh toán payOS
-            var amountInt = (int)Math.Round(totalAmount, MidpointRounding.AwayFromZero);
             var consignmentCode = order.ConsignmentCode ?? string.Empty;
-            var description = BuildDescription(consignmentCode);
+            var paymentRepo = _unitOfWork.Repository<Payment>();
+
+            // Edge: tỷ lệ cọc = 0% -> không cần cọc, cho phép vận chuyển ngay
+            if (depositAmount <= 0m)
+            {
+                order.Status = "DEPOSIT_PAID";
+                orderRepo.Update(order);
+
+                var noDeposit = new Payment
+                {
+                    Id = Guid.NewGuid(),
+                    InvoiceId = invoice.Id,
+                    Amount = 0m,
+                    PaymentMethod = "PAYOS",
+                    PaymentStatus = "PAID",
+                    InstallmentType = "DEPOSIT",
+                    PaidAt = DateTime.UtcNow
+                };
+                await paymentRepo.AddAsync(noDeposit);
+                await _unitOfWork.SaveChangesAsync();
+
+                return new ConfirmQuotationPaymentResponse
+                {
+                    QuotationId = quotation.Id,
+                    QuotationStatus = quotation.Status,
+                    OrderId = order.Id,
+                    OrderStatus = order.Status,
+                    ConsignmentCode = consignmentCode,
+                    InvoiceId = invoice.Id,
+                    InvoiceNo = invoice.InvoiceNo,
+                    PaymentId = noDeposit.Id,
+                    OrderCode = 0,
+                    Amount = 0m,
+                    InstallmentType = "DEPOSIT",
+                    TotalBillAmount = totalAmount,
+                    DepositRate = depositRate,
+                    PaymentMethod = "PAYOS",
+                    PaymentStatus = "PAID",
+                    CheckoutUrl = null,
+                    PaymentLinkId = null
+                };
+            }
+
+            // Tạo payOS link cho tiền cọc
+            long orderCode = await GenerateUniqueOrderCodeAsync();
+            var amountInt = (int)Math.Round(depositAmount, MidpointRounding.AwayFromZero);
+            var description = BuildDescription("Coc", consignmentCode);
             var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
             var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
+            var items = new List<PayOsItem> { new PayOsItem($"Cọc {consignmentCode}", 1, amountInt) };
 
-            var items = new List<PayOsItem>
-            {
-                new PayOsItem(BuildItemName(consignmentCode), 1, amountInt)
-            };
-
-            PayOsPaymentLink link = await _payOsService.CreatePaymentLinkAsync(
+            PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
                 orderCode, amountInt, description, returnUrl, cancelUrl, items);
 
-            // 10. Tạo Payment ở trạng thái PENDING
-            var paymentRepo = _unitOfWork.Repository<Payment>();
-            var payment = new Payment
+            var deposit = new Payment
             {
                 Id = Guid.NewGuid(),
                 InvoiceId = invoice.Id,
-                Amount = totalAmount,
+                Amount = depositAmount,
                 PaymentMethod = "PAYOS",
                 PaymentStatus = "PENDING",
+                InstallmentType = "DEPOSIT",
                 OrderCode = orderCode,
-                CheckoutUrl = link.CheckoutUrl,
-                PaymentLinkId = link.PaymentLinkId
+                CheckoutUrl = linkResult.CheckoutUrl,
+                PaymentLinkId = linkResult.PaymentLinkId
             };
-            await paymentRepo.AddAsync(payment);
+            await paymentRepo.AddAsync(deposit);
+
+            order.Status = "WAITING_DEPOSIT";
+            orderRepo.Update(order);
 
             await _unitOfWork.SaveChangesAsync();
 
@@ -139,66 +186,289 @@ namespace VCL_BLL.Services
                 ConsignmentCode = consignmentCode,
                 InvoiceId = invoice.Id,
                 InvoiceNo = invoice.InvoiceNo,
-                PaymentId = payment.Id,
+                PaymentId = deposit.Id,
                 OrderCode = orderCode,
-                Amount = totalAmount,
-                PaymentMethod = payment.PaymentMethod,
-                PaymentStatus = payment.PaymentStatus,
-                CheckoutUrl = link.CheckoutUrl,
-                PaymentLinkId = link.PaymentLinkId
+                Amount = depositAmount,
+                InstallmentType = "DEPOSIT",
+                TotalBillAmount = totalAmount,
+                DepositRate = depositRate,
+                PaymentMethod = "PAYOS",
+                PaymentStatus = "PENDING",
+                CheckoutUrl = linkResult.CheckoutUrl,
+                PaymentLinkId = linkResult.PaymentLinkId
             };
         }
 
+        // ---------------------------------------------------------------------
+        // ĐỢT 2: Sale tạo thanh toán cuối (phần còn lại + phí phát sinh)
+        // ---------------------------------------------------------------------
+        public async Task<CreateFinalPaymentResponse> CreateFinalPaymentAsync(
+            Guid orderId, Guid userId, string userRole, CreateFinalPaymentRequest request)
+        {
+            request ??= new CreateFinalPaymentRequest();
+
+            if (!IsStaff(userRole))
+                throw new UnauthorizedAccessException("Chỉ Sale/Staff được tạo thanh toán cuối cho đơn ký gửi.");
+
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
+
+            // Điều kiện trigger: đơn phải có kiện đã về kho đích (RECEIVED_AT_DESTINATION)
+            var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
+            var orderParcels = allParcels.Where(p => p.ConsignmentId == orderId).ToList();
+            bool anyReceivedAtDestination = orderParcels.Any(p =>
+                string.Equals(p.PackageStatus, ParcelReceivedAtDestination, StringComparison.OrdinalIgnoreCase));
+            if (!anyReceivedAtDestination)
+                throw new ArgumentException("Chưa thể tạo thanh toán cuối: đơn chưa có kiện hàng về đến kho đích.");
+
+            // Lấy hóa đơn của đơn (qua báo giá của đơn)
+            var (invoice, allOrderPayments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
+            if (invoice == null)
+                throw new ArgumentException("Đơn hàng chưa có hóa đơn/thanh toán cọc.");
+
+            // Phải đã thanh toán cọc thành công
+            var depositPaid = allOrderPayments
+                .Where(p => IsInstallment(p, "DEPOSIT") && IsPaid(p))
+                .Sum(p => p.Amount ?? 0m);
+            bool hasPaidDeposit = allOrderPayments.Any(p => IsInstallment(p, "DEPOSIT") && IsPaid(p));
+            if (!hasPaidDeposit)
+                throw new ArgumentException("Chưa thể tạo thanh toán cuối: đơn chưa thanh toán cọc thành công.");
+
+            // Không cho trùng đợt cuối
+            if (allOrderPayments.Any(p => IsInstallment(p, "FINAL_PAYMENT") && IsPaid(p)))
+                throw new ArgumentException("Đơn hàng đã hoàn tất thanh toán cuối.");
+            if (allOrderPayments.Any(p => IsInstallment(p, "FINAL_PAYMENT") &&
+                    string.Equals(p.PaymentStatus, "PENDING", StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("Đơn hàng đã có một đợt thanh toán cuối đang chờ thanh toán.");
+
+            // Ghi nhận chi phí phát sinh (InvoiceItem) + cập nhật tổng bill
+            var invoiceItemRepo = _unitOfWork.Repository<InvoiceItem>();
+            decimal extrasTotal = 0m;
+            foreach (var fee in request.ExtraFees ?? new List<ExtraFeeLineDto>())
+            {
+                if (fee.Amount <= 0m) continue;
+                extrasTotal += fee.Amount;
+                var desc = string.IsNullOrWhiteSpace(fee.Note) ? fee.Name : $"{fee.Name} - {fee.Note}";
+                await invoiceItemRepo.AddAsync(new InvoiceItem
+                {
+                    Id = Guid.NewGuid(),
+                    InvoiceId = invoice.Id,
+                    FeeType = "EXTRA",
+                    ReferenceType = "ORDER",
+                    ReferenceId = orderId,
+                    Amount = fee.Amount,
+                    Currency = "VND",
+                    Description = desc
+                });
+            }
+
+            var originalTotal = invoice.TotalAmount ?? 0m;
+            var newGrandTotal = originalTotal + extrasTotal;
+            invoice.TotalAmount = newGrandTotal;
+
+            // final = (tổng bill mới - đã trả cọc); clamp >= 0
+            var finalAmount = newGrandTotal - depositPaid;
+            if (finalAmount < 0m) finalAmount = 0m;
+
+            var invoiceRepo = _unitOfWork.Repository<Invoice>();
+            var paymentRepo = _unitOfWork.Repository<Payment>();
+            var consignmentCode = order.ConsignmentCode ?? string.Empty;
+
+            // Edge: final = 0 -> không cần thanh toán thêm, đơn PAID luôn
+            if (finalAmount <= 0m)
+            {
+                invoice.InvoiceStatus = "PAID";
+                invoiceRepo.Update(invoice);
+                order.Status = "PAID";
+                orderRepo.Update(order);
+
+                var zeroFinal = new Payment
+                {
+                    Id = Guid.NewGuid(),
+                    InvoiceId = invoice.Id,
+                    Amount = 0m,
+                    PaymentMethod = "PAYOS",
+                    PaymentStatus = "PAID",
+                    InstallmentType = "FINAL_PAYMENT",
+                    PaidAt = DateTime.UtcNow,
+                    TransactionCode = "NO_ADDITIONAL_PAYMENT"
+                };
+                await paymentRepo.AddAsync(zeroFinal);
+                await _unitOfWork.SaveChangesAsync();
+
+                return new CreateFinalPaymentResponse
+                {
+                    OrderId = order.Id,
+                    ConsignmentCode = consignmentCode,
+                    OrderStatus = order.Status,
+                    InvoiceId = invoice.Id,
+                    TotalBillAmount = newGrandTotal,
+                    DepositPaid = depositPaid,
+                    ExtraFeesTotal = extrasTotal,
+                    FinalAmount = 0m,
+                    PaymentId = zeroFinal.Id,
+                    OrderCode = null,
+                    PaymentStatus = "PAID",
+                    CheckoutUrl = null,
+                    PaymentLinkId = null
+                };
+            }
+
+            // Tạo payOS link cho đợt cuối
+            long orderCode = await GenerateUniqueOrderCodeAsync();
+            var amountInt = (int)Math.Round(finalAmount, MidpointRounding.AwayFromZero);
+            var description = BuildDescription("Cuoi", consignmentCode);
+            var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
+            var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
+            var items = new List<PayOsItem> { new PayOsItem($"TT cuoi {consignmentCode}", 1, amountInt) };
+
+            PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
+                orderCode, amountInt, description, returnUrl, cancelUrl, items);
+
+            var finalPayment = new Payment
+            {
+                Id = Guid.NewGuid(),
+                InvoiceId = invoice.Id,
+                Amount = finalAmount,
+                PaymentMethod = "PAYOS",
+                PaymentStatus = "PENDING",
+                InstallmentType = "FINAL_PAYMENT",
+                OrderCode = orderCode,
+                CheckoutUrl = linkResult.CheckoutUrl,
+                PaymentLinkId = linkResult.PaymentLinkId
+            };
+            await paymentRepo.AddAsync(finalPayment);
+
+            invoiceRepo.Update(invoice);
+            order.Status = "WAITING_FINAL_PAYMENT";
+            orderRepo.Update(order);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return new CreateFinalPaymentResponse
+            {
+                OrderId = order.Id,
+                ConsignmentCode = consignmentCode,
+                OrderStatus = order.Status,
+                InvoiceId = invoice.Id,
+                TotalBillAmount = newGrandTotal,
+                DepositPaid = depositPaid,
+                ExtraFeesTotal = extrasTotal,
+                FinalAmount = finalAmount,
+                PaymentId = finalPayment.Id,
+                OrderCode = orderCode,
+                PaymentStatus = "PENDING",
+                CheckoutUrl = linkResult.CheckoutUrl,
+                PaymentLinkId = linkResult.PaymentLinkId
+            };
+        }
+
+        // ---------------------------------------------------------------------
+        // Lịch sử thanh toán của đơn
+        // ---------------------------------------------------------------------
+        public async Task<OrderPaymentsResponse> GetOrderPaymentsAsync(Guid orderId, Guid userId, string userRole)
+        {
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
+
+            // Phân quyền: Customer chỉ xem đơn của mình; Staff xem tất cả
+            if (!IsStaff(userRole))
+            {
+                var allCustomers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+                var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
+                if (customer == null || order.CustomerId != customer.Id)
+                    throw new UnauthorizedAccessException("Bạn không có quyền xem lịch sử thanh toán của đơn này.");
+            }
+
+            var (invoice, payments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
+
+            var items = payments
+                .OrderBy(p => p.PaidAt ?? DateTime.MaxValue)
+                .Select(p => new OrderPaymentItemDto
+                {
+                    PaymentId = p.Id,
+                    InvoiceId = p.InvoiceId,
+                    InstallmentType = p.InstallmentType,
+                    Amount = p.Amount ?? 0m,
+                    PaymentMethod = p.PaymentMethod ?? string.Empty,
+                    PaymentStatus = p.PaymentStatus ?? string.Empty,
+                    OrderCode = p.OrderCode,
+                    TransactionCode = p.TransactionCode,
+                    CheckoutUrl = p.CheckoutUrl,
+                    PaidAt = p.PaidAt
+                })
+                .ToList();
+
+            var totalBill = invoice?.TotalAmount ?? 0m;
+            var totalPaid = payments.Where(IsPaid).Sum(p => p.Amount ?? 0m);
+
+            return new OrderPaymentsResponse
+            {
+                OrderId = order.Id,
+                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                OrderStatus = order.Status ?? string.Empty,
+                TotalBillAmount = totalBill,
+                TotalPaid = totalPaid,
+                Remaining = Math.Max(0m, totalBill - totalPaid),
+                Payments = items
+            };
+        }
+
+        // ---------------------------------------------------------------------
+        // Webhook payOS
+        // ---------------------------------------------------------------------
         public async Task<bool> HandlePayOsWebhookAsync(string rawJsonBody)
         {
-            // 1. Xác thực chữ ký + parse dữ liệu (ném lỗi nếu chữ ký sai)
             var result = _payOsService.VerifyWebhook(rawJsonBody);
 
-            // 2. Tìm khoản thanh toán ký gửi theo orderCode
             var paymentRepo = _unitOfWork.Repository<Payment>();
             var allPayments = await paymentRepo.GetAllAsync();
             var payment = allPayments.FirstOrDefault(p => p.OrderCode.HasValue && p.OrderCode.Value == result.OrderCode);
             if (payment == null)
-            {
-                // Không thuộc bảng PAYMENTS (có thể là thanh toán mua hộ hoặc webhook test) -> bỏ qua
                 return false;
-            }
 
-            // 3. Idempotent: đã xử lý xong thì thôi
             if (string.Equals(payment.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase))
                 return true;
-
             if (!result.Success)
                 return false;
 
-            // 4. Cập nhật thanh toán thành công
             payment.PaymentStatus = "PAID";
             payment.PaidAt = DateTime.UtcNow;
             payment.TransactionCode = result.Reference;
             paymentRepo.Update(payment);
 
-            // 5. Cập nhật hóa đơn + đơn hàng
             if (payment.InvoiceId.HasValue)
             {
                 var invoiceRepo = _unitOfWork.Repository<Invoice>();
                 var invoice = await invoiceRepo.GetByIdAsync(payment.InvoiceId.Value);
-                if (invoice != null)
+                if (invoice != null && invoice.QuotationId.HasValue)
                 {
-                    invoice.InvoiceStatus = "PAID";
-                    invoiceRepo.Update(invoice);
-
-                    if (invoice.QuotationId.HasValue)
+                    var quotation = await _unitOfWork.Repository<Quotation>().GetByIdAsync(invoice.QuotationId.Value);
+                    if (quotation?.OrderId != null)
                     {
-                        var quotation = await _unitOfWork.Repository<Quotation>().GetByIdAsync(invoice.QuotationId.Value);
-                        if (quotation?.OrderId != null)
+                        var orderRepo = _unitOfWork.Repository<Order>();
+                        var order = await orderRepo.GetByIdAsync(quotation.OrderId.Value);
+                        if (order != null)
                         {
-                            var orderRepo = _unitOfWork.Repository<Order>();
-                            var order = await orderRepo.GetByIdAsync(quotation.OrderId.Value);
-                            if (order != null)
+                            // Cọc trả xong -> cho phép vận chuyển; đợt cuối trả xong -> hoàn tất
+                            var installment = payment.InstallmentType?.Trim().ToUpperInvariant();
+                            if (installment == "DEPOSIT")
                             {
-                                order.Status = "PAID";
-                                orderRepo.Update(order);
+                                order.Status = "DEPOSIT_PAID";
+                                // Hóa đơn vẫn PENDING vì mới trả cọc
                             }
+                            else
+                            {
+                                // FINAL_PAYMENT hoặc thanh toán 1 lần cũ (null) -> hoàn tất
+                                order.Status = "PAID";
+                                invoice.InvoiceStatus = "PAID";
+                                invoiceRepo.Update(invoice);
+                            }
+                            orderRepo.Update(order);
                         }
                     }
                 }
@@ -207,6 +477,55 @@ namespace VCL_BLL.Services
             await _unitOfWork.SaveChangesAsync();
             return true;
         }
+
+        // ---------------------------------------------------------------------
+        // Helpers
+        // ---------------------------------------------------------------------
+
+        /// <summary>Lấy hóa đơn (mới nhất) của đơn + toàn bộ payment thuộc hóa đơn đó.</summary>
+        private async Task<(Invoice invoice, List<Payment> payments)> GetOrderInvoiceAndPaymentsAsync(Guid orderId)
+        {
+            var quotations = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
+                .Where(q => q.OrderId == orderId)
+                .Select(q => q.Id)
+                .ToHashSet();
+
+            var invoice = (await _unitOfWork.Repository<Invoice>().GetAllAsync())
+                .Where(i => i.QuotationId.HasValue && quotations.Contains(i.QuotationId.Value))
+                .OrderByDescending(i => i.IssuedAt)
+                .FirstOrDefault();
+
+            if (invoice == null)
+                return (null, new List<Payment>());
+
+            var payments = (await _unitOfWork.Repository<Payment>().GetAllAsync())
+                .Where(p => p.InvoiceId.HasValue && p.InvoiceId.Value == invoice.Id)
+                .ToList();
+
+            return (invoice, payments);
+        }
+
+        private async Task<decimal> GetDepositRateAsync()
+        {
+            var fees = await _unitOfWork.Repository<AdditionalServiceFee>().GetAllAsync();
+            var rateFee = fees.FirstOrDefault(f =>
+                f.IsActive && string.Equals(f.FeeCode, "DEPOSIT_RATE", StringComparison.OrdinalIgnoreCase));
+            if (rateFee == null) return DefaultDepositRate;
+            // Kẹp trong khoảng hợp lệ 0..100
+            var value = rateFee.Value;
+            if (value < 0m) value = 0m;
+            if (value > 100m) value = 100m;
+            return value;
+        }
+
+        private static bool IsStaff(string userRole) =>
+            !string.IsNullOrWhiteSpace(userRole) && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+
+        private static bool IsInstallment(Payment p, string type) =>
+            string.Equals(p.InstallmentType, type, StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsPaid(Payment p) =>
+            string.Equals(p.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase);
 
         private static async Task AddInvoiceItemAsync(
             IGenericRepository<InvoiceItem> repo, Guid invoiceId, string feeType, decimal? amount, string description)
@@ -228,7 +547,6 @@ namespace VCL_BLL.Services
 
         private async Task<long> GenerateUniqueOrderCodeAsync()
         {
-            // Đối chiếu ở cả PAYMENTS và PURCHASE_PAYMENTS để orderCode không trùng toàn hệ thống payOS
             var paymentCodes = (await _unitOfWork.Repository<Payment>().GetAllAsync())
                 .Where(p => p.OrderCode.HasValue).Select(p => p.OrderCode!.Value);
             var purchaseCodes = (await _unitOfWork.Repository<PurchasePayment>().GetAllAsync())
@@ -245,15 +563,10 @@ namespace VCL_BLL.Services
             return code;
         }
 
-        private static string BuildDescription(string consignmentCode)
+        private static string BuildDescription(string prefix, string consignmentCode)
         {
-            var desc = string.IsNullOrWhiteSpace(consignmentCode) ? "Thanh toan ky gui" : $"TT {consignmentCode}";
+            var desc = string.IsNullOrWhiteSpace(consignmentCode) ? $"{prefix} ky gui" : $"{prefix} {consignmentCode}";
             return desc.Length > 25 ? desc.Substring(0, 25) : desc;
-        }
-
-        private static string BuildItemName(string consignmentCode)
-        {
-            return string.IsNullOrWhiteSpace(consignmentCode) ? "Đơn ký gửi" : $"Ký gửi {consignmentCode}";
         }
 
         private static string FirstNonEmpty(params string?[] values)

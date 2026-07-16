@@ -276,12 +276,24 @@ namespace VCL_BLL.DTOs
 
         public Guid PaymentId { get; set; }
         public long OrderCode { get; set; }
+
+        /// <summary>Số tiền của đợt thanh toán này (cọc), KHÔNG phải tổng bill.</summary>
         public decimal Amount { get; set; }
+
+        /// <summary>Đợt thanh toán: DEPOSIT.</summary>
+        public string InstallmentType { get; set; } = string.Empty;
+
+        /// <summary>Tổng tiền của cả bill (báo giá) - để FE hiển thị "cọc X / tổng Y".</summary>
+        public decimal TotalBillAmount { get; set; }
+
+        /// <summary>Tỷ lệ cọc (%) áp dụng.</summary>
+        public decimal DepositRate { get; set; }
+
         public string PaymentMethod { get; set; } = string.Empty;
         public string PaymentStatus { get; set; } = string.Empty;
 
-        /// <summary>Link thanh toán payOS để FE điều hướng khách hàng.</summary>
-        public string CheckoutUrl { get; set; } = string.Empty;
+        /// <summary>Link thanh toán payOS để FE điều hướng khách hàng (null nếu không cần cọc).</summary>
+        public string? CheckoutUrl { get; set; }
         public string? PaymentLinkId { get; set; }
     }
 }

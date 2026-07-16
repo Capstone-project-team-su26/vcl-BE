@@ -1141,6 +1141,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("checkout_url");
 
+                    b.Property<string>("InstallmentType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("installment_type");
+
                     b.Property<Guid?>("InvoiceId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("invoice_id");
