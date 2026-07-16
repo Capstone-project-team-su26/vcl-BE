@@ -86,5 +86,37 @@ namespace VCL_API.Controllers
                 return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Lấy lịch sử thanh toán chi tiết của đơn ký gửi (kèm thông tin Customer, báo giá,
+        /// từng đợt thanh toán với trạng thái PENDING/SUCCESS/FAILED/CANCELED). Customer/Sales/Admin.
+        /// </summary>
+        [HttpGet("api/orders/{orderId}/payments/history")]
+        public async Task<IActionResult> GetPaymentHistory(Guid orderId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _consignmentPaymentService.GetPaymentHistoryAsync(orderId, userId, userRole);
+                return Ok(new { message = "Lấy lịch sử thanh toán của đơn thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
     }
 }

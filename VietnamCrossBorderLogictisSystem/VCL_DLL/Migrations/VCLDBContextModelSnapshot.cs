@@ -1141,6 +1141,17 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("checkout_url");
 
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("failure_reason");
+
                     b.Property<string>("InstallmentType")
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)")

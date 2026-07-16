@@ -71,4 +71,64 @@ namespace VCL_BLL.DTOs
         public decimal Remaining { get; set; }
         public List<OrderPaymentItemDto> Payments { get; set; } = new();
     }
+
+    // ----- VCL-207: Lịch sử thanh toán chi tiết theo đơn -----
+
+    public class PaymentHistoryCustomerDto
+    {
+        public Guid? CustomerId { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string CustomerCode { get; set; } = string.Empty;
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+    }
+
+    public class PaymentHistoryQuotationDto
+    {
+        public Guid QuotationId { get; set; }
+        public string? QuoteType { get; set; }
+        public string? Status { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+
+    public class PaymentHistoryItemDto
+    {
+        public Guid PaymentId { get; set; }
+        public Guid? InvoiceId { get; set; }
+
+        /// <summary>DEPOSIT | FINAL_PAYMENT (null với thanh toán 1 lần cũ).</summary>
+        public string? InstallmentType { get; set; }
+
+        public decimal Amount { get; set; }
+        public string PaymentMethod { get; set; } = string.Empty;
+
+        /// <summary>Trạng thái chuẩn hóa cho FE: PENDING | SUCCESS | FAILED | CANCELED.</summary>
+        public string Status { get; set; } = string.Empty;
+
+        public long? OrderCode { get; set; }
+
+        /// <summary>Mã giao dịch từ payOS (nếu thành công).</summary>
+        public string? TransactionCode { get; set; }
+        public string? CheckoutUrl { get; set; }
+
+        public DateTime? CreatedAt { get; set; }
+        public DateTime? PaidAt { get; set; }
+        public string? FailureReason { get; set; }
+    }
+
+    public class PaymentHistoryResponse
+    {
+        public Guid OrderId { get; set; }
+        public string ConsignmentCode { get; set; } = string.Empty;
+        public string OrderStatus { get; set; } = string.Empty;
+
+        public PaymentHistoryCustomerDto Customer { get; set; } = new();
+        public PaymentHistoryQuotationDto? Quotation { get; set; }
+
+        public decimal TotalBillAmount { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal Remaining { get; set; }
+
+        public List<PaymentHistoryItemDto> Payments { get; set; } = new();
+    }
 }

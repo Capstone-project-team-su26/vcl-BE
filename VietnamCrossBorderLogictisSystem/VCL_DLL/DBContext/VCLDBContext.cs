@@ -779,6 +779,12 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.InstallmentType)
                 .HasMaxLength(30)
                 .HasColumnName("installment_type");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getutcdate())")
+                .HasColumnName("created_at");
+            entity.Property(e => e.FailureReason)
+                .HasMaxLength(500)
+                .HasColumnName("failure_reason");
 
             entity.HasOne(d => d.Invoice).WithMany(p => p.Payments)
                 .HasForeignKey(d => d.InvoiceId)
