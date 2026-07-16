@@ -164,7 +164,7 @@ namespace VCL_BLL.Services
 
                 totalWeight += itemWeight;
                 totalVolume += itemVolume;
-                totalDeclaredValue += itemDeclaredValue * qty;
+                totalDeclaredValue += itemDeclaredValue;
 
                 itemDetails.Add(new OrderItemDetail
                 {
@@ -688,7 +688,7 @@ namespace VCL_BLL.Services
 
                     totalWeight += itemWeight;
                     totalVolume += itemVolume;
-                    totalDeclaredValue += itemDeclaredValue * qty;
+                    totalDeclaredValue += itemDeclaredValue;
 
                     itemDetails.Add(new OrderItemDetail
                     {

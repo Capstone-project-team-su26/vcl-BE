@@ -77,6 +77,7 @@ $$\text{Tổng tiền} = \left( \text{Net Weight} \times \text{Đơn cước qu�
 Trong đó:
 * **Phí dịch vụ cố định** = `50,000 VND` nếu chặng đi nhanh `Express`, hoặc `30,000 VND` nếu chặng thường `Standard`
 * **Thuế nhập khẩu** = Tổng giá trị khai báo × 10% (mặc định)
+  - *Lưu ý: Tổng giá trị khai báo được tính bằng tổng các giá trị khai báo của từng kiện/dòng sản phẩm ($\sum \text{Giá trị khai báo}$), không nhân thêm với số lượng sản phẩm (`Quantity`) do giá trị khai báo này đại diện cho toàn bộ kiện hàng.*
 
 ---
 
