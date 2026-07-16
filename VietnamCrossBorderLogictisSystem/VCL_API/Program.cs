@@ -17,7 +17,8 @@ builder.Services.AddCors(options =>
         var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
         if (allowedOrigins != null && allowedOrigins.Length > 0 && !allowedOrigins.Contains("*"))
         {
-            policy.WithOrigins(allowedOrigins)
+            var cleanedOrigins = allowedOrigins.Select(o => o.TrimEnd('/')).ToArray();
+            policy.WithOrigins(cleanedOrigins)
                   .AllowAnyHeader()
                   .AllowAnyMethod()
                   .AllowCredentials();
@@ -41,9 +42,9 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseHttpsRedirection();
-
 app.UseCors("AllowAll");
+
+app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
