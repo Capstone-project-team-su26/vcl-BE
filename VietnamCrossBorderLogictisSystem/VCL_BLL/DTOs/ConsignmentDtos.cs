@@ -35,6 +35,7 @@ namespace VCL_BLL.DTOs
         public string? ReceiverAddress { get; set; }
         public bool RequiresInspection { get; set; }
         public DateTime? CreatedAt { get; set; }
+        public int ItemCount { get; set; }
 
         public ConsignmentCustomerInfo Customer { get; set; } = new();
         public List<ConsignmentItemDetail> Items { get; set; } = new();

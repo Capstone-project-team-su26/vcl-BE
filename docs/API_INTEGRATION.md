@@ -1774,6 +1774,7 @@ export interface ConsignmentDetailResponse {
   receiverAddress: string | null;
   requiresInspection: boolean;
   createdAt: string | null;
+  itemCount: number;
   customer: ConsignmentCustomerInfo;
   items: ConsignmentItemDetail[];
   quotation: ConsignmentQuotationSummary | null;

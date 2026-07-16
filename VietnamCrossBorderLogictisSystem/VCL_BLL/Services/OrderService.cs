@@ -159,7 +159,7 @@ namespace VCL_BLL.Services
                 ConsignmentType = order.ConsignmentType,
                 Route = order.Route,
                 RequiresInspection = order.RequiresInspection,
-                ItemCount = request.Items.Count,
+                ItemCount = request.Items.Sum(i => i.Quantity),
                 Quotation = quotation,
                 Warnings = warnings
             };
@@ -317,7 +317,7 @@ namespace VCL_BLL.Services
                 ConsignmentType = order.ConsignmentType,
                 Route = order.Route,
                 RequiresInspection = order.RequiresInspection,
-                ItemCount = request.Items.Count,
+                ItemCount = request.Items.Sum(i => i.Quantity),
                 Quotation = quotation,
                 Warnings = warnings
             };
@@ -517,6 +517,7 @@ namespace VCL_BLL.Services
                 ReceiverAddress = order.ReceiverAddress,
                 RequiresInspection = order.RequiresInspection,
                 CreatedAt = order.CreatedAt,
+                ItemCount = items.Sum(i => i.Quantity ?? 0),
                 Customer = new ConsignmentCustomerInfo
                 {
                     CustomerId = customer?.Id,
@@ -832,7 +833,7 @@ namespace VCL_BLL.Services
 
             // 4. Số mặt hàng + danh sách kiện hàng (chỉ dữ liệu trạng thái, không lộ thông tin nhạy cảm)
             var allItems = await _unitOfWork.Repository<OrderItem>().GetAllAsync();
-            var itemCount = allItems.Count(i => i.OrderId == order.Id);
+            var itemCount = allItems.Where(i => i.OrderId == order.Id).Sum(i => i.Quantity ?? 0);
 
             var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
             var parcels = allParcels
