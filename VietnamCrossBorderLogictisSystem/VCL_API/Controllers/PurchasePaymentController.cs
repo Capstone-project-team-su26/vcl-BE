@@ -15,55 +15,13 @@ namespace VCL_API.Controllers
     {
         private readonly IPurchasePaymentService _purchasePaymentService;
         private readonly IConsignmentPaymentService _consignmentPaymentService;
-        private readonly IPayOsService _payOsService;
-        private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
 
         public PurchasePaymentController(
             IPurchasePaymentService purchasePaymentService,
-            IConsignmentPaymentService consignmentPaymentService,
-            IPayOsService payOsService,
-            Microsoft.Extensions.Configuration.IConfiguration configuration)
+            IConsignmentPaymentService consignmentPaymentService)
         {
             _purchasePaymentService = purchasePaymentService;
             _consignmentPaymentService = consignmentPaymentService;
-            _payOsService = payOsService;
-            _configuration = configuration;
-        }
-
-        /// <summary>
-        /// Đăng ký (confirm) webhook URL với payOS — chạy MỘT LẦN sau khi deploy
-        /// (hoặc khi đổi domain). Không truyền body thì dùng PayOS:WebhookUrl trong config.
-        /// payOS sẽ gọi thử URL ngay lúc đăng ký nên URL phải public + HTTPS.
-        /// </summary>
-        [HttpPost("api/payments/payos/confirm-webhook")]
-        //[Authorize(Roles = "ADMIN,Admin")]
-        public async Task<IActionResult> ConfirmPayOsWebhook([FromBody] ConfirmWebhookRequestDto request)
-        {
-            //var webhookUrl = request?.WebhookUrl;
-            //if (string.IsNullOrWhiteSpace(webhookUrl))
-            //    webhookUrl = _configuration["PayOS:WebhookUrl"];
-
-            //if (string.IsNullOrWhiteSpace(webhookUrl))
-            //    return BadRequest(new { message = "Thiếu webhook URL. Truyền webhookUrl trong body hoặc cấu hình PayOS:WebhookUrl." });
-
-            //try
-            //{
-            //    await _payOsService.ConfirmWebhookAsync(webhookUrl);
-            //    return Ok(new { message = "Đăng ký webhook với payOS thành công.", webhookUrl });
-            //}
-            //catch (ArgumentException ex)
-            //{
-            //    return BadRequest(new { message = ex.Message });
-            //}
-            //catch (InvalidOperationException ex)
-            //{
-            //    return BadRequest(new { message = ex.Message });
-            //}
-            //catch (Exception ex)
-            //{
-            //    return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            //}
-            return Ok(new { message = "Chức năng này hiện đang bị vô hiệu hóa. Vui lòng liên hệ quản trị viên." });
         }
 
         /// <summary>
@@ -111,7 +69,29 @@ namespace VCL_API.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> PayOsWebhook()
         {
-            return Ok(new { message = "Chức năng này hiện đang bị vô hiệu hóa. Vui lòng liên hệ quản trị viên." });
+            string rawBody;
+            using (var reader = new StreamReader(Request.Body))
+            {
+                rawBody = await reader.ReadToEndAsync();
+            }
+
+            try
+            {
+                // payOS chỉ có một webhook URL cho cả 2 loại thanh toán:
+                // thử khớp thanh toán mua hộ trước, nếu không thuộc thì thử thanh toán ký gửi.
+                var handled = await _purchasePaymentService.HandlePayOsWebhookAsync(rawBody);
+                if (!handled)
+                {
+                    handled = await _consignmentPaymentService.HandlePayOsWebhookAsync(rawBody);
+                }
+                // Luôn trả 200 để payOS ngừng gửi lại; kèm cờ đã ghi nhận hay chưa
+                return Ok(new { success = true, handled });
+            }
+            catch (Exception ex)
+            {
+                // Chữ ký không hợp lệ hoặc dữ liệu sai -> báo lỗi để payOS biết
+                return BadRequest(new { success = false, message = ex.Message });
+            }
         }
     }
 }

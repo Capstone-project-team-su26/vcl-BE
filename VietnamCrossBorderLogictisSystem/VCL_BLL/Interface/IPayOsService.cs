@@ -24,11 +24,5 @@ namespace VCL_BLL.Interface
 
         /// <summary>Xác thực chữ ký + parse dữ liệu webhook payOS từ JSON thô. Ném lỗi nếu chữ ký không hợp lệ.</summary>
         PayOsWebhookResult VerifyWebhook(string rawJsonBody);
-
-        /// <summary>
-        /// Đăng ký (confirm) webhook URL với payOS. payOS sẽ gọi thử URL này ngay khi đăng ký,
-        /// và từ đó về sau gửi thông báo thanh toán vào URL đó. Ném lỗi nếu payOS từ chối.
-        /// </summary>
-        Task ConfirmWebhookAsync(string webhookUrl);
     }
 }
