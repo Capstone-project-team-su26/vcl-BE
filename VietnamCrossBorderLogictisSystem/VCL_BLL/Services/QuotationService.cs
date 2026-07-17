@@ -191,7 +191,7 @@ namespace VCL_BLL.Services
             var route = order.Route ?? customerCountry;
 
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
             var matchedPricing = allPricings
                 .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
@@ -562,7 +562,7 @@ namespace VCL_BLL.Services
         private async Task<decimal> GetFreightRateAsync(string consignmentType)
         {
             var pricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await pricingRepo.GetAllAsync();
+            var allPricings = (await pricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
             // Tìm bảng giá khớp với ConsignmentType và còn hiệu lực
             var pricing = allPricings
@@ -667,11 +667,15 @@ namespace VCL_BLL.Services
                 // Convert m³ to cm³. If the input value is already > 1000, we assume it is already in cm³
                 totalVolume = request.VolumeM3.Value > 1000m ? request.VolumeM3.Value : request.VolumeM3.Value * 1000000m;
             }
-            decimal totalDeclaredValue = request.DeclaredValue ?? 0m;
-
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
             var allItems = await orderItemRepo.GetAllAsync();
             var orderItems = allItems.Where(i => i.OrderId == orderId).ToList();
+
+            decimal totalDeclaredValue = request.DeclaredValue ?? 0m;
+            if (totalDeclaredValue == 0m)
+            {
+                totalDeclaredValue = orderItems.Sum(item => item.DeclaredValue ?? 0m);
+            }
 
             var itemDetails = new List<OrderItemDetail>();
             if (totalWeight == 0m && totalVolume == 0m)
@@ -688,7 +692,6 @@ namespace VCL_BLL.Services
 
                     totalWeight += itemWeight;
                     totalVolume += itemVolume;
-                    totalDeclaredValue += itemDeclaredValue;
 
                     itemDetails.Add(new OrderItemDetail
                     {
@@ -731,7 +734,7 @@ namespace VCL_BLL.Services
             var route = order.Route ?? customerCountry;
 
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
             var matchedPricing = allPricings
                 .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
@@ -1014,7 +1017,7 @@ namespace VCL_BLL.Services
             var route = order.Route ?? customerCountry;
 
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
             var matchedPricing = allPricings
                 .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
@@ -1433,7 +1436,7 @@ namespace VCL_BLL.Services
             var volumetricWeight = Math.Round((order.TotalVolume ?? 0m) / divisor, 4);
 
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var consignmentType = order.ConsignmentType ?? "Express";
             var route = order.Route;
             var matchedPricing = allPricings
@@ -1575,7 +1578,7 @@ namespace VCL_BLL.Services
             var divisor = GetVolumetricDivisor(allActiveRules);
             
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = await servicePricingRepo.GetAllAsync();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var consignmentType = order.ConsignmentType ?? "Express";
             var route = order.Route;
             var matchedPricing = allPricings

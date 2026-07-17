@@ -22,7 +22,7 @@ namespace VCL_BLL.Services
         public async Task<IEnumerable<ServicePricingDto>> GetAllAsync()
         {
             var pricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var pricings = await pricingRepo.GetAllAsync();
+            var pricings = (await pricingRepo.GetAllAsync()).Where(p => !p.IsDeleted);
 
             return pricings.Select(p => new ServicePricingDto
             {
@@ -43,7 +43,7 @@ namespace VCL_BLL.Services
             var pricingRepo = _unitOfWork.Repository<ServicePricing>();
             var p = await pricingRepo.GetByIdAsync(id);
 
-            if (p == null)
+            if (p == null || p.IsDeleted)
             {
                 throw new NotFoundException($"Không tìm thấy cấu hình bảng giá dịch vụ với ID: {id}");
             }
@@ -112,7 +112,7 @@ namespace VCL_BLL.Services
             var pricingRepo = _unitOfWork.Repository<ServicePricing>();
             var p = await pricingRepo.GetByIdAsync(id);
 
-            if (p == null)
+            if (p == null || p.IsDeleted)
             {
                 throw new NotFoundException($"Không tìm thấy cấu hình bảng giá dịch vụ với ID: {id}");
             }
@@ -145,12 +145,13 @@ namespace VCL_BLL.Services
             var pricingRepo = _unitOfWork.Repository<ServicePricing>();
             var p = await pricingRepo.GetByIdAsync(id);
 
-            if (p == null)
+            if (p == null || p.IsDeleted)
             {
                 throw new NotFoundException($"Không tìm thấy cấu hình bảng giá dịch vụ với ID: {id}");
             }
 
-            pricingRepo.Delete(p);
+            p.IsDeleted = true;
+            pricingRepo.Update(p);
             await _unitOfWork.SaveChangesAsync();
         }
     }

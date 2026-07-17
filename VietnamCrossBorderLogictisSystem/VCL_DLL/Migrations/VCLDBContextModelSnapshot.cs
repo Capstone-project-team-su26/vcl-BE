@@ -2224,6 +2224,12 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("effective_date");
 
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_deleted");
+
                     b.Property<string>("OriginCountry")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -2249,6 +2255,32 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("CarrierId");
 
                     b.ToTable("SERVICE_PRICINGS", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("22222222-1111-1111-1111-111111111111"),
+                            Currency = "VND",
+                            DestinationCountry = "VN",
+                            EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            OriginCountry = "CN",
+                            Price = 50000m,
+                            ServiceType = "Express",
+                            UnitType = "KG"
+                        },
+                        new
+                        {
+                            Id = new Guid("22222222-2222-2222-2222-222222222222"),
+                            Currency = "VND",
+                            DestinationCountry = "VN",
+                            EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsDeleted = false,
+                            OriginCountry = "CN",
+                            Price = 30000m,
+                            ServiceType = "Standard",
+                            UnitType = "KG"
+                        });
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Shelf", b =>
