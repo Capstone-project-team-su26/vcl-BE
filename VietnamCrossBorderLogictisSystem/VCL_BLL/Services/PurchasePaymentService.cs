@@ -140,8 +140,7 @@ namespace VCL_BLL.Services
 
             // 2. Tìm khoản thanh toán theo orderCode
             var paymentRepo = _unitOfWork.Repository<PurchasePayment>();
-            var allPayments = await paymentRepo.GetAllAsync();
-            var payment = allPayments.FirstOrDefault(p => p.OrderCode == result.OrderCode);
+            var payment = await paymentRepo.FirstOrDefaultAsync(p => p.OrderCode == result.OrderCode);
             if (payment == null)
             {
                 // Có thể là webhook test của payOS (orderCode không thuộc hệ thống) -> bỏ qua nhưng vẫn ack

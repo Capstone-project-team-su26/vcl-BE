@@ -594,8 +594,7 @@ namespace VCL_BLL.Services
             var result = _payOsService.VerifyWebhook(rawJsonBody);
 
             var paymentRepo = _unitOfWork.Repository<Payment>();
-            var allPayments = await paymentRepo.GetAllAsync();
-            var payment = allPayments.FirstOrDefault(p => p.OrderCode.HasValue && p.OrderCode.Value == result.OrderCode);
+            var payment = await paymentRepo.FirstOrDefaultAsync(p => p.OrderCode.HasValue && p.OrderCode.Value == result.OrderCode);
             if (payment == null)
                 return false;
 

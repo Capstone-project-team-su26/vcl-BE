@@ -27,6 +27,11 @@ namespace VCL_DLL.Repositories
             return await _dbSet.FindAsync(id);
         }
 
+        public async Task<T?> FirstOrDefaultAsync(System.Linq.Expressions.Expression<System.Func<T, bool>> predicate)
+        {
+            return await _dbSet.FirstOrDefaultAsync(predicate);
+        }
+
         public async Task AddAsync(T entity)
         {
             await _dbSet.AddAsync(entity);
