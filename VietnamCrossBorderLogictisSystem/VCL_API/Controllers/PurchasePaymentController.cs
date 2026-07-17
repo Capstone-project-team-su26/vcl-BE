@@ -66,6 +66,7 @@ namespace VCL_API.Controllers
         /// Webhook nhận callback thanh toán từ payOS. payOS gọi trực tiếp, không yêu cầu đăng nhập.
         /// </summary>
         [HttpPost("api/payments/payos/webhook")]
+        [HttpPost("api/payments/payos-webhook")]
         [AllowAnonymous]
         public async Task<IActionResult> PayOsWebhook()
         {
