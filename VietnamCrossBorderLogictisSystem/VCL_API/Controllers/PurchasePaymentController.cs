@@ -69,7 +69,29 @@ namespace VCL_API.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> PayOsWebhook()
         {
-            return Ok(new { message = "Chức năng này hiện đang bị vô hiệu hóa. Vui lòng liên hệ quản trị viên." });
+            string rawBody;
+            using (var reader = new StreamReader(Request.Body))
+            {
+                rawBody = await reader.ReadToEndAsync();
+            }
+
+            try
+            {
+                // payOS chỉ có một webhook URL cho cả 2 loại thanh toán:
+                // thử khớp thanh toán mua hộ trước, nếu không thuộc thì thử thanh toán ký gửi.
+                var handled = await _purchasePaymentService.HandlePayOsWebhookAsync(rawBody);
+                if (!handled)
+                {
+                    handled = await _consignmentPaymentService.HandlePayOsWebhookAsync(rawBody);
+                }
+                // Luôn trả 200 để payOS ngừng gửi lại; kèm cờ đã ghi nhận hay chưa
+                return Ok(new { success = true, handled });
+            }
+            catch (Exception ex)
+            {
+                // Chữ ký không hợp lệ hoặc dữ liệu sai -> báo lỗi để payOS biết
+                return BadRequest(new { success = false, message = ex.Message });
+            }
         }
     }
 }
