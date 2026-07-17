@@ -36,33 +36,34 @@ namespace VCL_API.Controllers
         /// payOS sẽ gọi thử URL ngay lúc đăng ký nên URL phải public + HTTPS.
         /// </summary>
         [HttpPost("api/payments/payos/confirm-webhook")]
-        [Authorize(Roles = "ADMIN,Admin")]
+        //[Authorize(Roles = "ADMIN,Admin")]
         public async Task<IActionResult> ConfirmPayOsWebhook([FromBody] ConfirmWebhookRequestDto request)
         {
-            var webhookUrl = request?.WebhookUrl;
-            if (string.IsNullOrWhiteSpace(webhookUrl))
-                webhookUrl = _configuration["PayOS:WebhookUrl"];
+            //var webhookUrl = request?.WebhookUrl;
+            //if (string.IsNullOrWhiteSpace(webhookUrl))
+            //    webhookUrl = _configuration["PayOS:WebhookUrl"];
 
-            if (string.IsNullOrWhiteSpace(webhookUrl))
-                return BadRequest(new { message = "Thiếu webhook URL. Truyền webhookUrl trong body hoặc cấu hình PayOS:WebhookUrl." });
+            //if (string.IsNullOrWhiteSpace(webhookUrl))
+            //    return BadRequest(new { message = "Thiếu webhook URL. Truyền webhookUrl trong body hoặc cấu hình PayOS:WebhookUrl." });
 
-            try
-            {
-                await _payOsService.ConfirmWebhookAsync(webhookUrl);
-                return Ok(new { message = "Đăng ký webhook với payOS thành công.", webhookUrl });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
+            //try
+            //{
+            //    await _payOsService.ConfirmWebhookAsync(webhookUrl);
+            //    return Ok(new { message = "Đăng ký webhook với payOS thành công.", webhookUrl });
+            //}
+            //catch (ArgumentException ex)
+            //{
+            //    return BadRequest(new { message = ex.Message });
+            //}
+            //catch (InvalidOperationException ex)
+            //{
+            //    return BadRequest(new { message = ex.Message });
+            //}
+            //catch (Exception ex)
+            //{
+            //    return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            //}
+            return Ok (new { message = "Chức năng này hiện đang bị vô hiệu hóa. Vui lòng liên hệ quản trị viên." });
         }
 
         /// <summary>
