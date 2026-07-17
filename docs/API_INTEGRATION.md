@@ -4027,28 +4027,28 @@ GET /api/orders/consignments/routes
 ```json
 {
   "message": "Lấy danh sách tuyến hàng thành công.",
-  "data": ["VIETNAM-JAPAN", "Vietnam-Korea", "VIETNAM-USA"]
+  "data": ["Trung quốc --> Việt Nam"]
 }
 ```
 
-Giá trị route lấy từ `ServicePricing` theo định dạng `{OriginCountry}-{DestinationCountry}`, đã `distinct` và sắp xếp A→Z.
+Giá trị route trả về duy nhất tuyến `"Trung quốc --> Việt Nam"`. Khi gửi yêu cầu ký gửi lên hệ thống, tuyến này sẽ được chuẩn hóa nội bộ thành mã `"CN-VN"`.
 
 ### 30.2. Danh sách phương án vận chuyển (shippingOption)
 
 ```http
 GET /api/orders/consignments/shipping-options
-GET /api/orders/consignments/shipping-options?route=Vietnam-Korea
+GET /api/orders/consignments/shipping-options?route=Trung quốc --> Việt Nam
 ```
 
 ```json
 {
   "message": "Lấy danh sách phương án vận chuyển thành công.",
-  "data": ["CONSOLIDATION", "EXPRESS", "Standard"]
+  "data": ["Express", "Standard"]
 }
 ```
 
-- Không truyền `route` → trả về toàn bộ `ServiceType` distinct.
-- Truyền `route` → chỉ trả về các phương án khả dụng cho tuyến đó (rỗng `[]` nếu route không có).
+- Không truyền `route` → trả về toàn bộ phương án vận chuyển khả dụng (Express, Standard).
+- Truyền `route` → chỉ trả về các phương án khả dụng cho tuyến đó (ví dụ `"Trung quốc --> Việt Nam"` sẽ trả về `["Express", "Standard"]`).
 
 ### 30.3. Danh sách loại hàng (productType)
 

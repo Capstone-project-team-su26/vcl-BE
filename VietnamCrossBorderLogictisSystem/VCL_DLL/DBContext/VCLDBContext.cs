@@ -1063,6 +1063,33 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.Carrier).WithMany(p => p.ServicePricings)
                 .HasForeignKey(d => d.CarrierId)
                 .HasConstraintName("FK_PRICING_CARRIER");
+
+            entity.HasData(
+                new ServicePricing
+                {
+                    Id = new Guid("22222222-1111-1111-1111-111111111111"),
+                    ServiceType = "Express",
+                    OriginCountry = "CN",
+                    DestinationCountry = "VN",
+                    UnitType = "KG",
+                    Price = 50000m,
+                    Currency = "VND",
+                    EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                    IsDeleted = false
+                },
+                new ServicePricing
+                {
+                    Id = new Guid("22222222-2222-2222-2222-222222222222"),
+                    ServiceType = "Standard",
+                    OriginCountry = "CN",
+                    DestinationCountry = "VN",
+                    UnitType = "KG",
+                    Price = 30000m,
+                    Currency = "VND",
+                    EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                    IsDeleted = false
+                }
+            );
         });
 
         modelBuilder.Entity<Shelf>(entity =>

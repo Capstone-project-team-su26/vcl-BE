@@ -46,12 +46,14 @@ namespace VCL_BLL.Services
             if (string.IsNullOrWhiteSpace(request.ShippingOption))
                 throw new ArgumentException("Vui lòng chọn phương án vận chuyển (shippingOption).");
 
+            var canonicalRoute = NormalizeRoute(request.Route);
+
             var servicePricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var matchedPricing = servicePricings.FirstOrDefault(p =>
                 p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase)
                 && (
-                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", request.Route, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(p.OriginCountry, request.Route, StringComparison.OrdinalIgnoreCase)
+                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", canonicalRoute, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(p.OriginCountry, canonicalRoute, StringComparison.OrdinalIgnoreCase)
                 ));
 
             if (matchedPricing == null)
@@ -64,8 +66,8 @@ namespace VCL_BLL.Services
             }
 
             // Dùng đúng giá trị chuẩn hóa từ cấu hình
-            var route = request.Route;
-            var shippingOption = request.ShippingOption;
+            var route = canonicalRoute;
+            var shippingOption = matchedPricing != null ? matchedPricing.ServiceType : request.ShippingOption;
 
             if (request.Items == null || request.Items.Count == 0)
                 throw new ArgumentException("Yêu cầu ký gửi phải có ít nhất một mặt hàng.");
@@ -157,7 +159,7 @@ namespace VCL_BLL.Services
                 UserId = customer.UserId,
                 Status = order.Status,
                 ConsignmentType = order.ConsignmentType,
-                Route = order.Route,
+                Route = MapRouteToDisplayName(order.Route),
                 RequiresInspection = order.RequiresInspection,
                 ItemCount = request.Items.Sum(i => i.Quantity),
                 Quotation = quotation,
@@ -173,12 +175,14 @@ namespace VCL_BLL.Services
             if (string.IsNullOrWhiteSpace(request.ShippingOption))
                 throw new ArgumentException("Vui lòng chọn phương án vận chuyển (shippingOption).");
 
+            var canonicalRoute = NormalizeRoute(request.Route);
+
             var servicePricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
             var matchedPricing = servicePricings.FirstOrDefault(p =>
                 p.ServiceType != null && p.ServiceType.Equals(request.ShippingOption, StringComparison.OrdinalIgnoreCase)
                 && (
-                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", request.Route, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(p.OriginCountry, request.Route, StringComparison.OrdinalIgnoreCase)
+                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", canonicalRoute, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(p.OriginCountry, canonicalRoute, StringComparison.OrdinalIgnoreCase)
                 ));
 
             if (matchedPricing == null)
@@ -190,8 +194,8 @@ namespace VCL_BLL.Services
                 }
             }
 
-            var route = request.Route;
-            var shippingOption = request.ShippingOption;
+            var route = canonicalRoute;
+            var shippingOption = matchedPricing != null ? matchedPricing.ServiceType : request.ShippingOption;
 
             if (request.Items == null || request.Items.Count == 0)
                 throw new ArgumentException("Yêu cầu ký gửi phải có ít nhất một mặt hàng.");
@@ -315,7 +319,7 @@ namespace VCL_BLL.Services
                 UserId = customer.UserId,
                 Status = order.Status,
                 ConsignmentType = order.ConsignmentType,
-                Route = order.Route,
+                Route = MapRouteToDisplayName(order.Route),
                 RequiresInspection = order.RequiresInspection,
                 ItemCount = request.Items.Sum(i => i.Quantity),
                 Quotation = quotation,
@@ -511,7 +515,7 @@ namespace VCL_BLL.Services
                 TotalVolume = order.TotalVolume,
                 TotalVolumeM3 = order.TotalVolume / 1000000m,
                 Note = order.Note,
-                Route = order.Route,
+                Route = MapRouteToDisplayName(order.Route),
                 ReceiverName = order.ReceiverName,
                 ReceiverPhone = order.ReceiverPhone,
                 ReceiverAddress = order.ReceiverAddress,
@@ -767,7 +771,7 @@ namespace VCL_BLL.Services
                     TotalWeight = o.TotalWeight,
                     TotalVolume = o.TotalVolume,
                     TotalVolumeM3 = o.TotalVolume / 1000000m,
-                    Route = o.Route,
+                    Route = MapRouteToDisplayName(o.Route),
                     ReceiverName = o.ReceiverName,
                     ReceiverPhone = o.ReceiverPhone,
                     ReceiverAddress = o.ReceiverAddress,
@@ -851,7 +855,7 @@ namespace VCL_BLL.Services
             {
                 ConsignmentCode = order.ConsignmentCode ?? string.Empty,
                 ConsignmentType = order.ConsignmentType,
-                Route = order.Route,
+                Route = MapRouteToDisplayName(order.Route),
                 Status = order.Status ?? string.Empty,
                 StatusLabel = statusLabel,
                 ReceiverName = order.ReceiverName,
@@ -888,13 +892,8 @@ namespace VCL_BLL.Services
         /// </summary>
         public async Task<List<string>> GetConsignmentRoutesAsync()
         {
-            var pricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
-            return pricings
-                .Where(p => !string.IsNullOrWhiteSpace(p.OriginCountry) && !string.IsNullOrWhiteSpace(p.DestinationCountry))
-                .Select(p => $"{p.OriginCountry}-{p.DestinationCountry}")
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(r => r)
-                .ToList();
+            // ponytail: always return "Trung quốc --> Việt Nam" since that's the only supported route.
+            return await Task.FromResult(new List<string> { "Trung quốc --> Việt Nam" });
         }
 
         /// <summary>
@@ -908,10 +907,11 @@ namespace VCL_BLL.Services
 
             if (!string.IsNullOrWhiteSpace(route))
             {
+                var normalizedRoute = NormalizeRoute(route);
                 query = query.Where(p =>
                     !string.IsNullOrWhiteSpace(p.OriginCountry)
                     && !string.IsNullOrWhiteSpace(p.DestinationCountry)
-                    && string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route.Trim(), StringComparison.OrdinalIgnoreCase));
+                    && string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", normalizedRoute, StringComparison.OrdinalIgnoreCase));
             }
 
             return query
@@ -921,5 +921,30 @@ namespace VCL_BLL.Services
                 .ToList();
         }
 
+        public static string MapRouteToDisplayName(string? route)
+        {
+            if (string.IsNullOrWhiteSpace(route)) return string.Empty;
+            var trimmed = route.Trim();
+            if (trimmed.Equals("CN-VN", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("CN", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Trung quốc --> Việt Nam";
+            }
+            return trimmed;
+        }
+
+        public static string NormalizeRoute(string? route)
+        {
+            if (string.IsNullOrWhiteSpace(route)) return string.Empty;
+            var trimmed = route.Trim();
+            if (trimmed.Contains("Trung quốc", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Việt Nam", StringComparison.OrdinalIgnoreCase))
+            {
+                return "CN-VN";
+            }
+            if (trimmed.Contains("Trung quoc", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Viet nam", StringComparison.OrdinalIgnoreCase))
+            {
+                return "CN-VN";
+            }
+            return trimmed;
+        }
     }
 }
