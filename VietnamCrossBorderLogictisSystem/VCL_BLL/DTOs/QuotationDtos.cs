@@ -19,8 +19,6 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Tổng thể tích (cm³)</summary>
         public decimal TotalVolume { get; set; }
-        /// <summary>Tổng thể tích (m³)</summary>
-        public decimal TotalVolumeM3 { get; set; }
 
         /// <summary>Cân nặng quy đổi từ thể tích (kg) = TotalVolume / 5000</summary>
         public decimal VolumetricWeight { get; set; }
@@ -201,8 +199,6 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Tổng thể tích (cm³)</summary>
         public decimal TotalVolume { get; set; }
-        /// <summary>Tổng thể tích (m³)</summary>
-        public decimal TotalVolumeM3 { get; set; }
 
         /// <summary>Cân nặng quy đổi thể tích (kg)</summary>
         public decimal VolumetricWeight { get; set; }
