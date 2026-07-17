@@ -78,6 +78,23 @@ namespace VCL_API.Controllers
 
             try
             {
+                using (var doc = System.Text.Json.JsonDocument.Parse(rawBody))
+                {
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("desc", out var descProp) && 
+                        string.Equals(descProp.GetString(), "Confirm webhook", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Ok(new { success = true, message = "Webhook confirmed" });
+                    }
+                }
+            }
+            catch
+            {
+                // Let the next catch handle signature verification
+            }
+
+            try
+            {
                 // payOS chỉ có một webhook URL cho cả 2 loại thanh toán:
                 // thử khớp thanh toán mua hộ trước, nếu không thuộc thì thử thanh toán ký gửi.
                 var handled = await _purchasePaymentService.HandlePayOsWebhookAsync(rawBody);
