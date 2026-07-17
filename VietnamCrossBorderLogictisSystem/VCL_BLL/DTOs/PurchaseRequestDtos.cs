@@ -282,6 +282,12 @@ namespace VCL_BLL.DTOs
         public DateTime? UpdatedAt { get; set; }
     }
 
+    public class ConfirmWebhookRequestDto
+    {
+        /// <summary>Webhook URL đăng ký với payOS. Bỏ trống thì dùng PayOS:WebhookUrl trong config.</summary>
+        public string? WebhookUrl { get; set; }
+    }
+
     public class ConfirmQuotationAndPayRequestDto
     {
         /// <summary>URL FE để payOS chuyển hướng khi thanh toán thành công (nếu bỏ trống dùng cấu hình mặc định).</summary>
