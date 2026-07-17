@@ -18,6 +18,7 @@ namespace VCL_BLL.Services
     public class PayOsService : IPayOsService
     {
         private const string CreatePaymentLinkUrl = "https://api-merchant.payos.vn/v2/payment-requests";
+        private const string ConfirmWebhookUrl = "https://api-merchant.payos.vn/confirm-webhook";
 
         // HttpClient dùng chung, tránh cạn socket
         private static readonly HttpClient _httpClient = new HttpClient();
@@ -148,6 +149,38 @@ namespace VCL_BLL.Services
             var description = GetString(data, "description");
 
             return new PayOsWebhookResult(success, orderCode, reference, description);
+        }
+
+        public async Task ConfirmWebhookAsync(string webhookUrl)
+        {
+            EnsureConfigured();
+
+            if (string.IsNullOrWhiteSpace(webhookUrl))
+                throw new ArgumentException("Webhook URL không được để trống.");
+            if (!webhookUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("payOS yêu cầu webhook URL phải là HTTPS.");
+
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, ConfirmWebhookUrl)
+            {
+                Content = JsonContent.Create(new { webhookUrl })
+            };
+            httpRequest.Headers.Add("x-client-id", _clientId);
+            httpRequest.Headers.Add("x-api-key", _apiKey);
+
+            var httpResponse = await _httpClient.SendAsync(httpRequest);
+            var responseJson = await httpResponse.Content.ReadAsStringAsync();
+
+            using var doc = JsonDocument.Parse(responseJson);
+            var root = doc.RootElement;
+
+            var code = GetString(root, "code");
+            if (!string.Equals(code, "00", StringComparison.Ordinal))
+            {
+                var desc = GetString(root, "desc");
+                throw new InvalidOperationException(
+                    $"payOS xác nhận webhook thất bại (code {code}): {desc}. " +
+                    "Kiểm tra URL có public/HTTPS và endpoint webhook trả về 200 khi payOS gọi thử.");
+            }
         }
 
         private static string ComputeHmacSha256(string data, string key)
