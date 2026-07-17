@@ -64,37 +64,27 @@ namespace VCL_API.Controllers
 
         /// <summary>
         /// Webhook nhận callback thanh toán từ payOS. payOS gọi trực tiếp, không yêu cầu đăng nhập.
+        /// Bind body qua [FromBody] JsonElement (không dùng class cứng): GetRawText() giữ nguyên văn
+        /// JSON gốc cho bước verify chữ ký HMAC - bind qua model rồi serialize lại có thể làm
+        /// lệch format số/thứ tự field khiến chữ ký không khớp.
         /// </summary>
         [HttpPost("api/payments/payos/webhook")]
         [HttpPost("api/payments/payos-webhook")]
         [AllowAnonymous]
-        public async Task<IActionResult> PayOsWebhook()
+        public async Task<IActionResult> HandleWebhook([FromBody] System.Text.Json.JsonElement webhookData)
         {
-            string rawBody;
-            using (var reader = new StreamReader(Request.Body))
+            // payOS gọi thử khi đăng ký URL (desc = "Confirm webhook") -> ack ngay, không cần xử lý
+            if (webhookData.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                webhookData.TryGetProperty("desc", out var descProp) &&
+                string.Equals(descProp.GetString(), "Confirm webhook", StringComparison.OrdinalIgnoreCase))
             {
-                rawBody = await reader.ReadToEndAsync();
+                return Ok(new { success = true, message = "Webhook confirmed" });
             }
 
             try
             {
-                using (var doc = System.Text.Json.JsonDocument.Parse(rawBody))
-                {
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("desc", out var descProp) && 
-                        string.Equals(descProp.GetString(), "Confirm webhook", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return Ok(new { success = true, message = "Webhook confirmed" });
-                    }
-                }
-            }
-            catch
-            {
-                // Let the next catch handle signature verification
-            }
+                var rawBody = webhookData.GetRawText();
 
-            try
-            {
                 // payOS chỉ có một webhook URL cho cả 2 loại thanh toán:
                 // thử khớp thanh toán mua hộ trước, nếu không thuộc thì thử thanh toán ký gửi.
                 var handled = await _purchasePaymentService.HandlePayOsWebhookAsync(rawBody);
@@ -103,7 +93,7 @@ namespace VCL_API.Controllers
                     handled = await _consignmentPaymentService.HandlePayOsWebhookAsync(rawBody);
                 }
                 // Luôn trả 200 để payOS ngừng gửi lại; kèm cờ đã ghi nhận hay chưa
-                return Ok(new { success = true, handled });
+                return Ok(new { success = true, handled, message = "Webhook handled successfully" });
             }
             catch (Exception ex)
             {
