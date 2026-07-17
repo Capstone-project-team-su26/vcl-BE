@@ -1127,11 +1127,11 @@ Response `200 OK`:
 
 Trả về `404 Not Found` nếu không tìm thấy ID.
 
-## 15. Quản lý cấu hình bảng giá (Pricing Rules)
+## 15. Quản lý cấu hình phụ phí (Pricing Rules)
 
-Admin quản lý cấu hình bảng giá dùng để tính báo giá ký gửi. Bảng giá này được hệ thống sử dụng khi tạo báo giá tạm tính (estimate) và báo giá chốt cho yêu cầu ký gửi.
+Admin quản lý các quy tắc tính phụ phí (surcharges) cho đơn hàng. Hệ thống sử dụng các quy tắc này khi tạo báo giá tạm tính (estimate) và báo giá chính thức cho yêu cầu ký gửi.
 
-### 15.1. Xem danh sách cấu hình bảng giá
+### 15.1. Xem danh sách cấu hình phụ phí
 
 ```http
 GET /api/pricing-rules
@@ -1142,28 +1142,34 @@ Response `200 OK`:
 [
   {
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "shippingServiceType": "Air",
-    "consignmentType": "Express",
-    "route": "Vietnam",
-    "unitType": "kg",
-    "pricePerWeight": 50000.00,
-    "pricePerVolume": 100000.00,
-    "serviceFee": 50000.00,
-    "isActive": true,
-    "createdAt": "2026-06-19T12:00:00Z"
+    "servicePricingId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "ruleName": "Phí đóng thùng gỗ kiện hàng",
+    "ruleCode": "WOOD_CRATE",
+    "ruleType": "WOODEN_BOX",
+    "conditionType": "REQUIRES_WOODEN_BOX",
+    "conditionValue": "true",
+    "calculationType": "FIXED",
+    "value": 150000.00,
+    "minAmount": 150000.00,
+    "maxAmount": 500000.00,
+    "isRequired": false,
+    "status": "ACTIVE",
+    "description": "Phí đóng thùng gỗ bảo hộ kiện hàng lớn",
+    "createdAt": "2026-06-19T12:00:00Z",
+    "updatedAt": null
   }
 ]
 ```
 
-### 15.2. Lấy chi tiết cấu hình giá theo ID
+### 15.2. Lấy chi tiết cấu hình phụ phí theo ID
 
 ```http
 GET /api/pricing-rules/{id}
 ```
 
-Response `200 OK` (chi tiết cấu hình giá). Trả về `404 Not Found` nếu không tìm thấy ID.
+Response `200 OK` (chi tiết cấu hình phụ phí). Trả về `404 Not Found` nếu không tìm thấy ID.
 
-### 15.3. Thêm cấu hình giá mới
+### 15.3. Thêm cấu hình phụ phí mới
 
 ```http
 POST /api/pricing-rules
@@ -1173,34 +1179,42 @@ Authorization: Bearer {adminToken}
 Request Body:
 ```json
 {
-  "shippingServiceType": "Air",
-  "consignmentType": "Express",
-  "route": "Vietnam",
-  "unitType": "kg",
-  "pricePerWeight": 50000.00,
-  "pricePerVolume": 100000.00,
-  "serviceFee": 50000.00,
-  "isActive": true
+  "servicePricingId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "ruleName": "Phí đóng thùng gỗ kiện hàng",
+  "ruleCode": "WOOD_CRATE",
+  "ruleType": "WOODEN_BOX",
+  "conditionType": "REQUIRES_WOODEN_BOX",
+  "conditionValue": "true",
+  "calculationType": "FIXED",
+  "value": 150000.00,
+  "minAmount": 150000.00,
+  "maxAmount": 500000.00,
+  "isRequired": false,
+  "status": "ACTIVE",
+  "description": "Phí đóng gỗ cho các kiện hàng dễ vỡ"
 }
 ```
 
-| Field | Ràng buộc |
-|---|---|
-| `shippingServiceType` | Bắt buộc, tối đa 100 ký tự |
-| `consignmentType` | Bắt buộc, tối đa 100 ký tự (thường là `Express` hoặc `Consolidation`) |
-| `route` | Không bắt buộc, tối đa 255 ký tự (Tên quốc gia hoặc tuyến đường, ví dụ: `Vietnam`) |
-| `unitType` | Không bắt buộc, tối đa 50 ký tự |
-| `pricePerWeight` | Bắt buộc, >= 0 |
-| `pricePerVolume` | Không bắt buộc, >= 0 |
-| `serviceFee` | Bắt buộc, >= 0 |
-| `isActive` | Không bắt buộc, mặc định là `true` |
+| Tên trường | Ràng buộc | Kiểu dữ liệu | Mô tả |
+|---|---|---|---|
+| `ruleName` | **Bắt buộc**, tối đa 255 ký tự | `string` | Tên quy tắc phụ phí hiển thị trên hóa đơn |
+| `ruleCode` | **Bắt buộc**, tối đa 100 ký tự | `string` | Mã định danh code của phí (ví dụ: `WOOD_CRATE`, `INSPECTION`) |
+| `ruleType` | **Bắt buộc**, tối đa 100 ký tự | `string` | Nhóm loại phụ phí |
+| `calculationType` | **Bắt buộc**, tối đa 100 ký tự | `string` | Cách thức tính phí: `FIXED`, `PERCENTAGE`, `PER_KG`, `PER_CBM`, `PER_PRODUCT` |
+| `value` | **Bắt buộc**, lớn hơn hoặc bằng 0 | `number` | Giá trị tính phí (số tiền cố định hoặc phần trăm) |
+| `servicePricingId` | *Không bắt buộc* | `string (Guid)` | ID bảng giá chặng chính liên kết (nếu có) |
+| `conditionType` | *Không bắt buộc*, tối đa 100 ký tự | `string` | Loại điều kiện áp dụng: `MIN_WEIGHT`, `MIN_VOLUME`, `MIN_DECLARED_VALUE`, `REQUIRES_INSPECTION`, `REQUIRES_WOODEN_BOX`, `ALWAYS` |
+| `conditionValue` | *Không bắt buộc*, tối đa 255 ký tự | `string` | Giá trị của điều kiện lọc (ví dụ: `5` cho `MIN_WEIGHT`) |
+| `minAmount` | *Không bắt buộc*, lớn hơn hoặc bằng 0 | `number` | Số tiền phụ phí tối thiểu có thể áp dụng |
+| `maxAmount` | *Không bắt buộc*, lớn hơn hoặc bằng 0 | `number` | Số tiền phụ phí tối đa giới hạn |
+| `isRequired` | *Không bắt buộc*, mặc định là `false` | `boolean` | `true` nếu phụ phí này bắt buộc áp dụng tự động khi thỏa mãn điều kiện |
+| `status` | *Không bắt buộc*, mặc định là `"ACTIVE"` | `string` | Trạng thái hoạt động của rule: `ACTIVE` hoặc `INACTIVE` |
+| `description` | *Không bắt buộc*, tối đa 500 ký tự | `string` | Ghi chú, mô tả chi tiết của quy tắc này |
 
 Response `201 Created` trả về thông tin cấu hình giá vừa tạo kèm ID.
-Response `400 Bad Request` khi dữ liệu lỗi hoặc bị trùng (cùng loại dịch vụ vận chuyển, loại ký gửi, và tuyến vận chuyển).
+Response `400 Bad Request` khi dữ liệu không hợp lệ.
 
-### 15.4. Cập nhật cấu hình giá
-
-Sử dụng để chỉnh sửa thông tin cấu hình giá hoặc bật/tắt trạng thái hoạt động (`isActive: false` để vô hiệu hóa cấu hình giá).
+### 15.4. Cập nhật cấu hình phụ phí
 
 ```http
 PUT /api/pricing-rules/{id}
@@ -1210,16 +1224,37 @@ Authorization: Bearer {adminToken}
 Request Body:
 ```json
 {
-  "shippingServiceType": "Air",
-  "consignmentType": "Express",
-  "route": "Vietnam",
-  "unitType": "kg",
-  "pricePerWeight": 55000.00,
-  "pricePerVolume": 120000.00,
-  "serviceFee": 50000.00,
-  "isActive": false
+  "servicePricingId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "ruleName": "Phí đóng thùng gỗ kiện hàng (Cập nhật)",
+  "ruleCode": "WOOD_CRATE",
+  "ruleType": "WOODEN_BOX",
+  "conditionType": "REQUIRES_WOODEN_BOX",
+  "conditionValue": "true",
+  "calculationType": "FIXED",
+  "value": 180000.00,
+  "minAmount": 180000.00,
+  "maxAmount": 600000.00,
+  "isRequired": false,
+  "status": "ACTIVE",
+  "description": "Phí đóng gỗ cập nhật"
 }
 ```
+
+| Tên trường | Ràng buộc | Kiểu dữ liệu | Mô tả |
+|---|---|---|---|
+| `ruleName` | **Bắt buộc**, tối đa 255 ký tự | `string` | Tên hiển thị của quy tắc |
+| `ruleCode` | **Bắt buộc**, tối đa 100 ký tự | `string` | Mã code phụ phí |
+| `ruleType` | **Bắt buộc**, tối đa 100 ký tự | `string` | Loại phụ phí |
+| `calculationType` | **Bắt buộc**, tối đa 100 ký tự | `string` | Cách tính phí |
+| `value` | **Bắt buộc**, lớn hơn hoặc bằng 0 | `number` | Giá trị |
+| `status` | **Bắt buộc**, tối đa 50 ký tự | `string` | `ACTIVE` hoặc `INACTIVE` |
+| `servicePricingId` | *Không bắt buộc* | `string (Guid)` | ID bảng giá liên kết |
+| `conditionType` | *Không bắt buộc*, tối đa 100 ký tự | `string` | Loại điều kiện |
+| `conditionValue` | *Không bắt buộc*, tối đa 255 ký tự | `string` | Giá trị điều kiện |
+| `minAmount` | *Không bắt buộc*, lớn hơn hoặc bằng 0 | `number` | Phí tối thiểu |
+| `maxAmount` | *Không bắt buộc*, lớn hơn hoặc bằng 0 | `number` | Phí tối đa |
+| `isRequired` | *Không bắt buộc* | `boolean` | Bắt buộc áp dụng tự động hay không |
+| `description` | *Không bắt buộc*, tối đa 500 ký tự | `string` | Ghi chú mô tả |
 
 Response `200 OK`:
 ```json
@@ -1228,9 +1263,9 @@ Response `200 OK`:
 }
 ```
 
-Response `400` nếu thông tin bị trùng hoặc không hợp lệ. Trả về `404` nếu không tìm thấy ID.
+Response `400` nếu thông tin không hợp lệ. Trả về `404` nếu không tìm thấy ID.
 
-### 15.5. Xóa cấu hình giá
+### 15.5. Xóa cấu hình phụ phí
 
 ```http
 DELETE /api/pricing-rules/{id}
