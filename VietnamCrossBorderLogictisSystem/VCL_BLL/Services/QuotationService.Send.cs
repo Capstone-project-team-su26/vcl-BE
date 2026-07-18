@@ -283,7 +283,8 @@ namespace VCL_BLL.Services
                 TotalVolume = totalVolumeCm3,
                 CreatedAt = now,
                 ExpiredAt = now.AddDays(QuotationValidDays),
-                ServicePricingId = matchedPricing?.Id
+                ServicePricingId = matchedPricing?.Id,
+                SalesNote = request.SalesNote ?? request.Quotation?.SalesNote
             };
 
             var quotationRepo = _unitOfWork.Repository<Quotation>();

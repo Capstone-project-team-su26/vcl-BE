@@ -838,6 +838,7 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("total_volume");
             entity.Property(e => e.WroId).HasColumnName("wro_id");
             entity.Property(e => e.ServicePricingId).HasColumnName("service_pricing_id");
+            entity.Property(e => e.SalesNote).HasColumnName("sales_note");
 
             entity.HasOne(d => d.Order).WithMany(p => p.Quotations)
                 .HasForeignKey(d => d.OrderId)

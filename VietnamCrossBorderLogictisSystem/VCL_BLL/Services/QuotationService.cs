@@ -281,7 +281,7 @@ namespace VCL_BLL.Services
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 ExpiredAt = quotation.ExpiredAt,
-                SalesNote = null,
+                SalesNote = quotation.SalesNote,
                 AdditionalFees = feeDtos,
                 Parcels = parcelDetails
             };
@@ -374,7 +374,7 @@ namespace VCL_BLL.Services
                 TotalEstimatedCost = totalEstimatedCost,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 ExpiredAt = quotation.ExpiredAt,
-                SalesNote = null,
+                SalesNote = quotation.SalesNote,
                 AdditionalFees = feeDtos,
                 Parcels = parcelDetails
             };

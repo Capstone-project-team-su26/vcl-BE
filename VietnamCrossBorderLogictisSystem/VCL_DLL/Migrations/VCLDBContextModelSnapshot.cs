@@ -2031,6 +2031,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("quote_type");
 
+                    b.Property<string>("SalesNote")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("sales_note");
+
                     b.Property<decimal?>("ServiceFee")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("service_fee");

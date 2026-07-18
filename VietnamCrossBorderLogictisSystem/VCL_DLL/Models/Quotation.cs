@@ -35,6 +35,8 @@ public partial class Quotation
 
     public Guid? ServicePricingId { get; set; }
 
+    public string SalesNote { get; set; }
+
     public virtual ServicePricing ServicePricing { get; set; }
 
     public virtual ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
