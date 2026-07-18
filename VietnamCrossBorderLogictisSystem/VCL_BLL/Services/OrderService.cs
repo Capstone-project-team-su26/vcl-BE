@@ -100,11 +100,55 @@ namespace VCL_BLL.Services
                 })
                 .ToList();
 
-            // 4. Lấy quy định đóng gói được chọn từ cấp đơn hàng
-            PricingRule? orderBoxRule = null;
-            if (request.BoxPricingRuleId.HasValue)
+            // 4. Resolve các quy định giá/dịch vụ phụ được chọn
+            var selectedOrderRules = new List<PricingRule>();
+            if (request.PricingRuleIds != null && request.PricingRuleIds.Any())
             {
-                orderBoxRule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(request.BoxPricingRuleId.Value);
+                foreach (var ruleId in request.PricingRuleIds)
+                {
+                    var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
+                    if (rule != null)
+                    {
+                        selectedOrderRules.Add(rule);
+                    }
+                }
+            }
+
+            var selectedItemRulesMap = new Dictionary<ConsignmentItemRequest, List<PricingRule>>();
+            foreach (var item in request.Items)
+            {
+                var itemRules = new List<PricingRule>();
+                if (item.PricingRuleIds != null && item.PricingRuleIds.Any())
+                {
+                    foreach (var ruleId in item.PricingRuleIds)
+                    {
+                        var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
+                        if (rule != null)
+                        {
+                            itemRules.Add(rule);
+                        }
+                    }
+                }
+                selectedItemRulesMap[item] = itemRules;
+            }
+
+            // Kiểm tra dịch vụ kiểm hàng (RequiresInspection)
+            bool requiresInspection = selectedOrderRules.Concat(selectedItemRulesMap.Values.SelectMany(x => x)).Any(r =>
+                string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase)
+            );
+
+            // Gom tất cả mã đóng gói (RuleCode)
+            var boxRuleCodes = new List<string>();
+            foreach (var rule in selectedOrderRules.Concat(selectedItemRulesMap.Values.SelectMany(x => x)))
+            {
+                if (IsBoxRule(rule))
+                {
+                    if (!string.IsNullOrWhiteSpace(rule.RuleCode) && !boxRuleCodes.Contains(rule.RuleCode))
+                    {
+                        boxRuleCodes.Add(rule.RuleCode);
+                    }
+                }
             }
 
             var noteParts = new List<string>();
@@ -112,9 +156,13 @@ namespace VCL_BLL.Services
             {
                 noteParts.Add(request.Note);
             }
-            if (orderBoxRule != null && !string.IsNullOrWhiteSpace(orderBoxRule.RuleCode))
+            if (boxRuleCodes.Any())
             {
-                noteParts.Add("Yêu cầu đóng gói: " + orderBoxRule.RuleCode);
+                noteParts.Add("Yêu cầu đóng gói: " + string.Join(", ", boxRuleCodes));
+            }
+            if (requiresInspection)
+            {
+                noteParts.Add("Yêu cầu kiểm hàng");
             }
             var note = noteParts.Any() ? string.Join(". ", noteParts) : null;
 
@@ -132,7 +180,7 @@ namespace VCL_BLL.Services
                 ReceiverName = request.ReceiverName,
                 ReceiverPhone = request.ReceiverPhone,
                 ReceiverAddress = request.ReceiverAddress,
-                RequiresInspection = request.RequiresInspection,
+                RequiresInspection = requiresInspection,
                 Status = "PENDING_REVIEW",
                 OrderType = "CONSIGNMENT",
                 Note = note,
@@ -149,10 +197,23 @@ namespace VCL_BLL.Services
                 decimal? width = item.Width;
                 decimal? height = item.Height;
 
-                if (isFirstItem && orderBoxRule != null)
+                var itemRules = selectedItemRulesMap[item];
+                var itemBoxRule = itemRules.FirstOrDefault(IsBoxRule);
+
+                if (itemBoxRule == null && isFirstItem)
                 {
-                    var code = orderBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
-                    var name = orderBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
+                    // Fallback to order-level box rule
+                    itemBoxRule = selectedOrderRules.FirstOrDefault(IsBoxRule);
+                    if (itemBoxRule != null)
+                    {
+                        isFirstItem = false;
+                    }
+                }
+
+                if (itemBoxRule != null)
+                {
+                    var code = itemBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
+                    var name = itemBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
 
                     if (code.Contains("SMALL") || name.Contains("NHỎ") || name.Contains("SMALL"))
                     {
@@ -178,7 +239,6 @@ namespace VCL_BLL.Services
                         width = width ?? 20m;
                         height = height ?? 20m;
                     }
-                    isFirstItem = false;
                 }
 
                 await orderItemRepo.AddAsync(new OrderItem
@@ -314,11 +374,55 @@ namespace VCL_BLL.Services
             // BE luôn tự sinh ConsignmentCode ngay khi tạo (dù trạng thái ban đầu là gì)
             var consignmentCode = await GenerateUniqueConsignmentCodeAsync();
 
-            // 5. Lấy quy định đóng gói được chọn từ cấp đơn hàng
-            PricingRule? orderBoxRule = null;
-            if (request.BoxPricingRuleId.HasValue)
+            // 5. Resolve các quy định giá/dịch vụ phụ được chọn
+            var selectedOrderRules = new List<PricingRule>();
+            if (request.PricingRuleIds != null && request.PricingRuleIds.Any())
             {
-                orderBoxRule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(request.BoxPricingRuleId.Value);
+                foreach (var ruleId in request.PricingRuleIds)
+                {
+                    var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
+                    if (rule != null)
+                    {
+                        selectedOrderRules.Add(rule);
+                    }
+                }
+            }
+
+            var selectedItemRulesMap = new Dictionary<ConsignmentItemRequest, List<PricingRule>>();
+            foreach (var item in request.Items)
+            {
+                var itemRules = new List<PricingRule>();
+                if (item.PricingRuleIds != null && item.PricingRuleIds.Any())
+                {
+                    foreach (var ruleId in item.PricingRuleIds)
+                    {
+                        var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
+                        if (rule != null)
+                        {
+                            itemRules.Add(rule);
+                        }
+                    }
+                }
+                selectedItemRulesMap[item] = itemRules;
+            }
+
+            // Kiểm tra dịch vụ kiểm hàng (RequiresInspection)
+            bool requiresInspection = selectedOrderRules.Concat(selectedItemRulesMap.Values.SelectMany(x => x)).Any(r =>
+                string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase)
+            );
+
+            // Gom tất cả mã đóng gói (RuleCode)
+            var boxRuleCodes = new List<string>();
+            foreach (var rule in selectedOrderRules.Concat(selectedItemRulesMap.Values.SelectMany(x => x)))
+            {
+                if (IsBoxRule(rule))
+                {
+                    if (!string.IsNullOrWhiteSpace(rule.RuleCode) && !boxRuleCodes.Contains(rule.RuleCode))
+                    {
+                        boxRuleCodes.Add(rule.RuleCode);
+                    }
+                }
             }
 
             var noteParts = new List<string>();
@@ -326,9 +430,13 @@ namespace VCL_BLL.Services
             {
                 noteParts.Add(request.Note);
             }
-            if (orderBoxRule != null && !string.IsNullOrWhiteSpace(orderBoxRule.RuleCode))
+            if (boxRuleCodes.Any())
             {
-                noteParts.Add("Yêu cầu đóng gói: " + orderBoxRule.RuleCode);
+                noteParts.Add("Yêu cầu đóng gói: " + string.Join(", ", boxRuleCodes));
+            }
+            if (requiresInspection)
+            {
+                noteParts.Add("Yêu cầu kiểm hàng");
             }
             var note = noteParts.Any() ? string.Join(". ", noteParts) : null;
 
@@ -346,7 +454,7 @@ namespace VCL_BLL.Services
                 ReceiverName = request.ReceiverName,
                 ReceiverPhone = request.ReceiverPhone,
                 ReceiverAddress = request.ReceiverAddress,
-                RequiresInspection = request.RequiresInspection,
+                RequiresInspection = requiresInspection,
                 Status = initialStatus,
                 OrderType = "CONSIGNMENT",
                 Note = note,
@@ -364,10 +472,23 @@ namespace VCL_BLL.Services
                 decimal? width = item.Width;
                 decimal? height = item.Height;
 
-                if (isFirstItem && orderBoxRule != null)
+                var itemRules = selectedItemRulesMap[item];
+                var itemBoxRule = itemRules.FirstOrDefault(IsBoxRule);
+
+                if (itemBoxRule == null && isFirstItem)
                 {
-                    var code = orderBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
-                    var name = orderBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
+                    // Fallback to order-level box rule
+                    itemBoxRule = selectedOrderRules.FirstOrDefault(IsBoxRule);
+                    if (itemBoxRule != null)
+                    {
+                        isFirstItem = false;
+                    }
+                }
+
+                if (itemBoxRule != null)
+                {
+                    var code = itemBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
+                    var name = itemBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
 
                     if (code.Contains("SMALL") || name.Contains("NHỎ") || name.Contains("SMALL"))
                     {
@@ -393,7 +514,6 @@ namespace VCL_BLL.Services
                         width = width ?? 20m;
                         height = height ?? 20m;
                     }
-                    isFirstItem = false;
                 }
 
                 await orderItemRepo.AddAsync(new OrderItem
@@ -1103,6 +1223,21 @@ namespace VCL_BLL.Services
                 return "JP-VN";
             }
             return trimmed;
+        }
+
+        private bool IsBoxRule(PricingRule rule)
+        {
+            if (rule == null) return false;
+            var code = rule.RuleCode?.ToUpperInvariant() ?? string.Empty;
+            var name = rule.RuleName?.ToUpperInvariant() ?? string.Empty;
+            var ruleType = rule.RuleType?.ToUpperInvariant() ?? string.Empty;
+            var condType = rule.ConditionType?.ToUpperInvariant() ?? string.Empty;
+
+            return ruleType.Contains("BOX") || ruleType.Contains("CRATE") ||
+                   condType.Contains("BOX") ||
+                   code.Contains("SMALL") || code.Contains("MEDIUM") || code.Contains("LARGE") || code.Contains("BUBBLE") ||
+                   name.Contains("SMALL") || name.Contains("MEDIUM") || name.Contains("LARGE") || name.Contains("BUBBLE") ||
+                   name.Contains("NHỎ") || name.Contains("VỪA") || name.Contains("LỚN") || name.Contains("XỐP HƠI") || name.Contains("BÓP NỔ") || name.Contains("MÀNG XỐP") || name.Contains("THÙNG GỖ") || name.Contains("ĐÔNG GỖ") || name.Contains("ĐÓNG GỖ");
         }
     }
 }

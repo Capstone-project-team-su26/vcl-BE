@@ -1397,7 +1397,7 @@ Authorization: Bearer {salesToken}
   "receiverName": "Nguyen Van B",
   "receiverPhone": "0987654321",
   "receiverAddress": "123 Nguyen Trai, Q5, HCMC",
-  "requiresInspection": true,
+  "pricingRuleIds": ["bf39c7ce-9fd7-4142-a260-016c27fd489f"],
   "note": "Khách ký gửi tại quầy",
   "items": [
     {
@@ -1410,7 +1410,8 @@ Authorization: Bearer {salesToken}
       "length": 10,
       "declaredValue": 1000000,
       "referenceUrl": "http://taobao.com/item/123",
-      "domesticTrackingCode": "SF123456789"
+      "domesticTrackingCode": "SF123456789",
+      "pricingRuleIds": []
     }
   ]
 }
@@ -1424,9 +1425,11 @@ Authorization: Bearer {salesToken}
 | `route` | Bắt buộc. | Tuyến đường vận chuyển (ví dụ: `TQ-VN`) |
 | `shippingOption` | Bắt buộc. | Phương thức vận chuyển (khớp với ServicePricing, ví dụ: `Air - Express`, `Sea - Consolidation`) |
 | `items` | Bắt buộc. Tối thiểu 1 phần tử. | Danh sách hàng hóa ký gửi |
+| `pricingRuleIds` | Không bắt buộc. | Danh sách ID quy tắc giá / dịch vụ phụ chung cho đơn hàng (ví dụ: kiểm hàng, đóng gỗ...) |
 | `items[].productName` | Bắt buộc. | Tên mặt hàng ký gửi |
 | `items[].productType` | Bắt buộc. | Loại mặt hàng (ví dụ: `Quần áo`, `Điện tử`) |
 | `items[].quantity` | Bắt buộc. Phải > 0. | Số lượng mặt hàng |
+| `items[].pricingRuleIds` | Không bắt buộc. | Danh sách ID quy tắc giá / dịch vụ phụ riêng cho mặt hàng này (ví dụ: đóng gỗ, xốp hơi...) |
 
 ### 19.1 Response thành công
 
@@ -1889,6 +1892,7 @@ export interface ConsignmentItemRequest {
   declaredValue?: number;
   referenceUrl?: string;
   domesticTrackingCode?: string;
+  pricingRuleIds?: string[];
 }
 
 export interface CreateConsignmentByStaffRequest {
@@ -1900,7 +1904,7 @@ export interface CreateConsignmentByStaffRequest {
   receiverName?: string;
   receiverPhone?: string;
   receiverAddress?: string;
-  requiresInspection: boolean;
+  pricingRuleIds?: string[];
   note?: string;
   items: ConsignmentItemRequest[];
 }
