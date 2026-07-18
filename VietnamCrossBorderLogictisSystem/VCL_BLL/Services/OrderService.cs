@@ -889,8 +889,23 @@ namespace VCL_BLL.Services
         /// </summary>
         public async Task<List<string>> GetConsignmentRoutesAsync()
         {
-            // ponytail: always return "Trung quốc --> Việt Nam" since that's the only supported route.
-            return await Task.FromResult(new List<string> { "Trung quốc --> Việt Nam" });
+            var pricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync())
+                .Where(p => !p.IsDeleted)
+                .ToList();
+
+            var routes = pricings
+                .Where(p => !string.IsNullOrWhiteSpace(p.OriginCountry) && !string.IsNullOrWhiteSpace(p.DestinationCountry))
+                .Select(p => MapRouteToDisplayName($"{p.OriginCountry}-{p.DestinationCountry}"))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(r => r)
+                .ToList();
+
+            if (!routes.Any())
+            {
+                routes.Add("Trung quốc --> Việt Nam");
+            }
+
+            return routes;
         }
 
         /// <summary>
@@ -922,9 +937,26 @@ namespace VCL_BLL.Services
         {
             if (string.IsNullOrWhiteSpace(route)) return string.Empty;
             var trimmed = route.Trim();
-            if (trimmed.Equals("CN-VN", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("CN", StringComparison.OrdinalIgnoreCase))
+            if (trimmed.Equals("CN-VN", StringComparison.OrdinalIgnoreCase) || 
+                trimmed.Equals("CN", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("TQ-VN", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("TQ", StringComparison.OrdinalIgnoreCase))
             {
                 return "Trung quốc --> Việt Nam";
+            }
+            if (trimmed.Equals("KR-VN", StringComparison.OrdinalIgnoreCase) || 
+                trimmed.Equals("KR", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("HQ-VN", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("HQ", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Hàn Quốc --> Việt Nam";
+            }
+            if (trimmed.Equals("JP-VN", StringComparison.OrdinalIgnoreCase) || 
+                trimmed.Equals("JP", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("NB-VN", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("NB", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Nhật Bản --> Việt Nam";
             }
             return trimmed;
         }
@@ -933,13 +965,32 @@ namespace VCL_BLL.Services
         {
             if (string.IsNullOrWhiteSpace(route)) return string.Empty;
             var trimmed = route.Trim();
-            if (trimmed.Contains("Trung quốc", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Việt Nam", StringComparison.OrdinalIgnoreCase))
+            if (trimmed.Equals("TQ-VN", StringComparison.OrdinalIgnoreCase) || 
+                trimmed.Equals("TQ", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("CN", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("CN-VN", StringComparison.OrdinalIgnoreCase) ||
+                (trimmed.Contains("Trung quốc", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Việt Nam", StringComparison.OrdinalIgnoreCase)) ||
+                (trimmed.Contains("Trung quoc", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Viet nam", StringComparison.OrdinalIgnoreCase)))
             {
                 return "CN-VN";
             }
-            if (trimmed.Contains("Trung quoc", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Viet nam", StringComparison.OrdinalIgnoreCase))
+            if (trimmed.Equals("HQ-VN", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("HQ", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("KR", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("KR-VN", StringComparison.OrdinalIgnoreCase) ||
+                (trimmed.Contains("Hàn quốc", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Việt Nam", StringComparison.OrdinalIgnoreCase)) ||
+                (trimmed.Contains("Han quoc", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Viet nam", StringComparison.OrdinalIgnoreCase)))
             {
-                return "CN-VN";
+                return "KR-VN";
+            }
+            if (trimmed.Equals("NB-VN", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("NB", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("JP", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("JP-VN", StringComparison.OrdinalIgnoreCase) ||
+                (trimmed.Contains("Nhật bản", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Việt Nam", StringComparison.OrdinalIgnoreCase)) ||
+                (trimmed.Contains("Nhat ban", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("Viet nam", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "JP-VN";
             }
             return trimmed;
         }

@@ -252,6 +252,12 @@ namespace VCL_BLL.Services
                         {
                             throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
                         }
+
+                        if (isConsignment && (string.Equals(rule.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                              string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            continue;
+                        }
                     }
 
                     quotationFees.Add(new QuotationFee
