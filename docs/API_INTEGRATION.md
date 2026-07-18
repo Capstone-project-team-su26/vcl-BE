@@ -1410,8 +1410,7 @@ Authorization: Bearer {salesToken}
       "length": 10,
       "declaredValue": 1000000,
       "referenceUrl": "http://taobao.com/item/123",
-      "domesticTrackingCode": "SF123456789",
-      "pricingRuleIds": []
+      "domesticTrackingCode": "SF123456789"
     }
   ]
 }
@@ -1429,7 +1428,6 @@ Authorization: Bearer {salesToken}
 | `items[].productName` | Bắt buộc. | Tên mặt hàng ký gửi |
 | `items[].productType` | Bắt buộc. | Loại mặt hàng (ví dụ: `Quần áo`, `Điện tử`) |
 | `items[].quantity` | Bắt buộc. Phải > 0. | Số lượng mặt hàng |
-| `items[].pricingRuleIds` | Không bắt buộc. | Danh sách ID quy tắc giá / dịch vụ phụ riêng cho mặt hàng này (ví dụ: đóng gỗ, xốp hơi...) |
 
 ### 19.1 Response thành công
 
@@ -1657,6 +1655,7 @@ export interface ConsignmentResponseDto {
   receiverAddress: string | null;
   requiresInspection: boolean;
   createdAt: string | null;
+  pricingRuleIds: string[];
 }
 
 export interface ConsignmentCustomerInfo {
@@ -1708,6 +1707,7 @@ export interface ConsignmentDetailResponse {
   receiverAddress: string | null;
   requiresInspection: boolean;
   createdAt: string | null;
+  pricingRuleIds: string[];
   customer: ConsignmentCustomerInfo;
   items: ConsignmentItemDetail[];
   quotation: ConsignmentQuotationSummary | null;
@@ -1892,7 +1892,6 @@ export interface ConsignmentItemRequest {
   declaredValue?: number;
   referenceUrl?: string;
   domesticTrackingCode?: string;
-  pricingRuleIds?: string[];
 }
 
 export interface CreateConsignmentByStaffRequest {
@@ -1925,6 +1924,7 @@ export interface CreateConsignmentResponse {
   route: string;
   requiresInspection: boolean;
   itemCount: number;
+  pricingRuleIds: string[];
   quotation: EstimateQuotationResponse;
   warnings: RestrictedItemWarning[];
 }
@@ -2846,7 +2846,22 @@ GET /api/service-pricings
     "unitType": "KG",
     "price": 45000.0,
     "currency": "VND",
-    "effectiveDate": "2026-06-01T00:00:00Z"
+    "effectiveDate": "2026-06-01T00:00:00Z",
+    "boxPricingRules": [
+      {
+        "id": "a1b2c3d4-...",
+        "servicePricingId": "e3b0c442-...",
+        "ruleName": "Phí đóng thùng gỗ nhỏ",
+        "ruleCode": "SMALL_WOODEN_BOX",
+        "ruleType": "WOODEN_BOX",
+        "conditionType": "REQUIRES_WOODEN_BOX",
+        "conditionValue": "SMALL",
+        "calculationType": "FIXED",
+        "value": 150000.0,
+        "isRequired": false,
+        "status": "ACTIVE"
+      }
+    ]
   }
 ]
 ```
@@ -2869,7 +2884,22 @@ GET /api/service-pricings/{id}
   "unitType": "KG",
   "price": 45000.0,
   "currency": "VND",
-  "effectiveDate": "2026-06-01T00:00:00Z"
+  "effectiveDate": "2026-06-01T00:00:00Z",
+  "boxPricingRules": [
+    {
+      "id": "a1b2c3d4-...",
+      "servicePricingId": "e3b0c442-...",
+      "ruleName": "Phí đóng thùng gỗ nhỏ",
+      "ruleCode": "SMALL_WOODEN_BOX",
+      "ruleType": "WOODEN_BOX",
+      "conditionType": "REQUIRES_WOODEN_BOX",
+      "conditionValue": "SMALL",
+      "calculationType": "FIXED",
+      "value": 150000.0,
+      "isRequired": false,
+      "status": "ACTIVE"
+    }
+  ]
 }
 ```
 
@@ -3133,6 +3163,7 @@ Authorization: Bearer {adminToken}
       "name": "Kho Hà Nội",
       "code": "WH-HAN",
       "address": "Số 1 Đại Cồ Việt, Hà Nội",
+      "region": "VN",
       "warehouseType": "DOMESTIC",
       "isActive": true
     }
@@ -3160,6 +3191,7 @@ Content-Type: application/json
   "name": "Kho Hải Phòng",
   "code": "WH-HPH",
   "address": "Cảng Hải Phòng",
+  "region": "VN",
   "warehouseType": "DOMESTIC",
   "isActive": true
 }
@@ -3178,6 +3210,7 @@ Content-Type: application/json
   "name": "Kho Hải Phòng Cập Nhật",
   "code": "WH-HPH",
   "address": "Cảng Hải Phòng mới",
+  "region": "VN",
   "warehouseType": "DOMESTIC",
   "isActive": false
 }

@@ -14,6 +14,9 @@ namespace VCL_BLL.DTOs
         public decimal? Price { get; set; }
         public string Currency { get; set; } = null!;
         public DateTime? EffectiveDate { get; set; }
+
+        /// <summary>Danh sách các quy tắc bảng giá/phụ phí liên quan đến đóng thùng/đóng gói.</summary>
+        public List<PricingRuleDto> BoxPricingRules { get; set; } = new();
     }
 
     public class CreateServicePricingRequest

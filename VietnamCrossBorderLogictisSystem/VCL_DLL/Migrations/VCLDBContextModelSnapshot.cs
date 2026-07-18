@@ -2784,6 +2784,11 @@ namespace VCL_DLL.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<string>("Region")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("region");
+
                     b.Property<string>("WarehouseCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")

@@ -2,6 +2,7 @@
 #nullable disable
 using System;
 using System.Collections.Generic;
+using VCL_DLL.Enums;
 
 namespace VCL_DLL.Models;
 
@@ -18,6 +19,8 @@ public partial class Warehouse
     public string City { get; set; }
 
     public string Address { get; set; }
+
+    public RegionCode? Region { get; set; }
 
     public string WarehouseType { get; set; }
 

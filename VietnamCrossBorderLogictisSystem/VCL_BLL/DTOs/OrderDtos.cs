@@ -33,6 +33,9 @@ namespace VCL_BLL.DTOs
         public DateTime? CreatedAt { get; set; }
         public Guid? WarehouseId { get; set; }
 
+        /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
+        public List<Guid> PricingRuleIds { get; set; } = new();
+
         /// <summary>Tên các mặt hàng trong đơn (để FE hiển thị ở danh sách).</summary>
         public List<string> ItemNames { get; set; } = new();
     }

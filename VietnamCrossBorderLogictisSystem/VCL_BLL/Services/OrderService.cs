@@ -117,30 +117,18 @@ namespace VCL_BLL.Services
             var selectedItemRulesMap = new Dictionary<ConsignmentItemRequest, List<PricingRule>>();
             foreach (var item in request.Items)
             {
-                var itemRules = new List<PricingRule>();
-                if (item.PricingRuleIds != null && item.PricingRuleIds.Any())
-                {
-                    foreach (var ruleId in item.PricingRuleIds)
-                    {
-                        var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
-                        if (rule != null)
-                        {
-                            itemRules.Add(rule);
-                        }
-                    }
-                }
-                selectedItemRulesMap[item] = itemRules;
+                selectedItemRulesMap[item] = new List<PricingRule>();
             }
 
             // Kiểm tra dịch vụ kiểm hàng (RequiresInspection)
-            bool requiresInspection = selectedOrderRules.Concat(selectedItemRulesMap.Values.SelectMany(x => x)).Any(r =>
+            bool requiresInspection = selectedOrderRules.Any(r =>
                 string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase)
             );
 
             // Gom tất cả mã đóng gói (RuleCode)
             var boxRuleCodes = new List<string>();
-            foreach (var rule in selectedOrderRules.Concat(selectedItemRulesMap.Values.SelectMany(x => x)))
+            foreach (var rule in selectedOrderRules)
             {
                 if (IsBoxRule(rule))
                 {
@@ -150,6 +138,16 @@ namespace VCL_BLL.Services
                     }
                 }
             }
+
+            // Gom tất cả mã dịch vụ phụ khác (non-box, non-inspection)
+            var otherRuleCodes = selectedOrderRules
+                .Where(r => !IsBoxRule(r) && 
+                            !string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) && 
+                            !string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.RuleCode)
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Distinct()
+                .ToList();
 
             var noteParts = new List<string>();
             if (!string.IsNullOrWhiteSpace(request.Note))
@@ -163,6 +161,10 @@ namespace VCL_BLL.Services
             if (requiresInspection)
             {
                 noteParts.Add("Yêu cầu kiểm hàng");
+            }
+            if (otherRuleCodes.Any())
+            {
+                noteParts.Add("Dịch vụ khác: " + string.Join(", ", otherRuleCodes));
             }
             var note = noteParts.Any() ? string.Join(". ", noteParts) : null;
 
@@ -197,21 +199,11 @@ namespace VCL_BLL.Services
                 decimal? width = item.Width;
                 decimal? height = item.Height;
 
-                var itemRules = selectedItemRulesMap[item];
-                var itemBoxRule = itemRules.FirstOrDefault(IsBoxRule);
+                var itemBoxRule = selectedOrderRules.FirstOrDefault(IsBoxRule);
 
-                if (itemBoxRule == null && isFirstItem)
+                if (itemBoxRule != null && isFirstItem)
                 {
-                    // Fallback to order-level box rule
-                    itemBoxRule = selectedOrderRules.FirstOrDefault(IsBoxRule);
-                    if (itemBoxRule != null)
-                    {
-                        isFirstItem = false;
-                    }
-                }
-
-                if (itemBoxRule != null)
-                {
+                    isFirstItem = false;
                     var code = itemBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
                     var name = itemBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
 
@@ -277,6 +269,7 @@ namespace VCL_BLL.Services
                 Route = MapRouteToDisplayName(order.Route),
                 RequiresInspection = order.RequiresInspection,
                 ItemCount = request.Items.Sum(i => i.Quantity),
+                PricingRuleIds = selectedOrderRules.Select(r => r.Id).ToList(),
                 Quotation = quotation,
                 Warnings = warnings
             };
@@ -391,30 +384,18 @@ namespace VCL_BLL.Services
             var selectedItemRulesMap = new Dictionary<ConsignmentItemRequest, List<PricingRule>>();
             foreach (var item in request.Items)
             {
-                var itemRules = new List<PricingRule>();
-                if (item.PricingRuleIds != null && item.PricingRuleIds.Any())
-                {
-                    foreach (var ruleId in item.PricingRuleIds)
-                    {
-                        var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
-                        if (rule != null)
-                        {
-                            itemRules.Add(rule);
-                        }
-                    }
-                }
-                selectedItemRulesMap[item] = itemRules;
+                selectedItemRulesMap[item] = new List<PricingRule>();
             }
 
             // Kiểm tra dịch vụ kiểm hàng (RequiresInspection)
-            bool requiresInspection = selectedOrderRules.Concat(selectedItemRulesMap.Values.SelectMany(x => x)).Any(r =>
+            bool requiresInspection = selectedOrderRules.Any(r =>
                 string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase)
             );
 
             // Gom tất cả mã đóng gói (RuleCode)
             var boxRuleCodes = new List<string>();
-            foreach (var rule in selectedOrderRules.Concat(selectedItemRulesMap.Values.SelectMany(x => x)))
+            foreach (var rule in selectedOrderRules)
             {
                 if (IsBoxRule(rule))
                 {
@@ -424,6 +405,16 @@ namespace VCL_BLL.Services
                     }
                 }
             }
+
+            // Gom tất cả mã dịch vụ phụ khác (non-box, non-inspection)
+            var otherRuleCodes = selectedOrderRules
+                .Where(r => !IsBoxRule(r) && 
+                            !string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) && 
+                            !string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.RuleCode)
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Distinct()
+                .ToList();
 
             var noteParts = new List<string>();
             if (!string.IsNullOrWhiteSpace(request.Note))
@@ -437,6 +428,10 @@ namespace VCL_BLL.Services
             if (requiresInspection)
             {
                 noteParts.Add("Yêu cầu kiểm hàng");
+            }
+            if (otherRuleCodes.Any())
+            {
+                noteParts.Add("Dịch vụ khác: " + string.Join(", ", otherRuleCodes));
             }
             var note = noteParts.Any() ? string.Join(". ", noteParts) : null;
 
@@ -472,21 +467,11 @@ namespace VCL_BLL.Services
                 decimal? width = item.Width;
                 decimal? height = item.Height;
 
-                var itemRules = selectedItemRulesMap[item];
-                var itemBoxRule = itemRules.FirstOrDefault(IsBoxRule);
+                var itemBoxRule = selectedOrderRules.FirstOrDefault(IsBoxRule);
 
-                if (itemBoxRule == null && isFirstItem)
+                if (itemBoxRule != null && isFirstItem)
                 {
-                    // Fallback to order-level box rule
-                    itemBoxRule = selectedOrderRules.FirstOrDefault(IsBoxRule);
-                    if (itemBoxRule != null)
-                    {
-                        isFirstItem = false;
-                    }
-                }
-
-                if (itemBoxRule != null)
-                {
+                    isFirstItem = false;
                     var code = itemBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
                     var name = itemBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
 
@@ -552,6 +537,7 @@ namespace VCL_BLL.Services
                 Route = MapRouteToDisplayName(order.Route),
                 RequiresInspection = order.RequiresInspection,
                 ItemCount = request.Items.Sum(i => i.Quantity),
+                PricingRuleIds = selectedOrderRules.Select(r => r.Id).ToList(),
                 Quotation = quotation,
                 Warnings = warnings
             };
@@ -699,6 +685,7 @@ namespace VCL_BLL.Services
                 .OrderByDescending(q => q.CreatedAt)
                 .FirstOrDefault();
 
+            var pricingRuleIds = new List<Guid>();
             ConsignmentQuotationSummary? quotationSummary = null;
             if (latestQuotation != null)
             {
@@ -717,6 +704,15 @@ namespace VCL_BLL.Services
                     .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase)
                                 && (f.Amount > 0 || (f.PricingRuleId.HasValue && ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
                     .Sum(f => f.Amount);
+
+                pricingRuleIds = fees
+                    .Where(f => f.PricingRuleId.HasValue && 
+                                (f.Amount > 0 || 
+                                 string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                 (ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
+                    .Select(f => f.PricingRuleId!.Value)
+                    .Distinct()
+                    .ToList();
 
                 quotationSummary = new ConsignmentQuotationSummary
                 {
@@ -749,6 +745,7 @@ namespace VCL_BLL.Services
                 ReceiverAddress = order.ReceiverAddress,
                 RequiresInspection = order.RequiresInspection,
                 CreatedAt = order.CreatedAt,
+                PricingRuleIds = pricingRuleIds,
                 Customer = new ConsignmentCustomerInfo
                 {
                     CustomerId = customer?.Id,
@@ -985,10 +982,34 @@ namespace VCL_BLL.Services
                 .Take(pageSize)
                 .ToList();
 
+            var allQuotations = await _unitOfWork.Repository<Quotation>().GetAllAsync();
+            var allFees = await _unitOfWork.Repository<QuotationFee>().GetAllAsync();
+            var allRules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
+            var ruleMap = allRules.ToDictionary(r => r.Id, r => r);
+
             // Map to DTO
             var resultItems = paginatedOrders.Select(o => 
             {
                 var customerInfo = allCustomers.FirstOrDefault(c => c.Id == o.CustomerId);
+                var latestQuotation = allQuotations
+                    .Where(q => q.OrderId == o.Id)
+                    .OrderByDescending(q => q.CreatedAt)
+                    .FirstOrDefault();
+
+                var pricingRuleIds = new List<Guid>();
+                if (latestQuotation != null)
+                {
+                    var fees = allFees.Where(f => f.QuotationId == latestQuotation.Id).ToList();
+                    pricingRuleIds = fees
+                        .Where(f => f.PricingRuleId.HasValue && 
+                                    (f.Amount > 0 || 
+                                     string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                     (ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
+                        .Select(f => f.PricingRuleId!.Value)
+                        .Distinct()
+                        .ToList();
+                }
+
                 return new ConsignmentResponseDto
                 {
                     OrderId = o.Id,
@@ -1004,6 +1025,7 @@ namespace VCL_BLL.Services
                     ReceiverAddress = o.ReceiverAddress,
                     RequiresInspection = o.RequiresInspection,
                     CreatedAt = o.CreatedAt,
+                    PricingRuleIds = pricingRuleIds,
                     ItemNames = allItems
                         .Where(i => i.OrderId == o.Id && !string.IsNullOrWhiteSpace(i.ProductName))
                         .Select(i => i.ProductName!)

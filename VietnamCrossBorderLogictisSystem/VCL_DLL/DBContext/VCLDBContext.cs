@@ -1384,6 +1384,10 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.WarehouseCode)
                 .HasMaxLength(100)
                 .HasColumnName("warehouse_code");
+            entity.Property(e => e.Region)
+                .HasMaxLength(50)
+                .HasColumnName("region")
+                .HasConversion<string>();
             entity.Property(e => e.WarehouseType)
                 .HasMaxLength(100)
                 .HasColumnName("warehouse_type");

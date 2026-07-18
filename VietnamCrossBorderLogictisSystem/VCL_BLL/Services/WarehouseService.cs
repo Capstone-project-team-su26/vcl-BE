@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_DLL.Enums;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
 
@@ -46,6 +47,7 @@ namespace VCL_BLL.Services
                 Name = w.WarehouseName ?? string.Empty,
                 Code = w.WarehouseCode ?? string.Empty,
                 Address = w.Address ?? string.Empty,
+                Region = w.Region.HasValue ? w.Region.Value.ToString() : null,
                 WarehouseType = w.WarehouseType ?? "DOMESTIC",
                 IsActive = w.IsActive
             }).ToList();
@@ -64,12 +66,26 @@ namespace VCL_BLL.Services
             if (allWarehouses.Any(w => string.Equals(w.WarehouseCode, request.Code, StringComparison.OrdinalIgnoreCase)))
                 throw new ArgumentException("Mã kho đã tồn tại trên hệ thống.");
 
+            RegionCode? parsedRegion = null;
+            if (!string.IsNullOrWhiteSpace(request.Region))
+            {
+                if (Enum.TryParse<RegionCode>(request.Region, true, out var result))
+                {
+                    parsedRegion = result;
+                }
+                else
+                {
+                    throw new ArgumentException($"Mã vùng/quốc gia '{request.Region}' không hợp lệ.");
+                }
+            }
+
             var newWarehouse = new Warehouse
             {
                 Id = Guid.NewGuid(),
                 WarehouseName = request.Name,
                 WarehouseCode = request.Code,
                 Address = request.Address,
+                Region = parsedRegion,
                 WarehouseType = request.WarehouseType ?? "DOMESTIC",
                 IsActive = request.IsActive,
                 CreatedAt = DateTime.UtcNow
@@ -84,6 +100,7 @@ namespace VCL_BLL.Services
                 Name = newWarehouse.WarehouseName,
                 Code = newWarehouse.WarehouseCode,
                 Address = newWarehouse.Address,
+                Region = newWarehouse.Region?.ToString(),
                 WarehouseType = newWarehouse.WarehouseType,
                 IsActive = newWarehouse.IsActive
             };
@@ -147,9 +164,23 @@ namespace VCL_BLL.Services
                 }
             }
 
+            RegionCode? parsedRegion = null;
+            if (!string.IsNullOrWhiteSpace(request.Region))
+            {
+                if (Enum.TryParse<RegionCode>(request.Region, true, out var result))
+                {
+                    parsedRegion = result;
+                }
+                else
+                {
+                    throw new ArgumentException($"Mã vùng/quốc gia '{request.Region}' không hợp lệ.");
+                }
+            }
+
             warehouse.WarehouseName = request.Name;
             warehouse.WarehouseCode = request.Code;
             warehouse.Address = request.Address;
+            warehouse.Region = parsedRegion;
             warehouse.WarehouseType = request.WarehouseType ?? "DOMESTIC";
             warehouse.IsActive = request.IsActive;
 
@@ -162,6 +193,7 @@ namespace VCL_BLL.Services
                 Name = warehouse.WarehouseName,
                 Code = warehouse.WarehouseCode,
                 Address = warehouse.Address,
+                Region = warehouse.Region?.ToString(),
                 WarehouseType = warehouse.WarehouseType,
                 IsActive = warehouse.IsActive
             };

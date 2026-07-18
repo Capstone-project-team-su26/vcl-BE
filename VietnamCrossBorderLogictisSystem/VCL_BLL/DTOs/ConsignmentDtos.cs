@@ -34,6 +34,9 @@ namespace VCL_BLL.DTOs
         public bool RequiresInspection { get; set; }
         public DateTime? CreatedAt { get; set; }
 
+        /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
+        public List<Guid> PricingRuleIds { get; set; } = new();
+
         public ConsignmentCustomerInfo Customer { get; set; } = new();
         public List<ConsignmentItemDetail> Items { get; set; } = new();
 
@@ -143,9 +146,6 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Mã tracking nội địa (nếu có) — chỉ để kho đối soát, không tính phí.</summary>
         public string? DomesticTrackingCode { get; set; }
-
-        /// <summary>Danh sách ID cấu hình bảng giá/dịch vụ phụ riêng cho mặt hàng này (ví dụ: đóng gỗ, xốp hơi...).</summary>
-        public List<Guid> PricingRuleIds { get; set; } = new();
     }
 
 
@@ -224,6 +224,9 @@ namespace VCL_BLL.DTOs
         public string Route { get; set; } = string.Empty;
         public bool RequiresInspection { get; set; }
         public int ItemCount { get; set; }
+
+        /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
+        public List<Guid> PricingRuleIds { get; set; } = new();
 
         /// <summary>Báo giá tạm tính sinh tự động sau khi tạo.</summary>
         public EstimateQuotationResponse Quotation { get; set; } = new();

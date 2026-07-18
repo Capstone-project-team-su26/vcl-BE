@@ -8,6 +8,7 @@ namespace VCL_BLL.DTOs
         public string Name { get; set; } = string.Empty;
         public string Code { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
+        public string? Region { get; set; }
         public string WarehouseType { get; set; } = string.Empty;
         public bool IsActive { get; set; }
     }
@@ -17,6 +18,7 @@ namespace VCL_BLL.DTOs
         public string Name { get; set; } = string.Empty;
         public string Code { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
+        public string? Region { get; set; }
         public string WarehouseType { get; set; } = "DOMESTIC";
         public bool IsActive { get; set; } = true;
     }

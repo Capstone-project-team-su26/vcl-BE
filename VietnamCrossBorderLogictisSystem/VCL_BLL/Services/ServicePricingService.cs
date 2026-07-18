@@ -22,19 +22,51 @@ namespace VCL_BLL.Services
         public async Task<IEnumerable<ServicePricingDto>> GetAllAsync()
         {
             var pricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var pricings = (await pricingRepo.GetAllAsync()).Where(p => !p.IsDeleted);
+            var pricings = (await pricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
-            return pricings.Select(p => new ServicePricingDto
+            var rulesRepo = _unitOfWork.Repository<PricingRule>();
+            var allRules = await rulesRepo.GetAllAsync();
+            var activeRules = allRules.Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            return pricings.Select(p => 
             {
-                Id = p.Id,
-                CarrierId = p.CarrierId,
-                ServiceType = p.ServiceType,
-                OriginCountry = p.OriginCountry,
-                DestinationCountry = p.DestinationCountry,
-                UnitType = p.UnitType,
-                Price = p.Price,
-                Currency = p.Currency,
-                EffectiveDate = p.EffectiveDate
+                var associatedRules = activeRules
+                    .Where(r => r.ServicePricingId == p.Id)
+                    .Where(IsBoxRule)
+                    .Select(r => new PricingRuleDto
+                    {
+                        Id = r.Id,
+                        ServicePricingId = r.ServicePricingId,
+                        RuleName = r.RuleName,
+                        RuleCode = r.RuleCode,
+                        RuleType = r.RuleType,
+                        ConditionType = r.ConditionType,
+                        ConditionValue = r.ConditionValue,
+                        CalculationType = r.CalculationType,
+                        Value = r.Value,
+                        MinAmount = r.MinAmount,
+                        MaxAmount = r.MaxAmount,
+                        IsRequired = r.IsRequired,
+                        Status = r.Status,
+                        Description = r.Description,
+                        CreatedAt = r.CreatedAt,
+                        UpdatedAt = r.UpdatedAt
+                    })
+                    .ToList();
+
+                return new ServicePricingDto
+                {
+                    Id = p.Id,
+                    CarrierId = p.CarrierId,
+                    ServiceType = p.ServiceType,
+                    OriginCountry = p.OriginCountry,
+                    DestinationCountry = p.DestinationCountry,
+                    UnitType = p.UnitType,
+                    Price = p.Price,
+                    Currency = p.Currency,
+                    EffectiveDate = p.EffectiveDate,
+                    BoxPricingRules = associatedRules
+                };
             });
         }
 
@@ -48,6 +80,32 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy cấu hình bảng giá dịch vụ với ID: {id}");
             }
 
+            var rulesRepo = _unitOfWork.Repository<PricingRule>();
+            var allRules = await rulesRepo.GetAllAsync();
+            var associatedRules = allRules
+                .Where(r => r.ServicePricingId == id && string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .Where(IsBoxRule)
+                .Select(r => new PricingRuleDto
+                {
+                    Id = r.Id,
+                    ServicePricingId = r.ServicePricingId,
+                    RuleName = r.RuleName,
+                    RuleCode = r.RuleCode,
+                    RuleType = r.RuleType,
+                    ConditionType = r.ConditionType,
+                    ConditionValue = r.ConditionValue,
+                    CalculationType = r.CalculationType,
+                    Value = r.Value,
+                    MinAmount = r.MinAmount,
+                    MaxAmount = r.MaxAmount,
+                    IsRequired = r.IsRequired,
+                    Status = r.Status,
+                    Description = r.Description,
+                    CreatedAt = r.CreatedAt,
+                    UpdatedAt = r.UpdatedAt
+                })
+                .ToList();
+
             return new ServicePricingDto
             {
                 Id = p.Id,
@@ -58,7 +116,8 @@ namespace VCL_BLL.Services
                 UnitType = p.UnitType,
                 Price = p.Price,
                 Currency = p.Currency,
-                EffectiveDate = p.EffectiveDate
+                EffectiveDate = p.EffectiveDate,
+                BoxPricingRules = associatedRules
             };
         }
 
@@ -103,7 +162,8 @@ namespace VCL_BLL.Services
                 UnitType = newPricing.UnitType,
                 Price = newPricing.Price,
                 Currency = newPricing.Currency,
-                EffectiveDate = newPricing.EffectiveDate
+                EffectiveDate = newPricing.EffectiveDate,
+                BoxPricingRules = new List<PricingRuleDto>()
             };
         }
 
@@ -153,6 +213,21 @@ namespace VCL_BLL.Services
             p.IsDeleted = true;
             pricingRepo.Update(p);
             await _unitOfWork.SaveChangesAsync();
+        }
+
+        private bool IsBoxRule(PricingRule rule)
+        {
+            if (rule == null) return false;
+            var code = rule.RuleCode?.ToUpperInvariant() ?? string.Empty;
+            var name = rule.RuleName?.ToUpperInvariant() ?? string.Empty;
+            var ruleType = rule.RuleType?.ToUpperInvariant() ?? string.Empty;
+            var condType = rule.ConditionType?.ToUpperInvariant() ?? string.Empty;
+
+            return ruleType.Contains("BOX") || ruleType.Contains("CRATE") ||
+                   condType.Contains("BOX") ||
+                   code.Contains("SMALL") || code.Contains("MEDIUM") || code.Contains("LARGE") || code.Contains("BUBBLE") ||
+                   name.Contains("SMALL") || name.Contains("MEDIUM") || name.Contains("LARGE") || name.Contains("BUBBLE") ||
+                   name.Contains("NHỎ") || name.Contains("VỪA") || name.Contains("LỚN") || name.Contains("XỐP HƠI") || name.Contains("BÓP NỔ") || name.Contains("MÀNG XỐP") || name.Contains("THÙNG GỖ") || name.Contains("ĐÔNG GỖ") || name.Contains("ĐÓNG GỖ");
         }
     }
 }
