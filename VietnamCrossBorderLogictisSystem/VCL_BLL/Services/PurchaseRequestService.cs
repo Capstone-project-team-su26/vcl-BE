@@ -98,9 +98,20 @@ namespace VCL_BLL.Services
                     Quantity = item.Quantity,
                     Attributes = item.Attributes,
                     Note = item.Note,
-                    ImageUrl = item.ImageUrl
+                    ImageUrl = (item.ImageUrls != null && item.ImageUrls.Any())
+                        ? string.Join(",", item.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+                        : (item.ImageUrl ?? string.Empty)
                 };
                 await itemRepo.AddAsync(requestItem);
+
+                var returnedImageUrls = new List<string>();
+                if (!string.IsNullOrWhiteSpace(requestItem.ImageUrl))
+                {
+                    returnedImageUrls = requestItem.ImageUrl
+                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(u => u.Trim())
+                        .ToList();
+                }
 
                 resultItems.Add(new PurchaseRequestItemResponseDto
                 {
@@ -112,7 +123,8 @@ namespace VCL_BLL.Services
                     Quantity = requestItem.Quantity,
                     Attributes = requestItem.Attributes,
                     Note = requestItem.Note,
-                    ImageUrl = requestItem.ImageUrl
+                    ImageUrl = requestItem.ImageUrl,
+                    ImageUrls = returnedImageUrls
                 });
             }
 
@@ -291,17 +303,28 @@ namespace VCL_BLL.Services
             var allItems = await _unitOfWork.Repository<PurchaseRequestItem>().GetAllAsync();
             var relatedItems = allItems.Where(i => i.PurchaseRequestId == requestId).ToList();
 
-            var itemDtos = relatedItems.Select(i => new PurchaseRequestItemResponseDto
-            {
-                ItemId = i.Id,
-                ProductLink = i.ProductLink ?? string.Empty,
-                SourceWebsite = i.SourceWebsite,
-                ProductType = i.ProductType,
-                ProductName = i.ProductName,
-                Quantity = i.Quantity,
-                Attributes = i.Attributes,
-                Note = i.Note,
-                ImageUrl = i.ImageUrl
+            var itemDtos = relatedItems.Select(i => {
+                var urls = new List<string>();
+                if (!string.IsNullOrWhiteSpace(i.ImageUrl))
+                {
+                    urls = i.ImageUrl
+                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(u => u.Trim())
+                        .ToList();
+                }
+                return new PurchaseRequestItemResponseDto
+                {
+                    ItemId = i.Id,
+                    ProductLink = i.ProductLink ?? string.Empty,
+                    SourceWebsite = i.SourceWebsite,
+                    ProductType = i.ProductType,
+                    ProductName = i.ProductName,
+                    Quantity = i.Quantity,
+                    Attributes = i.Attributes,
+                    Note = i.Note,
+                    ImageUrl = i.ImageUrl,
+                    ImageUrls = urls
+                };
             }).ToList();
 
             // 4.1 Lấy báo giá liên quan nếu có

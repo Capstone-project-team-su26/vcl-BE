@@ -107,6 +107,9 @@ namespace VCL_BLL.DTOs
         /// <summary>Khách yêu cầu kiểm hàng — sale/kho mở kiện kiểm tra số lượng & tình trạng.</summary>
         public bool RequiresInspection { get; set; }
 
+        /// <summary>ID quy định giá cấu hình thùng hàng tương ứng. Nếu chọn gói, hệ thống tự động áp kích thước.</summary>
+        public Guid? BoxPricingRuleId { get; set; }
+
         /// <summary>Ghi chú xử lý chung cho cả yêu cầu.</summary>
         public string? Note { get; set; }
 
@@ -263,6 +266,9 @@ namespace VCL_BLL.DTOs
         /// <summary>Khách yêu cầu kiểm hàng — sale/kho mở kiện kiểm tra số lượng & tình trạng.</summary>
         public bool RequiresInspection { get; set; }
 
+        /// <summary>ID quy định giá cấu hình thùng hàng tương ứng. Nếu chọn gói, hệ thống tự động áp kích thước.</summary>
+        public Guid? BoxPricingRuleId { get; set; }
+
         /// <summary>Ghi chú từ Sales/Khách hàng.</summary>
         public string? Note { get; set; }
 
@@ -296,4 +302,5 @@ namespace VCL_BLL.DTOs
         public DateTime? CheckInTime { get; set; }
         public DateTime? PutAwayTime { get; set; }
     }
+
 }

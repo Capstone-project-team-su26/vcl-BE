@@ -28,6 +28,9 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Hình ảnh tham khảo (nếu có).</summary>
         public string? ImageUrl { get; set; }
+
+        /// <summary>Danh sách hình ảnh tham khảo (nếu có nhiều ảnh).</summary>
+        public List<string>? ImageUrls { get; set; }
     }
 
     public class CreatePurchaseRequestDto
@@ -69,6 +72,7 @@ namespace VCL_BLL.DTOs
         public string? Attributes { get; set; }
         public string? Note { get; set; }
         public string? ImageUrl { get; set; }
+        public List<string> ImageUrls { get; set; } = new();
     }
 
     public class PurchaseRequestResponseDto

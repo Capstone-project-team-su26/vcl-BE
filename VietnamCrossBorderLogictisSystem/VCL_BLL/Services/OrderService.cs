@@ -100,7 +100,25 @@ namespace VCL_BLL.Services
                 })
                 .ToList();
 
-            // 4. Tạo Order (BE tự sinh ConsignmentCode ngay khi khách tạo yêu cầu ký gửi)
+            // 4. Lấy quy định đóng gói được chọn từ cấp đơn hàng
+            PricingRule? orderBoxRule = null;
+            if (request.BoxPricingRuleId.HasValue)
+            {
+                orderBoxRule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(request.BoxPricingRuleId.Value);
+            }
+
+            var noteParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(request.Note))
+            {
+                noteParts.Add(request.Note);
+            }
+            if (orderBoxRule != null && !string.IsNullOrWhiteSpace(orderBoxRule.RuleCode))
+            {
+                noteParts.Add("Yêu cầu đóng gói: " + orderBoxRule.RuleCode);
+            }
+            var note = noteParts.Any() ? string.Join(". ", noteParts) : null;
+
+            // Tạo Order
             var orderRepo = _unitOfWork.Repository<Order>();
             var now = DateTime.UtcNow;
             var order = new Order
@@ -117,15 +135,52 @@ namespace VCL_BLL.Services
                 RequiresInspection = request.RequiresInspection,
                 Status = "PENDING_REVIEW",
                 OrderType = "CONSIGNMENT",
-                Note = request.Note,
+                Note = note,
                 CreatedAt = now
             };
             await orderRepo.AddAsync(order);
 
             // 5. Tạo OrderItems
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            bool isFirstItem = true;
             foreach (var item in request.Items)
             {
+                decimal? length = item.Length;
+                decimal? width = item.Width;
+                decimal? height = item.Height;
+
+                if (isFirstItem && orderBoxRule != null)
+                {
+                    var code = orderBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
+                    var name = orderBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
+
+                    if (code.Contains("SMALL") || name.Contains("NHỎ") || name.Contains("SMALL"))
+                    {
+                        length = 30m;
+                        width = 20m;
+                        height = 20m;
+                    }
+                    else if (code.Contains("MEDIUM") || name.Contains("VỪA") || name.Contains("MEDIUM"))
+                    {
+                        length = 50m;
+                        width = 40m;
+                        height = 30m;
+                    }
+                    else if (code.Contains("LARGE") || name.Contains("LỚN") || name.Contains("LARGE"))
+                    {
+                        length = 80m;
+                        width = 60m;
+                        height = 50m;
+                    }
+                    else if (code.Contains("BUBBLE") || name.Contains("XỐP HƠI") || name.Contains("BÓP NỔ") || name.Contains("MÀNG XỐP"))
+                    {
+                        length = length ?? 30m;
+                        width = width ?? 20m;
+                        height = height ?? 20m;
+                    }
+                    isFirstItem = false;
+                }
+
                 await orderItemRepo.AddAsync(new OrderItem
                 {
                     Id = Guid.NewGuid(),
@@ -135,9 +190,9 @@ namespace VCL_BLL.Services
                     ProductType = item.ProductType,
                     Quantity = item.Quantity,
                     Weight = item.Weight,
-                    Width = item.Width,
-                    Height = item.Height,
-                    Length = item.Length,
+                    Width = width,
+                    Height = height,
+                    Length = length,
                     DeclaredValue = item.DeclaredValue,
                     ReferenceUrl = item.ReferenceUrl,
                     DomesticTrackingCode = item.DomesticTrackingCode,
@@ -259,7 +314,25 @@ namespace VCL_BLL.Services
             // BE luôn tự sinh ConsignmentCode ngay khi tạo (dù trạng thái ban đầu là gì)
             var consignmentCode = await GenerateUniqueConsignmentCodeAsync();
 
-            // 5. Tạo Order
+            // 5. Lấy quy định đóng gói được chọn từ cấp đơn hàng
+            PricingRule? orderBoxRule = null;
+            if (request.BoxPricingRuleId.HasValue)
+            {
+                orderBoxRule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(request.BoxPricingRuleId.Value);
+            }
+
+            var noteParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(request.Note))
+            {
+                noteParts.Add(request.Note);
+            }
+            if (orderBoxRule != null && !string.IsNullOrWhiteSpace(orderBoxRule.RuleCode))
+            {
+                noteParts.Add("Yêu cầu đóng gói: " + orderBoxRule.RuleCode);
+            }
+            var note = noteParts.Any() ? string.Join(". ", noteParts) : null;
+
+            // Tạo Order
             var orderRepo = _unitOfWork.Repository<Order>();
             var nowTime = DateTime.UtcNow;
             var order = new Order
@@ -276,7 +349,7 @@ namespace VCL_BLL.Services
                 RequiresInspection = request.RequiresInspection,
                 Status = initialStatus,
                 OrderType = "CONSIGNMENT",
-                Note = request.Note,
+                Note = note,
                 CreatedById = staffUserId,
                 CreatedAt = nowTime
             };
@@ -284,8 +357,45 @@ namespace VCL_BLL.Services
 
             // 6. Tạo OrderItems
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            bool isFirstItem = true;
             foreach (var item in request.Items)
             {
+                decimal? length = item.Length;
+                decimal? width = item.Width;
+                decimal? height = item.Height;
+
+                if (isFirstItem && orderBoxRule != null)
+                {
+                    var code = orderBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
+                    var name = orderBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
+
+                    if (code.Contains("SMALL") || name.Contains("NHỎ") || name.Contains("SMALL"))
+                    {
+                        length = 30m;
+                        width = 20m;
+                        height = 20m;
+                    }
+                    else if (code.Contains("MEDIUM") || name.Contains("VỪA") || name.Contains("MEDIUM"))
+                    {
+                        length = 50m;
+                        width = 40m;
+                        height = 30m;
+                    }
+                    else if (code.Contains("LARGE") || name.Contains("LỚN") || name.Contains("LARGE"))
+                    {
+                        length = 80m;
+                        width = 60m;
+                        height = 50m;
+                    }
+                    else if (code.Contains("BUBBLE") || name.Contains("XỐP HƠI") || name.Contains("BÓP NỔ") || name.Contains("MÀNG XỐP"))
+                    {
+                        length = length ?? 30m;
+                        width = width ?? 20m;
+                        height = height ?? 20m;
+                    }
+                    isFirstItem = false;
+                }
+
                 await orderItemRepo.AddAsync(new OrderItem
                 {
                     Id = Guid.NewGuid(),
@@ -295,9 +405,9 @@ namespace VCL_BLL.Services
                     ProductType = item.ProductType,
                     Quantity = item.Quantity,
                     Weight = item.Weight,
-                    Width = item.Width,
-                    Height = item.Height,
-                    Length = item.Length,
+                    Width = width,
+                    Height = height,
+                    Length = length,
                     DeclaredValue = item.DeclaredValue,
                     ReferenceUrl = item.ReferenceUrl,
                     DomesticTrackingCode = item.DomesticTrackingCode,
