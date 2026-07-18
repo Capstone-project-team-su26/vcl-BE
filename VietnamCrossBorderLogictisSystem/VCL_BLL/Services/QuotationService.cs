@@ -139,7 +139,8 @@ namespace VCL_BLL.Services
                     TotalVolume = order.TotalVolume,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
-                    CreatedAt = order.CreatedAt
+                    CreatedAt = order.CreatedAt,
+                    WarehouseId = latestQuotation?.WarehouseId
                 }
             };
         }
@@ -180,7 +181,8 @@ namespace VCL_BLL.Services
                     TotalVolume = order.TotalVolume,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
-                    CreatedAt = order.CreatedAt
+                    CreatedAt = order.CreatedAt,
+                    WarehouseId = quotation.WarehouseId
                 } : null
             };
         }
@@ -282,6 +284,7 @@ namespace VCL_BLL.Services
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 ExpiredAt = quotation.ExpiredAt,
                 SalesNote = quotation.SalesNote,
+                WarehouseId = quotation.WarehouseId,
                 AdditionalFees = feeDtos,
                 Parcels = parcelDetails
             };
@@ -375,6 +378,7 @@ namespace VCL_BLL.Services
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
                 ExpiredAt = quotation.ExpiredAt,
                 SalesNote = quotation.SalesNote,
+                WarehouseId = quotation.WarehouseId,
                 AdditionalFees = feeDtos,
                 Parcels = parcelDetails
             };

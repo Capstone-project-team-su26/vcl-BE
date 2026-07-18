@@ -284,7 +284,8 @@ namespace VCL_BLL.Services
                 CreatedAt = now,
                 ExpiredAt = now.AddDays(QuotationValidDays),
                 ServicePricingId = matchedPricing?.Id,
-                SalesNote = request.SalesNote ?? request.Quotation?.SalesNote
+                SalesNote = request.SalesNote ?? request.Quotation?.SalesNote,
+                WarehouseId = request.WarehouseId
             };
 
             var quotationRepo = _unitOfWork.Repository<Quotation>();
@@ -316,7 +317,8 @@ namespace VCL_BLL.Services
                     TotalVolume = order.TotalVolume,
                     TotalWeight = order.TotalWeight,
                     Route = order.Route,
-                    CreatedAt = order.CreatedAt
+                    CreatedAt = order.CreatedAt,
+                    WarehouseId = request.WarehouseId
                 }
             };
         }

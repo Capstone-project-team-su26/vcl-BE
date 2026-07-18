@@ -2060,6 +2060,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("vat");
 
+                    b.Property<Guid?>("WarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_id");
+
                     b.Property<Guid?>("WroId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("wro_id");

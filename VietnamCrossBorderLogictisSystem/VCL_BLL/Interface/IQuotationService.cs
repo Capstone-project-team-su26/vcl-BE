@@ -14,11 +14,6 @@ namespace VCL_BLL.Interface
         Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId);
 
         /// <summary>
-        /// Tạo báo giá tạm tính bằng cách truyền thông tin từ FE (không lưu DB, không đổi trạng thái đơn).
-        /// </summary>
-        Task<EstimateQuotationResponse> CreateEstimateQuotationWithBodyAsync(Guid orderId, CreateQuotationRequest request);
-
-        /// <summary>
         /// Lưu báo giá chính thức gửi khách hàng, cập nhật Order → QUOTATION_SENT, Quotation → SENT/PENDING.
         /// </summary>
         Task<QuotationActionResponse> SendQuotationAsync(Guid orderId, CreateQuotationRequest request);

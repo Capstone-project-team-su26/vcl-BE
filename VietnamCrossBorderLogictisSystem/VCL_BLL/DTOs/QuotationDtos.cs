@@ -231,6 +231,9 @@ namespace VCL_BLL.DTOs
         /// <summary>Ghi chú của nhân viên sales</summary>
         public string? SalesNote { get; set; }
 
+        /// <summary>Mã kho hàng tiếp nhận</summary>
+        public Guid? WarehouseId { get; set; }
+
         public List<QuotationFeeResponseDto> AdditionalFees { get; set; } = new();
 
         /// <summary>Chi tiết cước phí theo từng kiện hàng</summary>

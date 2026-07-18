@@ -69,7 +69,6 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/User/{id}/unlock` | Admin | Mở khóa tài khoản |
 | `GET` | `/api/User/profile` | Authenticated | Lấy thông tin cá nhân của người dùng đang đăng nhập |
 | `PUT` | `/api/User/profile` | Authenticated | Cập nhật thông tin cá nhân của người dùng đang đăng nhập |
-| `POST` | `/api/orders/{orderId}/quotation/estimate` | Authenticated | Tạo báo giá tạm tính cho đơn ký gửi |
 | `GET` | `/api/orders/{orderId}/quotation` | Authenticated | Khách hàng xem thông tin báo giá mới nhất |
 | `PUT` | `/api/quotations/{quotationId}/accept` | Authenticated | Khách hàng xác nhận báo giá tạm tính |
 | `PUT` | `/api/orders/consignments/{orderId}/status` | Staff | Staff cập nhật trạng thái yêu cầu ký gửi |
@@ -501,109 +500,6 @@ Response `200 OK`:
   "message": "Cập nhật thông tin cá nhân thành công."
 }
 ```
-
-## 9. Báo giá tạm tính (Quotation Estimate)
-
-Tạo báo giá tạm tính cho yêu cầu ký gửi dựa trên thông tin Order và Order_Items. Đây chỉ là báo giá ước tính, chưa phải báo giá chốt sau khi kho cân đo thực tế.
-
-```http
-POST /api/orders/{orderId}/quotation/estimate
-Authorization: Bearer {token}
-```
-
-**Path Parameters:**
-
-| Parameter | Kiểu | Mô tả |
-|---|---|---|
-| `orderId` | `Guid` | ID của đơn hàng ký gửi |
-
-Không cần request body — hệ thống tự lấy thông tin từ Order và OrderItems.
-
-### 9.1. Công thức tính phí
-
-| Thành phần | Công thức |
-|---|---|
-| Total Weight | `Σ OrderItem.Weight` (kg) |
-| Total Volume | `Σ (Length × Width × Height)` (cm³) |
-| Volumetric Weight | `TotalVolume / 5000` (tiêu chuẩn IATA) |
-| Chargeable Weight | `MAX(TotalWeight, VolumetricWeight)` |
-| Freight Charge | `ChargeableWeight × Rate` (từ bảng ServicePricing) |
-| Service Fee | Express: 50,000 VND \| Consolidation: 30,000 VND |
-| Tax & Duty | `10% × Σ DeclaredValue` |
-| **Total** | **FreightCharge + ServiceFee + TaxAndDuty** |
-
-Nếu không có bảng giá trong DB, hệ thống dùng giá mặc định: Express = 50,000 VND/kg, Consolidation = 30,000 VND/kg.
-
-### 9.2. Response thành công
-
-Response `200 OK`:
-
-```json
-{
-  "message": "Tạo báo giá tạm tính thành công.",
-  "data": {
-    "quotationId": "a1b2c3d4-...",
-    "orderId": "e5f6g7h8-...",
-    "consignmentType": "Express",
-    "quoteType": "ESTIMATE",
-    "status": "DRAFT",
-    "totalWeight": 2.50,
-    "totalVolume": 15000.00,
-    "volumetricWeight": 3.00,
-    "chargeableWeight": 3.00,
-    "estimatedFreightCharge": 150000.00,
-    "serviceFee": 50000.00,
-    "taxAndDuty": 50000.00,
-    "totalEstimatedCost": 250000.00,
-    "createdAt": "2026-06-15T12:00:00Z",
-    "expiredAt": "2026-06-22T12:00:00Z",
-    "items": [
-      {
-        "id": "i1j2k3l4-...",
-        "productName": "iPhone 15",
-        "weight": 0.50,
-        "length": 15.00,
-        "width": 8.00,
-        "height": 5.00,
-        "declaredValue": 500000.00,
-        "itemVolume": 600.00
-      }
-    ],
-    "additionalFees": [
-      {
-        "id": "f5e4d3c2-...",
-        "pricingRuleId": "b1c2d3e4-...",
-        "feeName": "Phí đóng khung gỗ gia cố",
-        "feeType": "SURCHARGE",
-        "calculationType": "FIXED",
-        "value": 80000.00,
-        "amount": 80000.00,
-        "note": "Đóng gỗ gia cố cho hàng dễ vỡ",
-        "createdAt": "2026-06-15T12:00:00Z"
-      }
-    ],
-    "parcels": []
-  }
-}
-```
-
-### 9.3. Response lỗi
-
-| Status | Trường hợp | Message |
-|---|---|---|
-| `400` | Order chưa có sản phẩm | `"Đơn hàng chưa có sản phẩm nào. Vui lòng thêm sản phẩm trước khi tạo báo giá."` |
-| `401` | Chưa đăng nhập | Tự động bởi middleware JWT |
-| `404` | Order không tồn tại | `"Không tìm thấy đơn hàng với ID: {orderId}"` |
-
-### 9.4. Lưu ý
-
-- Báo giá tạm tính có hiệu lực **7 ngày** (`expiredAt`).
-- `quoteType` luôn là `"ESTIMATE"`, `status` luôn là `"DRAFT"`.
-- `consignmentType` lấy từ Order: `"Express"` hoặc `"Consolidation"`.
-- Cập nhật Quotation → `ACCEPTED`, Order → `WAITING_FOR_PARCEL`.
-- Mỗi lần gọi API sẽ tạo mới một Quotation record (không cập nhật cái cũ).
-- API cũng cập nhật `totalWeight` và `totalVolume` trên Order.
-
 ## 9.5. Xem báo giá mới nhất của đơn hàng (Get Latest Quotation)
 
 Khách hàng xem thông tin báo giá mới nhất của đơn hàng. Trả về báo giá ở trạng thái `SENT`, `PENDING`, `DRAFT` hoặc `ACCEPTED`.
@@ -2374,9 +2270,6 @@ export async function forgotPassword(email: string) {
 
 export async function resetPassword(payload: ResetPasswordRequest) {
   return api.post<MessageResponse>('/api/Auth/reset-password', payload);
-}
-export async function createEstimateQuotation(orderId: string) {
-  return api.post<QuotationDataResponse>(`/api/orders/${orderId}/quotation/estimate`);
 }
 
 export async function acceptQuotation(quotationId: string) {
@@ -5255,7 +5148,7 @@ interface WarehouseLayoutStatusDto {
 | `/forgot-password` | `POST /api/Auth/forgot-password` |
 | `/reset-password` | `POST /api/Auth/reset-password` |
 | `/admin/users/create` | `POST /api/Auth/admin/register` |
-| `/orders/{id}/quotation` | `GET /api/orders/{orderId}/quotation`, `POST /api/orders/{orderId}/quotation/estimate` |
+| `/orders/{id}/quotation` | `GET /api/orders/{orderId}/quotation` |
 | `/quotations/{id}/accept` | `PUT /api/quotations/{quotationId}/accept` |
 | `/orders/{id}/status` | `PUT /api/orders/consignments/{orderId}/status` |
 | `/orders/consignments` | `GET /api/orders/consignments` |
