@@ -223,15 +223,24 @@ namespace VCL_BLL.Services
             // Save service fee
             if (serviceFee > 0)
             {
+                var domesticRule = activeRules.FirstOrDefault(r =>
+                    (r.ServicePricingId == matchedPricing?.Id || r.ServicePricingId == null) &&
+                    (string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.ConditionType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     r.RuleName.Contains("nội địa", StringComparison.OrdinalIgnoreCase))
+                );
+
                 quotationFees.Add(new QuotationFee
                 {
                     Id = Guid.NewGuid(),
-                    FeeName = isConsignment ? "Phí vận chuyển nội địa" : "Phí dịch vụ cơ bản",
+                    PricingRuleId = isConsignment ? domesticRule?.Id : null,
+                    FeeName = isConsignment ? (domesticRule?.RuleName ?? "Phí vận chuyển nội địa") : "Phí dịch vụ cơ bản",
                     FeeType = isConsignment ? "DOMESTIC_FEE" : "SERVICE_FEE",
-                    CalculationType = "FIXED",
-                    Value = serviceFee,
+                    CalculationType = isConsignment ? (domesticRule?.CalculationType ?? "FIXED") : "FIXED",
+                    Value = isConsignment ? (domesticRule?.Value ?? serviceFee) : serviceFee,
                     Amount = serviceFee,
-                    Note = isConsignment ? "Phí vận chuyển nội địa chính thức" : "Phí dịch vụ cơ bản chính thức",
+                    Note = isConsignment ? (domesticRule?.Description ?? "Phí vận chuyển nội địa chính thức") : "Phí dịch vụ cơ bản chính thức",
                     CreatedAt = now
                 });
             }

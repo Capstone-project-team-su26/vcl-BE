@@ -176,12 +176,10 @@ namespace VCL_BLL.Services
                 }
             }
 
+            decimal baseServiceFee = 0m;
             if (isConsignment)
             {
-                var domesticShippingFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
-                serviceFee = domesticShippingFee;
-                taxAndDuty = 0m;
-                totalEstimatedCost = estimatedFreightCharge + serviceFee;
+                baseServiceFee = GetDomesticShippingFeeEstimate(activeRules, matchedPricing);
 
                 var domesticRule = activeRules.FirstOrDefault(r =>
                     (r.ServicePricingId == matchedPricing?.Id || r.ServicePricingId == null) &&
@@ -191,7 +189,7 @@ namespace VCL_BLL.Services
                      r.RuleName.Contains("nội địa", StringComparison.OrdinalIgnoreCase))
                 );
 
-                if (domesticShippingFee > 0)
+                if (baseServiceFee > 0)
                 {
                     quotationFees.Add(new QuotationFee
                     {
@@ -200,8 +198,8 @@ namespace VCL_BLL.Services
                         FeeName = domesticRule?.RuleName ?? "Phí vận chuyển nội địa",
                         FeeType = "DOMESTIC_FEE",
                         CalculationType = domesticRule?.CalculationType ?? "FIXED",
-                        Value = domesticRule?.Value ?? domesticShippingFee,
-                        Amount = domesticShippingFee,
+                        Value = domesticRule?.Value ?? baseServiceFee,
+                        Amount = baseServiceFee,
                         Note = domesticRule?.Description ?? "Phí vận chuyển nội địa ước tính",
                         CreatedAt = now
                     });
@@ -209,7 +207,7 @@ namespace VCL_BLL.Services
             }
             else
             {
-                decimal baseServiceFee = IsExpressServiceType(consignmentType)
+                baseServiceFee = IsExpressServiceType(consignmentType)
                     ? ExpressServiceFee
                     : StandardServiceFee;
 
@@ -224,145 +222,154 @@ namespace VCL_BLL.Services
                     Note = "Phí dịch vụ cơ bản",
                     CreatedAt = now
                 });
+            }
 
-                decimal totalSurcharges = 0m;
-                foreach (var rule in activeRules)
+            decimal totalSurcharges = 0m;
+            foreach (var rule in activeRules)
+            {
+                // Nếu là đơn ký gửi (consignment), bỏ qua quy tắc phí nội địa trong vòng lặp phụ phí vì đã add riêng ở trên
+                if (isConsignment && (string.Equals(rule.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(rule.ConditionType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                      rule.RuleName.Contains("nội địa", StringComparison.OrdinalIgnoreCase)))
                 {
-                    // Nếu rule liên kết với một ServicePricing cụ thể, kiểm tra xem có khớp không
-                    if (rule.ServicePricingId.HasValue)
-                    {
-                        if (matchedPricing == null || matchedPricing.Id != rule.ServicePricingId.Value)
-                        {
-                            continue; // Không khớp dịch vụ cụ thể
-                        }
-                    }
+                    continue;
+                }
 
-                    // Kiểm tra điều kiện áp dụng
-                    bool isConditionMet = false;
-                    if (string.IsNullOrWhiteSpace(rule.ConditionType) || string.Equals(rule.ConditionType, "ALWAYS", StringComparison.OrdinalIgnoreCase))
+                // Nếu rule liên kết với một ServicePricing cụ thể, kiểm tra xem có khớp không
+                if (rule.ServicePricingId.HasValue)
+                {
+                    if (matchedPricing == null || matchedPricing.Id != rule.ServicePricingId.Value)
                     {
-                        isConditionMet = true;
+                        continue; // Không khớp dịch vụ cụ thể
                     }
-                    else if (string.Equals(rule.ConditionType, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase))
+                }
+
+                // Kiểm tra điều kiện áp dụng
+                bool isConditionMet = false;
+                if (string.IsNullOrWhiteSpace(rule.ConditionType) || string.Equals(rule.ConditionType, "ALWAYS", StringComparison.OrdinalIgnoreCase))
+                {
+                    isConditionMet = true;
+                }
+                else if (string.Equals(rule.ConditionType, "MIN_WEIGHT", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (decimal.TryParse(rule.ConditionValue, out var minWeight))
                     {
-                        if (decimal.TryParse(rule.ConditionValue, out var minWeight))
-                        {
-                            isConditionMet = chargeableWeight >= minWeight;
-                        }
+                        isConditionMet = chargeableWeight >= minWeight;
                     }
-                    else if (string.Equals(rule.ConditionType, "MIN_VOLUME", StringComparison.OrdinalIgnoreCase))
+                }
+                else if (string.Equals(rule.ConditionType, "MIN_VOLUME", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (decimal.TryParse(rule.ConditionValue, out var minVolume))
                     {
-                        if (decimal.TryParse(rule.ConditionValue, out var minVolume))
-                        {
-                            var totalCbm = totalVolume / 1000000m;
-                            isConditionMet = totalCbm >= minVolume;
-                        }
+                        var totalCbm = totalVolume / 1000000m;
+                        isConditionMet = totalCbm >= minVolume;
                     }
-                    else if (string.Equals(rule.ConditionType, "MIN_DECLARED_VALUE", StringComparison.OrdinalIgnoreCase))
+                }
+                else if (string.Equals(rule.ConditionType, "MIN_DECLARED_VALUE", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (decimal.TryParse(rule.ConditionValue, out var minVal))
                     {
-                        if (decimal.TryParse(rule.ConditionValue, out var minVal))
-                        {
-                            isConditionMet = totalDeclaredValue >= minVal;
-                        }
+                        isConditionMet = totalDeclaredValue >= minVal;
                     }
-                    else if (string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
+                }
+                else if (string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
+                {
+                    isConditionMet = order.RequiresInspection;
+                }
+                else if (string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
+                {
+                    var note = order.Note?.ToLower() ?? string.Empty;
+                    isConditionMet = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
+                }
+
+                // Xác định xem rule có được áp dụng hay không
+                bool isApplicable = false;
+                if (rule.IsRequired)
+                {
+                    isApplicable = isConditionMet;
+                }
+                else
+                {
+                    // Phụ phí tùy chọn - áp dụng nếu được yêu cầu rõ ràng hoặc note khớp
+                    if (string.Equals(rule.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
                     {
-                        isConditionMet = order.RequiresInspection;
+                        isApplicable = order.RequiresInspection;
                     }
-                    else if (string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
+                    else if (string.Equals(rule.RuleType, "WOODEN_BOX", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
                     {
                         var note = order.Note?.ToLower() ?? string.Empty;
-                        isConditionMet = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
+                        isApplicable = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
                     }
-
-                    // Xác định xem rule có được áp dụng hay không
-                    bool isApplicable = false;
-                    if (rule.IsRequired)
+                    else if (string.Equals(rule.RuleType, "INSURANCE", StringComparison.OrdinalIgnoreCase))
                     {
-                        isApplicable = isConditionMet;
+                        var note = order.Note?.ToLower() ?? string.Empty;
+                        isApplicable = note.Contains("insurance") || note.Contains("bảo hiểm") || isConditionMet;
                     }
                     else
                     {
-                        // Phụ phí tùy chọn - áp dụng nếu được yêu cầu rõ ràng hoặc note khớp
-                        if (string.Equals(rule.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isApplicable = order.RequiresInspection;
-                        }
-                        else if (string.Equals(rule.RuleType, "WOODEN_BOX", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var note = order.Note?.ToLower() ?? string.Empty;
-                            isApplicable = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
-                        }
-                        else if (string.Equals(rule.RuleType, "INSURANCE", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var note = order.Note?.ToLower() ?? string.Empty;
-                            isApplicable = note.Contains("insurance") || note.Contains("bảo hiểm") || isConditionMet;
-                        }
-                        else
-                        {
-                            var note = order.Note?.ToLower() ?? string.Empty;
-                            isApplicable = !string.IsNullOrWhiteSpace(rule.RuleCode) && note.Contains(rule.RuleCode.ToLower());
-                        }
+                        var note = order.Note?.ToLower() ?? string.Empty;
+                        isApplicable = !string.IsNullOrWhiteSpace(rule.RuleCode) && note.Contains(rule.RuleCode.ToLower());
                     }
-
-                    decimal surchargeAmount = 0m;
-                    if (isApplicable)
-                    {
-                        if (string.Equals(rule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
-                        {
-                            surchargeAmount = rule.Value;
-                        }
-                        else if (string.Equals(rule.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var baseAmount = totalDeclaredValue > 0 ? totalDeclaredValue : estimatedFreightCharge;
-                            surchargeAmount = baseAmount * (rule.Value / 100m);
-                        }
-                        else if (string.Equals(rule.CalculationType, "PER_KG", StringComparison.OrdinalIgnoreCase))
-                        {
-                            surchargeAmount = chargeableWeight * rule.Value;
-                        }
-                        else if (string.Equals(rule.CalculationType, "PER_CBM", StringComparison.OrdinalIgnoreCase))
-                        {
-                            surchargeAmount = (totalVolume / 1000000m) * rule.Value;
-                        }
-                        else if (string.Equals(rule.CalculationType, "PER_PRODUCT", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var totalQty = orderItems.Sum(item => item.Quantity ?? 1);
-                            surchargeAmount = totalQty * rule.Value;
-                        }
-
-                        // Áp dụng giới hạn Min/Max nếu có cấu hình
-                        if (rule.MinAmount.HasValue && surchargeAmount < rule.MinAmount.Value)
-                        {
-                            surchargeAmount = rule.MinAmount.Value;
-                        }
-                        if (rule.MaxAmount.HasValue && surchargeAmount > rule.MaxAmount.Value)
-                        {
-                            surchargeAmount = rule.MaxAmount.Value;
-                        }
-
-                        totalSurcharges += surchargeAmount;
-                    }
-
-                    // Luôn add để lưu trữ vào DB (Enabled = false nếu Amount = 0)
-                    quotationFees.Add(new QuotationFee
-                    {
-                        Id = Guid.NewGuid(),
-                        PricingRuleId = rule.Id,
-                        FeeName = rule.RuleName,
-                        FeeType = "SURCHARGE",
-                        CalculationType = rule.CalculationType,
-                        Value = rule.Value,
-                        Amount = surchargeAmount,
-                        Note = rule.Description,
-                        CreatedAt = now
-                    });
                 }
 
-                serviceFee = baseServiceFee + totalSurcharges;
+                decimal surchargeAmount = 0m;
+                if (isApplicable)
+                {
+                    if (string.Equals(rule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
+                    {
+                        surchargeAmount = rule.Value;
+                    }
+                    else if (string.Equals(rule.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var baseAmount = totalDeclaredValue > 0 ? totalDeclaredValue : estimatedFreightCharge;
+                        surchargeAmount = baseAmount * (rule.Value / 100m);
+                    }
+                    else if (string.Equals(rule.CalculationType, "PER_KG", StringComparison.OrdinalIgnoreCase))
+                    {
+                        surchargeAmount = chargeableWeight * rule.Value;
+                    }
+                    else if (string.Equals(rule.CalculationType, "PER_CBM", StringComparison.OrdinalIgnoreCase))
+                    {
+                        surchargeAmount = (totalVolume / 1000000m) * rule.Value;
+                    }
+                    else if (string.Equals(rule.CalculationType, "PER_PRODUCT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var totalQty = orderItems.Sum(item => item.Quantity ?? 1);
+                        surchargeAmount = totalQty * rule.Value;
+                    }
+
+                    // Áp dụng giới hạn Min/Max nếu có cấu hình
+                    if (rule.MinAmount.HasValue && surchargeAmount < rule.MinAmount.Value)
+                    {
+                        surchargeAmount = rule.MinAmount.Value;
+                    }
+                    if (rule.MaxAmount.HasValue && surchargeAmount > rule.MaxAmount.Value)
+                    {
+                        surchargeAmount = rule.MaxAmount.Value;
+                    }
+
+                    totalSurcharges += surchargeAmount;
+                }
+
+                // Luôn add để lưu trữ vào DB (Enabled = false nếu Amount = 0)
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    PricingRuleId = rule.Id,
+                    FeeName = rule.RuleName,
+                    FeeType = "SURCHARGE",
+                    CalculationType = rule.CalculationType,
+                    Value = rule.Value,
+                    Amount = surchargeAmount,
+                    Note = rule.Description,
+                    CreatedAt = now
+                });
             }
+
+            serviceFee = baseServiceFee + totalSurcharges;
 
             var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now);
             decimal vatAmount = taxResult.VatAmount;
