@@ -223,9 +223,14 @@ namespace VCL_BLL.Services
                 .FirstOrDefault(p => p.Id == quotation.ServicePricingId);
             var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
 
+            var totalSurcharges = quotationFees
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Sum(f => f.Amount);
+
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m) +
                                      (quotation.ServiceFee ?? 0m) +
-                                     (quotation.TaxAndDuty ?? 0m);
+                                     (quotation.TaxAndDuty ?? 0m) +
+                                     totalSurcharges;
 
             var ruleMap = activeRules.ToDictionary(r => r.Id, r => r);
 
@@ -318,9 +323,14 @@ namespace VCL_BLL.Services
                 .FirstOrDefault(p => p.Id == quotation.ServicePricingId);
             var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
 
+            var totalSurcharges = quotationFees
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Sum(f => f.Amount);
+
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m) +
                                      (quotation.ServiceFee ?? 0m) +
-                                     (quotation.TaxAndDuty ?? 0m);
+                                     (quotation.TaxAndDuty ?? 0m) +
+                                     totalSurcharges;
 
             var ruleMap = activeRules.ToDictionary(r => r.Id, r => r);
 
