@@ -231,6 +231,12 @@ namespace VCL_BLL.Services
                         width = width ?? 20m;
                         height = height ?? 20m;
                     }
+                    else if (code.Contains("WOOD") || name.Contains("THÙNG GỖ") || name.Contains("ĐÓNG GỖ") || code.Contains("CRATE"))
+                    {
+                        length = (length ?? 0m) + 5m;
+                        width = (width ?? 0m) + 5m;
+                        height = (height ?? 0m) + 5m;
+                    }
                 }
 
                 await orderItemRepo.AddAsync(new OrderItem
@@ -498,6 +504,12 @@ namespace VCL_BLL.Services
                         length = length ?? 30m;
                         width = width ?? 20m;
                         height = height ?? 20m;
+                    }
+                    else if (code.Contains("WOOD") || name.Contains("THÙNG GỖ") || name.Contains("ĐÓNG GỖ") || code.Contains("CRATE"))
+                    {
+                        length = (length ?? 0m) + 5m;
+                        width = (width ?? 0m) + 5m;
+                        height = (height ?? 0m) + 5m;
                     }
                 }
 
