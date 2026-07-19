@@ -30,16 +30,26 @@ namespace VCL_BLL.Services
             var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
             var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
 
-            var matchedPricing = allPricings
-                .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
-                .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
-                .OrderByDescending(p => p.EffectiveDate)
-                .FirstOrDefault(p =>
-                    string.IsNullOrWhiteSpace(route) ||
-                    string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route, StringComparison.OrdinalIgnoreCase) ||
-                    (p.OriginCountry != null && route.Contains(p.OriginCountry, StringComparison.OrdinalIgnoreCase)) ||
-                    (p.DestinationCountry != null && route.Contains(p.DestinationCountry, StringComparison.OrdinalIgnoreCase))
-                );
+            ServicePricing matchedPricing = null;
+            var targetPricingId = request.ServicePricingId ?? request.Quotation?.ServicePricingId;
+            if (targetPricingId.HasValue && targetPricingId.Value != Guid.Empty)
+            {
+                matchedPricing = allPricings.FirstOrDefault(p => p.Id == targetPricingId.Value);
+            }
+
+            if (matchedPricing == null)
+            {
+                matchedPricing = allPricings
+                    .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
+                    .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                    .OrderByDescending(p => p.EffectiveDate)
+                    .FirstOrDefault(p =>
+                        string.IsNullOrWhiteSpace(route) ||
+                        string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route, StringComparison.OrdinalIgnoreCase) ||
+                        (p.OriginCountry != null && route.Contains(p.OriginCountry, StringComparison.OrdinalIgnoreCase)) ||
+                        (p.DestinationCountry != null && route.Contains(p.DestinationCountry, StringComparison.OrdinalIgnoreCase))
+                    );
+            }
 
             if (matchedPricing == null)
             {
