@@ -678,7 +678,8 @@ namespace VCL_BLL.Services
 
                 var domesticShippingFee = fees
                     .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) || 
-                                string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase))
+                                (string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase) && 
+                                 string.Equals(order.OrderType, "PURCHASE", StringComparison.OrdinalIgnoreCase)))
                     .Sum(f => f.Amount);
 
                 var additionalSurchargesAmount = fees

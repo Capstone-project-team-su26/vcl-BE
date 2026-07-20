@@ -394,7 +394,7 @@ namespace VCL_BLL.Services
                         {
                             Id = Guid.NewGuid(),
                             FeeName = $"Phí đóng thùng ({config.ConfigName})",
-                            FeeType = "SERVICE_FEE",
+                            FeeType = "PACKING_FEE",
                             CalculationType = "FIXED",
                             Value = config.PackageFee,
                             Amount = totalFee,
