@@ -11,7 +11,7 @@ namespace VCL_BLL.Services
     public partial class QuotationService
     {
         /// <inheritdoc/>
-        public async Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId)
+        public async Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId, IReadOnlyCollection<Guid>? selectedPricingRuleIds = null)
         {
             // 1. Tìm Order theo orderId
             var orderRepo = _unitOfWork.Repository<Order>();
@@ -289,9 +289,14 @@ namespace VCL_BLL.Services
                 {
                     isApplicable = isConditionMet;
                 }
+                else if (selectedPricingRuleIds != null)
+                {
+                    // Khách tự tick phụ phí (yêu cầu thầy Long): chỉ áp các rule tùy chọn khách đã chọn
+                    isApplicable = selectedPricingRuleIds.Contains(rule.Id);
+                }
                 else
                 {
-                    // Phụ phí tùy chọn - áp dụng nếu được yêu cầu rõ ràng hoặc note khớp
+                    // Client cũ chưa gửi selectedPricingRuleIds - giữ logic đoán theo note như trước
                     if (string.Equals(rule.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
                     {

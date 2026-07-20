@@ -114,14 +114,20 @@ namespace VCL_BLL.Services
                 }
             }
 
+            // FE hiện gửi các cờ boolean thay vì PricingRuleIds -> map cờ sang PricingRule active
+            // theo RuleType tương ứng và union vào danh sách đã chọn (không trùng lặp).
+            await AddRulesFromServiceFlagsAsync(selectedOrderRules,
+                request.RequiresInspection, request.RequiresPacking,
+                request.RequiresWoodenCrate, request.RequiresInsurance);
+
             var selectedItemRulesMap = new Dictionary<ConsignmentItemRequest, List<PricingRule>>();
             foreach (var item in request.Items)
             {
                 selectedItemRulesMap[item] = new List<PricingRule>();
             }
 
-            // Kiểm tra dịch vụ kiểm hàng (RequiresInspection)
-            bool requiresInspection = selectedOrderRules.Any(r =>
+            // Kiểm tra dịch vụ kiểm hàng (RequiresInspection): theo cờ FE gửi hoặc theo rule đã chọn
+            bool requiresInspection = request.RequiresInspection || selectedOrderRules.Any(r =>
                 string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase)
             );
@@ -246,7 +252,7 @@ namespace VCL_BLL.Services
                     Height = height,
                     Length = length,
                     DeclaredValue = item.DeclaredValue,
-                    ReferenceUrl = item.ReferenceUrl,
+                    ReferenceUrl = item.CombinedReferenceUrls(),
                     DomesticTrackingCode = item.DomesticTrackingCode,
                     CreatedAt = now
                 });
@@ -255,7 +261,9 @@ namespace VCL_BLL.Services
             await _unitOfWork.SaveChangesAsync();
 
             // 6. Sinh báo giá tạm tính (tái sử dụng QuotationService)
-            var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id);
+            // Truyền danh sách phụ phí khách tự tick để báo giá chỉ áp các phí đã chọn
+            var quotation = await _quotationService.CreateEstimateQuotationAsync(
+                order.Id, selectedOrderRules.Select(r => r.Id).ToList());
 
             // 7. Trả về kết quả gộp
             return new CreateConsignmentResponse
@@ -514,7 +522,7 @@ namespace VCL_BLL.Services
                     Height = height,
                     Length = length,
                     DeclaredValue = item.DeclaredValue,
-                    ReferenceUrl = item.ReferenceUrl,
+                    ReferenceUrl = item.CombinedReferenceUrls(),
                     DomesticTrackingCode = item.DomesticTrackingCode,
                     CreatedAt = nowTime
                 });
@@ -523,7 +531,9 @@ namespace VCL_BLL.Services
             await _unitOfWork.SaveChangesAsync();
 
             // 7. Sinh báo giá tạm tính
-            var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id);
+            // Truyền danh sách phụ phí khách/sale đã tick để báo giá chỉ áp các phí đã chọn
+            var quotation = await _quotationService.CreateEstimateQuotationAsync(
+                order.Id, selectedOrderRules.Select(r => r.Id).ToList());
 
             // 8. Trả kết quả
             return new CreateConsignmentResponse
@@ -1245,6 +1255,44 @@ namespace VCL_BLL.Services
                 return "JP-VN";
             }
             return trimmed;
+        }
+
+        /// <summary>
+        /// Map các cờ dịch vụ boolean FE gửi (kiểm hàng/đóng gói/thùng gỗ/bảo hiểm) sang các
+        /// PricingRule ACTIVE tương ứng và thêm vào danh sách đã chọn (bỏ qua nếu đã có).
+        /// </summary>
+        private async Task AddRulesFromServiceFlagsAsync(
+            List<PricingRule> selectedRules,
+            bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance)
+        {
+            if (!requiresInspection && !requiresPacking && !requiresWoodenCrate && !requiresInsurance)
+                return;
+
+            var activeRules = (await _unitOfWork.Repository<PricingRule>().GetAllAsync())
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            bool MatchType(PricingRule r, params string[] keywords)
+            {
+                var ruleType = r.RuleType?.ToUpperInvariant() ?? string.Empty;
+                var condType = r.ConditionType?.ToUpperInvariant() ?? string.Empty;
+                var code = r.RuleCode?.ToUpperInvariant() ?? string.Empty;
+                return keywords.Any(k => ruleType.Contains(k) || condType.Contains(k) || code.Contains(k));
+            }
+
+            void AddMatches(Func<PricingRule, bool> predicate)
+            {
+                foreach (var rule in activeRules.Where(predicate))
+                {
+                    if (selectedRules.All(x => x.Id != rule.Id))
+                        selectedRules.Add(rule);
+                }
+            }
+
+            if (requiresInspection) AddMatches(r => MatchType(r, "INSPECTION"));
+            if (requiresPacking) AddMatches(r => MatchType(r, "PACKING", "REPACK"));
+            if (requiresWoodenCrate) AddMatches(r => MatchType(r, "WOODEN_BOX", "WOODEN", "CRATE"));
+            if (requiresInsurance) AddMatches(r => MatchType(r, "INSURANCE"));
         }
 
         private bool IsBoxRule(PricingRule rule)

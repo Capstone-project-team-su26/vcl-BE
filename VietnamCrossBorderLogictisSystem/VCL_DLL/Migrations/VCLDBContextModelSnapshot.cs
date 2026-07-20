@@ -1031,8 +1031,7 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("quantity");
 
                     b.Property<string>("ReferenceUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("reference_url");
 
                     b.Property<string>("Sku")
