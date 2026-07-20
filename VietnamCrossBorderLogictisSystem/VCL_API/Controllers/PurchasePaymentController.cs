@@ -76,6 +76,15 @@ namespace VCL_API.Controllers
                 rawBody = await reader.ReadToEndAsync();
             }
 
+            // payOS chỉ chấp nhận đăng ký webhook khi URL trả 2xx. Vì vậy endpoint này
+            // LUÔN trả 200 — kèm cờ handled/success để biết có ghi nhận thanh toán hay không.
+            // (Body rỗng = payOS/Swagger ping thử; chữ ký sai = bỏ qua, không ghi nhận.)
+
+            if (string.IsNullOrWhiteSpace(rawBody))
+            {
+                return Ok(new { success = true, handled = false, message = "Empty body - acknowledged." });
+            }
+
             try
             {
                 using (var doc = System.Text.Json.JsonDocument.Parse(rawBody))
@@ -96,7 +105,7 @@ namespace VCL_API.Controllers
             }
             catch
             {
-                // Let the next catch handle signature verification
+                // JSON không hợp lệ -> vẫn ack 200 ở dưới, không làm payOS retry
             }
 
             try
@@ -108,13 +117,13 @@ namespace VCL_API.Controllers
                 {
                     handled = await _consignmentPaymentService.HandlePayOsWebhookAsync(rawBody);
                 }
-                // Luôn trả 200 để payOS ngừng gửi lại; kèm cờ đã ghi nhận hay chưa
                 return Ok(new { success = true, handled });
             }
             catch (Exception ex)
             {
-                // Chữ ký không hợp lệ hoặc dữ liệu sai -> báo lỗi để payOS biết
-                return BadRequest(new { success = false, message = ex.Message });
+                // Chữ ký sai / dữ liệu lỗi: KHÔNG ghi nhận, nhưng vẫn trả 200 để payOS
+                // không đánh dấu webhook URL là hỏng. Ghi lý do vào response để debug.
+                return Ok(new { success = false, handled = false, message = ex.Message });
             }
         }
     }
