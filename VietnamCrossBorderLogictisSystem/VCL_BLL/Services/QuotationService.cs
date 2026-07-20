@@ -229,8 +229,7 @@ namespace VCL_BLL.Services
 
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m) +
                                      (quotation.ServiceFee ?? 0m) +
-                                     (quotation.TaxAndDuty ?? 0m) +
-                                     totalSurcharges;
+                                     (quotation.TaxAndDuty ?? 0m);
 
             var ruleMap = activeRules.ToDictionary(r => r.Id, r => r);
 
@@ -329,8 +328,7 @@ namespace VCL_BLL.Services
 
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m) +
                                      (quotation.ServiceFee ?? 0m) +
-                                     (quotation.TaxAndDuty ?? 0m) +
-                                     totalSurcharges;
+                                     (quotation.TaxAndDuty ?? 0m);
 
             var ruleMap = activeRules.ToDictionary(r => r.Id, r => r);
 

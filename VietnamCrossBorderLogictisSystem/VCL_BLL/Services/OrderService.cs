@@ -107,7 +107,7 @@ namespace VCL_BLL.Services
                 foreach (var ruleId in request.PricingRuleIds)
                 {
                     var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
-                    if (rule != null)
+                    if (rule != null && !string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && !rule.IsRequired)
                     {
                         selectedOrderRules.Add(rule);
                     }
@@ -236,6 +236,12 @@ namespace VCL_BLL.Services
                         length = length ?? 30m;
                         width = width ?? 20m;
                         height = height ?? 20m;
+                    }
+                    else if (code.Contains("WOOD") || name.Contains("THÙNG GỖ") || name.Contains("ĐÓNG GỖ") || code.Contains("CRATE"))
+                    {
+                        length = (length ?? 0m) + 5m;
+                        width = (width ?? 0m) + 5m;
+                        height = (height ?? 0m) + 5m;
                     }
                 }
 
@@ -382,7 +388,7 @@ namespace VCL_BLL.Services
                 foreach (var ruleId in request.PricingRuleIds)
                 {
                     var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
-                    if (rule != null)
+                    if (rule != null && !string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && !rule.IsRequired)
                     {
                         selectedOrderRules.Add(rule);
                     }
@@ -506,6 +512,12 @@ namespace VCL_BLL.Services
                         length = length ?? 30m;
                         width = width ?? 20m;
                         height = height ?? 20m;
+                    }
+                    else if (code.Contains("WOOD") || name.Contains("THÙNG GỖ") || name.Contains("ĐÓNG GỖ") || code.Contains("CRATE"))
+                    {
+                        length = (length ?? 0m) + 5m;
+                        width = (width ?? 0m) + 5m;
+                        height = (height ?? 0m) + 5m;
                     }
                 }
 
@@ -716,11 +728,11 @@ namespace VCL_BLL.Services
                     .Sum(f => f.Amount);
 
                 pricingRuleIds = fees
-                    .Where(f => f.PricingRuleId.HasValue && 
-                                (f.Amount > 0 || 
-                                 string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
-                                 (ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
+                    .Where(f => f.PricingRuleId.HasValue && f.Amount > 0)
                     .Select(f => f.PricingRuleId!.Value)
+                    .Where(id => ruleMap.TryGetValue(id, out var r) && 
+                                 !string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && 
+                                 !r.IsRequired)
                     .Distinct()
                     .ToList();
 
@@ -733,7 +745,7 @@ namespace VCL_BLL.Services
                     ServiceFee = latestQuotation.ServiceFee,
                     TaxAndDuty = latestQuotation.TaxAndDuty,
                     TotalVolume = latestQuotation.TotalVolume,
-                    TotalEstimatedCost = freight + service + tax + additionalSurchargesAmount,
+                    TotalEstimatedCost = freight + service + tax,
                     CreatedAt = latestQuotation.CreatedAt,
                     ExpiredAt = latestQuotation.ExpiredAt
                 };
@@ -1011,11 +1023,11 @@ namespace VCL_BLL.Services
                 {
                     var fees = allFees.Where(f => f.QuotationId == latestQuotation.Id).ToList();
                     pricingRuleIds = fees
-                        .Where(f => f.PricingRuleId.HasValue && 
-                                    (f.Amount > 0 || 
-                                     string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
-                                     (ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
+                        .Where(f => f.PricingRuleId.HasValue && f.Amount > 0)
                         .Select(f => f.PricingRuleId!.Value)
+                        .Where(id => ruleMap.TryGetValue(id, out var r) && 
+                                     !string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && 
+                                     !r.IsRequired)
                         .Distinct()
                         .ToList();
                 }

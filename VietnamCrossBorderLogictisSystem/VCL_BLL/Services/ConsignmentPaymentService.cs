@@ -69,10 +69,17 @@ namespace VCL_BLL.Services
             if (customer == null || customer.UserId != userId)
                 throw new UnauthorizedAccessException("Bạn không có quyền xác nhận báo giá này.");
 
-            // Tổng bill = cước + phí dịch vụ (đã gồm phụ phí) + thuế
+            // Tổng bill = cước + phí dịch vụ (đã gồm phụ phí) + thuế + các phụ phí lưu riêng trong QuotationFee
+            var feeRepo = _unitOfWork.Repository<QuotationFee>();
+            var allFees = await feeRepo.GetAllAsync();
+            var surchargesAmount = allFees
+                .Where(f => f.QuotationId == quotation.Id && string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Sum(f => f.Amount);
+
             var totalAmount = (quotation.EstimatedFreightCharge ?? 0m)
                               + (quotation.ServiceFee ?? 0m)
-                              + (quotation.TaxAndDuty ?? 0m);
+                              + (quotation.TaxAndDuty ?? 0m)
+                              + surchargesAmount;
             if (totalAmount <= 0m)
                 throw new ArgumentException("Tổng tiền báo giá không hợp lệ để tạo thanh toán.");
 
