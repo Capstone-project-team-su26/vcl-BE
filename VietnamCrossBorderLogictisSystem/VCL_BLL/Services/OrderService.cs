@@ -735,7 +735,7 @@ namespace VCL_BLL.Services
                     ServiceFee = latestQuotation.ServiceFee,
                     TaxAndDuty = latestQuotation.TaxAndDuty,
                     TotalVolume = latestQuotation.TotalVolume,
-                    TotalEstimatedCost = freight + service + tax + additionalSurchargesAmount,
+                    TotalEstimatedCost = freight + service + tax,
                     CreatedAt = latestQuotation.CreatedAt,
                     ExpiredAt = latestQuotation.ExpiredAt
                 };
