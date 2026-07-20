@@ -64,7 +64,13 @@ namespace VCL_BLL.DTOs
         public decimal? Height { get; set; }
         public decimal? Length { get; set; }
         public decimal? DeclaredValue { get; set; }
+
+        /// <summary>Ảnh đầu tiên của mặt hàng (giữ cho FE cũ).</summary>
         public string? ReferenceUrl { get; set; }
+
+        /// <summary>Danh sách URL ảnh của mặt hàng (đã tách từ chuỗi lưu DB).</summary>
+        public List<string> ReferenceUrls { get; set; } = new();
+
         public string? DomesticTrackingCode { get; set; }
         public Guid? PackageConfigurationId { get; set; }
         public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
@@ -182,6 +188,17 @@ namespace VCL_BLL.DTOs
                 all.AddRange(ReferenceUrls.Where(u => !string.IsNullOrWhiteSpace(u)));
             var distinct = all.Select(u => u.Trim()).Where(u => u.Length > 0).Distinct().ToList();
             return distinct.Any() ? string.Join("|", distinct) : null;
+        }
+
+        /// <summary>Tách chuỗi ảnh lưu DB (phân cách "|") thành danh sách URL cho response.</summary>
+        public static List<string> SplitReferenceUrls(string? stored)
+        {
+            if (string.IsNullOrWhiteSpace(stored))
+                return new List<string>();
+            return stored.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim())
+                .Where(u => u.Length > 0)
+                .ToList();
         }
     }
 
