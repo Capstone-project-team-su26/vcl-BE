@@ -35,6 +35,8 @@ public partial class Parcel
 
     public Guid? BinId { get; set; }
 
+    public Guid? PackageConfigurationId { get; set; }
+
     public virtual Order Consignment { get; set; }
 
     public virtual ICollection<DomesticWaybill> DomesticWaybills { get; set; } = new List<DomesticWaybill>();
@@ -42,4 +44,6 @@ public partial class Parcel
     public virtual MasterBox MasterBox { get; set; }
 
     public virtual Bin Bin { get; set; }
+
+    public virtual PackageConfiguration PackageConfiguration { get; set; }
 }

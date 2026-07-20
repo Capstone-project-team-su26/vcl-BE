@@ -198,51 +198,16 @@ namespace VCL_BLL.Services
 
             // 5. Tạo OrderItems
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            bool isFirstItem = true;
             foreach (var item in request.Items)
             {
                 decimal? length = item.Length;
                 decimal? width = item.Width;
                 decimal? height = item.Height;
 
-                var itemBoxRule = selectedOrderRules.FirstOrDefault(IsBoxRule);
-
-                if (itemBoxRule != null && isFirstItem)
+                Guid? packageConfigId = item.PackageConfigurationId;
+                if (!packageConfigId.HasValue || packageConfigId.Value == Guid.Empty)
                 {
-                    isFirstItem = false;
-                    var code = itemBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
-                    var name = itemBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
-
-                    if (code.Contains("SMALL") || name.Contains("NHỎ") || name.Contains("SMALL"))
-                    {
-                        length = 30m;
-                        width = 20m;
-                        height = 20m;
-                    }
-                    else if (code.Contains("MEDIUM") || name.Contains("VỪA") || name.Contains("MEDIUM"))
-                    {
-                        length = 50m;
-                        width = 40m;
-                        height = 30m;
-                    }
-                    else if (code.Contains("LARGE") || name.Contains("LỚN") || name.Contains("LARGE"))
-                    {
-                        length = 80m;
-                        width = 60m;
-                        height = 50m;
-                    }
-                    else if (code.Contains("BUBBLE") || name.Contains("XỐP HƠI") || name.Contains("BÓP NỔ") || name.Contains("MÀNG XỐP"))
-                    {
-                        length = length ?? 30m;
-                        width = width ?? 20m;
-                        height = height ?? 20m;
-                    }
-                    else if (code.Contains("WOOD") || name.Contains("THÙNG GỖ") || name.Contains("ĐÓNG GỖ") || code.Contains("CRATE"))
-                    {
-                        length = (length ?? 0m) + 5m;
-                        width = (width ?? 0m) + 5m;
-                        height = (height ?? 0m) + 5m;
-                    }
+                    packageConfigId = await SuggestPackageConfigurationIdAsync(length, width, height, item.Weight);
                 }
 
                 await orderItemRepo.AddAsync(new OrderItem
@@ -260,6 +225,7 @@ namespace VCL_BLL.Services
                     DeclaredValue = item.DeclaredValue,
                     ReferenceUrl = item.CombinedReferenceUrls(),
                     DomesticTrackingCode = item.DomesticTrackingCode,
+                    PackageConfigurationId = packageConfigId,
                     CreatedAt = now
                 });
             }
@@ -474,51 +440,16 @@ namespace VCL_BLL.Services
 
             // 6. Tạo OrderItems
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            bool isFirstItem = true;
             foreach (var item in request.Items)
             {
                 decimal? length = item.Length;
                 decimal? width = item.Width;
                 decimal? height = item.Height;
 
-                var itemBoxRule = selectedOrderRules.FirstOrDefault(IsBoxRule);
-
-                if (itemBoxRule != null && isFirstItem)
+                Guid? packageConfigId = item.PackageConfigurationId;
+                if (!packageConfigId.HasValue || packageConfigId.Value == Guid.Empty)
                 {
-                    isFirstItem = false;
-                    var code = itemBoxRule.RuleCode?.ToUpperInvariant() ?? string.Empty;
-                    var name = itemBoxRule.RuleName?.ToUpperInvariant() ?? string.Empty;
-
-                    if (code.Contains("SMALL") || name.Contains("NHỎ") || name.Contains("SMALL"))
-                    {
-                        length = 30m;
-                        width = 20m;
-                        height = 20m;
-                    }
-                    else if (code.Contains("MEDIUM") || name.Contains("VỪA") || name.Contains("MEDIUM"))
-                    {
-                        length = 50m;
-                        width = 40m;
-                        height = 30m;
-                    }
-                    else if (code.Contains("LARGE") || name.Contains("LỚN") || name.Contains("LARGE"))
-                    {
-                        length = 80m;
-                        width = 60m;
-                        height = 50m;
-                    }
-                    else if (code.Contains("BUBBLE") || name.Contains("XỐP HƠI") || name.Contains("BÓP NỔ") || name.Contains("MÀNG XỐP"))
-                    {
-                        length = length ?? 30m;
-                        width = width ?? 20m;
-                        height = height ?? 20m;
-                    }
-                    else if (code.Contains("WOOD") || name.Contains("THÙNG GỖ") || name.Contains("ĐÓNG GỖ") || code.Contains("CRATE"))
-                    {
-                        length = (length ?? 0m) + 5m;
-                        width = (width ?? 0m) + 5m;
-                        height = (height ?? 0m) + 5m;
-                    }
+                    packageConfigId = await SuggestPackageConfigurationIdAsync(length, width, height, item.Weight);
                 }
 
                 await orderItemRepo.AddAsync(new OrderItem
@@ -536,6 +467,7 @@ namespace VCL_BLL.Services
                     DeclaredValue = item.DeclaredValue,
                     ReferenceUrl = item.CombinedReferenceUrls(),
                     DomesticTrackingCode = item.DomesticTrackingCode,
+                    PackageConfigurationId = packageConfigId,
                     CreatedAt = nowTime
                 });
             }
@@ -663,6 +595,9 @@ namespace VCL_BLL.Services
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
             var allItems = await orderItemRepo.GetAllAsync();
 
+            var packageConfigs = await _unitOfWork.Repository<PackageConfiguration>().GetAllAsync();
+            var configMap = packageConfigs.ToDictionary(c => c.Id, c => c);
+
             var divisorSection = _configuration.GetSection("PricingSettings:VolumetricDivisor");
             var divisor = divisorSection.Exists() && decimal.TryParse(divisorSection.Value, out var div) ? div : 5000m;
 
@@ -681,6 +616,23 @@ namespace VCL_BLL.Services
                         volumetricWeight = Math.Round(itemVolume / divisor, 4);
                     }
 
+                    PackageConfigurationResponseDto? packageDto = null;
+                    if (i.PackageConfigurationId.HasValue && configMap.TryGetValue(i.PackageConfigurationId.Value, out var pc))
+                    {
+                        packageDto = new PackageConfigurationResponseDto
+                        {
+                            Id = pc.Id,
+                            ConfigCode = pc.ConfigCode,
+                            ConfigName = pc.ConfigName,
+                            Length = pc.Length,
+                            Width = pc.Width,
+                            Height = pc.Height,
+                            MaxWeight = pc.MaxWeight,
+                            PackageFee = pc.PackageFee,
+                            Status = pc.Status
+                        };
+                    }
+
                     return new ConsignmentItemDetail
                     {
                         Id = i.Id,
@@ -694,6 +646,8 @@ namespace VCL_BLL.Services
                         DeclaredValue = i.DeclaredValue,
                         ReferenceUrl = i.ReferenceUrl,
                         DomesticTrackingCode = i.DomesticTrackingCode,
+                        PackageConfigurationId = i.PackageConfigurationId,
+                        PackageConfiguration = packageDto,
                         VolumetricWeight = volumetricWeight
                     };
                 })
@@ -1311,6 +1265,36 @@ namespace VCL_BLL.Services
                    code.Contains("SMALL") || code.Contains("MEDIUM") || code.Contains("LARGE") || code.Contains("BUBBLE") ||
                    name.Contains("SMALL") || name.Contains("MEDIUM") || name.Contains("LARGE") || name.Contains("BUBBLE") ||
                    name.Contains("NHỎ") || name.Contains("VỪA") || name.Contains("LỚN") || name.Contains("XỐP HƠI") || name.Contains("BÓP NỔ") || name.Contains("MÀNG XỐP") || name.Contains("THÙNG GỖ") || name.Contains("ĐÔNG GỖ") || name.Contains("ĐÓNG GỖ");
+        }
+
+        private async Task<Guid?> SuggestPackageConfigurationIdAsync(decimal? length, decimal? width, decimal? height, decimal? weight)
+        {
+            var len = length ?? 0m;
+            var w = width ?? 0m;
+            var h = height ?? 0m;
+            var wt = weight ?? 0m;
+
+            var configs = await _unitOfWork.Repository<PackageConfiguration>().GetAllAsync();
+            var activeConfigs = configs.Where(c => string.Equals(c.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            var sortedDims = new[] { len, w, h }.OrderBy(d => d).ToList();
+
+            var fittingConfig = activeConfigs
+                .Where(c => !string.Equals(c.ConfigCode, "CUSTOM", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(c => c.Length * c.Width * c.Height)
+                .FirstOrDefault(c =>
+                {
+                    var boxDims = new[] { c.Length, c.Width, c.Height }.OrderBy(d => d).ToList();
+                    return sortedDims[0] <= boxDims[0] &&
+                           sortedDims[1] <= boxDims[1] &&
+                           sortedDims[2] <= boxDims[2] &&
+                           wt <= c.MaxWeight;
+                });
+
+            if (fittingConfig != null) return fittingConfig.Id;
+
+            var customConfig = activeConfigs.FirstOrDefault(c => string.Equals(c.ConfigCode, "CUSTOM", StringComparison.OrdinalIgnoreCase));
+            return customConfig?.Id;
         }
     }
 }

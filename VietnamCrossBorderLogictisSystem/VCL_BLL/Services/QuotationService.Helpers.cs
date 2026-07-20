@@ -375,5 +375,37 @@ namespace VCL_BLL.Services
 
             return (importTax, vatAmount, taxFees);
         }
+
+        private async Task<List<QuotationFee>> CalculatePackageFeesAsync(IEnumerable<OrderItem> orderItems, DateTime now)
+        {
+            var fees = new List<QuotationFee>();
+            var configRepo = _unitOfWork.Repository<PackageConfiguration>();
+            var allConfigs = await configRepo.GetAllAsync();
+            var configMap = allConfigs.ToDictionary(c => c.Id, c => c);
+
+            foreach (var item in orderItems)
+            {
+                if (item.PackageConfigurationId.HasValue && configMap.TryGetValue(item.PackageConfigurationId.Value, out var config))
+                {
+                    if (config.PackageFee > 0)
+                    {
+                        var totalFee = config.PackageFee * (item.Quantity ?? 1);
+                        fees.Add(new QuotationFee
+                        {
+                            Id = Guid.NewGuid(),
+                            FeeName = $"Phí đóng thùng ({config.ConfigName})",
+                            FeeType = "SERVICE_FEE",
+                            CalculationType = "FIXED",
+                            Value = config.PackageFee,
+                            Amount = totalFee,
+                            Note = $"Phí đóng gói {config.ConfigName} cho {item.Quantity ?? 1} kiện {item.ProductName}",
+                            CreatedAt = now
+                        });
+                    }
+                }
+            }
+
+            return fees;
+        }
     }
 }

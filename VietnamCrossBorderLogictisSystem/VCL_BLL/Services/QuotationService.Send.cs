@@ -230,7 +230,11 @@ namespace VCL_BLL.Services
                 }
             }
 
-            serviceFee = baseServiceFee + totalSurcharges;
+            var packageFees = await CalculatePackageFeesAsync(orderItems, now);
+            quotationFees.AddRange(packageFees);
+            decimal totalPackageFees = packageFees.Sum(f => f.Amount);
+
+            serviceFee = baseServiceFee + totalSurcharges + totalPackageFees;
 
             decimal vatAmount = 0m;
             decimal importTax = 0m;

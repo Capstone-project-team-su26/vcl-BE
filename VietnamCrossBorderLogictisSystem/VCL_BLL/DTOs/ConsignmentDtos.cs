@@ -66,6 +66,8 @@ namespace VCL_BLL.DTOs
         public decimal? DeclaredValue { get; set; }
         public string? ReferenceUrl { get; set; }
         public string? DomesticTrackingCode { get; set; }
+        public Guid? PackageConfigurationId { get; set; }
+        public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
 
         /// <summary>Cân nặng quy đổi của dòng sản phẩm = Length × Width × Height × Quantity / 5000</summary>
         public decimal? VolumetricWeight { get; set; }
@@ -166,6 +168,9 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Mã tracking nội địa (nếu có) — chỉ để kho đối soát, không tính phí.</summary>
         public string? DomesticTrackingCode { get; set; }
+
+        /// <summary>ID cấu hình thùng đóng gói khách chọn (nếu trống hệ thống sẽ tự gợi ý).</summary>
+        public Guid? PackageConfigurationId { get; set; }
 
         /// <summary>Gộp ReferenceUrl + ReferenceUrls thành 1 chuỗi lưu DB (phân cách "|"), bỏ trùng/rỗng.</summary>
         public string? CombinedReferenceUrls()

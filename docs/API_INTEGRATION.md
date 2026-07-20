@@ -1677,6 +1677,8 @@ export interface ConsignmentItemDetail {
   declaredValue: number | null;
   referenceUrl: string | null;
   domesticTrackingCode: string | null;
+  packageConfigurationId: string | null;
+  packageConfiguration: PackageConfigurationResponseDto | null;
 }
 
 export interface ConsignmentQuotationSummary {
@@ -1684,6 +1686,7 @@ export interface ConsignmentQuotationSummary {
   quoteType: string | null;
   status: string | null;
   estimatedFreightCharge: number | null;
+  domesticShippingFee: number | null;
   serviceFee: number | null;
   taxAndDuty: number | null;
   totalVolume: number | null;
@@ -1711,6 +1714,18 @@ export interface ConsignmentDetailResponse {
   customer: ConsignmentCustomerInfo;
   items: ConsignmentItemDetail[];
   quotation: ConsignmentQuotationSummary | null;
+}
+
+export interface PackageConfigurationResponseDto {
+  id: string;
+  configCode: string;
+  configName: string;
+  length: number;
+  width: number;
+  height: number;
+  maxWeight: number;
+  packageFee: number;
+  status: string;
 }
 
 export interface ConsignmentDetailDataResponse extends MessageResponse {
@@ -1892,6 +1907,7 @@ export interface ConsignmentItemRequest {
   declaredValue?: number;
   referenceUrl?: string;
   domesticTrackingCode?: string;
+  packageConfigurationId?: string;
 }
 
 export interface CreateConsignmentByStaffRequest {

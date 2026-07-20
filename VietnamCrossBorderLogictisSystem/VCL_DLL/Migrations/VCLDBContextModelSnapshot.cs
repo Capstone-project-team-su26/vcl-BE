@@ -1016,6 +1016,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("order_id");
 
+                    b.Property<Guid?>("PackageConfigurationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("package_configuration_id");
+
                     b.Property<string>("ProductName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
@@ -1059,7 +1063,61 @@ namespace VCL_DLL.Migrations
 
                     b.HasIndex("OrderId");
 
+                    b.HasIndex("PackageConfigurationId");
+
                     b.ToTable("ORDER_ITEMS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PackageConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("ConfigCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("config_code");
+
+                    b.Property<string>("ConfigName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)")
+                        .HasColumnName("config_name");
+
+                    b.Property<decimal>("Height")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("height");
+
+                    b.Property<decimal>("Length")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("length");
+
+                    b.Property<decimal>("MaxWeight")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("max_weight");
+
+                    b.Property<decimal>("PackageFee")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("package_fee");
+
+                    b.Property<string>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("ACTIVE")
+                        .HasColumnName("status");
+
+                    b.Property<decimal>("Width")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("width");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PACKAGE_CONFIGURATIONS", (string)null);
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Parcel", b =>
@@ -1107,6 +1165,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("package_code");
 
+                    b.Property<Guid?>("PackageConfigurationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("package_configuration_id");
+
                     b.Property<string>("PackageStatus")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
@@ -1132,6 +1194,8 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("ConsignmentId");
 
                     b.HasIndex("MasterBoxId");
+
+                    b.HasIndex("PackageConfigurationId");
 
                     b.ToTable("PARCELS", (string)null);
                 });
@@ -3345,9 +3409,16 @@ namespace VCL_DLL.Migrations
                         .HasForeignKey("OrderId")
                         .HasConstraintName("FK_ITEM_ORDER");
 
+                    b.HasOne("VCL_DLL.Models.PackageConfiguration", "PackageConfiguration")
+                        .WithMany("OrderItems")
+                        .HasForeignKey("PackageConfigurationId")
+                        .HasConstraintName("FK_ORDER_ITEMS_PACKAGE_CONFIG");
+
                     b.Navigation("Company");
 
                     b.Navigation("Order");
+
+                    b.Navigation("PackageConfiguration");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Parcel", b =>
@@ -3367,11 +3438,18 @@ namespace VCL_DLL.Migrations
                         .HasForeignKey("MasterBoxId")
                         .HasConstraintName("FK_PARCEL_MASTER");
 
+                    b.HasOne("VCL_DLL.Models.PackageConfiguration", "PackageConfiguration")
+                        .WithMany("Parcels")
+                        .HasForeignKey("PackageConfigurationId")
+                        .HasConstraintName("FK_PARCELS_PACKAGE_CONFIG");
+
                     b.Navigation("Bin");
 
                     b.Navigation("Consignment");
 
                     b.Navigation("MasterBox");
+
+                    b.Navigation("PackageConfiguration");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Payment", b =>
@@ -3933,6 +4011,13 @@ namespace VCL_DLL.Migrations
             modelBuilder.Entity("VCL_DLL.Models.OrderItem", b =>
                 {
                     b.Navigation("Bins");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PackageConfiguration", b =>
+                {
+                    b.Navigation("OrderItems");
+
+                    b.Navigation("Parcels");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Parcel", b =>

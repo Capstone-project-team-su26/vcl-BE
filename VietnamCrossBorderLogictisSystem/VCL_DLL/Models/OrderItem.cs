@@ -41,9 +41,13 @@ public partial class OrderItem
 
     public DateTime? CreatedAt { get; set; }
 
+    public Guid? PackageConfigurationId { get; set; }
+
     public virtual ICollection<Bin> Bins { get; set; } = new List<Bin>();
 
     public virtual Company Company { get; set; }
 
     public virtual Order Order { get; set; }
+
+    public virtual PackageConfiguration PackageConfiguration { get; set; }
 }

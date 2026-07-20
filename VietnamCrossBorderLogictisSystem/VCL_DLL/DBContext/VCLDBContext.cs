@@ -45,6 +45,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<OrderItem> OrderItems { get; set; }
 
+    public virtual DbSet<PackageConfiguration> PackageConfigurations { get; set; }
+
     public virtual DbSet<Parcel> Parcels { get; set; }
 
     public virtual DbSet<Payment> Payments { get; set; }
@@ -690,6 +692,8 @@ public partial class VCLDBContext : DbContext
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("width");
 
+            entity.Property(e => e.PackageConfigurationId).HasColumnName("package_configuration_id");
+
             entity.HasOne(d => d.Company).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.CompanyId)
                 .HasConstraintName("FK_ITEM_COMP");
@@ -697,6 +701,10 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.Order).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.OrderId)
                 .HasConstraintName("FK_ITEM_ORDER");
+
+            entity.HasOne(d => d.PackageConfiguration).WithMany(p => p.OrderItems)
+                .HasForeignKey(d => d.PackageConfigurationId)
+                .HasConstraintName("FK_ORDER_ITEMS_PACKAGE_CONFIG");
         });
 
         modelBuilder.Entity<Parcel>(entity =>
@@ -739,6 +747,7 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.PutAwayTime)
                 .HasColumnName("put_away_time");
             entity.Property(e => e.BinId).HasColumnName("bin_id");
+            entity.Property(e => e.PackageConfigurationId).HasColumnName("package_configuration_id");
 
             entity.HasOne(d => d.Consignment).WithMany(p => p.Parcels)
                 .HasForeignKey(d => d.ConsignmentId)
@@ -751,6 +760,10 @@ public partial class VCLDBContext : DbContext
             entity.HasOne(d => d.Bin).WithMany(p => p.Parcels)
                 .HasForeignKey(d => d.BinId)
                 .HasConstraintName("FK_PARCEL_BIN");
+
+            entity.HasOne(d => d.PackageConfiguration).WithMany(p => p.Parcels)
+                .HasForeignKey(d => d.PackageConfigurationId)
+                .HasConstraintName("FK_PARCELS_PACKAGE_CONFIG");
         });
 
         modelBuilder.Entity<Payment>(entity =>
@@ -2044,6 +2057,22 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
 
             entity.HasIndex(e => e.FeeCode).IsUnique().HasDatabaseName("UQ_ADDITIONAL_SERVICE_FEE_CODE");
+        });
+
+        modelBuilder.Entity<PackageConfiguration>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("PACKAGE_CONFIGURATIONS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.ConfigCode).IsRequired().HasMaxLength(50).HasColumnName("config_code");
+            entity.Property(e => e.ConfigName).IsRequired().HasMaxLength(150).HasColumnName("config_name");
+            entity.Property(e => e.Length).HasColumnType("decimal(18, 2)").HasColumnName("length");
+            entity.Property(e => e.Width).HasColumnType("decimal(18, 2)").HasColumnName("width");
+            entity.Property(e => e.Height).HasColumnType("decimal(18, 2)").HasColumnName("height");
+            entity.Property(e => e.MaxWeight).HasColumnType("decimal(18, 2)").HasColumnName("max_weight");
+            entity.Property(e => e.PackageFee).HasColumnType("decimal(18, 2)").HasColumnName("package_fee");
+            entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValue("ACTIVE").HasColumnName("status");
         });
 
         OnModelCreatingPartial(modelBuilder);
