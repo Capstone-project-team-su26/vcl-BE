@@ -45,9 +45,14 @@ namespace VCL_BLL.Services
                     .OrderByDescending(p => p.EffectiveDate)
                     .FirstOrDefault(p =>
                         string.IsNullOrWhiteSpace(route) ||
-                        string.Equals($"{p.OriginCountry}-{p.DestinationCountry}", route, StringComparison.OrdinalIgnoreCase) ||
-                        (p.OriginCountry != null && route.Contains(p.OriginCountry, StringComparison.OrdinalIgnoreCase)) ||
-                        (p.DestinationCountry != null && route.Contains(p.DestinationCountry, StringComparison.OrdinalIgnoreCase))
+                        string.Equals(
+                            OrderService.NormalizeRoute($"{p.OriginCountry}-{p.DestinationCountry}"), 
+                            OrderService.NormalizeRoute(route), 
+                            StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(
+                            OrderService.NormalizeRoute(p.OriginCountry), 
+                            OrderService.NormalizeRoute(route), 
+                            StringComparison.OrdinalIgnoreCase)
                     );
             }
 
