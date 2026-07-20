@@ -452,7 +452,8 @@ namespace VCL_BLL.Services
                 Items = itemDetails,
                 Parcels = parcelCalculationDetails,
                 AdditionalFees = quotationFees
-                    .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                    .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) || 
+                                string.Equals(f.FeeType, "PACKING_FEE", StringComparison.OrdinalIgnoreCase))
                     .Select(f => MapToFeeResponseDto(f, activeRules.ToDictionary(r => r.Id, r => r), orderItems.Sum(item => item.Quantity ?? 1)))
                     .ToList()
             };

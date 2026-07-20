@@ -268,7 +268,8 @@ namespace VCL_BLL.Services
 
             var packageCount = parcels.Any() ? parcels.Count : 1;
             var feeDtos = quotationFees
-                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) || 
+                            string.Equals(f.FeeType, "PACKING_FEE", StringComparison.OrdinalIgnoreCase))
                 .Select(f => MapToFeeResponseDto(f, ruleMap, packageCount))
                 .ToList();
 
@@ -372,7 +373,8 @@ namespace VCL_BLL.Services
 
             var packageCount = parcels.Any() ? parcels.Count : 1;
             var feeDtos = quotationFees
-                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) || 
+                            string.Equals(f.FeeType, "PACKING_FEE", StringComparison.OrdinalIgnoreCase))
                 .Select(f => MapToFeeResponseDto(f, ruleMap, packageCount))
                 .ToList();
 
