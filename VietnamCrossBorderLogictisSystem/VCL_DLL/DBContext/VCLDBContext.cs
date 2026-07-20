@@ -665,8 +665,8 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("length");
             entity.Property(e => e.OrderId).HasColumnName("order_id");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
+            // Chứa nhiều URL ảnh phân cách "|" nên không giới hạn 500 ký tự nữa
             entity.Property(e => e.ReferenceUrl)
-                .HasMaxLength(500)
                 .HasColumnName("reference_url");
             entity.Property(e => e.DomesticTrackingCode)
                 .HasMaxLength(100)

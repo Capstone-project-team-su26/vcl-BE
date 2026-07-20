@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 
 namespace VCL_BLL.DTOs
 {
@@ -111,6 +112,21 @@ namespace VCL_BLL.DTOs
         /// <summary>Danh sách ID cấu hình bảng giá/dịch vụ phụ (ví dụ: đóng gỗ, kiểm hàng, bảo hiểm...).</summary>
         public List<Guid> PricingRuleIds { get; set; } = new();
 
+        // --- Các cờ dịch vụ phụ dạng boolean (FE hiện gửi kiểu này thay vì PricingRuleIds).
+        // BE map cờ -> PricingRule active theo RuleType tương ứng, union với PricingRuleIds.
+
+        /// <summary>Khách yêu cầu kiểm hàng (map rule INSPECTION).</summary>
+        public bool RequiresInspection { get; set; }
+
+        /// <summary>Khách yêu cầu đóng gói lại (map rule PACKING).</summary>
+        public bool RequiresPacking { get; set; }
+
+        /// <summary>Khách yêu cầu đóng thùng gỗ (map rule WOODEN_BOX).</summary>
+        public bool RequiresWoodenCrate { get; set; }
+
+        /// <summary>Khách đăng ký bảo hiểm (map rule INSURANCE).</summary>
+        public bool RequiresInsurance { get; set; }
+
         /// <summary>Ghi chú xử lý chung cho cả yêu cầu.</summary>
         public string? Note { get; set; }
 
@@ -142,11 +158,26 @@ namespace VCL_BLL.DTOs
         /// <summary>Giá trị khai báo.</summary>
         public decimal? DeclaredValue { get; set; }
 
-        /// <summary>Ảnh / link tham chiếu.</summary>
+        /// <summary>Ảnh / link tham chiếu (giữ lại cho FE cũ; nếu gửi cả ReferenceUrls thì field này được gộp chung).</summary>
         public string? ReferenceUrl { get; set; }
+
+        /// <summary>Danh sách URL ảnh của mặt hàng (upload qua POST /api/uploads/images).</summary>
+        public List<string>? ReferenceUrls { get; set; }
 
         /// <summary>Mã tracking nội địa (nếu có) — chỉ để kho đối soát, không tính phí.</summary>
         public string? DomesticTrackingCode { get; set; }
+
+        /// <summary>Gộp ReferenceUrl + ReferenceUrls thành 1 chuỗi lưu DB (phân cách "|"), bỏ trùng/rỗng.</summary>
+        public string? CombinedReferenceUrls()
+        {
+            var all = new List<string>();
+            if (!string.IsNullOrWhiteSpace(ReferenceUrl))
+                all.AddRange(ReferenceUrl.Split('|', StringSplitOptions.RemoveEmptyEntries));
+            if (ReferenceUrls != null)
+                all.AddRange(ReferenceUrls.Where(u => !string.IsNullOrWhiteSpace(u)));
+            var distinct = all.Select(u => u.Trim()).Where(u => u.Length > 0).Distinct().ToList();
+            return distinct.Any() ? string.Join("|", distinct) : null;
+        }
     }
 
 

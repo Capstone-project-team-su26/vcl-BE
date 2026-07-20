@@ -11,7 +11,10 @@ namespace VCL_BLL.Interface
         /// </summary>
         /// <param name="orderId">ID của đơn hàng cần tạo báo giá</param>
         /// <returns>Thông tin báo giá tạm tính</returns>
-        Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId);
+        /// <param name="orderId">Đơn ký gửi cần báo giá.</param>
+        /// <param name="selectedPricingRuleIds">Danh sách PricingRule (phụ phí TÙY CHỌN) khách tự tick.
+        /// Null = client cũ chưa gửi -> dùng logic đoán theo note như trước.</param>
+        Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId, IReadOnlyCollection<Guid>? selectedPricingRuleIds = null);
 
         /// <summary>
         /// Lưu báo giá chính thức gửi khách hàng, cập nhật Order → QUOTATION_SENT, Quotation → SENT/PENDING.
