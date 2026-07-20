@@ -29,6 +29,9 @@ namespace VCL_BLL.DTOs
         /// <summary>Phí vận chuyển ước tính</summary>
         public decimal EstimatedFreightCharge { get; set; }
 
+        /// <summary>Phí vận chuyển nội địa</summary>
+        public decimal DomesticShippingFee { get; set; }
+
         /// <summary>Phí dịch vụ</summary>
         public decimal ServiceFee { get; set; }
 
@@ -120,6 +123,7 @@ namespace VCL_BLL.DTOs
         public decimal? Discount { get; set; }
         public decimal? Total { get; set; }
         public decimal? EstimatedFreightCharge { get; set; }
+        public decimal? DomesticShippingFee { get; set; }
         public decimal? ServiceFee { get; set; }
         public decimal? TotalEstimatedCost { get; set; }
         public decimal? Vat { get; set; }
@@ -209,7 +213,10 @@ namespace VCL_BLL.DTOs
         /// <summary>Cước vận chuyển quốc tế</summary>
         public decimal EstimatedFreightCharge { get; set; }
 
-        /// <summary>Phí dịch vụ / Phí nội địa</summary>
+        /// <summary>Phí vận chuyển nội địa</summary>
+        public decimal DomesticShippingFee { get; set; }
+
+        /// <summary>Phí dịch vụ / Phí phụ phí</summary>
         public decimal ServiceFee { get; set; }
 
         /// <summary>Thuế & phí hải quan tạm tính</summary>

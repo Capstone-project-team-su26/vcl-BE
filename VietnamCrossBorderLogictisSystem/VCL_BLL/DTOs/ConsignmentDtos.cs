@@ -77,6 +77,7 @@ namespace VCL_BLL.DTOs
         public string? QuoteType { get; set; }
         public string? Status { get; set; }
         public decimal? EstimatedFreightCharge { get; set; }
+        public decimal? DomesticShippingFee { get; set; }
         public decimal? ServiceFee { get; set; }
         public decimal? TaxAndDuty { get; set; }
         /// <summary>Tổng thể tích (cm³)</summary>

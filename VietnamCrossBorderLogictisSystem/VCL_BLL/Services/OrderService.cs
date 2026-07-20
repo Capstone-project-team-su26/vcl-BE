@@ -722,6 +722,11 @@ namespace VCL_BLL.Services
                 var rules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
                 var ruleMap = rules.ToDictionary(r => r.Id, r => r);
 
+                var domesticShippingFee = fees
+                    .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) || 
+                                string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase))
+                    .Sum(f => f.Amount);
+
                 var additionalSurchargesAmount = fees
                     .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase)
                                 && (f.Amount > 0 || (f.PricingRuleId.HasValue && ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
@@ -742,7 +747,8 @@ namespace VCL_BLL.Services
                     QuoteType = latestQuotation.QuoteType,
                     Status = latestQuotation.Status,
                     EstimatedFreightCharge = latestQuotation.EstimatedFreightCharge,
-                    ServiceFee = latestQuotation.ServiceFee,
+                    DomesticShippingFee = domesticShippingFee,
+                    ServiceFee = Math.Max(0m, (latestQuotation.ServiceFee ?? 0m) - domesticShippingFee),
                     TaxAndDuty = latestQuotation.TaxAndDuty,
                     TotalVolume = latestQuotation.TotalVolume,
                     TotalEstimatedCost = freight + service + tax,
