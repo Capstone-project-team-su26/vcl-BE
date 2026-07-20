@@ -43,4 +43,9 @@ jobs:
             --restart always \
             -e ConnectionStrings__DefaultConnection="${{ secrets.CONNECTIONSTRING }}" \
             -e JWT__SecretKey="${{ secrets.JWT_SECRET_KEY }}" \
+            -l "traefik.enable=true" \
+            -l "traefik.http.routers.vcl-api.rule=Host(\`api-vcl.zushin.io.vn\`) || Host(\`api-vcl2.zushin.io.vn\`)" \
+            -l "traefik.http.services.vcl-api.loadbalancer.server.port=8080" \
             -p $DOCKER_PORT:$APP_PORT $IMAGE_NAME:v1
+            
+          docker network connect traefik $IMAGE_NAME || true
