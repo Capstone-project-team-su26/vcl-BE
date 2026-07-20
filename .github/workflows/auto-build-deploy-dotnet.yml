@@ -45,7 +45,8 @@ jobs:
             -e JWT__SecretKey="${{ secrets.JWT_SECRET_KEY }}" \
             -l "traefik.enable=true" \
             -l "traefik.http.routers.vcl-api.rule=Host(\`api-vcl.zushin.io.vn\`) || Host(\`api-vcl2.zushin.io.vn\`)" \
-            -l "traefik.http.routers.vcl-api.entrypoints=websecure" \
+            -l "traefik.http.routers.vcl-api.entrypoints=web,websecure" \
+            -l "traefik.http.routers.vcl-api.tls=true" \
             -l "traefik.http.routers.vcl-api.tls.certresolver=myresolver" \
             -l "traefik.http.services.vcl-api.loadbalancer.server.port=8080" \
             -l "traefik.docker.network=traefik" \
