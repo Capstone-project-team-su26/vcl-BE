@@ -162,6 +162,7 @@ namespace VCL_BLL.Services
                 }
             }
 
+            decimal baseServiceFee;
             decimal serviceFee;
             decimal taxAndDuty;
             decimal totalEstimatedCost;
@@ -172,13 +173,59 @@ namespace VCL_BLL.Services
             var quotationDetails = request.Quotation;
             if (isConsignment)
             {
-                serviceFee = domesticShippingFee;
+                baseServiceFee = domesticShippingFee;
             }
             else
             {
                 estimatedFreightCharge = quotationDetails?.EstimatedFreightCharge ?? estimatedFreightCharge;
-                serviceFee = quotationDetails?.ServiceFee ?? domesticShippingFee;
+                baseServiceFee = quotationDetails?.ServiceFee ?? domesticShippingFee;
             }
+
+            decimal totalSurcharges = 0m;
+            var surchargeFees = new List<QuotationFee>();
+            if (request.Quotation != null && request.Quotation.AdditionalFees != null)
+            {
+                foreach (var feeDto in request.Quotation.AdditionalFees)
+                {
+                    PricingRule rule = null;
+                    if (feeDto.FeeId.HasValue)
+                    {
+                        rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(feeDto.FeeId.Value);
+                        if (rule == null)
+                        {
+                            throw new ArgumentException($"Không tìm thấy quy định phí với ID: {feeDto.FeeId.Value}");
+                        }
+                        if (!string.Equals(rule.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
+                        }
+
+                        if (isConsignment && (string.Equals(rule.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                              string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            continue;
+                        }
+                    }
+
+                    decimal feeAmount = feeDto.Enabled ? feeDto.Amount : 0m;
+                    totalSurcharges += feeAmount;
+
+                    surchargeFees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        PricingRuleId = feeDto.FeeId,
+                        FeeName = feeDto.Label ?? rule?.RuleName ?? "Phụ phí bổ sung",
+                        FeeType = "SURCHARGE",
+                        CalculationType = rule?.CalculationType ?? "FIXED",
+                        Value = rule?.Value ?? (feeDto.Amount > 0 ? feeDto.Amount : 0m),
+                        Amount = feeAmount,
+                        Note = rule?.Description ?? "Phụ phí bổ sung",
+                        CreatedAt = now
+                    });
+                }
+            }
+
+            serviceFee = baseServiceFee + totalSurcharges;
 
             decimal vatAmount = 0m;
             decimal importTax = 0m;
@@ -231,7 +278,7 @@ namespace VCL_BLL.Services
             totalEstimatedCost = estimatedFreightCharge + serviceFee + taxAndDuty;
 
             // Save service fee
-            if (serviceFee > 0)
+            if (baseServiceFee > 0)
             {
                 var domesticRule = activeRules.FirstOrDefault(r =>
                     (r.ServicePricingId == matchedPricing?.Id || r.ServicePricingId == null) &&
@@ -248,51 +295,14 @@ namespace VCL_BLL.Services
                     FeeName = isConsignment ? (domesticRule?.RuleName ?? "Phí vận chuyển nội địa") : "Phí dịch vụ cơ bản",
                     FeeType = isConsignment ? "DOMESTIC_FEE" : "SERVICE_FEE",
                     CalculationType = isConsignment ? (domesticRule?.CalculationType ?? "FIXED") : "FIXED",
-                    Value = isConsignment ? (domesticRule?.Value ?? serviceFee) : serviceFee,
-                    Amount = serviceFee,
+                    Value = isConsignment ? (domesticRule?.Value ?? baseServiceFee) : baseServiceFee,
+                    Amount = baseServiceFee,
                     Note = isConsignment ? (domesticRule?.Description ?? "Phí vận chuyển nội địa chính thức") : "Phí dịch vụ cơ bản chính thức",
                     CreatedAt = now
                 });
             }
 
-            if (request.Quotation != null && request.Quotation.AdditionalFees != null)
-            {
-                foreach (var feeDto in request.Quotation.AdditionalFees)
-                {
-                    PricingRule rule = null;
-                    if (feeDto.FeeId.HasValue)
-                    {
-                        rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(feeDto.FeeId.Value);
-                        if (rule == null)
-                        {
-                            throw new ArgumentException($"Không tìm thấy quy định phí với ID: {feeDto.FeeId.Value}");
-                        }
-                        if (!string.Equals(rule.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
-                        {
-                            throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
-                        }
-
-                        if (isConsignment && (string.Equals(rule.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
-                                              string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            continue;
-                        }
-                    }
-
-                    quotationFees.Add(new QuotationFee
-                    {
-                        Id = Guid.NewGuid(),
-                        PricingRuleId = feeDto.FeeId,
-                        FeeName = feeDto.Label ?? rule?.RuleName ?? "Phụ phí bổ sung",
-                        FeeType = "SURCHARGE",
-                        CalculationType = rule?.CalculationType ?? "FIXED",
-                        Value = rule?.Value ?? (feeDto.Amount > 0 ? feeDto.Amount : 0m),
-                        Amount = feeDto.Enabled ? feeDto.Amount : 0m,
-                        Note = rule?.Description ?? "Phụ phí bổ sung",
-                        CreatedAt = now
-                    });
-                }
-            }
+            quotationFees.AddRange(surchargeFees);
 
             var quotation = new Quotation
             {
