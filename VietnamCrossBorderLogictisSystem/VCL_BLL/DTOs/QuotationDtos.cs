@@ -71,6 +71,15 @@ namespace VCL_BLL.DTOs
         public decimal? Height { get; set; }
         public decimal? DeclaredValue { get; set; }
 
+        /// <summary>Ảnh đầu tiên của mặt hàng (giữ cho FE cũ).</summary>
+        public string? ReferenceUrl { get; set; }
+
+        /// <summary>Danh sách URL ảnh của mặt hàng (đã tách từ chuỗi lưu DB).</summary>
+        public List<string> ReferenceUrls { get; set; } = new();
+
+        /// <summary>ID cấu hình thùng đóng gói đã áp cho mặt hàng (khách chọn hoặc hệ thống gợi ý).</summary>
+        public Guid? PackageConfigurationId { get; set; }
+
         /// <summary>Thể tích item = Length × Width × Height (cm³)</summary>
         public decimal ItemVolume { get; set; }
 
