@@ -107,7 +107,7 @@ namespace VCL_BLL.Services
                 foreach (var ruleId in request.PricingRuleIds)
                 {
                     var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
-                    if (rule != null)
+                    if (rule != null && !string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && !rule.IsRequired)
                     {
                         selectedOrderRules.Add(rule);
                     }
@@ -263,22 +263,6 @@ namespace VCL_BLL.Services
             // 6. Sinh báo giá tạm tính (tái sử dụng QuotationService)
             var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id);
 
-            var feeRepo = _unitOfWork.Repository<QuotationFee>();
-            var allFees = await feeRepo.GetAllAsync();
-            var fees = allFees.Where(f => f.QuotationId == quotation.QuotationId).ToList();
-
-            var rules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
-            var ruleMap = rules.ToDictionary(r => r.Id, r => r);
-
-            var appliedPricingRuleIds = fees
-                .Where(f => f.PricingRuleId.HasValue && 
-                            (f.Amount > 0 || 
-                             string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
-                             (ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
-                .Select(f => f.PricingRuleId!.Value)
-                .Distinct()
-                .ToList();
-
             // 7. Trả về kết quả gộp
             return new CreateConsignmentResponse
             {
@@ -291,7 +275,7 @@ namespace VCL_BLL.Services
                 Route = MapRouteToDisplayName(order.Route),
                 RequiresInspection = order.RequiresInspection,
                 ItemCount = request.Items.Sum(i => i.Quantity),
-                PricingRuleIds = appliedPricingRuleIds,
+                PricingRuleIds = selectedOrderRules.Select(r => r.Id).ToList(),
                 Quotation = quotation,
                 Warnings = warnings
             };
@@ -396,7 +380,7 @@ namespace VCL_BLL.Services
                 foreach (var ruleId in request.PricingRuleIds)
                 {
                     var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
-                    if (rule != null)
+                    if (rule != null && !string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && !rule.IsRequired)
                     {
                         selectedOrderRules.Add(rule);
                     }
@@ -553,22 +537,6 @@ namespace VCL_BLL.Services
             // 7. Sinh báo giá tạm tính
             var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id);
 
-            var feeRepo = _unitOfWork.Repository<QuotationFee>();
-            var allFees = await feeRepo.GetAllAsync();
-            var fees = allFees.Where(f => f.QuotationId == quotation.QuotationId).ToList();
-
-            var rules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
-            var ruleMap = rules.ToDictionary(r => r.Id, r => r);
-
-            var appliedPricingRuleIds = fees
-                .Where(f => f.PricingRuleId.HasValue && 
-                            (f.Amount > 0 || 
-                             string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
-                             (ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
-                .Select(f => f.PricingRuleId!.Value)
-                .Distinct()
-                .ToList();
-
             // 8. Trả kết quả
             return new CreateConsignmentResponse
             {
@@ -581,7 +549,7 @@ namespace VCL_BLL.Services
                 Route = MapRouteToDisplayName(order.Route),
                 RequiresInspection = order.RequiresInspection,
                 ItemCount = request.Items.Sum(i => i.Quantity),
-                PricingRuleIds = appliedPricingRuleIds,
+                PricingRuleIds = selectedOrderRules.Select(r => r.Id).ToList(),
                 Quotation = quotation,
                 Warnings = warnings
             };
@@ -750,11 +718,11 @@ namespace VCL_BLL.Services
                     .Sum(f => f.Amount);
 
                 pricingRuleIds = fees
-                    .Where(f => f.PricingRuleId.HasValue && 
-                                (f.Amount > 0 || 
-                                 string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
-                                 (ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
+                    .Where(f => f.PricingRuleId.HasValue && f.Amount > 0)
                     .Select(f => f.PricingRuleId!.Value)
+                    .Where(id => ruleMap.TryGetValue(id, out var r) && 
+                                 !string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && 
+                                 !r.IsRequired)
                     .Distinct()
                     .ToList();
 
@@ -1045,11 +1013,11 @@ namespace VCL_BLL.Services
                 {
                     var fees = allFees.Where(f => f.QuotationId == latestQuotation.Id).ToList();
                     pricingRuleIds = fees
-                        .Where(f => f.PricingRuleId.HasValue && 
-                                    (f.Amount > 0 || 
-                                     string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
-                                     (ruleMap.TryGetValue(f.PricingRuleId.Value, out var r) && r.IsRequired)))
+                        .Where(f => f.PricingRuleId.HasValue && f.Amount > 0)
                         .Select(f => f.PricingRuleId!.Value)
+                        .Where(id => ruleMap.TryGetValue(id, out var r) && 
+                                     !string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && 
+                                     !r.IsRequired)
                         .Distinct()
                         .ToList();
                 }
