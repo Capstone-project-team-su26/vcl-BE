@@ -227,6 +227,11 @@ namespace VCL_BLL.Services
                 .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
                 .Sum(f => f.Amount);
 
+            var domesticShippingFee = quotationFees
+                .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) || 
+                            string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase))
+                .Sum(f => f.Amount);
+
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m) +
                                      (quotation.ServiceFee ?? 0m) +
                                      (quotation.TaxAndDuty ?? 0m);
@@ -280,7 +285,8 @@ namespace VCL_BLL.Services
                 VolumetricWeight = volumetricWeight,
                 ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, Math.Max(volumetricWeight, minimumWeight)),
                 EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,
-                ServiceFee = quotation.ServiceFee ?? 0m,
+                ServiceFee = Math.Max(0m, (quotation.ServiceFee ?? 0m) - domesticShippingFee),
+                DomesticShippingFee = domesticShippingFee,
                 TaxAndDuty = quotation.TaxAndDuty ?? 0m,
                 Vat = quotation.Vat ?? 0m,
                 ImportTax = quotation.ImportTax ?? 0m,
@@ -324,6 +330,11 @@ namespace VCL_BLL.Services
 
             var totalSurcharges = quotationFees
                 .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase))
+                .Sum(f => f.Amount);
+
+            var domesticShippingFee = quotationFees
+                .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) || 
+                            string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase))
                 .Sum(f => f.Amount);
 
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m) +
@@ -378,7 +389,8 @@ namespace VCL_BLL.Services
                 VolumetricWeight = volumetricWeight,
                 ChargeableWeight = Math.Max(order.TotalWeight ?? 0m, Math.Max(volumetricWeight, minimumWeight)),
                 EstimatedFreightCharge = quotation.EstimatedFreightCharge ?? 0m,
-                ServiceFee = quotation.ServiceFee ?? 0m,
+                ServiceFee = Math.Max(0m, (quotation.ServiceFee ?? 0m) - domesticShippingFee),
+                DomesticShippingFee = domesticShippingFee,
                 TaxAndDuty = quotation.TaxAndDuty ?? 0m,
                 Vat = quotation.Vat ?? 0m,
                 ImportTax = quotation.ImportTax ?? 0m,
