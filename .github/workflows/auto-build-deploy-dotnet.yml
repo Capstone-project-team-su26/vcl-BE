@@ -48,6 +48,7 @@ jobs:
             -l "traefik.http.routers.vcl-api.entrypoints=websecure" \
             -l "traefik.http.routers.vcl-api.tls.certresolver=myresolver" \
             -l "traefik.http.services.vcl-api.loadbalancer.server.port=8080" \
+            -l "traefik.docker.network=traefik" \
             -p $DOCKER_PORT:$APP_PORT $IMAGE_NAME:v1
             
           docker network connect traefik $IMAGE_NAME || true
