@@ -387,9 +387,33 @@ namespace VCL_BLL.Services
             {
                 if (item.PackageConfigurationId.HasValue && configMap.TryGetValue(item.PackageConfigurationId.Value, out var config))
                 {
-                    if (config.PackageFee > 0)
+                    var qty = item.Quantity ?? 1;
+                    bool isCustomBox = string.Equals(config.ConfigCode, "CUSTOM", StringComparison.OrdinalIgnoreCase);
+
+                    if (isCustomBox)
                     {
-                        var totalFee = config.PackageFee * (item.Quantity ?? 1);
+                        // Thùng CUSTOM: phí theo thể tích khách nhập (dims cm) —
+                        // PackageFee là đơn giá cho mỗi 1.000 cm³, làm tròn lên.
+                        var feePerBox = VCL_BLL.Interface.IPackageConfigurationService.ComputeCustomBoxFee(
+                            config.PackageFee, item.Length ?? 0m, item.Width ?? 0m, item.Height ?? 0m);
+                        if (feePerBox <= 0m) continue;
+
+                        var volumeCm3 = (item.Length ?? 0m) * (item.Width ?? 0m) * (item.Height ?? 0m);
+                        fees.Add(new QuotationFee
+                        {
+                            Id = Guid.NewGuid(),
+                            FeeName = $"Phí đóng thùng ({config.ConfigName})",
+                            FeeType = "PACKING_FEE",
+                            CalculationType = "PER_VOLUME",
+                            Value = config.PackageFee,
+                            Amount = feePerBox * qty,
+                            Note = $"Thùng custom {volumeCm3:N0} cm³ ({config.PackageFee:N0}đ/1.000cm³) cho {qty} kiện {item.ProductName}",
+                            CreatedAt = now
+                        });
+                    }
+                    else if (config.PackageFee > 0)
+                    {
+                        var totalFee = config.PackageFee * qty;
                         fees.Add(new QuotationFee
                         {
                             Id = Guid.NewGuid(),
@@ -398,7 +422,7 @@ namespace VCL_BLL.Services
                             CalculationType = "FIXED",
                             Value = config.PackageFee,
                             Amount = totalFee,
-                            Note = $"Phí đóng gói {config.ConfigName} cho {item.Quantity ?? 1} kiện {item.ProductName}",
+                            Note = $"Phí đóng gói {config.ConfigName} cho {qty} kiện {item.ProductName}",
                             CreatedAt = now
                         });
                     }
