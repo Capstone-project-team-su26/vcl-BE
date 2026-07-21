@@ -63,12 +63,6 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Webhook nhận callback thanh toán từ payOS. payOS gọi trực tiếp, không yêu cầu đăng nhập.
-        /// </summary>
-        [HttpPost("api/payments/payos/webhook")]
-        [HttpPost("api/payments/payos-webhook")]
-        [AllowAnonymous]
-        /// <summary>
         /// Nhận diện request ping xác nhận webhook của payOS qua trường data.description.
         /// Bỏ dấu tiếng Việt trước khi so khớp để bắt được cả "mã xác nhận webhook",
         /// "ma xac nhan webhook" lẫn "confirm webhook".
@@ -90,6 +84,12 @@ namespace VCL_API.Controllers
                 || normalized.Contains("ma xac nhan");
         }
 
+        /// <summary>
+        /// Webhook nhận callback thanh toán từ payOS. payOS gọi trực tiếp, không yêu cầu đăng nhập.
+        /// </summary>
+        [HttpPost("api/payments/payos/webhook")]
+        [HttpPost("api/payments/payos-webhook")]
+        [AllowAnonymous]
         public async Task<IActionResult> PayOsWebhook()
         {
             string rawBody;
