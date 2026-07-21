@@ -145,6 +145,10 @@ namespace VCL_BLL.Services
             if (warehouse.IsActive == false)
                 throw new ArgumentException("Kho tiếp nhận được chọn đang tạm ngưng hoạt động.");
 
+            // Rule: Receiving note only applies to DESTINATION warehouses
+            if (!string.Equals(warehouse.WarehouseType, "DESTINATION", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Phiếu tiếp nhận kho chỉ được áp dụng cho kho Destination (Kho đích Việt Nam).");
+
             // Generate unique code: WRN-XXXXXXXX (8 digits)
             var random = new Random();
             string code;

@@ -20,6 +20,22 @@ namespace VCL_BLL.Services
             _unitOfWork = unitOfWork;
         }
 
+        private static string NormalizeWarehouseType(string? rawType)
+        {
+            if (string.IsNullOrWhiteSpace(rawType))
+                return "DESTINATION";
+
+            var trimmed = rawType.Trim();
+            if (string.Equals(trimmed, "ORIGIN", StringComparison.OrdinalIgnoreCase))
+                return "ORIGIN";
+            if (string.Equals(trimmed, "DESTINATION", StringComparison.OrdinalIgnoreCase))
+                return "DESTINATION";
+            if (string.Equals(trimmed, "DOMESTIC", StringComparison.OrdinalIgnoreCase))
+                return "DOMESTIC";
+
+            return trimmed.ToUpperInvariant();
+        }
+
         public async Task<IEnumerable<WarehouseResponseDto>> GetWarehousesAsync(bool? isActive, string? search)
         {
             var warehouseRepo = _unitOfWork.Repository<Warehouse>();
@@ -48,7 +64,7 @@ namespace VCL_BLL.Services
                 Code = w.WarehouseCode ?? string.Empty,
                 Address = w.Address ?? string.Empty,
                 Region = w.Region.HasValue ? w.Region.Value.ToString() : null,
-                WarehouseType = w.WarehouseType ?? "DOMESTIC",
+                WarehouseType = NormalizeWarehouseType(w.WarehouseType),
                 IsActive = w.IsActive
             }).ToList();
         }
@@ -86,7 +102,7 @@ namespace VCL_BLL.Services
                 WarehouseCode = request.Code,
                 Address = request.Address,
                 Region = parsedRegion,
-                WarehouseType = request.WarehouseType ?? "DOMESTIC",
+                WarehouseType = NormalizeWarehouseType(request.WarehouseType),
                 IsActive = request.IsActive,
                 CreatedAt = DateTime.UtcNow
             };
@@ -181,7 +197,7 @@ namespace VCL_BLL.Services
             warehouse.WarehouseCode = request.Code;
             warehouse.Address = request.Address;
             warehouse.Region = parsedRegion;
-            warehouse.WarehouseType = request.WarehouseType ?? "DOMESTIC";
+            warehouse.WarehouseType = NormalizeWarehouseType(request.WarehouseType);
             warehouse.IsActive = request.IsActive;
 
             warehouseRepo.Update(warehouse);
