@@ -77,6 +77,9 @@ namespace VCL_BLL.DTOs
         /// <summary>ID cấu hình thùng đóng gói đã áp cho mặt hàng (khách chọn hoặc hệ thống gợi ý).</summary>
         public Guid? PackageConfigurationId { get; set; }
 
+        /// <summary>Chi tiết thùng đã áp (mã, tên, kích thước, phí) — để FE hiển thị ngay sau khi tạo đơn.</summary>
+        public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
+
         /// <summary>Thể tích item = Length × Width × Height (cm³)</summary>
         public decimal ItemVolume { get; set; }
 
