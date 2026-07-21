@@ -1,0 +1,408 @@
+{
+	"info": {
+		"_postman_id": "e8a123f4-5678-49ab-9123-bcdef1234567",
+		"name": "Warehouse CheckIn, PutAway & Auto Inventory Fix API",
+		"description": "Postman Collection chuyên biệt dùng để test tính năng Chuẩn hóa trạng thái nhập kho và tự tạo tồn kho sau Put-away.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Authentication",
+			"item": [
+				{
+					"name": "Login as Staff / Warehouse Operator",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.token) {",
+									"    pm.collectionVariables.set(\"accessToken\", jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"staff@vcl-system.com\",\n  \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Flow Test: Check-in -> Put-away -> Auto Inventory",
+			"item": [
+				{
+					"name": "Step 1. Check-in Kiện hàng (Expect: Parcel = RECEIVED, Order = CHECKED_IN, NO Inventory)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.packageCode) {",
+									"    pm.collectionVariables.set(\"packageCode\", jsonData.packageCode);",
+									"}",
+									"if (jsonData && jsonData.consignmentId) {",
+									"    pm.collectionVariables.set(\"orderId\", jsonData.consignmentId);",
+									"}",
+									"pm.test(\"PackageStatus is RECEIVED\", function () {",
+									"    pm.expect(jsonData.packageStatus).to.eql(\"RECEIVED\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"shippingCode\": \"{{shippingCode}}\",\n  \"actualWeight\": 3.5,\n  \"length\": 40,\n  \"width\": 30,\n  \"height\": 20\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/parcels/check-in",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"parcels",
+								"check-in"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 2. Kiểm tra chi tiết đơn hàng sau Check-in (Expect: Order Status = CHECKED_IN)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Order status is CHECKED_IN and NOT WAREHOUSE_RECEIVED\", function () {",
+									"    pm.expect(jsonData.status).to.eql(\"CHECKED_IN\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"consignments",
+								"{{orderId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 3. Kiểm tra chi tiết kiện hàng sau Check-in (Expect: hasInventory = false)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"hasInventory is false before Put-away\", function () {",
+									"    pm.expect(jsonData.hasInventory).to.eql(false);",
+									"});",
+									"pm.test(\"PackageStatus is RECEIVED\", function () {",
+									"    pm.expect(jsonData.packageStatus).to.eql(\"RECEIVED\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parcels/{{parcelId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"parcels",
+								"{{parcelId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 4. Put-away Kiện hàng vào vị trí (Expect: Auto create Inventory & Order = WAREHOUSE_RECEIVED)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"PackageStatus becomes STORED\", function () {",
+									"    pm.expect(jsonData.packageStatus).to.eql(\"STORED\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"zoneId\": \"{{zoneId}}\",\n  \"shelfId\": \"{{shelfId}}\",\n  \"binId\": \"{{binId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/parcels/{{parcelId}}/put-away",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"parcels",
+								"{{parcelId}}",
+								"put-away"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 5. Kiểm tra lại chi tiết kiện hàng sau Put-away (Expect: hasInventory = true)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"hasInventory is true after Put-away\", function () {",
+									"    pm.expect(jsonData.hasInventory).to.eql(true);",
+									"});",
+									"pm.test(\"PackageStatus is STORED\", function () {",
+									"    pm.expect(jsonData.packageStatus).to.eql(\"STORED\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parcels/{{parcelId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"parcels",
+								"{{parcelId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 6. Kiểm tra lại chi tiết đơn hàng sau Put-away (Expect: Order Status = WAREHOUSE_RECEIVED)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Order status is now WAREHOUSE_RECEIVED\", function () {",
+									"    pm.expect(jsonData.status).to.eql(\"WAREHOUSE_RECEIVED\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"consignments",
+								"{{orderId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 7. Gọi API tạo tồn từ kiện hàng (Verify Idempotent API)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Returns existing inventory record with AVAILABLE status\", function () {",
+									"    pm.expect(jsonData.status).to.eql(\"AVAILABLE\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/inventories/from-parcel/{{parcelId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"inventories",
+								"from-parcel",
+								"{{parcelId}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{accessToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7237",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "shippingCode",
+			"value": "VCL-20260721145629",
+			"type": "string"
+		},
+		{
+			"key": "orderId",
+			"value": "e5f6a7b8-1234-5678-90ab-cdef12345678",
+			"type": "string"
+		},
+		{
+			"key": "parcelId",
+			"value": "bfe85f64-5717-4562-b3fc-2c963f66afb1",
+			"type": "string"
+		},
+		{
+			"key": "warehouseId",
+			"value": "cfe85f64-5717-4562-b3fc-2c963f66afb2",
+			"type": "string"
+		},
+		{
+			"key": "zoneId",
+			"value": "dfe85f64-5717-4562-b3fc-2c963f66afb3",
+			"type": "string"
+		},
+		{
+			"key": "shelfId",
+			"value": "efe85f64-5717-4562-b3fc-2c963f66afb4",
+			"type": "string"
+		},
+		{
+			"key": "binId",
+			"value": "ffe85f64-5717-4562-b3fc-2c963f66afb5",
+			"type": "string"
+		}
+	]
+}
