@@ -408,7 +408,6 @@ namespace VCL_BLL.Services
             {
                 if (item.PackageConfigurationId.HasValue && configMap.TryGetValue(item.PackageConfigurationId.Value, out var config))
                 {
-                    var qty = item.Quantity ?? 1;
                     bool isCustomBox = string.Equals(config.ConfigCode, "CUSTOM", StringComparison.OrdinalIgnoreCase);
 
                     if (isCustomBox)
@@ -427,14 +426,14 @@ namespace VCL_BLL.Services
                             FeeType = "PACKING_FEE",
                             CalculationType = "PER_VOLUME",
                             Value = config.PackageFee,
-                            Amount = feePerBox * qty,
-                            Note = $"Thùng custom {volumeCm3:N0} cm³ ({config.PackageFee:N0}đ/1.000cm³) cho {qty} kiện {item.ProductName}",
+                            Amount = feePerBox,
+                            Note = $"Thùng custom {volumeCm3:N0} cm³ ({config.PackageFee:N0}đ/1.000cm³) cho kiện {item.ProductName}",
                             CreatedAt = now
                         });
                     }
                     else if (config.PackageFee > 0)
                     {
-                        var totalFee = config.PackageFee * qty;
+                        var totalFee = config.PackageFee;
                         fees.Add(new QuotationFee
                         {
                             Id = Guid.NewGuid(),
@@ -443,7 +442,7 @@ namespace VCL_BLL.Services
                             CalculationType = "FIXED",
                             Value = config.PackageFee,
                             Amount = totalFee,
-                            Note = $"Phí đóng gói {config.ConfigName} cho {qty} kiện {item.ProductName}",
+                            Note = $"Phí đóng gói {config.ConfigName} cho kiện {item.ProductName}",
                             CreatedAt = now
                         });
                     }
