@@ -76,10 +76,11 @@ namespace VCL_BLL.Services
                 throw new NotFoundException("Không tìm thấy yêu cầu ký gửi.");
             }
 
-            // 3. Chỉ cho check-in yêu cầu ở trạng thái APPROVED
-            if (!string.Equals(order.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            // 3. Cho phép check-in với các đơn đã chốt báo giá / đặt cọc hoặc đã duyệt
+            var checkInEligibleStatuses = new[] { "APPROVED", "CHECKED_IN", "DEPOSIT_PAID", "PAYMENT_CONFIRMED", "WAITING_DEPOSIT", "QUOTATION_CONFIRMED" };
+            if (!checkInEligibleStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new ArgumentException("Yêu cầu ký gửi không ở trạng thái APPROVED.");
+                throw new ArgumentException($"Yêu cầu ký gửi không ở trạng thái cho phép check-in (Hiện tại: {order.Status}).");
             }
 
             if (request.ActualWeight <= 0)
@@ -134,9 +135,13 @@ namespace VCL_BLL.Services
 
             await parcelRepo.AddAsync(parcel);
 
-            // 8. Cập nhật trạng thái Order thành WAREHOUSE_RECEIVED
-            order.Status = "WAREHOUSE_RECEIVED";
-            orderRepo.Update(order);
+            // 8. Cập nhật trạng thái Order thành CHECKED_IN (nếu đang ở các trạng thái trước nhập kho)
+            var priorStatuses = new[] { "APPROVED", "DEPOSIT_PAID", "PAYMENT_CONFIRMED", "WAITING_DEPOSIT", "QUOTATION_CONFIRMED" };
+            if (priorStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
+            {
+                order.Status = "CHECKED_IN";
+                orderRepo.Update(order);
+            }
 
             // 8b. Nếu có phiếu tiếp nhận kho đang hiệu lực (VCL-146) -> cập nhật sang RECEIVED
             var wrnRepo = _unitOfWork.Repository<WarehouseReceivingNote>();
@@ -165,6 +170,7 @@ namespace VCL_BLL.Services
             // 10. Trả về thông tin check-in đầy đủ
             var response = new ParcelCheckInResponse
             {
+                ParcelId = parcel.Id,
                 ShippingCode = request.ShippingCode,
                 ConsignmentId = order.Id,
                 ConsignmentCode = order.ConsignmentCode ?? string.Empty,
@@ -235,6 +241,10 @@ namespace VCL_BLL.Services
                 }
             }
 
+            // 3.5. Kiểm tra sự tồn tại của bản ghi tồn kho
+            var allInventories = await _unitOfWork.Repository<Inventory>().GetAllAsync();
+            bool hasInventory = allInventories.Any(i => i.ParcelId == parcel.Id);
+
             // 4. Map response
             return new ParcelDetailResponse
             {
@@ -255,7 +265,8 @@ namespace VCL_BLL.Services
                 ChargeableWeight = parcel.ChargeableWeight.HasValue ? Math.Round(parcel.ChargeableWeight.Value, 4) : null,
                 CheckInTime = parcel.CheckInTime,
                 PutAwayTime = parcel.PutAwayTime,
-                StorageLocation = location
+                StorageLocation = location,
+                HasInventory = hasInventory
             };
         }
 
@@ -458,6 +469,59 @@ namespace VCL_BLL.Services
 
             parcelRepo.Update(parcel);
             binRepo.Update(bin);
+
+            // 7b. TỰ ĐỘNG GHI NHẬN TỒN KHO (INVENTORY) & CẬP NHẬT TRẠNG THÁI ORDER (TRONG CÙNG TRANSACTION)
+            if (parcel.ConsignmentId.HasValue)
+            {
+                var orderRepo = _unitOfWork.Repository<Order>();
+                var order = await orderRepo.GetByIdAsync(parcel.ConsignmentId.Value);
+                if (order == null)
+                {
+                    throw new NotFoundException("Không tìm thấy thông tin yêu cầu ký gửi liên kết với kiện hàng.");
+                }
+
+                if (!order.CustomerId.HasValue)
+                {
+                    throw new ArgumentException("Yêu cầu ký gửi không liên kết với khách hàng nào để tạo tồn kho.");
+                }
+
+                var inventoryRepo = _unitOfWork.Repository<Inventory>();
+                var allInventories = await inventoryRepo.GetAllAsync();
+                var existingInventory = allInventories.FirstOrDefault(i => i.ParcelId == parcel.Id);
+
+                if (existingInventory == null)
+                {
+                    var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+                    var allItems = await orderItemRepo.GetAllAsync();
+                    var consignmentItems = allItems.Where(i => i.OrderId == order.Id).ToList();
+
+                    Guid? orderItemId = consignmentItems.FirstOrDefault()?.Id;
+                    int quantity = consignmentItems.Sum(item => item.Quantity ?? 1);
+                    if (quantity <= 0)
+                    {
+                        quantity = 1;
+                    }
+
+                    var newInventory = new Inventory
+                    {
+                        Id = Guid.NewGuid(),
+                        CustomerId = order.CustomerId.Value,
+                        OrderId = order.Id,
+                        OrderItemId = orderItemId,
+                        ParcelId = parcel.Id,
+                        BinId = bin.Id,
+                        Quantity = quantity,
+                        Status = "AVAILABLE",
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    await inventoryRepo.AddAsync(newInventory);
+                }
+
+                // Chuyển trạng thái đơn sang WAREHOUSE_RECEIVED khi đã hoàn tất put-away và có inventory
+                order.Status = "WAREHOUSE_RECEIVED";
+                orderRepo.Update(order);
+            }
 
             await _unitOfWork.SaveChangesAsync();
 

@@ -14,6 +14,7 @@ namespace VCL_BLL.DTOs
 
     public class ParcelCheckInResponse
     {
+        public Guid ParcelId { get; set; }
         public string ShippingCode { get; set; } = string.Empty;
         public Guid ConsignmentId { get; set; }
         public string ConsignmentCode { get; set; } = string.Empty;
@@ -99,6 +100,9 @@ namespace VCL_BLL.DTOs
 
         // Vị trí kho (chỉ có khi đã put-away)
         public ParcelStorageLocation? StorageLocation { get; set; }
+
+        // Trạng thái đã ghi nhận tồn kho
+        public bool HasInventory { get; set; }
     }
 
     /// <summary>
