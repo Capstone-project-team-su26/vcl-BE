@@ -116,5 +116,6 @@ public class WarehouseLayoutStatusDto
     public decimal? MaxWeight { get; set; }
     public decimal? UtilizationRate { get; set; }
     public List<Guid>? ParcelIds { get; set; }
+    public List<Guid>? InventoryIds { get; set; }
 }
 

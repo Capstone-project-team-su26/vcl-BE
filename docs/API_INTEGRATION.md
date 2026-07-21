@@ -5144,6 +5144,9 @@ Authorization: Bearer {accessToken}
       "parcelIds": [
         "1132b4f9-dbac-4fc1-a9f8-b3d9cbb281ff",
         "28ac9bb1-39d2-43bb-a5a4-cbf8cf129aff"
+      ],
+      "inventoryIds": [
+        "8832b4f9-dbac-4fc1-a9f8-b3d9cbb282ee"
       ]
     }
   ]
@@ -5151,7 +5154,8 @@ Authorization: Bearer {accessToken}
 ```
 
 *Lưu ý về phân quyền & dữ liệu nhạy cảm:*
-- Đối với **Warehouse Staff** hoặc **Staff**, danh sách `parcelIds` sẽ được ẩn (`null`) nhằm tránh tiết lộ thông tin nhạy cảm của các kiện hàng.
+- Hỗ trợ các quyền: `OperationsManager`, `Operations`, `Admin`, `WarehouseStaff`, `Staff`.
+- Đối với **Warehouse Staff** hoặc **Staff**, danh sách `parcelIds` và `inventoryIds` sẽ được ẩn (`null`) nhằm tránh tiết lộ thông tin nhạy cảm của các kiện hàng.
 
 **TypeScript Interfaces:**
 
@@ -5172,6 +5176,7 @@ interface WarehouseLayoutStatusDto {
   maxWeight: number | null;
   utilizationRate: number | null;
   parcelIds: string[] | null;
+  inventoryIds: string[] | null;
 }
 ```
 

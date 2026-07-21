@@ -474,15 +474,23 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
         var warehouseBins = allBins.Where(b => b.WarehouseId == warehouseId).ToList();
         var binMap = warehouseBins.ToDictionary(b => b.Id);
 
-        // 4. Lấy tất cả Parcel có trạng thái STORED trong kho
+        // 4. Lấy tất cả Parcel và Inventory có hàng trong kho
         var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
         var storedParcels = allParcels
             .Where(p => p.BinId.HasValue && string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        // Gom nhóm Parcels theo BinId để tăng hiệu năng tìm kiếm
         var parcelsByBin = storedParcels
             .GroupBy(p => p.BinId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var allInventories = await _unitOfWork.Repository<Inventory>().GetAllAsync();
+        var activeInventories = allInventories
+            .Where(i => i.BinId != Guid.Empty && i.Quantity > 0)
+            .ToList();
+
+        var inventoriesByBin = activeInventories
+            .GroupBy(i => i.BinId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
         var result = new List<WarehouseLayoutStatusDto>();
@@ -504,19 +512,22 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
                 MaxItemCount = null,
                 MaxWeight = null,
                 UtilizationRate = null,
-                ParcelIds = new List<Guid>()
+                ParcelIds = new List<Guid>(),
+                InventoryIds = new List<Guid>()
             };
 
             // Nếu vị trí là một Ô chứa (Bin)
             if (layout.BinId.HasValue && binMap.TryGetValue(layout.BinId.Value, out var bin))
             {
-                // Lấy danh sách kiện hàng đang lưu tại Bin này
-                var binParcels = parcelsByBin.ContainsKey(bin.Id) ? parcelsByBin[bin.Id] : new List<Parcel>();
+                // Lấy danh sách kiện hàng và hàng tồn kho đang lưu tại Bin này
+                var binParcels = parcelsByBin.TryGetValue(bin.Id, out var pList) ? pList : new List<Parcel>();
+                var binInventories = inventoriesByBin.TryGetValue(bin.Id, out var iList) ? iList : new List<Inventory>();
 
-                dto.CurrentItemCount = binParcels.Count;
+                dto.CurrentItemCount = binParcels.Count + binInventories.Sum(i => i.Quantity);
                 dto.CurrentWeight = binParcels.Sum(p => p.ActualWeight ?? 0m);
                 dto.MaxWeight = bin.MaxWeight;
                 dto.ParcelIds = binParcels.Select(p => p.Id).ToList();
+                dto.InventoryIds = binInventories.Select(i => i.Id).ToList();
 
                 // Tính toán UtilizationRate dựa trên MaxWeight hoặc MaxVolume
                 decimal weightUtilization = 0m;
@@ -580,6 +591,7 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
                 string.Equals(userRole, "Staff", StringComparison.OrdinalIgnoreCase))
             {
                 dto.ParcelIds = null;
+                dto.InventoryIds = null;
             }
 
             result.Add(dto);
