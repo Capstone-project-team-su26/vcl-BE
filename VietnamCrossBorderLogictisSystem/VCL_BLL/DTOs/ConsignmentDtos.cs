@@ -163,9 +163,6 @@ namespace VCL_BLL.DTOs
         /// <summary>Giá trị khai báo.</summary>
         public decimal? DeclaredValue { get; set; }
 
-        /// <summary>Ảnh / link tham chiếu (giữ lại cho FE cũ; nếu gửi cả ReferenceUrls thì field này được gộp chung).</summary>
-        public string? ReferenceUrl { get; set; }
-
         /// <summary>Danh sách URL ảnh của mặt hàng (upload qua POST /api/uploads/images).</summary>
         public List<string>? ReferenceUrls { get; set; }
 
@@ -175,15 +172,15 @@ namespace VCL_BLL.DTOs
         /// <summary>ID cấu hình thùng đóng gói khách chọn (nếu trống hệ thống sẽ tự gợi ý).</summary>
         public Guid? PackageConfigurationId { get; set; }
 
-        /// <summary>Gộp ReferenceUrl + ReferenceUrls thành 1 chuỗi lưu DB (phân cách "|"), bỏ trùng/rỗng.</summary>
+        /// <summary>Gộp ReferenceUrls thành 1 chuỗi lưu DB (phân cách "|"), bỏ trùng/rỗng.</summary>
         public string? CombinedReferenceUrls()
         {
-            var all = new List<string>();
-            if (!string.IsNullOrWhiteSpace(ReferenceUrl))
-                all.AddRange(ReferenceUrl.Split('|', StringSplitOptions.RemoveEmptyEntries));
-            if (ReferenceUrls != null)
-                all.AddRange(ReferenceUrls.Where(u => !string.IsNullOrWhiteSpace(u)));
-            var distinct = all.Select(u => u.Trim()).Where(u => u.Length > 0).Distinct().ToList();
+            if (ReferenceUrls == null) return null;
+            var distinct = ReferenceUrls
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Select(u => u.Trim())
+                .Distinct()
+                .ToList();
             return distinct.Any() ? string.Join("|", distinct) : null;
         }
 
