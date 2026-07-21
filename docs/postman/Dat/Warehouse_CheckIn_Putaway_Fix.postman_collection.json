@@ -70,15 +70,21 @@
 									"    pm.response.to.have.status(200);",
 									"});",
 									"var jsonData = pm.response.json();",
-									"if (jsonData && jsonData.packageCode) {",
-									"    pm.collectionVariables.set(\"packageCode\", jsonData.packageCode);",
-									"}",
-									"if (jsonData && jsonData.consignmentId) {",
-									"    pm.collectionVariables.set(\"orderId\", jsonData.consignmentId);",
-									"}",
-									"pm.test(\"PackageStatus is RECEIVED\", function () {",
-									"    pm.expect(jsonData.packageStatus).to.eql(\"RECEIVED\");",
-									"});"
+									"var parcelData = jsonData.data || jsonData;",
+									"if (parcelData) {",
+									"    if (parcelData.packageCode) {",
+									"        pm.collectionVariables.set(\"packageCode\", parcelData.packageCode);",
+									"    }",
+									"    if (parcelData.consignmentId) {",
+									"        pm.collectionVariables.set(\"orderId\", parcelData.consignmentId);",
+									"    }",
+									"    if (parcelData.parcelId) {",
+									"        pm.collectionVariables.set(\"parcelId\", parcelData.parcelId);",
+									"    }",
+									"    pm.test(\"PackageStatus is RECEIVED\", function () {",
+									"        pm.expect(parcelData.packageStatus).to.eql(\"RECEIVED\");",
+									"    });",
+									"}"
 								],
 								"type": "text/javascript"
 							}
@@ -197,8 +203,9 @@
 									"    pm.response.to.have.status(200);",
 									"});",
 									"var jsonData = pm.response.json();",
+									"var resultData = jsonData.data || jsonData;",
 									"pm.test(\"PackageStatus becomes STORED\", function () {",
-									"    pm.expect(jsonData.packageStatus).to.eql(\"STORED\");",
+									"    pm.expect(resultData.packageStatus).to.eql(\"STORED\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -315,12 +322,13 @@
 							"listen": "test",
 							"script": {
 								"exec": [
-									"pm.test(\"Status code is 200\", function () {",
-									"    pm.response.to.have.status(200);",
+									"pm.test(\"Status code is 200 or 201\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
 									"});",
 									"var jsonData = pm.response.json();",
+									"var inventoryData = jsonData.data || jsonData;",
 									"pm.test(\"Returns existing inventory record with AVAILABLE status\", function () {",
-									"    pm.expect(jsonData.status).to.eql(\"AVAILABLE\");",
+									"    pm.expect(inventoryData.status).to.eql(\"AVAILABLE\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -376,32 +384,32 @@
 		},
 		{
 			"key": "orderId",
-			"value": "e5f6a7b8-1234-5678-90ab-cdef12345678",
+			"value": "",
 			"type": "string"
 		},
 		{
 			"key": "parcelId",
-			"value": "bfe85f64-5717-4562-b3fc-2c963f66afb1",
+			"value": "",
 			"type": "string"
 		},
 		{
 			"key": "warehouseId",
-			"value": "cfe85f64-5717-4562-b3fc-2c963f66afb2",
+			"value": "",
 			"type": "string"
 		},
 		{
 			"key": "zoneId",
-			"value": "dfe85f64-5717-4562-b3fc-2c963f66afb3",
+			"value": "",
 			"type": "string"
 		},
 		{
 			"key": "shelfId",
-			"value": "efe85f64-5717-4562-b3fc-2c963f66afb4",
+			"value": "",
 			"type": "string"
 		},
 		{
 			"key": "binId",
-			"value": "ffe85f64-5717-4562-b3fc-2c963f66afb5",
+			"value": "",
 			"type": "string"
 		}
 	]

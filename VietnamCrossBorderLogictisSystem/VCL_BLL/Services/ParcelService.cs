@@ -170,6 +170,7 @@ namespace VCL_BLL.Services
             // 10. Trả về thông tin check-in đầy đủ
             var response = new ParcelCheckInResponse
             {
+                ParcelId = parcel.Id,
                 ShippingCode = request.ShippingCode,
                 ConsignmentId = order.Id,
                 ConsignmentCode = order.ConsignmentCode ?? string.Empty,
