@@ -76,8 +76,8 @@ namespace VCL_BLL.Services
                 throw new NotFoundException("Không tìm thấy yêu cầu ký gửi.");
             }
 
-            // 3. Chỉ cho check-in yêu cầu ở trạng thái APPROVED hoặc CHECKED_IN
-            var checkInEligibleStatuses = new[] { "APPROVED", "CHECKED_IN" };
+            // 3. Cho phép check-in với các đơn đã chốt báo giá / đặt cọc hoặc đã duyệt
+            var checkInEligibleStatuses = new[] { "APPROVED", "CHECKED_IN", "DEPOSIT_PAID", "PAYMENT_CONFIRMED", "WAITING_DEPOSIT", "QUOTATION_CONFIRMED" };
             if (!checkInEligibleStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new ArgumentException($"Yêu cầu ký gửi không ở trạng thái cho phép check-in (Hiện tại: {order.Status}).");
@@ -135,8 +135,9 @@ namespace VCL_BLL.Services
 
             await parcelRepo.AddAsync(parcel);
 
-            // 8. Cập nhật trạng thái Order thành CHECKED_IN (chỉ khi đang là APPROVED; chưa chuyển sang WAREHOUSE_RECEIVED khi chưa put-away / tạo tồn)
-            if (string.Equals(order.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            // 8. Cập nhật trạng thái Order thành CHECKED_IN (nếu đang ở các trạng thái trước nhập kho)
+            var priorStatuses = new[] { "APPROVED", "DEPOSIT_PAID", "PAYMENT_CONFIRMED", "WAITING_DEPOSIT", "QUOTATION_CONFIRMED" };
+            if (priorStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
             {
                 order.Status = "CHECKED_IN";
                 orderRepo.Update(order);
