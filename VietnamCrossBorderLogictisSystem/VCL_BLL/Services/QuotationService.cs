@@ -219,7 +219,7 @@ namespace VCL_BLL.Services
             var volumetricWeight = (order.TotalVolume ?? 0m) / divisor;
 
             // Tìm Minimum Weight
-            var matchedPricing = _unitOfWork.Repository<ServicePricing>().GetAllAsync().Result
+            var matchedPricing = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync())
                 .FirstOrDefault(p => p.Id == quotation.ServicePricingId);
             var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
 
@@ -324,7 +324,7 @@ namespace VCL_BLL.Services
             var divisor = GetVolumetricDivisor(activeRules);
             var volumetricWeight = (order.TotalVolume ?? 0m) / divisor;
 
-            var matchedPricing = _unitOfWork.Repository<ServicePricing>().GetAllAsync().Result
+            var matchedPricing = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync())
                 .FirstOrDefault(p => p.Id == quotation.ServicePricingId);
             var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
 
