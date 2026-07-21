@@ -5233,6 +5233,82 @@ interface WarehouseLayoutStatusDto {
 | `/customer/chat` | `GET /api/conversations`, `POST /api/conversations` |
 | `/customer/chat/{id}` | `GET /api/conversations/{id}`, `POST /api/conversations/{id}/messages`, `PUT /api/conversations/{id}/read` |
 | `/sales/chat` | `GET /api/conversations` |
-| `/sales/chat/{id}` | `GET /api/conversations/{id}`, `POST /api/conversations/{id}/messages`, `PUT /api/conversations/{id}/read` |
+
+## 26. AI Assistant Endpoints
+
+### 26.1 AI hỗ trợ Sales tra cứu tình trạng đơn hàng
+
+Sales/Staff gửi câu hỏi tự nhiên để AI tổng hợp và trả lời tình trạng đơn ký gửi, đơn mua hộ, kiện hàng, kho, vận chuyển và thanh toán mà không làm thay đổi dữ liệu đơn.
+
+```http
+POST /api/ai/sales/order-status-query
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```typescript
+interface SalesOrderStatusQueryRequest {
+  message: string; // Câu hỏi tra cứu tự nhiên (Bắt buộc)
+  orderCode?: string; // Mã đơn ký gửi / mua hộ / mã kiện (Tùy chọn)
+  customerId?: string; // ID khách hàng (Tùy chọn)
+  relatedType?: string; // CONSIGNMENT | PURCHASE | PARCEL | CUSTOMER (Tùy chọn)
+  relatedId?: string; // ID thực thể liên quan (Tùy chọn)
+}
+```
+
+**Response (200 OK):**
+
+```typescript
+interface SalesOrderStatusQueryResponse {
+  answer: string;
+  relatedOrders: Array<{
+    orderId: string;
+    orderCode: string;
+    orderType: string;
+    customerName: string;
+    customerPhone: string;
+    status: string;
+    createdAt: string;
+  }>;
+  relatedParcels: Array<{
+    parcelId: string;
+    packageCode: string;
+    status: string;
+    localTrackingCode: string;
+    weightKg: number;
+  }>;
+  currentStatus: string;
+  paymentStatus: string;
+  warehouseStatus: string;
+  shipmentStatus: string;
+  nextActionSuggestion: string;
+  dataSources: string[];
+  warning?: string;
+}
+```
+
+**Response Error (400 Bad Request):**
+```json
+{
+  "message": "Câu hỏi tra cứu (message) không được để trống."
+}
+```
+
+**Response Error (403 Forbidden):**
+```json
+{
+  "message": "Bạn không có quyền truy xuất dữ liệu tra cứu tình trạng đơn hàng cho Sales."
+}
+```
+
+**Response Error (404 Not Found):**
+```json
+{
+  "message": "Không tìm thấy dữ liệu đơn hàng, kiện hàng hoặc khách hàng liên quan đến câu hỏi."
+}
+```
+
 
 

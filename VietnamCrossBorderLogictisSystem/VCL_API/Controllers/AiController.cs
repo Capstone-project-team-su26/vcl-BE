@@ -49,4 +49,43 @@ public class AiController : ControllerBase
             return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// AI hỗ trợ Sales tra cứu tình trạng đơn hàng
+    /// </summary>
+    [HttpPost("sales/order-status-query")]
+    public async Task<IActionResult> QuerySalesOrderStatus([FromBody] SalesOrderStatusQueryRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? 
+                       User.FindFirst("role")?.Value;
+
+        var allowedRoles = new[] { "ADMIN", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
+        if (string.IsNullOrEmpty(userRole) || !allowedRoles.Contains(userRole.ToUpperInvariant()))
+        {
+            return StatusCode(403, new { message = "Bạn không có quyền truy xuất dữ liệu tra cứu tình trạng đơn hàng cho Sales." });
+        }
+
+        try
+        {
+            var result = await _aiService.QuerySalesOrderStatusAsync(request);
+            return Ok(result);
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+        }
+    }
 }
