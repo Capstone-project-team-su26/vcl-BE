@@ -693,18 +693,33 @@ namespace VCL_BLL.Services
             }
 
             // 7. Tính tổng tiền báo giá
-            decimal vatAmount = Math.Round((request.PurchaseFee + request.ShippingFee + totalAdditionalFees) * 0.08m, 2);
+            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
+            var allRules = await pricingRuleRepo.GetAllAsync();
+            var activeRules = allRules.Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            decimal vatRatePercent = 8m;
+            var vatRule = activeRules.FirstOrDefault(r =>
+                string.Equals(r.RuleCode, "VAT", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.RuleType, "VAT", StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(r.RuleType, "TAX", StringComparison.OrdinalIgnoreCase) && (r.RuleName ?? "").Contains("VAT", StringComparison.OrdinalIgnoreCase)));
+
+            if (vatRule != null && vatRule.Value > 0)
+            {
+                vatRatePercent = vatRule.Value <= 1.0m ? vatRule.Value * 100m : vatRule.Value;
+            }
+
+            decimal vatAmount = Math.Round((request.PurchaseFee + request.ShippingFee + totalAdditionalFees) * (vatRatePercent / 100m), 2);
             if (vatAmount > 0)
             {
                 quotationFees.Add(new QuotationFee
                 {
                     Id = Guid.NewGuid(),
-                    FeeName = "Thuế giá trị gia tăng (VAT 8%)",
+                    FeeName = $"Thuế giá trị gia tăng (VAT {vatRatePercent:G29}%)",
                     FeeType = "TAX",
                     CalculationType = "PERCENTAGE",
-                    Value = 8m,
+                    Value = vatRatePercent,
                     Amount = vatAmount,
-                    Note = "8% phí dịch vụ mua hộ",
+                    Note = $"{vatRatePercent:G29}% phí dịch vụ mua hộ",
                     CreatedAt = DateTime.UtcNow
                 });
             }

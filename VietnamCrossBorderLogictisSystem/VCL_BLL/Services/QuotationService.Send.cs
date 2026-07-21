@@ -246,24 +246,25 @@ namespace VCL_BLL.Services
 
             if (vatAmount == 0m && importTax == 0m)
             {
-                var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now);
+                var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now, activeRules);
                 vatAmount = taxResult.VatAmount;
                 importTax = taxResult.ImportTax;
                 quotationFees.AddRange(taxResult.TaxFees);
             }
             else
             {
+                var vatRatePercent = GetVatRatePercent(activeRules);
                 if (vatAmount > 0)
                 {
                     quotationFees.Add(new QuotationFee
                     {
                         Id = Guid.NewGuid(),
-                        FeeName = "Thuế giá trị gia tăng (VAT 8%)",
+                        FeeName = $"Thuế giá trị gia tăng (VAT {vatRatePercent:G29}%)",
                         FeeType = "TAX",
                         CalculationType = "PERCENTAGE",
-                        Value = 8m,
+                        Value = vatRatePercent,
                         Amount = vatAmount,
-                        Note = "8% phí dịch vụ logistics",
+                        Note = $"{vatRatePercent:G29}% phí dịch vụ logistics",
                         CreatedAt = now
                     });
                 }

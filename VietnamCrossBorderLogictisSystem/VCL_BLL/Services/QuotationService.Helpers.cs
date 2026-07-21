@@ -38,6 +38,38 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
+        /// Lấy tỷ lệ thuế VAT (%) từ activeRules (RuleCode/RuleType: VAT),
+        /// hoặc từ file cấu hình (PricingSettings:VatRate),
+        /// hoặc mặc định là 8%.
+        /// </summary>
+        private decimal GetVatRatePercent(IEnumerable<PricingRule>? activeRules = null)
+        {
+            if (activeRules != null)
+            {
+                var rule = activeRules.FirstOrDefault(r =>
+                    string.Equals(r.RuleCode, "VAT", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(r.RuleType, "VAT", StringComparison.OrdinalIgnoreCase) ||
+                    (string.Equals(r.RuleType, "TAX", StringComparison.OrdinalIgnoreCase) && (r.RuleName ?? "").Contains("VAT", StringComparison.OrdinalIgnoreCase)));
+
+                if (rule != null && rule.Value > 0)
+                {
+                    return rule.Value <= 1.0m ? rule.Value * 100m : rule.Value;
+                }
+            }
+
+            if (_configuration != null)
+            {
+                var configValStr = _configuration["PricingSettings:VatRate"];
+                if (decimal.TryParse(configValStr, out var configVal) && configVal > 0)
+                {
+                    return configVal <= 1.0m ? configVal * 100m : configVal;
+                }
+            }
+
+            return 8m;
+        }
+
+        /// <summary>
         /// Nhận diện phương án vận chuyển nhanh (Express) — hỗ trợ cả tên tiếng Anh ("Express")
         /// lẫn tiếng Việt ("Hỏa Tốc"). Dùng cho các mức giá/phí mặc định khi ServicePricing chưa có Price.
         /// </summary>
@@ -309,7 +341,8 @@ namespace VCL_BLL.Services
             List<OrderItem> orderItems,
             decimal estimatedFreightCharge,
             decimal serviceFee,
-            DateTime now)
+            DateTime now,
+            IEnumerable<PricingRule>? activeRules = null)
         {
             var categories = await _unitOfWork.Repository<ProductType>().GetAllAsync();
             decimal importTax = 0m;
@@ -357,18 +390,19 @@ namespace VCL_BLL.Services
                 }
             }
 
-            decimal vatAmount = Math.Round((estimatedFreightCharge + serviceFee) * 0.08m, 2);
+            var vatRatePercent = GetVatRatePercent(activeRules);
+            decimal vatAmount = Math.Round((estimatedFreightCharge + serviceFee) * (vatRatePercent / 100m), 2);
             if (vatAmount > 0)
             {
                 taxFees.Add(new QuotationFee
                 {
                     Id = Guid.NewGuid(),
-                    FeeName = "Thuế giá trị gia tăng (VAT 8%)",
+                    FeeName = $"Thuế giá trị gia tăng (VAT {vatRatePercent:G29}%)",
                     FeeType = "TAX",
                     CalculationType = "PERCENTAGE",
-                    Value = 8m,
+                    Value = vatRatePercent,
                     Amount = vatAmount,
-                    Note = "8% phí dịch vụ logistics",
+                    Note = $"{vatRatePercent:G29}% phí dịch vụ logistics",
                     CreatedAt = now
                 });
             }

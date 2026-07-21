@@ -392,7 +392,7 @@ namespace VCL_BLL.Services
 
             serviceFee = baseServiceFee + totalSurcharges + totalPackageFees;
 
-            var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now);
+            var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now, activeRules);
             decimal vatAmount = taxResult.VatAmount;
             decimal importTax = taxResult.ImportTax;
             taxAndDuty = importTax + vatAmount;
