@@ -1,0 +1,339 @@
+{
+	"info": {
+		"_postman_id": "c1f7a2d4-3948-4e8b-b892-3a59f1c7d23a",
+		"name": "VCL AI Sales Query & Warehouse Flow Test API",
+		"description": "Postman Collection test cho tính năng AI Sales tra cứu tình trạng đơn hàng và luồng Chuẩn hóa Nhập kho (Check-in -> Put-away -> Auto Inventory).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Authentication",
+			"item": [
+				{
+					"name": "Login as Staff / Sales",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.token) {",
+									"    pm.collectionVariables.set(\"accessToken\", jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"staff@vcl-system.com\",\n  \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. AI Sales Order Status Query",
+			"item": [
+				{
+					"name": "1. Tra cứu đơn hàng tự nhiên (AI Query)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"Kiểm tra tình trạng đơn ký gửi VCL-20260721145629 giúp mình với\",\n  \"orderCode\": \"VCL-20260721145629\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/ai/sales/order-status-query",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ai",
+								"sales",
+								"order-status-query"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Tra cứu đơn mua hộ (AI Query Purchase)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"Tra cứu đơn mua hộ mã PUR-20260715001\",\n  \"orderCode\": \"PUR-20260715001\",\n  \"relatedType\": \"PURCHASE\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/ai/sales/order-status-query",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ai",
+								"sales",
+								"order-status-query"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Tra cứu theo SĐT / Tên Khách Hàng (AI Query Customer)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"Xem đơn mới nhất của khách hàng Nguyễn Văn A 0987654321\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/ai/sales/order-status-query",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"ai",
+								"sales",
+								"order-status-query"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Warehouse Flow (Check-in -> Put-away -> Auto Inventory)",
+			"item": [
+				{
+					"name": "1. Check-in Kiện hàng (Status: RECEIVED)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.packageCode) {",
+									"    pm.collectionVariables.set(\"packageCode\", jsonData.packageCode);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"shippingCode\": \"VCL-20260721145629\",\n  \"actualWeight\": 2.5,\n  \"length\": 30,\n  \"width\": 20,\n  \"height\": 15\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/parcels/check-in",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"parcels",
+								"check-in"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Xem chi tiết kiện hàng (Kèm hasInventory)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/parcels/{{parcelId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"parcels",
+								"{{parcelId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Put-away Kiện hàng (Auto-create Inventory & Status WAREHOUSE_RECEIVED)",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"zoneId\": \"{{zoneId}}\",\n  \"shelfId\": \"{{shelfId}}\",\n  \"binId\": \"{{binId}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/parcels/{{parcelId}}/put-away",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"parcels",
+								"{{parcelId}}",
+								"put-away"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Verify Inventory Idempotent API",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/inventories/from-parcel/{{parcelId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"inventories",
+								"from-parcel",
+								"{{parcelId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Xem chi tiết đơn ký gửi (Check Order Status WAREHOUSE_RECEIVED)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/orders/consignments/{{orderId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"orders",
+								"consignments",
+								"{{orderId}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{accessToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7237",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "orderId",
+			"value": "e5f6a7b8-1234-5678-90ab-cdef12345678",
+			"type": "string"
+		},
+		{
+			"key": "parcelId",
+			"value": "bfe85f64-5717-4562-b3fc-2c963f66afb1",
+			"type": "string"
+		},
+		{
+			"key": "warehouseId",
+			"value": "cfe85f64-5717-4562-b3fc-2c963f66afb2",
+			"type": "string"
+		},
+		{
+			"key": "zoneId",
+			"value": "dfe85f64-5717-4562-b3fc-2c963f66afb3",
+			"type": "string"
+		},
+		{
+			"key": "shelfId",
+			"value": "efe85f64-5717-4562-b3fc-2c963f66afb4",
+			"type": "string"
+		},
+		{
+			"key": "binId",
+			"value": "ffe85f64-5717-4562-b3fc-2c963f66afb5",
+			"type": "string"
+		}
+	]
+}
