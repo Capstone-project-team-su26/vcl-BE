@@ -58,7 +58,6 @@ namespace VCL_BLL.Services
                     Height = item.Height,
                     DeclaredValue = item.DeclaredValue,
                     ReferenceUrls = ConsignmentItemRequest.SplitReferenceUrls(item.ReferenceUrl),
-                    ReferenceUrl = ConsignmentItemRequest.SplitReferenceUrls(item.ReferenceUrl).FirstOrDefault(),
                     PackageConfigurationId = item.PackageConfigurationId,
                     ItemVolume = itemVolume
                 });
