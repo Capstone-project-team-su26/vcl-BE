@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
 using System.Security.Claims;
+using System.Text;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
@@ -15,13 +17,16 @@ namespace VCL_API.Controllers
     {
         private readonly IPurchasePaymentService _purchasePaymentService;
         private readonly IConsignmentPaymentService _consignmentPaymentService;
+        private readonly ILogger<PurchasePaymentController> _logger;
 
         public PurchasePaymentController(
             IPurchasePaymentService purchasePaymentService,
-            IConsignmentPaymentService consignmentPaymentService)
+            IConsignmentPaymentService consignmentPaymentService,
+            ILogger<PurchasePaymentController> logger)
         {
             _purchasePaymentService = purchasePaymentService;
             _consignmentPaymentService = consignmentPaymentService;
+            _logger = logger;
         }
 
         /// <summary>
@@ -95,71 +100,115 @@ namespace VCL_API.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> PayOsWebhook()
         {
+            var headers = new StringBuilder();
+            foreach (var header in Request.Headers)
+            {
+                headers.AppendLine($"{header.Key}: {header.Value}");
+            }
+
+            _logger.LogInformation(
+                "PayOS webhook hit. Time={Time} Method={Method} Path={Path} Content-Type={ContentType} Content-Length={ContentLength}\nHeaders:\n{Headers}",
+                DateTime.Now, Request.Method, Request.Path, Request.ContentType, Request.ContentLength, headers.ToString());
+
             string rawBody;
             using (var reader = new StreamReader(Request.Body))
             {
                 rawBody = await reader.ReadToEndAsync();
             }
 
-            // payOS chỉ chấp nhận đăng ký webhook khi URL trả 2xx. Vì vậy endpoint này
-            // LUÔN trả 200 — kèm cờ handled/success để biết có ghi nhận thanh toán hay không.
-            // (Body rỗng = payOS/Swagger ping thử; chữ ký sai = bỏ qua, không ghi nhận.)
+            _logger.LogInformation("PayOS webhook body: {RawBody}", rawBody);
 
+            // Body rỗng -> ACK ngay
             if (string.IsNullOrWhiteSpace(rawBody))
             {
-                return Ok(new { success = true, handled = false, message = "Empty body - acknowledged." });
+                _logger.LogInformation("PayOS webhook body is empty.");
+
+                return Ok(new
+                {
+                    success = true,
+                    handled = false,
+                    message = "Empty body - acknowledged."
+                });
             }
 
-            // Kiểm tra nhanh raw body nếu chứa các cụm từ xác nhận webhook của payOS
-            if (rawBody.Contains("confirm-webhook", StringComparison.OrdinalIgnoreCase) || 
-                rawBody.Contains("confirm webhook", StringComparison.OrdinalIgnoreCase) ||
-                rawBody.Contains("xac-nhan-webhook", StringComparison.OrdinalIgnoreCase) ||
-                rawBody.Contains("xac nhan webhook", StringComparison.OrdinalIgnoreCase))
+            // Kiểm tra nhanh confirm webhook
+            if (rawBody.Contains("confirm-webhook", StringComparison.OrdinalIgnoreCase)
+                || rawBody.Contains("confirm webhook", StringComparison.OrdinalIgnoreCase)
+                || rawBody.Contains("xac-nhan-webhook", StringComparison.OrdinalIgnoreCase)
+                || rawBody.Contains("xac nhan webhook", StringComparison.OrdinalIgnoreCase))
             {
-                return Ok(new { success = true, message = "Webhook confirmed" });
+                _logger.LogInformation("PayOS webhook confirmation detected (raw body match).");
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "Webhook confirmed"
+                });
             }
 
             try
             {
-                using (var doc = System.Text.Json.JsonDocument.Parse(rawBody))
+                using var doc = System.Text.Json.JsonDocument.Parse(rawBody);
+
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("data", out var dataProp))
                 {
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("data", out var dataProp) && dataProp.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    if (dataProp.TryGetProperty("description", out var descProp))
                     {
-                        if (dataProp.TryGetProperty("description", out var descProp))
+                        var description = descProp.GetString();
+
+                        _logger.LogInformation("PayOS webhook description: {Description}", description);
+
+                        if (IsWebhookConfirmationPing(description))
                         {
-                            // payOS gửi ping thử khi đăng ký URL. Mô tả thay đổi tùy phiên bản
-                            // (tiếng Anh / tiếng Việt có dấu / không dấu) nên nhận diện rộng.
-                            var descStr = descProp.GetString();
-                            if (IsWebhookConfirmationPing(descStr))
+                            _logger.LogInformation("PayOS webhook confirmation detected (description match).");
+
+                            return Ok(new
                             {
-                                return Ok(new { success = true, message = "Webhook confirmed" });
-                            }
+                                success = true,
+                                message = "Webhook confirmed"
+                            });
                         }
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // JSON không hợp lệ -> vẫn ack 200 ở dưới, không làm payOS retry
+                _logger.LogWarning(ex, "PayOS webhook body is not valid JSON.");
             }
 
             try
             {
-                // payOS chỉ có một webhook URL cho cả 2 loại thanh toán:
-                // thử khớp thanh toán mua hộ trước, nếu không thuộc thì thử thanh toán ký gửi.
+                _logger.LogInformation("Processing PayOS webhook as purchase payment...");
+
                 var handled = await _purchasePaymentService.HandlePayOsWebhookAsync(rawBody);
+
                 if (!handled)
                 {
+                    _logger.LogInformation("Not a purchase payment. Trying consignment payment...");
+
                     handled = await _consignmentPaymentService.HandlePayOsWebhookAsync(rawBody);
                 }
-                return Ok(new { success = true, handled });
+
+                _logger.LogInformation("PayOS webhook handled = {Handled}", handled);
+
+                return Ok(new
+                {
+                    success = true,
+                    handled
+                });
             }
             catch (Exception ex)
             {
-                // Chữ ký sai / dữ liệu lỗi: KHÔNG ghi nhận, nhưng vẫn trả 200 để payOS
-                // không đánh dấu webhook URL là hỏng. Ghi lý do vào response để debug.
-                return Ok(new { success = false, handled = false, message = ex.Message });
+                _logger.LogError(ex, "Error while handling PayOS webhook.");
+
+                return Ok(new
+                {
+                    success = false,
+                    handled = false,
+                    message = ex.Message
+                });
             }
         }
     }
