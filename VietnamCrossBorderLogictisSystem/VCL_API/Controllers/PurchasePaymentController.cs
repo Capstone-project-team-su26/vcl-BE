@@ -68,6 +68,28 @@ namespace VCL_API.Controllers
         [HttpPost("api/payments/payos/webhook")]
         [HttpPost("api/payments/payos-webhook")]
         [AllowAnonymous]
+        /// <summary>
+        /// Nhận diện request ping xác nhận webhook của payOS qua trường data.description.
+        /// Bỏ dấu tiếng Việt trước khi so khớp để bắt được cả "mã xác nhận webhook",
+        /// "ma xac nhan webhook" lẫn "confirm webhook".
+        /// </summary>
+        private static bool IsWebhookConfirmationPing(string? description)
+        {
+            if (string.IsNullOrWhiteSpace(description)) return false;
+
+            var normalized = new string(description
+                .Normalize(System.Text.NormalizationForm.FormD)
+                .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
+                            != System.Globalization.UnicodeCategory.NonSpacingMark)
+                .ToArray())
+                .Replace('đ', 'd').Replace('Đ', 'D')
+                .ToLowerInvariant();
+
+            return normalized.Contains("confirm webhook")
+                || normalized.Contains("xac nhan webhook")
+                || normalized.Contains("ma xac nhan");
+        }
+
         public async Task<IActionResult> PayOsWebhook()
         {
             string rawBody;
@@ -94,8 +116,10 @@ namespace VCL_API.Controllers
                     {
                         if (dataProp.TryGetProperty("description", out var descProp))
                         {
+                            // payOS gửi ping thử khi đăng ký URL. Mô tả thay đổi tùy phiên bản
+                            // (tiếng Anh / tiếng Việt có dấu / không dấu) nên nhận diện rộng.
                             var descStr = descProp.GetString();
-                            if (descStr != null && descStr.Contains("confirm webhook", StringComparison.OrdinalIgnoreCase))
+                            if (IsWebhookConfirmationPing(descStr))
                             {
                                 return Ok(new { success = true, message = "Webhook confirmed" });
                             }
