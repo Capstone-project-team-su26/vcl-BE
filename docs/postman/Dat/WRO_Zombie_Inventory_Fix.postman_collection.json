@@ -1,0 +1,368 @@
+{
+	"info": {
+		"_postman_id": "a9f81234-5678-4321-89ab-cdef98765432",
+		"name": "WRO & Zombie Inventory Fix Test API",
+		"description": "Postman Collection chuyên biệt dùng để test tính năng Sửa logic tồn kho khi xuất kho để tránh inventory zombie.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Authentication",
+			"item": [
+				{
+					"name": "Login as Staff / Warehouse Staff",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.token) {",
+									"    pm.collectionVariables.set(\"accessToken\", jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"staff@vcl-system.com\",\n  \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. WRO & Inventory Flow Test",
+			"item": [
+				{
+					"name": "Step 1. Lấy danh sách Tồn kho khả dụng (GET /api/inventories)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.items && jsonData.items.length > 0) {",
+									"    var inv = jsonData.items[0];",
+									"    pm.collectionVariables.set(\"inventoryId\", inv.inventoryId);",
+									"    pm.collectionVariables.set(\"availableQuantity\", inv.quantity);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/inventories?status=AVAILABLE",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"inventories"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "AVAILABLE"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 2. Tạo Yêu cầu Xuất kho (POST WRO - Không để lại zombie row)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 201\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"var wroData = jsonData.data || jsonData;",
+									"if (wroData && wroData.wroId) {",
+									"    pm.collectionVariables.set(\"wroRequestId\", wroData.wroId);",
+									"}",
+									"if (wroData && wroData.items && wroData.items.length > 0) {",
+									"    pm.collectionVariables.set(\"reservedInventoryId\", wroData.items[0].inventoryId);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"receiverName\": \"Nguyễn Văn A\",\n  \"receiverPhone\": \"0987654321\",\n  \"deliveryAddress\": \"123 Đường ABC, Quận 1, TP.HCM\",\n  \"shelfCode\": \"A1\",\n  \"items\": [\n    {\n      \"inventoryId\": \"{{inventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouse-release-requests",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouse-release-requests"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 3. Tạo Phiếu Picking (POST Picking List)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 201\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"var pickingData = jsonData.data || jsonData;",
+									"if (pickingData && pickingData.pickingListId) {",
+									"    pm.collectionVariables.set(\"pickingListId\", pickingData.pickingListId);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroRequestId}}/picking-list",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouse-release-requests",
+								"{{wroRequestId}}",
+								"picking-list"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 4. Xác nhận Picking (PUT Confirm Picking List)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"var confirmData = jsonData.data || jsonData;",
+									"pm.test(\"Picking status is PICKED\", function () {",
+									"    pm.expect(confirmData.status).to.eql(\"PICKED\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"items\": [\n    {\n      \"inventoryId\": \"{{reservedInventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/picking-lists/{{pickingListId}}/confirm",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"picking-lists",
+								"{{pickingListId}}",
+								"confirm"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 5. Hoàn tất Xuất kho (PUT Complete WRO)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"var completeData = jsonData.data || jsonData;",
+									"pm.test(\"WRO status is RELEASED\", function () {",
+									"    pm.expect(completeData.status).to.eql(\"RELEASED\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"items\": [\n    {\n      \"inventoryId\": \"{{reservedInventoryId}}\",\n      \"quantity\": 1\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroRequestId}}/complete",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouse-release-requests",
+								"{{wroRequestId}}",
+								"complete"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 6. Kiểm tra lại danh sách Tồn kho (Xác nhận KHÔNG có dòng zombie AVAILABLE = 0)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.items) {",
+									"    var zeroAvailable = jsonData.items.filter(i => i.status === 'AVAILABLE' && i.quantity <= 0);",
+									"    pm.test(\"No zero-quantity AVAILABLE zombie rows exist\", function () {",
+									"        pm.expect(zeroAvailable.length).to.eql(0);",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/inventories",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"inventories"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{accessToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7237",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "inventoryId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "reservedInventoryId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "wroRequestId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "pickingListId",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
