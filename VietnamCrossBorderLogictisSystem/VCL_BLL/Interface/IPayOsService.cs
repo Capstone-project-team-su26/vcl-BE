@@ -10,7 +10,7 @@ namespace VCL_BLL.Interface
     public record PayOsPaymentLink(long OrderCode, string PaymentLinkId, string CheckoutUrl);
 
     /// <summary>Dữ liệu thanh toán đã xác thực từ webhook payOS.</summary>
-    public record PayOsWebhookResult(bool Success, long OrderCode, string Reference, string Description);
+    public record PayOsWebhookResult(bool Success, long OrderCode, string Reference, string Description, string Code, string Desc);
 
     public interface IPayOsService
     {

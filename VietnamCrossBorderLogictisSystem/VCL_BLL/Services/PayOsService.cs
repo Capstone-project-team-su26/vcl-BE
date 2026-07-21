@@ -137,17 +137,20 @@ namespace VCL_BLL.Services
 
             var expectedSignature = ComputeHmacSha256(signatureRaw, _checksumKey);
 
-            // 2. So khớp chữ ký (chống giả mạo)
-            if (!string.Equals(expectedSignature, receivedSignature, StringComparison.OrdinalIgnoreCase))
+            // 2. So khớp chữ ký (chống giả mạo) - dùng so sánh thời gian cố định để tránh timing attack
+            if (!FixedTimeEquals(expectedSignature, receivedSignature))
                 throw new ArgumentException("Chữ ký webhook payOS không hợp lệ.");
 
+            // 3. payOS trả trạng thái thành công qua field "success" ở cấp gốc (không phải data.code)
+            bool success = root.TryGetProperty("success", out var successProp)
+                && successProp.ValueKind == JsonValueKind.True;
             var code = GetString(data, "code");
-            bool success = string.Equals(code, "00", StringComparison.Ordinal);
+            var desc = GetString(data, "desc");
             var orderCode = data.TryGetProperty("orderCode", out var oc) && oc.TryGetInt64(out var ocVal) ? ocVal : 0L;
             var reference = GetString(data, "reference");
             var description = GetString(data, "description");
 
-            return new PayOsWebhookResult(success, orderCode, reference, description);
+            return new PayOsWebhookResult(success, orderCode, reference, description, code, desc);
         }
 
         private static string ComputeHmacSha256(string data, string key)
@@ -157,6 +160,14 @@ namespace VCL_BLL.Services
             var sb = new StringBuilder(hash.Length * 2);
             foreach (var b in hash) sb.Append(b.ToString("x2"));
             return sb.ToString();
+        }
+
+        private static bool FixedTimeEquals(string expected, string received)
+        {
+            var expectedBytes = Encoding.UTF8.GetBytes(expected.ToLowerInvariant());
+            var receivedBytes = Encoding.UTF8.GetBytes(received.ToLowerInvariant());
+            return expectedBytes.Length == receivedBytes.Length
+                && CryptographicOperations.FixedTimeEquals(expectedBytes, receivedBytes);
         }
 
         private static string GetString(JsonElement element, string propertyName)
