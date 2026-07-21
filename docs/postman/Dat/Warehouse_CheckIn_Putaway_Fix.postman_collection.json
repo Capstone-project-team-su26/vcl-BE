@@ -57,7 +57,90 @@
 			]
 		},
 		{
-			"name": "2. Flow Test: Check-in -> Put-away -> Auto Inventory",
+			"name": "2. Setup: Auto-Fetch Warehouse & Location GUIDs",
+			"item": [
+				{
+					"name": "Step 0a. Lấy danh sách Kho active (Tự động gán warehouseId)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.items && jsonData.items.length > 0) {",
+									"    var wh = jsonData.items[0];",
+									"    pm.collectionVariables.set(\"warehouseId\", wh.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouses/active",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouses",
+								"active"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 0b. Lấy danh sách Vị trí kho active (Tự động gán zoneId, shelfId, binId)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.items && jsonData.items.length > 0) {",
+									"    var loc = jsonData.items[0];",
+									"    pm.collectionVariables.set(\"zoneId\", loc.zoneId);",
+									"    pm.collectionVariables.set(\"shelfId\", loc.shelfId);",
+									"    pm.collectionVariables.set(\"binId\", loc.locationId);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouses/{{warehouseId}}/locations/active",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouses",
+								"{{warehouseId}}",
+								"locations",
+								"active"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Flow Test: Check-in -> Put-away -> Auto Inventory",
 			"item": [
 				{
 					"name": "Step 1. Check-in Kiện hàng (Expect: Parcel = RECEIVED, Order = CHECKED_IN, NO Inventory)",
