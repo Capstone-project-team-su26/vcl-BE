@@ -151,6 +151,53 @@
 					"response": []
 				},
 				{
+					"name": "Step 2b. Duyệt Yêu cầu Xuất kho (PUT WRO Status -> APPROVED)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"var wroData = jsonData.data || jsonData;",
+									"pm.test(\"WRO Status is APPROVED\", function () {",
+									"    pm.expect(wroData.status).to.eql(\"APPROVED\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"APPROVED\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouse-release-requests/{{wroRequestId}}/status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouse-release-requests",
+								"{{wroRequestId}}",
+								"status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
 					"name": "Step 3. Tạo Phiếu Picking (POST Picking List)",
 					"event": [
 						{
