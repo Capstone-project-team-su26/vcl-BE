@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
@@ -16,6 +17,7 @@ namespace VCL_BLL.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPayOsService _payOsService;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<ConsignmentPaymentService> _logger;
 
         // Role nội bộ được tạo thanh toán cuối / xem lịch sử thanh toán.
         private static readonly string[] StaffRoles =
@@ -27,11 +29,16 @@ namespace VCL_BLL.Services
         // Trạng thái kiện đã về kho đích - điều kiện cho phép tạo thanh toán cuối.
         private const string ParcelReceivedAtDestination = "RECEIVED_AT_DESTINATION";
 
-        public ConsignmentPaymentService(IUnitOfWork unitOfWork, IPayOsService payOsService, IConfiguration configuration)
+        public ConsignmentPaymentService(
+            IUnitOfWork unitOfWork,
+            IPayOsService payOsService,
+            IConfiguration configuration,
+            ILogger<ConsignmentPaymentService> logger)
         {
             _unitOfWork = unitOfWork;
             _payOsService = payOsService;
             _configuration = configuration;
+            _logger = logger;
         }
 
         // ---------------------------------------------------------------------
@@ -601,7 +608,12 @@ namespace VCL_BLL.Services
             if (string.Equals(payment.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase))
                 return true;
             if (!result.Success)
+            {
+                _logger.LogWarning(
+                    "PayOS webhook reports unsuccessful payment for OrderCode={OrderCode}. Code={Code} Desc={Desc}",
+                    result.OrderCode, result.Code, result.Desc);
                 return false;
+            }
 
             payment.PaymentStatus = "PAID";
             payment.PaidAt = DateTime.UtcNow;

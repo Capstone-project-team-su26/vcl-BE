@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
@@ -16,12 +17,18 @@ namespace VCL_BLL.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPayOsService _payOsService;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<PurchasePaymentService> _logger;
 
-        public PurchasePaymentService(IUnitOfWork unitOfWork, IPayOsService payOsService, IConfiguration configuration)
+        public PurchasePaymentService(
+            IUnitOfWork unitOfWork,
+            IPayOsService payOsService,
+            IConfiguration configuration,
+            ILogger<PurchasePaymentService> logger)
         {
             _unitOfWork = unitOfWork;
             _payOsService = payOsService;
             _configuration = configuration;
+            _logger = logger;
         }
 
         public async Task<ConfirmQuotationAndPayResponseDto> ConfirmQuotationAndPayAsync(
@@ -155,6 +162,9 @@ namespace VCL_BLL.Services
 
             if (!result.Success)
             {
+                _logger.LogWarning(
+                    "PayOS webhook reports unsuccessful payment for OrderCode={OrderCode}. Code={Code} Desc={Desc}",
+                    result.OrderCode, result.Code, result.Desc);
                 return false;
             }
 
