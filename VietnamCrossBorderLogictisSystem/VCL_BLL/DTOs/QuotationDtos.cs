@@ -71,9 +71,6 @@ namespace VCL_BLL.DTOs
         public decimal? Height { get; set; }
         public decimal? DeclaredValue { get; set; }
 
-        /// <summary>Ảnh đầu tiên của mặt hàng (giữ cho FE cũ).</summary>
-        public string? ReferenceUrl { get; set; }
-
         /// <summary>Danh sách URL ảnh của mặt hàng (đã tách từ chuỗi lưu DB).</summary>
         public List<string> ReferenceUrls { get; set; } = new();
 

@@ -87,7 +87,6 @@ namespace VCL_BLL.Services
                         Height = i.Height,
                         Length = i.Length,
                         DeclaredValue = i.DeclaredValue,
-                        ReferenceUrl = ConsignmentItemRequest.SplitReferenceUrls(i.ReferenceUrl).FirstOrDefault(),
                         ReferenceUrls = ConsignmentItemRequest.SplitReferenceUrls(i.ReferenceUrl),
                         DomesticTrackingCode = i.DomesticTrackingCode,
                         PackageConfigurationId = i.PackageConfigurationId,
