@@ -22,6 +22,7 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
     private void EnsureReadAccess(string userRole)
     {
         if (!string.Equals(userRole, "Admin", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(userRole, "OperationsManager", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "Operations", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "WarehouseStaff", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "Warehouse Staff", StringComparison.OrdinalIgnoreCase) &&
@@ -34,9 +35,10 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
     private void EnsureWriteAccess(string userRole)
     {
         if (!string.Equals(userRole, "Admin", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(userRole, "OperationsManager", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "Operations", StringComparison.OrdinalIgnoreCase))
         {
-            throw new UnauthorizedAccessException("Chỉ Operations hoặc Admin mới được phép thao tác cấu hình sơ đồ kho.");
+            throw new UnauthorizedAccessException("Chỉ OperationsManager, Operations hoặc Admin mới được phép thao tác cấu hình sơ đồ kho.");
         }
     }
 
