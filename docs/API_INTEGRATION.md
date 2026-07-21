@@ -5303,12 +5303,58 @@ interface SalesOrderStatusQueryResponse {
 }
 ```
 
-**Response Error (404 Not Found):**
+
+---
+
+## 35. Tồn kho & Quy tắc Xuất kho (Zombie Inventory Prevention)
+
+Hệ thống quản lý tồn kho chặt chẽ, loại bỏ hoàn toàn các dòng tồn kho rác/zombie (`AVAILABLE` với số lượng `= 0` hoặc trùng lặp `parcelId + orderItemId`).
+
+### 35.1. Lấy danh sách hàng tồn kho
+
+```http
+GET /api/inventories?status=AVAILABLE&customerId={customerId}
+Authorization: Bearer {token}
+```
+
+**Query Parameters:**
+- `status` (tùy chọn): Filter theo trạng thái (`AVAILABLE`, `RESERVED`, `PICKED`, `RELEASED`). Mặc định tự động loại bỏ các bản ghi `AVAILABLE` có `quantity <= 0`.
+- `customerId` (tùy chọn): Filter theo ID khách hàng sở hữu.
+
+**Response (200 OK):**
 ```json
 {
-  "message": "Không tìm thấy dữ liệu đơn hàng, kiện hàng hoặc khách hàng liên quan đến câu hỏi."
+  "message": "Lấy danh sách tồn kho thành công.",
+  "items": [
+    {
+      "inventoryId": "3fa85f64-5717-4562-b3fc-2c963f66afb1",
+      "customerId": "1b53ba9c-...",
+      "orderId": "5c94b9d5-...",
+      "orderItemId": "8a71b2c3-...",
+      "parcelId": "bfe85f64-...",
+      "binId": "ffe85f64-...",
+      "quantity": 5,
+      "status": "AVAILABLE",
+      "createdAt": "2026-07-21T16:00:00Z"
+    }
+  ]
 }
 ```
+
+### 35.2. Quy tắc xuất kho (WRO & Picking List)
+
+1. **Khởi tạo WRO (`POST /api/warehouse-release-requests`)**:
+   - Chỉ cho phép xuất từ tồn kho `AVAILABLE` có `quantity > 0`.
+   - Nếu xuất **toàn bộ số lượng** tồn hiện có: Chuyển trực tiếp trạng thái bản ghi tồn kho đó sang `RESERVED`. Không tạo thêm dòng mới và không để lại dòng `AVAILABLE` số lượng 0.
+   - Nếu xuất **một phần số lượng**: Trừ số lượng khỏi dòng `AVAILABLE` (đảm bảo còn > 0) và khởi tạo bản ghi `RESERVED` mới cho phần được xuất.
+
+2. **Xác nhận Picking (`PUT /api/picking-lists/{pickingListId}/confirm`)**:
+   - Cập nhật đúng số lượng thực tế đã pick. Nếu pick bớt hoặc trả lại, cộng gộp lại dòng `AVAILABLE` hợp lệ thay vì sinh thêm dòng rác.
+
+3. **Hoàn tất Xuất kho (`PUT /api/warehouse-release-requests/{requestId}/complete`)**:
+   - Yêu cầu phiếu picking của WRO phải ở trạng thái `PICKED`. Trả về `400` nếu chưa confirm picking hoặc số lượng xuất không khớp số lượng đã pick.
+   - Trả về `404` nếu không tìm thấy WRO hoặc phiếu picking.
+   - Chuyển trạng thái tồn kho từ `PICKED` sang `RELEASED`.
 
 
 

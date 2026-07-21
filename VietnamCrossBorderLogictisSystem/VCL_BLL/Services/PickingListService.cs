@@ -234,6 +234,7 @@ namespace VCL_BLL.Services
                 inv.OrderItemId == reservedInventory.OrderItemId &&
                 inv.ParcelId == reservedInventory.ParcelId &&
                 inv.BinId == reservedInventory.BinId &&
+                inv.Id != reservedInventory.Id &&
                 string.Equals(inv.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase)
             );
 
@@ -244,19 +245,27 @@ namespace VCL_BLL.Services
             }
             else
             {
-                var newAvailable = new Inventory
+                if (quantityToRelease == reservedInventory.Quantity)
                 {
-                    Id = Guid.NewGuid(),
-                    CustomerId = reservedInventory.CustomerId,
-                    OrderId = reservedInventory.OrderId,
-                    OrderItemId = reservedInventory.OrderItemId,
-                    ParcelId = reservedInventory.ParcelId,
-                    BinId = reservedInventory.BinId,
-                    Quantity = quantityToRelease,
-                    Status = "AVAILABLE",
-                    CreatedAt = DateTime.UtcNow
-                };
-                await inventoryRepo.AddAsync(newAvailable);
+                    reservedInventory.Status = "AVAILABLE";
+                    inventoryRepo.Update(reservedInventory);
+                }
+                else
+                {
+                    var newAvailable = new Inventory
+                    {
+                        Id = Guid.NewGuid(),
+                        CustomerId = reservedInventory.CustomerId,
+                        OrderId = reservedInventory.OrderId,
+                        OrderItemId = reservedInventory.OrderItemId,
+                        ParcelId = reservedInventory.ParcelId,
+                        BinId = reservedInventory.BinId,
+                        Quantity = quantityToRelease,
+                        Status = "AVAILABLE",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await inventoryRepo.AddAsync(newAvailable);
+                }
             }
         }
 
