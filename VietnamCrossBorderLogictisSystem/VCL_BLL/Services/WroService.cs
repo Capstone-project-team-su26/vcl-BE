@@ -86,9 +86,9 @@ namespace VCL_BLL.Services
                     throw new ArgumentException("Số lượng xuất kho phải lớn hơn 0.");
                 }
 
-                if (!string.Equals(inventory.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(inventory.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) || inventory.Quantity <= 0)
                 {
-                    throw new ArgumentException($"Hàng tồn kho với ID {item.InventoryId} không khả dụng để xuất (Trạng thái hiện tại: {inventory.Status}).");
+                    throw new ArgumentException($"Hàng tồn kho với ID {item.InventoryId} không khả dụng để xuất (Trạng thái hiện tại: {inventory.Status}, Số lượng: {inventory.Quantity}).");
                 }
 
                 if (inventory.Quantity < item.Quantity)
@@ -123,32 +123,44 @@ namespace VCL_BLL.Services
             foreach (var item in request.Items)
             {
                 var inventory = await inventoryRepo.GetByIdAsync(item.InventoryId);
+                Guid targetInventoryId;
 
-                // A. Giảm số lượng tồn AVAILABLE
-                inventory.Quantity -= item.Quantity;
-                inventoryRepo.Update(inventory);
-
-                // B. Tạo bản ghi RESERVED mới
-                var reservedInventory = new Inventory
+                if (inventory!.Quantity == item.Quantity)
                 {
-                    Id = Guid.NewGuid(),
-                    CustomerId = inventory.CustomerId,
-                    OrderId = inventory.OrderId,
-                    OrderItemId = inventory.OrderItemId,
-                    ParcelId = inventory.ParcelId,
-                    BinId = inventory.BinId,
-                    Quantity = item.Quantity,
-                    Status = "RESERVED",
-                    CreatedAt = DateTime.UtcNow
-                };
-                await inventoryRepo.AddAsync(reservedInventory);
+                    // Chuyển trực tiếp bản ghi hiện tại sang RESERVED (tránh tạo dòng AVAILABLE quantity = 0 zombie)
+                    inventory.Status = "RESERVED";
+                    inventoryRepo.Update(inventory);
+                    targetInventoryId = inventory.Id;
+                }
+                else
+                {
+                    // Trừ số lượng khỏi bản ghi AVAILABLE hiện tại (vẫn còn quantity > 0)
+                    inventory.Quantity -= item.Quantity;
+                    inventoryRepo.Update(inventory);
+
+                    // Tạo bản ghi RESERVED riêng cho phần xuất
+                    var reservedInventory = new Inventory
+                    {
+                        Id = Guid.NewGuid(),
+                        CustomerId = inventory.CustomerId,
+                        OrderId = inventory.OrderId,
+                        OrderItemId = inventory.OrderItemId,
+                        ParcelId = inventory.ParcelId,
+                        BinId = inventory.BinId,
+                        Quantity = item.Quantity,
+                        Status = "RESERVED",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await inventoryRepo.AddAsync(reservedInventory);
+                    targetInventoryId = reservedInventory.Id;
+                }
 
                 // C. Tạo WroItem liên kết
                 var wroItem = new WroItem
                 {
                     Id = Guid.NewGuid(),
                     WroRequestId = wroRequest.Id,
-                    InventoryId = reservedInventory.Id,
+                    InventoryId = targetInventoryId,
                     Quantity = item.Quantity
                 };
                 await wroItemRepo.AddAsync(wroItem);
@@ -160,7 +172,7 @@ namespace VCL_BLL.Services
                 resultItems.Add(new WroItemResponseDto
                 {
                     ItemId = wroItem.Id,
-                    InventoryId = reservedInventory.Id,
+                    InventoryId = targetInventoryId,
                     Quantity = wroItem.Quantity,
                     PackageCode = packageCode
                 });
@@ -382,6 +394,7 @@ namespace VCL_BLL.Services
                             inv.OrderItemId == reservedInventory.OrderItemId &&
                             inv.ParcelId == reservedInventory.ParcelId &&
                             inv.BinId == reservedInventory.BinId &&
+                            inv.Id != reservedInventory.Id &&
                             string.Equals(inv.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase)
                         );
 
@@ -396,7 +409,7 @@ namespace VCL_BLL.Services
                         }
                         else
                         {
-                            // Nếu không tìm thấy record AVAILABLE cũ (có thể đã bị xóa khi qty về 0), đổi trạng thái reserved thành AVAILABLE
+                            // Nếu không tìm thấy record AVAILABLE khác (do trước đó chuyển toàn bộ record sang RESERVED), chuyển lại trạng thái thành AVAILABLE
                             reservedInventory.Status = "AVAILABLE";
                             inventoryRepo.Update(reservedInventory);
                         }
@@ -628,7 +641,12 @@ namespace VCL_BLL.Services
             var pickingList = allPickingLists.FirstOrDefault(pl => pl.WroRequestId == requestId);
             if (pickingList == null)
             {
-                throw new ArgumentException("Không tìm thấy phiếu picking liên kết với yêu cầu xuất kho này.");
+                throw new NotFoundException($"Không tìm thấy phiếu picking liên kết với yêu cầu xuất kho có ID {requestId}.");
+            }
+
+            if (!string.Equals(pickingList.Status, "PICKED", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"Yêu cầu xuất kho chưa được xác nhận picking (Phiếu picking chưa ở trạng thái PICKED). Trạng thái hiện tại: {pickingList.Status}");
             }
 
             // 5. Lấy danh sách hàng đã picking (RESERVED hoặc PICKED)

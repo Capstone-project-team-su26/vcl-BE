@@ -46,5 +46,15 @@ namespace VCL_API.Controllers
                 return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Lấy danh sách hàng tồn kho (loại bỏ các dòng zombie AVAILABLE có số lượng 0).
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetInventories([FromQuery] string? status, [FromQuery] Guid? customerId)
+        {
+            var result = await _inventoryService.GetInventoriesAsync(status, customerId);
+            return Ok(new { message = "Lấy danh sách tồn kho thành công.", items = result });
+        }
     }
 }

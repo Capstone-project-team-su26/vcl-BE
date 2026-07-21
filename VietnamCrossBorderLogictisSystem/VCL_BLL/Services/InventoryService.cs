@@ -116,5 +116,39 @@ namespace VCL_BLL.Services
                 CreatedAt = inventory.CreatedAt
             };
         }
+
+        public async Task<List<InventoryResponseDto>> GetInventoriesAsync(string? status, Guid? customerId)
+        {
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+
+            var query = allInventories.AsQueryable();
+
+            // Loại bỏ các bản ghi zombie AVAILABLE có Quantity <= 0
+            query = query.Where(i => !(string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity <= 0));
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(i => string.Equals(i.Status, status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (customerId.HasValue)
+            {
+                query = query.Where(i => i.CustomerId == customerId.Value);
+            }
+
+            return query.Select(i => new InventoryResponseDto
+            {
+                InventoryId = i.Id,
+                CustomerId = i.CustomerId,
+                OrderId = i.OrderId,
+                OrderItemId = i.OrderItemId,
+                ParcelId = i.ParcelId,
+                BinId = i.BinId,
+                Quantity = i.Quantity,
+                Status = i.Status ?? string.Empty,
+                CreatedAt = i.CreatedAt
+            }).ToList();
+        }
     }
 }
