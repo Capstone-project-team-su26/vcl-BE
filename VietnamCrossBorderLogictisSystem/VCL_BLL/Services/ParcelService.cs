@@ -76,10 +76,11 @@ namespace VCL_BLL.Services
                 throw new NotFoundException("Không tìm thấy yêu cầu ký gửi.");
             }
 
-            // 3. Chỉ cho check-in yêu cầu ở trạng thái APPROVED
-            if (!string.Equals(order.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            // 3. Chỉ cho check-in yêu cầu ở trạng thái APPROVED hoặc CHECKED_IN
+            var checkInEligibleStatuses = new[] { "APPROVED", "CHECKED_IN" };
+            if (!checkInEligibleStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new ArgumentException("Yêu cầu ký gửi không ở trạng thái APPROVED.");
+                throw new ArgumentException($"Yêu cầu ký gửi không ở trạng thái cho phép check-in (Hiện tại: {order.Status}).");
             }
 
             if (request.ActualWeight <= 0)
