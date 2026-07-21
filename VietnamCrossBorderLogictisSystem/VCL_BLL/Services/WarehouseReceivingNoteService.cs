@@ -112,12 +112,24 @@ namespace VCL_BLL.Services
 
         public async Task<WarehouseReceivingNoteResponseDto> CreateReceivingNoteAsync(CreateWarehouseReceivingNoteRequestDto request)
         {
+            // 1. Rule: Warehouse must exist, be active and be of type DESTINATION
+            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
+            var warehouse = await warehouseRepo.GetByIdAsync(request.WarehouseId);
+            if (warehouse == null)
+                throw new NotFoundException($"Không tìm thấy kho với ID: {request.WarehouseId}");
+
+            if (warehouse.IsActive == false)
+                throw new ArgumentException("Kho tiếp nhận được chọn đang tạm ngưng hoạt động.");
+
+            if (!string.Equals(warehouse.WarehouseType, "DESTINATION", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Phiếu tiếp nhận kho chỉ được áp dụng cho kho Destination (Kho đích Việt Nam).");
+
+            // 2. Rule: Consignment must exist and be APPROVED
             var orderRepo = _unitOfWork.Repository<Order>();
             var order = await orderRepo.GetByIdAsync(request.ConsignmentOrderId);
             if (order == null)
                 throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID: {request.ConsignmentOrderId}");
 
-            // Rule: Consignment must be APPROVED
             if (!string.Equals(order.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Chỉ có thể tạo phiếu tiếp nhận kho khi yêu cầu ký gửi đã được duyệt (APPROVED).");
 
@@ -135,19 +147,6 @@ namespace VCL_BLL.Services
 
             if (hasActiveNote)
                 throw new ConflictException("Yêu cầu ký gửi này đã có một phiếu tiếp nhận đang hoạt động.");
-
-            // Rule: Warehouse must exist and be active
-            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
-            var warehouse = await warehouseRepo.GetByIdAsync(request.WarehouseId);
-            if (warehouse == null)
-                throw new NotFoundException($"Không tìm thấy kho với ID: {request.WarehouseId}");
-
-            if (warehouse.IsActive == false)
-                throw new ArgumentException("Kho tiếp nhận được chọn đang tạm ngưng hoạt động.");
-
-            // Rule: Receiving note only applies to DESTINATION warehouses
-            if (!string.Equals(warehouse.WarehouseType, "DESTINATION", StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException("Phiếu tiếp nhận kho chỉ được áp dụng cho kho Destination (Kho đích Việt Nam).");
 
             // Generate unique code: WRN-XXXXXXXX (8 digits)
             var random = new Random();
