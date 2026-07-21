@@ -34,6 +34,10 @@ namespace VCL_BLL.Services
             decimal totalVolume = 0m;
             decimal totalDeclaredValue = 0m;
 
+            // Map cấu hình thùng để trả kèm kích thước/phí trong response (FE hiển thị ngay sau khi tạo đơn)
+            var packageConfigMap = (await _unitOfWork.Repository<PackageConfiguration>().GetAllAsync())
+                .ToDictionary(c => c.Id, c => c);
+
             foreach (var item in orderItems)
             {
                 var qty = item.Quantity ?? 1;
@@ -59,6 +63,7 @@ namespace VCL_BLL.Services
                     DeclaredValue = item.DeclaredValue,
                     ReferenceUrls = ConsignmentItemRequest.SplitReferenceUrls(item.ReferenceUrl),
                     PackageConfigurationId = item.PackageConfigurationId,
+                    PackageConfiguration = MapPackageConfig(item.PackageConfigurationId, packageConfigMap),
                     ItemVolume = itemVolume
                 });
             }

@@ -376,6 +376,27 @@ namespace VCL_BLL.Services
             return (importTax, vatAmount, taxFees);
         }
 
+        /// <summary>Map cấu hình thùng của item sang DTO để trả trong response (null nếu item chưa gắn thùng).</summary>
+        private static PackageConfigurationResponseDto? MapPackageConfig(
+            Guid? packageConfigurationId, IReadOnlyDictionary<Guid, PackageConfiguration> configMap)
+        {
+            if (!packageConfigurationId.HasValue) return null;
+            if (!configMap.TryGetValue(packageConfigurationId.Value, out var c)) return null;
+
+            return new PackageConfigurationResponseDto
+            {
+                Id = c.Id,
+                ConfigCode = c.ConfigCode,
+                ConfigName = c.ConfigName,
+                Length = c.Length,
+                Width = c.Width,
+                Height = c.Height,
+                MaxWeight = c.MaxWeight,
+                PackageFee = c.PackageFee,
+                Status = c.Status
+            };
+        }
+
         private async Task<List<QuotationFee>> CalculatePackageFeesAsync(IEnumerable<OrderItem> orderItems, DateTime now)
         {
             var fees = new List<QuotationFee>();
