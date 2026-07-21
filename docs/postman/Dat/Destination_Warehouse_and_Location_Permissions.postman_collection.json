@@ -1,0 +1,401 @@
+{
+	"info": {
+		"_postman_id": "b8e71234-5678-4321-89ab-cdef98765433",
+		"name": "Destination Warehouse & Location Permissions Test API",
+		"description": "Postman Collection chuyên biệt dùng để test tính năng Chuẩn hóa kho Destination và quyền tạo vị trí kho.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Authentication",
+			"item": [
+				{
+					"name": "Login as Sale",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.token) {",
+									"    pm.collectionVariables.set(\"saleToken\", jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"sale@vcl-system.com\",\n  \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Login as Operations / WarehouseStaff",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.token) {",
+									"    pm.collectionVariables.set(\"opsToken\", jsonData.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"staff@vcl-system.com\",\n  \"password\": \"Password123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/Auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"Auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Destination & Receiving Note Test",
+			"item": [
+				{
+					"name": "Step 1. Lấy danh sách kho đang hoạt động (GET /api/warehouses/active)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"if (jsonData && jsonData.items && jsonData.items.length > 0) {",
+									"    var destWarehouse = jsonData.items.find(w => w.warehouseType && w.warehouseType.toUpperCase() === 'DESTINATION');",
+									"    var origWarehouse = jsonData.items.find(w => w.warehouseType && w.warehouseType.toUpperCase() === 'ORIGIN');",
+									"    if (destWarehouse) pm.collectionVariables.set(\"destinationWarehouseId\", destWarehouse.id);",
+									"    if (origWarehouse) pm.collectionVariables.set(\"originWarehouseId\", origWarehouse.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{saleToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouses/active",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouses",
+								"active"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 2. Test Lỗi: Tạo Receiving Note với kho ORIGIN (POST /api/warehouse-receiving-notes -> 400 Bad Request)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400 Bad Request\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.test(\"Error message indicates Destination warehouse requirement\", function () {",
+									"    pm.expect(jsonData.message).to.include(\"Destination\");",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{saleToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"consignmentOrderId\": \"5c94b9d5-1234-5678-90ab-cdef12345678\",\n  \"warehouseId\": \"{{originWarehouseId}}\",\n  \"warehouseNote\": \"Test kho Origin\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouse-receiving-notes",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouse-receiving-notes"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Location Permissions Test (Ops / Staff Roles)",
+			"item": [
+				{
+					"name": "Step 3. Operations / Staff lấy danh sách vị trí kho (GET /api/warehouses/{warehouseId}/locations)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{opsToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouses/{{destinationWarehouseId}}/locations",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouses",
+								"{{destinationWarehouseId}}",
+								"locations"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 4. Operations / Staff tạo vị trí kho mới (POST /api/warehouses/{warehouseId}/locations)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 201\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"var locData = jsonData.data || jsonData;",
+									"if (locData && locData.locationId) {",
+									"    pm.collectionVariables.set(\"createdLocationId\", locData.locationId);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{opsToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"zoneName\": \"Khu Vực A\",\n  \"shelfCode\": \"Kệ A1\",\n  \"binCode\": \"Ô A1-01\",\n  \"maxVolume\": 100,\n  \"maxWeight\": 500,\n  \"isActive\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouses/{{destinationWarehouseId}}/locations",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouses",
+								"{{destinationWarehouseId}}",
+								"locations"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Step 5. Operations / Staff cập nhật vị trí kho (PUT /api/warehouse-locations/{locationId})",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{opsToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"zoneName\": \"Khu Vực A - Updated\",\n  \"shelfCode\": \"Kệ A1\",\n  \"binCode\": \"Ô A1-01\",\n  \"maxVolume\": 150,\n  \"maxWeight\": 600,\n  \"isActive\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/warehouse-locations/{{createdLocationId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"warehouse-locations",
+								"{{createdLocationId}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://localhost:7237",
+			"type": "string"
+		},
+		{
+			"key": "saleToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "opsToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "destinationWarehouseId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "originWarehouseId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "createdLocationId",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

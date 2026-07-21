@@ -5348,13 +5348,30 @@ Authorization: Bearer {token}
    - Nếu xuất **toàn bộ số lượng** tồn hiện có: Chuyển trực tiếp trạng thái bản ghi tồn kho đó sang `RESERVED`. Không tạo thêm dòng mới và không để lại dòng `AVAILABLE` số lượng 0.
    - Nếu xuất **một phần số lượng**: Trừ số lượng khỏi dòng `AVAILABLE` (đảm bảo còn > 0) và khởi tạo bản ghi `RESERVED` mới cho phần được xuất.
 
-2. **Xác nhận Picking (`PUT /api/picking-lists/{pickingListId}/confirm`)**:
-   - Cập nhật đúng số lượng thực tế đã pick. Nếu pick bớt hoặc trả lại, cộng gộp lại dòng `AVAILABLE` hợp lệ thay vì sinh thêm dòng rác.
+---
 
-3. **Hoàn tất Xuất kho (`PUT /api/warehouse-release-requests/{requestId}/complete`)**:
-   - Yêu cầu phiếu picking của WRO phải ở trạng thái `PICKED`. Trả về `400` nếu chưa confirm picking hoặc số lượng xuất không khớp số lượng đã pick.
-   - Trả về `404` nếu không tìm thấy WRO hoặc phiếu picking.
-   - Chuyển trạng thái tồn kho từ `PICKED` sang `RELEASED`.
+## 36. Chuẩn hóa Kho Destination & Phân quyền Vị trí Kho
+
+### 36.1. Ràng buộc Kho Destination đối với Phiếu Tiếp Nhận (Receiving Note)
+
+```http
+POST /api/warehouse-receiving-notes
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+- Phiếu tiếp nhận kho (`WarehouseReceivingNote`) chỉ chấp nhận kho có `WarehouseType` là **`DESTINATION`** (Kho đích Việt Nam).
+- Nếu chọn kho `ORIGIN` hoặc kho khác loại: Trả về **`400 Bad Request`**: `"Phiếu tiếp nhận kho chỉ được áp dụng cho kho Destination (Kho đích Việt Nam)."`.
+- Hệ thống hỗ trợ so sánh `WarehouseType` không phân biệt hoa thường (`DESTINATION`, `Destination`, `destination`).
+- Khi khởi tạo/cập nhật kho mới, `WarehouseType` được tự động chuẩn hóa về định dạng in hoa thống nhất (`ORIGIN`, `DESTINATION`, `DOMESTIC`).
+
+### 36.2. Phân quyền Quản lý Vị trí Kho (Zone / Shelf / Bin)
+
+- **Xem danh sách vị trí kho** (`GET /api/warehouses/{warehouseId}/locations`): Mở cho tất cả các role hệ thống (`Admin`, `Sale`, `Staff`, `WarehouseStaff`, `OperationsManager`, `Operations`).
+- **Tạo mới vị trí kho** (`POST /api/warehouses/{warehouseId}/locations`): Mở quyền cho `Admin`, `OperationsManager`, `Operations`, `WarehouseStaff`, `Staff`.
+- **Cập nhật vị trí kho** (`PUT /api/warehouse-locations/{locationId}`): Mở quyền cho `Admin`, `OperationsManager`, `Operations`, `WarehouseStaff`, `Staff`.
+- **Xóa vị trí kho** (`DELETE /api/warehouse-locations/{locationId}`): Giới hạn cho `Admin`, `OperationsManager`, `Operations`.
+- **Quản lý Master Warehouse** (`POST/PUT/DELETE /api/warehouses`): Giữ nguyên phân quyền nghiêm ngặt chỉ dành riêng cho `Admin`.
 
 
 
