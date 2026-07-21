@@ -49,8 +49,8 @@ namespace VCL_BLL.Services
                 var itemDeclaredValue = item.DeclaredValue ?? 0m;
 
                 totalWeight += itemWeight;
-                totalVolume += itemVolume * qty;
-                totalDeclaredValue += itemDeclaredValue * qty;
+                totalVolume += itemVolume;
+                totalDeclaredValue += itemDeclaredValue;
 
                 itemDetails.Add(new OrderItemDetail
                 {
@@ -156,7 +156,7 @@ namespace VCL_BLL.Services
                 {
                     var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
                     var qty = item?.Quantity ?? 1;
-                    detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
+                    detail.VolumetricWeight = Math.Round(detail.ItemVolume / divisor, 4);
                     detail.Quantity = qty;
                 }
                 volumetricWeight = totalVolume / divisor;

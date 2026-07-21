@@ -338,8 +338,7 @@ namespace VCL_BLL.Services
                     throw new ArgumentException($"Loại hàng '{item.ProductType}' chưa được cấu hình thuế nhập khẩu hợp lệ.");
                 }
 
-                var qty = item.Quantity ?? 1;
-                var itemImportTax = Math.Round((item.DeclaredValue ?? 0m) * qty * category.ImportTaxRate.Value, 2);
+                var itemImportTax = Math.Round((item.DeclaredValue ?? 0m) * category.ImportTaxRate.Value, 2);
                 importTax += itemImportTax;
 
                 if (itemImportTax > 0)
