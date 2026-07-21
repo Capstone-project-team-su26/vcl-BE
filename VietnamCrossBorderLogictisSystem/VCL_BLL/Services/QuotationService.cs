@@ -228,8 +228,7 @@ namespace VCL_BLL.Services
                 .Sum(f => f.Amount);
 
             var domesticShippingFee = quotationFees
-                .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) || 
-                            string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase))
+                .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
                 .Sum(f => f.Amount);
 
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m) +
@@ -334,8 +333,7 @@ namespace VCL_BLL.Services
                 .Sum(f => f.Amount);
 
             var domesticShippingFee = quotationFees
-                .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) || 
-                            string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase))
+                .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
                 .Sum(f => f.Amount);
 
             var totalEstimatedCost = (quotation.EstimatedFreightCharge ?? 0m) +

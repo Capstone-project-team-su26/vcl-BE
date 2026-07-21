@@ -120,9 +120,7 @@ namespace VCL_BLL.Services
                 var ruleMap = rules.ToDictionary(r => r.Id, r => r);
 
                 var domesticShippingFee = fees
-                    .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) || 
-                                (string.Equals(f.FeeType, "SERVICE_FEE", StringComparison.OrdinalIgnoreCase) && 
-                                 string.Equals(order.OrderType, "PURCHASE", StringComparison.OrdinalIgnoreCase)))
+                    .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
                     .Sum(f => f.Amount);
 
                 var additionalSurchargesAmount = fees

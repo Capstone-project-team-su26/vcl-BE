@@ -49,8 +49,8 @@ namespace VCL_BLL.Services
                 var itemDeclaredValue = item.DeclaredValue ?? 0m;
 
                 totalWeight += itemWeight;
-                totalVolume += itemVolume;
-                totalDeclaredValue += itemDeclaredValue;
+                totalVolume += itemVolume * qty;
+                totalDeclaredValue += itemDeclaredValue * qty;
 
                 itemDetails.Add(new OrderItemDetail
                 {
@@ -156,7 +156,7 @@ namespace VCL_BLL.Services
                 {
                     var item = orderItems.FirstOrDefault(oi => oi.Id == detail.Id);
                     var qty = item?.Quantity ?? 1;
-                    detail.VolumetricWeight = Math.Round(detail.ItemVolume / divisor, 4);
+                    detail.VolumetricWeight = Math.Round((detail.ItemVolume * qty) / divisor, 4);
                     detail.Quantity = qty;
                 }
                 volumetricWeight = totalVolume / divisor;
@@ -448,8 +448,8 @@ namespace VCL_BLL.Services
                 VolumetricWeight = Math.Round(volumetricWeight, 4),
                 ChargeableWeight = Math.Round(chargeableWeight, 4),
                 EstimatedFreightCharge = estimatedFreightCharge,
-                ServiceFee = totalSurcharges,
-                DomesticShippingFee = baseServiceFee,
+                ServiceFee = isConsignment ? (totalSurcharges + totalPackageFees) : serviceFee,
+                DomesticShippingFee = isConsignment ? baseServiceFee : 0m,
                 TaxAndDuty = taxAndDuty,
                 Vat = vatAmount,
                 ImportTax = importTax,
