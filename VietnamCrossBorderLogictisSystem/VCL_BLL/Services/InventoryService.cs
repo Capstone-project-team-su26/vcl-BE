@@ -35,13 +35,24 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Kiện hàng chưa được nhập vị trí kho (chưa put-away).");
             }
 
-            // 3. Không cho tạo trùng tồn kho cho cùng một Parcel
+            // 3. Nếu kiện hàng đã được ghi nhận tồn kho trước đó -> trả về bản ghi hiện có (idempotent)
             var inventoryRepo = _unitOfWork.Repository<Inventory>();
             var allInventories = await inventoryRepo.GetAllAsync();
-            var exists = allInventories.Any(i => i.ParcelId == parcelId);
-            if (exists)
+            var existingInventory = allInventories.FirstOrDefault(i => i.ParcelId == parcelId);
+            if (existingInventory != null)
             {
-                throw new ArgumentException("Kiện hàng đã được ghi nhận tồn kho trước đó.");
+                return new InventoryResponseDto
+                {
+                    InventoryId = existingInventory.Id,
+                    CustomerId = existingInventory.CustomerId,
+                    OrderId = existingInventory.OrderId,
+                    OrderItemId = existingInventory.OrderItemId,
+                    ParcelId = existingInventory.ParcelId,
+                    BinId = existingInventory.BinId,
+                    Quantity = existingInventory.Quantity,
+                    Status = existingInventory.Status,
+                    CreatedAt = existingInventory.CreatedAt
+                };
             }
 
             // 4. Kiểm tra yêu cầu ký gửi liên kết

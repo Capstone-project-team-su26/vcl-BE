@@ -99,6 +99,9 @@ namespace VCL_BLL.DTOs
 
         // Vị trí kho (chỉ có khi đã put-away)
         public ParcelStorageLocation? StorageLocation { get; set; }
+
+        // Trạng thái đã ghi nhận tồn kho
+        public bool HasInventory { get; set; }
     }
 
     /// <summary>

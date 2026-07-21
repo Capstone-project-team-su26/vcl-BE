@@ -109,7 +109,7 @@ namespace VCL_BLL.Services
 
             // Đạt xác nhận (PR#48): staff VẪN được đổi duyệt/từ chối khi đơn ở QUOTATION_SENT/CONFIRMED/REJECTED.
             // Chỉ chặn khi đơn đã hủy hoặc đã nhập kho.
-            var invalidCurrentStatuses = new[] { "CANCELLED", "WAREHOUSE_RECEIVED" };
+            var invalidCurrentStatuses = new[] { "CANCELLED", "WAREHOUSE_RECEIVED", "CHECKED_IN" };
             if (order.Status != null && invalidCurrentStatuses.Contains(order.Status.ToUpper()))
             {
                 throw new ArgumentException($"Không thể cập nhật trạng thái yêu cầu khi yêu cầu đang ở trạng thái {order.Status}");
