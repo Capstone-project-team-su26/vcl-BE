@@ -79,8 +79,11 @@ namespace VCL_API.Controllers
                 .Replace('đ', 'd').Replace('Đ', 'D')
                 .ToLowerInvariant();
 
-            return normalized.Contains("confirm webhook")
+            return normalized.Contains("confirm-webhook")
+                || normalized.Contains("confirm webhook")
+                || normalized.Contains("xac-nhan-webhook")
                 || normalized.Contains("xac nhan webhook")
+                || normalized.Contains("ma-xac-nhan")
                 || normalized.Contains("ma xac nhan");
         }
 
@@ -105,6 +108,15 @@ namespace VCL_API.Controllers
             if (string.IsNullOrWhiteSpace(rawBody))
             {
                 return Ok(new { success = true, handled = false, message = "Empty body - acknowledged." });
+            }
+
+            // Kiểm tra nhanh raw body nếu chứa các cụm từ xác nhận webhook của payOS
+            if (rawBody.Contains("confirm-webhook", StringComparison.OrdinalIgnoreCase) || 
+                rawBody.Contains("confirm webhook", StringComparison.OrdinalIgnoreCase) ||
+                rawBody.Contains("xac-nhan-webhook", StringComparison.OrdinalIgnoreCase) ||
+                rawBody.Contains("xac nhan webhook", StringComparison.OrdinalIgnoreCase))
+            {
+                return Ok(new { success = true, message = "Webhook confirmed" });
             }
 
             try
