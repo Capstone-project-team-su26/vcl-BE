@@ -39,24 +39,36 @@ namespace VCL_BLL.Services
 
         public bool VerifyWebhook(string signatureHeader, string timestampHeader, string authorizationHeader, string rawJsonBody)
         {
+            var apiKey = _apiKey?.Trim() ?? string.Empty;
+            if (apiKey.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase))
+            {
+                apiKey = string.Empty;
+            }
+
+            var webhookSecret = _webhookSecret?.Trim() ?? string.Empty;
+            if (webhookSecret.StartsWith("REPLACE_", StringComparison.OrdinalIgnoreCase))
+            {
+                webhookSecret = string.Empty;
+            }
+
             // 1. Kiểm tra API Key gửi qua header Authorization (nếu có cấu hình ApiKey)
-            if (!string.IsNullOrWhiteSpace(_apiKey))
+            if (!string.IsNullOrWhiteSpace(apiKey))
             {
                 var authClean = authorizationHeader?.Replace("Apikey ", "", StringComparison.OrdinalIgnoreCase)?.Trim() ?? string.Empty;
-                if (string.Equals(_apiKey, authClean, StringComparison.Ordinal))
+                if (string.Equals(apiKey, authClean, StringComparison.Ordinal))
                 {
                     return true;
                 }
             }
 
             // 2. Kiểm tra HMAC-SHA256 chữ ký (nếu có cấu hình WebhookSecret và đầy đủ header)
-            if (!string.IsNullOrWhiteSpace(_webhookSecret) && !string.IsNullOrWhiteSpace(signatureHeader) && !string.IsNullOrWhiteSpace(timestampHeader))
+            if (!string.IsNullOrWhiteSpace(webhookSecret) && !string.IsNullOrWhiteSpace(signatureHeader) && !string.IsNullOrWhiteSpace(timestampHeader))
             {
                 try
                 {
                     var message = $"{timestampHeader}.{rawJsonBody}";
                     
-                    var keyBytes = Encoding.UTF8.GetBytes(_webhookSecret);
+                    var keyBytes = Encoding.UTF8.GetBytes(webhookSecret);
                     var messageBytes = Encoding.UTF8.GetBytes(message);
 
                     using var hmac = new HMACSHA256(keyBytes);
@@ -80,7 +92,7 @@ namespace VCL_BLL.Services
             }
 
             // 3. Nếu không cấu hình cả ApiKey và WebhookSecret (môi trường dev/test) -> bỏ qua xác thực
-            if (string.IsNullOrWhiteSpace(_apiKey) && string.IsNullOrWhiteSpace(_webhookSecret))
+            if (string.IsNullOrWhiteSpace(apiKey) && string.IsNullOrWhiteSpace(webhookSecret))
             {
                 return true;
             }
