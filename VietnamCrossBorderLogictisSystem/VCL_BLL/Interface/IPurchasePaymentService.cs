@@ -14,5 +14,11 @@ namespace VCL_BLL.Interface
 
         /// <summary>Xử lý webhook SePay: xác thực + cập nhật trạng thái thanh toán. Trả true nếu đã ghi nhận thành công.</summary>
         Task<bool> HandleSePayWebhookAsync(SePayWebhookDto dto);
+
+        /// <summary>
+        /// Hỏi trực tiếp payOS trạng thái thanh toán rồi cập nhật DB (thay cho webhook).
+        /// Trả về trạng thái payOS: PENDING | PAID | CANCELLED | EXPIRED.
+        /// </summary>
+        Task<string> SyncPaymentStatusAsync(long orderCode);
     }
 }

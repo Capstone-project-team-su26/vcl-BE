@@ -112,6 +112,48 @@ namespace VCL_BLL.Services
             return new PayOsPaymentLink(returnedOrderCode, paymentLinkId, checkoutUrl);
         }
 
+        public async Task<PayOsPaymentStatus> GetPaymentStatusAsync(long orderCode)
+        {
+            EnsureConfigured();
+
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Get, $"{CreatePaymentLinkUrl}/{orderCode}");
+            httpRequest.Headers.Add("x-client-id", _clientId);
+            httpRequest.Headers.Add("x-api-key", _apiKey);
+
+            var httpResponse = await _httpClient.SendAsync(httpRequest);
+            var responseJson = await httpResponse.Content.ReadAsStringAsync();
+
+            using var doc = JsonDocument.Parse(responseJson);
+            var root = doc.RootElement;
+
+            var code = GetString(root, "code");
+            if (!string.Equals(code, "00", StringComparison.Ordinal))
+            {
+                var desc = GetString(root, "desc");
+                throw new InvalidOperationException($"payOS trả về lỗi khi tra cứu thanh toán (code {code}): {desc}");
+            }
+
+            if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("payOS không trả về dữ liệu thanh toán.");
+            }
+
+            var status = GetString(data, "status");
+            var amountPaid = data.TryGetProperty("amountPaid", out var ap) && ap.TryGetInt32(out var apVal) ? apVal : 0;
+
+            // Mã giao dịch nằm trong danh sách transactions (nếu đã có tiền về)
+            var reference = string.Empty;
+            if (data.TryGetProperty("transactions", out var txs) && txs.ValueKind == JsonValueKind.Array)
+            {
+                var firstTx = txs.EnumerateArray().FirstOrDefault();
+                if (firstTx.ValueKind == JsonValueKind.Object)
+                    reference = GetString(firstTx, "reference");
+            }
+
+            return new PayOsPaymentStatus(orderCode, status, amountPaid, reference);
+        }
+
         public PayOsWebhookResult VerifyWebhook(string rawJsonBody)
         {
             EnsureConfigured();

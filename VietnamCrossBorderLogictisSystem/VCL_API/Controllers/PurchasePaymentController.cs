@@ -80,6 +80,44 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Đồng bộ trạng thái thanh toán trực tiếp từ payOS (không cần chờ webhook).
+        /// FE gọi sau khi khách thanh toán xong và được payOS chuyển về ReturnUrl.
+        /// Tự động thử cả thanh toán mua hộ lẫn thanh toán ký gửi theo orderCode.
+        /// </summary>
+        [HttpGet("api/payments/{orderCode}/sync-status")]
+        [Authorize]
+        public async Task<IActionResult> SyncPaymentStatus(long orderCode)
+        {
+            try
+            {
+                string status;
+                try
+                {
+                    status = await _purchasePaymentService.SyncPaymentStatusAsync(orderCode);
+                }
+                catch (NotFoundException)
+                {
+                    // Không thuộc thanh toán mua hộ -> thử thanh toán ký gửi
+                    status = await _consignmentPaymentService.SyncPaymentStatusAsync(orderCode);
+                }
+
+                return Ok(new
+                {
+                    message = "Đồng bộ trạng thái thanh toán thành công.",
+                    data = new { orderCode, status, isPaid = string.Equals(status, "PAID", StringComparison.OrdinalIgnoreCase) }
+                });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Nhận diện request ping xác nhận webhook của payOS qua trường data.description.
         /// Bỏ dấu tiếng Việt trước khi so khớp để bắt được cả "mã xác nhận webhook",
         /// "ma xac nhan webhook" lẫn "confirm webhook".

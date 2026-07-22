@@ -188,9 +188,51 @@ namespace VCL_BLL.Services
             }
 
             // 4. Cập nhật thanh toán thành công + đẩy yêu cầu mua hộ sang PAID
+            await MarkPaymentAsPaidAsync(payment, result.Reference);
+            return true;
+        }
+
+        public async Task<string> SyncPaymentStatusAsync(long orderCode)
+        {
+            var paymentRepo = _unitOfWork.Repository<PurchasePayment>();
+            var payment = await paymentRepo.FirstOrDefaultAsync(p => p.OrderCode == orderCode);
+            if (payment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy khoản thanh toán mua hộ với mã đơn {orderCode}.");
+            }
+
+            // Đã ghi nhận rồi thì thôi (idempotent, giống webhook)
+            if (string.Equals(payment.Status, "PAID", StringComparison.OrdinalIgnoreCase))
+            {
+                return "PAID";
+            }
+
+            // Hỏi thẳng payOS thay vì chờ webhook gọi về
+            var status = await _payOsService.GetPaymentStatusAsync(orderCode);
+            _logger.LogInformation(
+                "Synced payOS status for OrderCode={OrderCode}: Status={Status} AmountPaid={AmountPaid}",
+                orderCode, status.Status, status.AmountPaid);
+
+            if (string.Equals(status.Status, "PAID", StringComparison.OrdinalIgnoreCase))
+            {
+                await MarkPaymentAsPaidAsync(payment, status.Reference);
+                return "PAID";
+            }
+
+            // CANCELLED / EXPIRED / PENDING -> ghi nhận trạng thái, chưa đổi nghiệp vụ
+            return status.Status;
+        }
+
+        /// <summary>
+        /// Ghi nhận thanh toán thành công + đẩy yêu cầu mua hộ sang PAID.
+        /// Dùng chung cho cả webhook lẫn sync chủ động để nghiệp vụ không bị lệch.
+        /// </summary>
+        private async Task MarkPaymentAsPaidAsync(PurchasePayment payment, string reference)
+        {
+            var paymentRepo = _unitOfWork.Repository<PurchasePayment>();
             payment.Status = "PAID";
             payment.PaidAt = DateTime.UtcNow;
-            payment.TransactionCode = result.Reference;
+            payment.TransactionCode = reference;
             paymentRepo.Update(payment);
 
             var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
@@ -202,7 +244,6 @@ namespace VCL_BLL.Services
             }
 
             await _unitOfWork.SaveChangesAsync();
-            return true;
         }
 
         private static async Task<long> GenerateUniqueOrderCode(IEnumerable<PurchasePayment> existing)
