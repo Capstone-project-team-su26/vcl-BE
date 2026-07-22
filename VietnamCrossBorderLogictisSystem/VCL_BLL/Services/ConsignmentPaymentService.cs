@@ -30,6 +30,10 @@ namespace VCL_BLL.Services
         // Trạng thái kiện đã về kho đích - điều kiện cho phép tạo thanh toán cuối.
         private const string ParcelReceivedAtDestination = "RECEIVED_AT_DESTINATION";
 
+        // Thanh toán offline (chuyển khoản tay): chờ Sales đối soát chứng từ rồi mới xác nhận.
+        private const string PaymentMethodOffline = "OFFLINE";
+        private const string PendingReconciliation = "PENDING_RECONCILIATION";
+
         public ConsignmentPaymentService(
             IUnitOfWork unitOfWork,
             IPayOsService payOsService,
@@ -68,6 +72,13 @@ namespace VCL_BLL.Services
 
             if (quotation.ExpiredAt.HasValue && quotation.ExpiredAt.Value < DateTime.UtcNow)
                 throw new ArgumentException("Báo giá đã hết hạn. Vui lòng tạo báo giá mới.");
+
+            // Không cho tạo trùng khoản cọc offline đang chờ Sales đối soát cho cùng báo giá
+            if (await HasPendingOfflineDepositAsync(quotationId))
+            {
+                throw new ArgumentException(
+                    "Báo giá này đã có khoản cọc chuyển khoản đang chờ đối soát. Vui lòng đợi Sales xác nhận.");
+            }
 
             var orderRepo = _unitOfWork.Repository<Order>();
             var order = await orderRepo.GetByIdAsync(quotation.OrderId);
@@ -161,13 +172,21 @@ namespace VCL_BLL.Services
             // Tạo link thanh toán theo phương thức đã chọn
             long orderCode = await GenerateUniqueOrderCodeAsync();
             var amountInt = (int)Math.Round(depositAmount, MidpointRounding.AwayFromZero);
+            var isOffline = string.Equals(request.PaymentMethod, PaymentMethodOffline, StringComparison.OrdinalIgnoreCase);
             var isSePay = string.Equals(request.PaymentMethod, "SEPAY", StringComparison.OrdinalIgnoreCase);
 
             string checkoutUrl;
             string paymentLinkId;
             string paymentMethodString;
 
-            if (isSePay)
+            if (isOffline)
+            {
+                // Chuyển khoản tay: KHÔNG tạo link cổng thanh toán, chờ Sales đối soát chứng từ
+                paymentMethodString = PaymentMethodOffline;
+                paymentLinkId = null;
+                checkoutUrl = null;
+            }
+            else if (isSePay)
             {
                 paymentMethodString = "SEPAY";
                 paymentLinkId = $"SEPAY-{orderCode}";
@@ -189,13 +208,16 @@ namespace VCL_BLL.Services
                 paymentLinkId = linkResult.PaymentLinkId;
             }
 
+            // Offline chờ Sales đối soát; cổng online chờ webhook/sync báo về
+            var depositStatus = isOffline ? PendingReconciliation : "PENDING";
+
             var deposit = new Payment
             {
                 Id = Guid.NewGuid(),
                 InvoiceId = invoice.Id,
                 Amount = depositAmount,
                 PaymentMethod = paymentMethodString,
-                PaymentStatus = "PENDING",
+                PaymentStatus = depositStatus,
                 InstallmentType = "DEPOSIT",
                 OrderCode = orderCode,
                 CheckoutUrl = checkoutUrl,
@@ -225,10 +247,31 @@ namespace VCL_BLL.Services
                 TotalBillAmount = totalAmount,
                 DepositRate = depositRate,
                 PaymentMethod = paymentMethodString,
-                PaymentStatus = "PENDING",
+                PaymentStatus = depositStatus,
                 CheckoutUrl = checkoutUrl,
                 PaymentLinkId = paymentLinkId
             };
+        }
+
+        /// <summary>
+        /// Kiểm tra báo giá đã có khoản cọc offline đang chờ Sales đối soát hay chưa
+        /// (tránh khách bấm xác nhận nhiều lần tạo ra nhiều khoản cọc treo).
+        /// </summary>
+        private async Task<bool> HasPendingOfflineDepositAsync(Guid quotationId)
+        {
+            var invoiceIds = (await _unitOfWork.Repository<Invoice>().GetAllAsync())
+                .Where(i => i.QuotationId.HasValue && i.QuotationId.Value == quotationId)
+                .Select(i => i.Id)
+                .ToHashSet();
+
+            if (invoiceIds.Count == 0)
+                return false;
+
+            return (await _unitOfWork.Repository<Payment>().GetAllAsync())
+                .Any(p => p.InvoiceId.HasValue
+                          && invoiceIds.Contains(p.InvoiceId.Value)
+                          && IsInstallment(p, "DEPOSIT")
+                          && string.Equals(p.PaymentStatus, PendingReconciliation, StringComparison.OrdinalIgnoreCase));
         }
 
         // ---------------------------------------------------------------------

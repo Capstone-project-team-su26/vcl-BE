@@ -1,0 +1,447 @@
+{
+  "info": {
+    "name": "VCL - Thanh toan coc OFFLINE song song payOS (VCL-223)",
+    "description": "Kiem thu VCL-223: Customer chon PAYOS hoac OFFLINE khi xac nhan bao gia ky gui.\n\nOFFLINE = chuyen khoan tay, KHONG tao link cong thanh toan, Payment o trang thai PENDING_RECONCILIATION cho Sales doi soat (VCL-224).\n\nCHUAN BI: chi can co san don ky gui da duoc Sales GUI BAO GIA (order status = QUOTATION_SENT). Collection tu tim va tu dien quotationId, KHONG can dien tay.\nCan 3 don de test day du: don 1 cho OFFLINE, don 2 cho regression PAYOS, don 3 cho regression SEPAY. Thieu don nao thi buoc tuong ung tu bo qua (khong tinh la fail).\n\nLUU Y: buoc 2a goi payOS THAT nen can PayOS:ChecksumKey dung o local (dat trong user-secrets). Neu payOS tra 'code 201 - Ma kiem tra khong hop le' thi la sai key local, khong phai loi VCL-223.\n\nChay ca collection bang Runner theo dung thu tu tu tren xuong.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:7237", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "customerEmail", "value": "buidinhtrong912@gmail.com", "type": "string" },
+    { "key": "customerPassword", "value": "trong123", "type": "string" },
+    { "key": "quotationId", "value": "", "type": "string" },
+    { "key": "quotationIdPayos", "value": "", "type": "string" },
+    { "key": "quotationIdSepay", "value": "", "type": "string" },
+    { "key": "orderIdOffline", "value": "", "type": "string" },
+    { "key": "orderIdPayos", "value": "", "type": "string" },
+    { "key": "orderIdSepay", "value": "", "type": "string" },
+    { "key": "orderId", "value": "", "type": "string" },
+    { "key": "invoiceId", "value": "", "type": "string" },
+    { "key": "paymentId", "value": "", "type": "string" },
+    { "key": "orderCode", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0a. Login - Customer",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var d = pm.response.json();",
+              "var t = d.token || (d.data && (d.data.token || d.data.accessToken)) || d.accessToken;",
+              "pm.collectionVariables.set('token', t);",
+              "pm.test('Co token', function () { pm.expect(t).to.be.a('string').and.not.empty; });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "login"]
+        }
+      }
+    },
+    {
+      "name": "0b. Setup - Tim don da gui bao gia (QUOTATION_SENT)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var body = pm.response.json();",
+              "var d = body.data || body;",
+              "var list = d.items || d.data || (Array.isArray(d) ? d : []);",
+              "",
+              "pm.test('Can it nhat 1 don o trang thai QUOTATION_SENT', function () {",
+              "  pm.expect(list.length, 'Chua co don nao da gui bao gia. Hay tao yeu cau ky gui + Sales gui bao gia truoc.').to.be.above(0);",
+              "});",
+              "",
+              "if (list.length > 0) {",
+              "  pm.collectionVariables.set('orderIdOffline', list[0].id || list[0].orderId);",
+              "  console.log('Don cho test OFFLINE:', list[0].consignmentCode || list[0].id);",
+              "}",
+              "",
+              "if (list.length > 1) {",
+              "  pm.collectionVariables.set('orderIdPayos', list[1].id || list[1].orderId);",
+              "  console.log('Don cho test PAYOS (regression):', list[1].consignmentCode || list[1].id);",
+              "} else {",
+              "  console.log('CHU Y: chi co 1 don QUOTATION_SENT -> buoc 2a (regression PAYOS) se bi bo qua.');",
+              "}",
+              "",
+              "if (list.length > 2) {",
+              "  pm.collectionVariables.set('orderIdSepay', list[2].id || list[2].orderId);",
+              "  console.log('Don cho test SEPAY (regression):', list[2].consignmentCode || list[2].id);",
+              "} else {",
+              "  console.log('CHU Y: chua du 3 don QUOTATION_SENT -> buoc 2b (regression SEPAY) se bi bo qua.');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/consignments?pageNumber=1&pageSize=50&status=QUOTATION_SENT",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "consignments"],
+          "query": [
+            { "key": "pageNumber", "value": "1" },
+            { "key": "pageSize", "value": "50" },
+            { "key": "status", "value": "QUOTATION_SENT" }
+          ]
+        },
+        "description": "Tu dong tim don ky gui da duoc Sales gui bao gia (dang cho khach xac nhan). Don thu nhat dung cho test OFFLINE, don thu hai dung cho regression PAYOS."
+      }
+    },
+    {
+      "name": "0c. Setup - Lay quotationId cua don OFFLINE",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var body = pm.response.json();",
+              "var d = body.data || body;",
+              "var qid = d.quotationId || d.id;",
+              "pm.collectionVariables.set('quotationId', qid);",
+              "pm.test('Lay duoc quotationId', function () { pm.expect(qid).to.be.a('string').and.not.empty; });",
+              "console.log('quotationId (OFFLINE):', qid);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/{{orderIdOffline}}/quotation",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "{{orderIdOffline}}", "quotation"]
+        }
+      }
+    },
+    {
+      "name": "0d. Setup - Lay quotationId cua don PAYOS (regression)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (!pm.collectionVariables.get('orderIdPayos')) {",
+              "  console.log('Bo qua: khong co don thu hai de test regression PAYOS.');",
+              "} else {",
+              "  pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "  var body = pm.response.json();",
+              "  var d = body.data || body;",
+              "  var qid = d.quotationId || d.id;",
+              "  pm.collectionVariables.set('quotationIdPayos', qid);",
+              "  console.log('quotationId (PAYOS):', qid);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/{{orderIdPayos}}/quotation",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "{{orderIdPayos}}", "quotation"]
+        }
+      }
+    },
+    {
+      "name": "1a. OFFLINE - Xac nhan bao gia va tao coc chuyen khoan tay",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var body = pm.response.json();",
+              "var d = body.data || body;",
+              "",
+              "pm.collectionVariables.set('orderId', d.orderId);",
+              "pm.collectionVariables.set('invoiceId', d.invoiceId);",
+              "pm.collectionVariables.set('paymentId', d.paymentId);",
+              "pm.collectionVariables.set('orderCode', d.orderCode);",
+              "",
+              "// AC: OFFLINE tao duoc invoice, ma bill va payment coc",
+              "pm.test('Co invoiceId', function () { pm.expect(d.invoiceId).to.be.a('string').and.not.empty; });",
+              "pm.test('Co invoiceNo (ma bill)', function () { pm.expect(d.invoiceNo).to.be.a('string').and.not.empty; });",
+              "pm.test('Co paymentId', function () { pm.expect(d.paymentId).to.be.a('string').and.not.empty; });",
+              "",
+              "// AC: phuong thuc + trang thai dung",
+              "pm.test('paymentMethod = OFFLINE', function () { pm.expect(d.paymentMethod).to.eql('OFFLINE'); });",
+              "pm.test('paymentStatus = PENDING_RECONCILIATION', function () { pm.expect(d.paymentStatus).to.eql('PENDING_RECONCILIATION'); });",
+              "pm.test('installmentType = DEPOSIT', function () { pm.expect(d.installmentType).to.eql('DEPOSIT'); });",
+              "",
+              "// AC: KHONG tao link payOS khi chon OFFLINE",
+              "pm.test('checkoutUrl phai null', function () { pm.expect(d.checkoutUrl).to.be.oneOf([null, undefined, '']); });",
+              "pm.test('paymentLinkId phai null', function () { pm.expect(d.paymentLinkId).to.be.oneOf([null, undefined, '']); });",
+              "",
+              "// AC: chua duoc ban giao kho -> don van o WAITING_DEPOSIT",
+              "pm.test('orderStatus = WAITING_DEPOSIT', function () { pm.expect(d.orderStatus).to.eql('WAITING_DEPOSIT'); });",
+              "",
+              "// So tien coc phai > 0 va nho hon tong bill",
+              "pm.test('So tien coc hop le', function () {",
+              "  pm.expect(d.amount).to.be.above(0);",
+              "  pm.expect(d.amount).to.be.at.most(d.totalBillAmount);",
+              "});",
+              "",
+              "console.log('Coc:', d.amount, '/ Tong bill:', d.totalBillAmount, '| Ty le coc:', d.depositRate + '%');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"paymentMethod\": \"OFFLINE\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/confirm-and-pay",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "quotations", "{{quotationId}}", "confirm-and-pay"]
+        },
+        "description": "Happy path VCL-223: chon OFFLINE -> tao Invoice + Payment(DEPOSIT/OFFLINE/PENDING_RECONCILIATION), khong tao link cong thanh toan."
+      }
+    },
+    {
+      "name": "1b. OFFLINE - Goi lai lan 2 phai bi chan (chong trung coc cho doi soat)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// AC: Khong cho tao trung khoan coc dang cho doi soat cho cung bao gia.",
+              "// Bao gia da chuyen ACCEPTED sau buoc 1a nen BE tra 400 (mot trong hai thong bao duoi).",
+              "pm.test('Status 400', function () { pm.response.to.have.status(400); });",
+              "var msg = (pm.response.json().message || '');",
+              "pm.test('Bi chan voi ly do ro rang', function () {",
+              "  pm.expect(msg).to.satisfy(function (m) {",
+              "    return m.indexOf('doi soat') >= 0 || m.indexOf('đối soát') >= 0 || m.indexOf('xac nhan') >= 0 || m.indexOf('xác nhận') >= 0;",
+              "  });",
+              "});",
+              "console.log('Message:', msg);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"paymentMethod\": \"OFFLINE\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/confirm-and-pay",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "quotations", "{{quotationId}}", "confirm-and-pay"]
+        },
+        "description": "Goi lai chinh bao gia vua xac nhan o buoc 1a -> phai bi tu choi, khong duoc tao them khoan coc treo thu hai."
+      }
+    },
+    {
+      "name": "2a. PAYOS - Luong cu phai khong doi (regression)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// AC: PAYOS van hoat dong khong thay doi.",
+              "// Can bien quotationIdPayos tro toi MOT bao gia khac (chua xac nhan).",
+              "if (!pm.collectionVariables.get('quotationIdPayos')) {",
+              "  console.log('BO QUA regression PAYOS: khong co don thu hai o trang thai QUOTATION_SENT.');",
+              "  return;",
+              "}",
+              "",
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var body = pm.response.json();",
+              "var d = body.data || body;",
+              "",
+              "pm.test('paymentMethod = PAYOS', function () { pm.expect(d.paymentMethod).to.eql('PAYOS'); });",
+              "pm.test('paymentStatus = PENDING', function () { pm.expect(d.paymentStatus).to.eql('PENDING'); });",
+              "pm.test('Co checkoutUrl cua cong thanh toan', function () {",
+              "  pm.expect(d.checkoutUrl).to.be.a('string').and.not.empty;",
+              "});",
+              "pm.test('Co paymentLinkId', function () { pm.expect(d.paymentLinkId).to.be.a('string').and.not.empty; });",
+              "console.log('CheckoutUrl:', d.checkoutUrl);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"paymentMethod\": \"PAYOS\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/quotations/{{quotationIdPayos}}/confirm-and-pay",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "quotations", "{{quotationIdPayos}}", "confirm-and-pay"]
+        },
+        "description": "Regression: dam bao nhanh PAYOS cu khong bi anh huong boi thay doi cua VCL-223. Dung mot quotationId KHAC voi buoc 1a."
+      }
+    },
+    {
+      "name": "0e. Setup - Lay quotationId cua don SEPAY (regression)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (!pm.collectionVariables.get('orderIdSepay')) {",
+              "  console.log('Bo qua: khong co don thu ba de test regression SEPAY.');",
+              "} else {",
+              "  pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "  var body = pm.response.json();",
+              "  var d = body.data || body;",
+              "  var qid = d.quotationId || d.id;",
+              "  pm.collectionVariables.set('quotationIdSepay', qid);",
+              "  console.log('quotationId (SEPAY):', qid);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/{{orderIdSepay}}/quotation",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "{{orderIdSepay}}", "quotation"]
+        }
+      }
+    },
+    {
+      "name": "2b. SEPAY - Luong cu phai khong doi (regression)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Dam bao nhanh SEPAY (cua Dat) khong bi anh huong boi thay doi VCL-223.",
+              "if (!pm.collectionVariables.get('quotationIdSepay')) {",
+              "  console.log('BO QUA regression SEPAY: khong co don thu ba o trang thai QUOTATION_SENT.');",
+              "  return;",
+              "}",
+              "",
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var body = pm.response.json();",
+              "var d = body.data || body;",
+              "",
+              "pm.test('paymentMethod = SEPAY', function () { pm.expect(d.paymentMethod).to.eql('SEPAY'); });",
+              "pm.test('paymentStatus = PENDING', function () { pm.expect(d.paymentStatus).to.eql('PENDING'); });",
+              "pm.test('checkoutUrl tro toi trang checkout SePay', function () {",
+              "  pm.expect(d.checkoutUrl).to.be.a('string').and.include('/api/payments/sepay/checkout/');",
+              "});",
+              "pm.test('paymentLinkId co tien to SEPAY-', function () {",
+              "  pm.expect(d.paymentLinkId).to.be.a('string').and.match(/^SEPAY-/);",
+              "});",
+              "console.log('CheckoutUrl SePay:', d.checkoutUrl);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"paymentMethod\": \"SEPAY\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/quotations/{{quotationIdSepay}}/confirm-and-pay",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "quotations", "{{quotationIdSepay}}", "confirm-and-pay"]
+        },
+        "description": "Regression: nhanh SEPAY van tao checkout URL noi bo va giu trang thai PENDING nhu truoc. Dung mot quotationId KHAC voi buoc 1a va 2a."
+      }
+    },
+    {
+      "name": "3a. Kiem tra lich su thanh toan cua don OFFLINE",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var body = pm.response.json();",
+              "var d = body.data || body;",
+              "var list = d.payments || d.items || (Array.isArray(d) ? d : []);",
+              "",
+              "pm.test('Co khoan coc OFFLINE trong lich su', function () {",
+              "  var found = list.filter(function (p) {",
+              "    return (p.paymentMethod === 'OFFLINE') && (p.installmentType === 'DEPOSIT');",
+              "  });",
+              "  pm.expect(found.length).to.be.above(0);",
+              "});",
+              "",
+              "pm.test('Khoan coc OFFLINE chua duoc tinh la da tra', function () {",
+              "  var paidOffline = list.filter(function (p) {",
+              "    return p.paymentMethod === 'OFFLINE' && p.paymentStatus === 'PAID';",
+              "  });",
+              "  pm.expect(paidOffline.length, 'chua co Sales xac nhan nen khong duoc PAID').to.eql(0);",
+              "});",
+              "",
+              "console.log('Lich su thanh toan:', JSON.stringify(list));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/orders/{{orderId}}/payments/history",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "orders", "{{orderId}}", "payments", "history"]
+        },
+        "description": "Xac nhan khoan coc OFFLINE duoc ghi nhan va van chua o trang thai PAID (cho VCL-224 - Sales doi soat)."
+      }
+    }
+  ]
+}
