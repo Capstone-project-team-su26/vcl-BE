@@ -16,6 +16,7 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPayOsService _payOsService;
+        private readonly ISePayService _sePayService;
         private readonly IConfiguration _configuration;
         private readonly ILogger<ConsignmentPaymentService> _logger;
 
@@ -32,11 +33,13 @@ namespace VCL_BLL.Services
         public ConsignmentPaymentService(
             IUnitOfWork unitOfWork,
             IPayOsService payOsService,
+            ISePayService sePayService,
             IConfiguration configuration,
             ILogger<ConsignmentPaymentService> logger)
         {
             _unitOfWork = unitOfWork;
             _payOsService = payOsService;
+            _sePayService = sePayService;
             _configuration = configuration;
             _logger = logger;
         }
@@ -155,28 +158,48 @@ namespace VCL_BLL.Services
                 };
             }
 
-            // Tạo payOS link cho tiền cọc
+            // Tạo link thanh toán theo phương thức đã chọn
             long orderCode = await GenerateUniqueOrderCodeAsync();
             var amountInt = (int)Math.Round(depositAmount, MidpointRounding.AwayFromZero);
-            var description = BuildDescription("Coc", consignmentCode);
-            var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
-            var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
-            var items = new List<PayOsItem> { new PayOsItem($"Cọc {consignmentCode}", 1, amountInt) };
+            var isSePay = string.Equals(request.PaymentMethod, "SEPAY", StringComparison.OrdinalIgnoreCase);
 
-            PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
-                orderCode, amountInt, description, returnUrl, cancelUrl, items);
+            string checkoutUrl;
+            string paymentLinkId;
+            string paymentMethodString;
+
+            if (isSePay)
+            {
+                paymentMethodString = "SEPAY";
+                paymentLinkId = $"SEPAY-{orderCode}";
+                var baseUrl = _configuration["SePay:BaseUrl"] ?? string.Empty;
+                checkoutUrl = $"{baseUrl}/api/payments/sepay/checkout/{orderCode}";
+            }
+            else
+            {
+                paymentMethodString = "PAYOS";
+                var description = BuildDescription("Coc", consignmentCode);
+                var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
+                var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
+                var items = new List<PayOsItem> { new PayOsItem($"Cọc {consignmentCode}", 1, amountInt) };
+
+                PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
+                    orderCode, amountInt, description, returnUrl, cancelUrl, items);
+
+                checkoutUrl = linkResult.CheckoutUrl;
+                paymentLinkId = linkResult.PaymentLinkId;
+            }
 
             var deposit = new Payment
             {
                 Id = Guid.NewGuid(),
                 InvoiceId = invoice.Id,
                 Amount = depositAmount,
-                PaymentMethod = "PAYOS",
+                PaymentMethod = paymentMethodString,
                 PaymentStatus = "PENDING",
                 InstallmentType = "DEPOSIT",
                 OrderCode = orderCode,
-                CheckoutUrl = linkResult.CheckoutUrl,
-                PaymentLinkId = linkResult.PaymentLinkId,
+                CheckoutUrl = checkoutUrl,
+                PaymentLinkId = paymentLinkId,
                 CreatedAt = DateTime.UtcNow
             };
             await paymentRepo.AddAsync(deposit);
@@ -201,10 +224,10 @@ namespace VCL_BLL.Services
                 InstallmentType = "DEPOSIT",
                 TotalBillAmount = totalAmount,
                 DepositRate = depositRate,
-                PaymentMethod = "PAYOS",
+                PaymentMethod = paymentMethodString,
                 PaymentStatus = "PENDING",
-                CheckoutUrl = linkResult.CheckoutUrl,
-                PaymentLinkId = linkResult.PaymentLinkId
+                CheckoutUrl = checkoutUrl,
+                PaymentLinkId = paymentLinkId
             };
         }
 
@@ -326,28 +349,48 @@ namespace VCL_BLL.Services
                 };
             }
 
-            // Tạo payOS link cho đợt cuối
+            // Tạo link thanh toán theo phương thức đã chọn
             long orderCode = await GenerateUniqueOrderCodeAsync();
             var amountInt = (int)Math.Round(finalAmount, MidpointRounding.AwayFromZero);
-            var description = BuildDescription("Cuoi", consignmentCode);
-            var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
-            var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
-            var items = new List<PayOsItem> { new PayOsItem($"TT cuoi {consignmentCode}", 1, amountInt) };
+            var isSePay = string.Equals(request.PaymentMethod, "SEPAY", StringComparison.OrdinalIgnoreCase);
 
-            PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
-                orderCode, amountInt, description, returnUrl, cancelUrl, items);
+            string checkoutUrl;
+            string paymentLinkId;
+            string paymentMethodString;
+
+            if (isSePay)
+            {
+                paymentMethodString = "SEPAY";
+                paymentLinkId = $"SEPAY-{orderCode}";
+                var baseUrl = _configuration["SePay:BaseUrl"] ?? string.Empty;
+                checkoutUrl = $"{baseUrl}/api/payments/sepay/checkout/{orderCode}";
+            }
+            else
+            {
+                paymentMethodString = "PAYOS";
+                var description = BuildDescription("Cuoi", consignmentCode);
+                var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
+                var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
+                var items = new List<PayOsItem> { new PayOsItem($"TT cuoi {consignmentCode}", 1, amountInt) };
+
+                PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
+                    orderCode, amountInt, description, returnUrl, cancelUrl, items);
+
+                checkoutUrl = linkResult.CheckoutUrl;
+                paymentLinkId = linkResult.PaymentLinkId;
+            }
 
             var finalPayment = new Payment
             {
                 Id = Guid.NewGuid(),
                 InvoiceId = invoice.Id,
                 Amount = finalAmount,
-                PaymentMethod = "PAYOS",
+                PaymentMethod = paymentMethodString,
                 PaymentStatus = "PENDING",
                 InstallmentType = "FINAL_PAYMENT",
                 OrderCode = orderCode,
-                CheckoutUrl = linkResult.CheckoutUrl,
-                PaymentLinkId = linkResult.PaymentLinkId,
+                CheckoutUrl = checkoutUrl,
+                PaymentLinkId = paymentLinkId,
                 CreatedAt = DateTime.UtcNow
             };
             await paymentRepo.AddAsync(finalPayment);
@@ -371,8 +414,8 @@ namespace VCL_BLL.Services
                 PaymentId = finalPayment.Id,
                 OrderCode = orderCode,
                 PaymentStatus = "PENDING",
-                CheckoutUrl = linkResult.CheckoutUrl,
-                PaymentLinkId = linkResult.PaymentLinkId
+                CheckoutUrl = checkoutUrl,
+                PaymentLinkId = paymentLinkId
             };
         }
 
@@ -795,6 +838,90 @@ namespace VCL_BLL.Services
         private static string FirstNonEmpty(params string?[] values)
         {
             return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
+        }
+
+        public async Task<bool> HandleSePayWebhookAsync(SePayWebhookDto dto)
+        {
+            if (dto == null) return false;
+
+            long? orderCode = null;
+            if (!string.IsNullOrWhiteSpace(dto.Code) && long.TryParse(System.Text.RegularExpressions.Regex.Match(dto.Code, @"\d{10,18}").Value, out var parsedCode))
+            {
+                orderCode = parsedCode;
+            }
+            else if (!string.IsNullOrWhiteSpace(dto.Content))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(dto.Content, @"\d{10,18}");
+                if (match.Success && long.TryParse(match.Value, out var parsedContentCode))
+                {
+                    orderCode = parsedContentCode;
+                }
+            }
+
+            if (!orderCode.HasValue)
+            {
+                _logger.LogWarning("SePay Webhook: Không tìm thấy orderCode trong Code={Code} hoặc Content={Content}", dto.Code, dto.Content);
+                return false;
+            }
+
+            var paymentRepo = _unitOfWork.Repository<Payment>();
+            var payment = await paymentRepo.FirstOrDefaultAsync(p => p.OrderCode.HasValue && p.OrderCode.Value == orderCode.Value);
+            if (payment == null)
+            {
+                _logger.LogWarning("SePay Webhook: Không tìm thấy khoản thanh toán với OrderCode={OrderCode}", orderCode.Value);
+                return false;
+            }
+
+            if (string.Equals(payment.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (dto.TransferAmount < payment.Amount)
+            {
+                _logger.LogWarning(
+                    "SePay Webhook: Số tiền thanh toán ({TransferAmount}) nhỏ hơn số tiền yêu cầu ({PaymentAmount}) cho OrderCode={OrderCode}",
+                    dto.TransferAmount, payment.Amount, orderCode.Value);
+                return false;
+            }
+
+            payment.PaymentStatus = "PAID";
+            payment.PaidAt = DateTime.UtcNow;
+            payment.TransactionCode = dto.ReferenceCode;
+            paymentRepo.Update(payment);
+
+            if (payment.InvoiceId.HasValue)
+            {
+                var invoiceRepo = _unitOfWork.Repository<Invoice>();
+                var invoice = await invoiceRepo.GetByIdAsync(payment.InvoiceId.Value);
+                if (invoice != null && invoice.QuotationId.HasValue)
+                {
+                    var quotation = await _unitOfWork.Repository<Quotation>().GetByIdAsync(invoice.QuotationId.Value);
+                    if (quotation?.OrderId != null)
+                    {
+                        var orderRepo = _unitOfWork.Repository<Order>();
+                        var order = await orderRepo.GetByIdAsync(quotation.OrderId.Value);
+                        if (order != null)
+                        {
+                            var installment = payment.InstallmentType?.Trim().ToUpperInvariant();
+                            if (installment == "DEPOSIT")
+                            {
+                                order.Status = "DEPOSIT_PAID";
+                            }
+                            else
+                            {
+                                order.Status = "PAID";
+                                invoice.InvoiceStatus = "PAID";
+                                invoiceRepo.Update(invoice);
+                            }
+                            orderRepo.Update(order);
+                        }
+                    }
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+            return true;
         }
     }
 }

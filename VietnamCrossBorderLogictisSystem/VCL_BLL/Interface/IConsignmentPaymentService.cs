@@ -26,6 +26,9 @@ namespace VCL_BLL.Interface
         /// <summary>Xử lý webhook payOS cho thanh toán ký gửi. Trả true nếu đã ghi nhận khoản thanh toán thuộc bảng PAYMENTS.</summary>
         Task<bool> HandlePayOsWebhookAsync(string rawJsonBody);
 
+        /// <summary>Xử lý webhook SePay cho thanh toán ký gửi. Trả true nếu đã ghi nhận khoản thanh toán thành công.</summary>
+        Task<bool> HandleSePayWebhookAsync(SePayWebhookDto dto);
+
         /// <summary>
         /// Hỏi trực tiếp payOS trạng thái thanh toán rồi cập nhật DB (thay cho webhook).
         /// Trả về trạng thái payOS: PENDING | PAID | CANCELLED | EXPIRED.

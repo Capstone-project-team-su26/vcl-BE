@@ -106,10 +106,10 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Lấy danh sách vị trí kho (chỉ Admin).
+        /// Lấy danh sách vị trí kho.
         /// </summary>
         [HttpGet("api/warehouses/{warehouseId}/locations")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> GetWarehouseLocations(Guid warehouseId, [FromQuery] bool? isActive)
         {
             try
@@ -124,10 +124,10 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Tạo mới vị trí kho (chỉ Admin).
+        /// Tạo mới vị trí kho (Admin, Operations, Warehouse Staff).
         /// </summary>
         [HttpPost("api/warehouses/{warehouseId}/locations")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF")]
         public async Task<IActionResult> CreateWarehouseLocation(Guid warehouseId, [FromBody] CreateLocationRequestDto request)
         {
             if (!ModelState.IsValid)
@@ -149,10 +149,10 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Cập nhật thông tin vị trí kho (chỉ Admin).
+        /// Cập nhật thông tin vị trí kho (Admin, Operations, Warehouse Staff).
         /// </summary>
         [HttpPut("api/warehouse-locations/{locationId}")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF")]
         public async Task<IActionResult> UpdateWarehouseLocation(Guid locationId, [FromBody] CreateLocationRequestDto request)
         {
             if (!ModelState.IsValid)
@@ -174,10 +174,10 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Xóa vị trí kho (chỉ Admin).
+        /// Xóa vị trí kho (Admin, Operations).
         /// </summary>
         [HttpDelete("api/warehouse-locations/{locationId}")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> DeleteWarehouseLocation(Guid locationId)
         {
             try

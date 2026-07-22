@@ -183,6 +183,7 @@ public class WarehouseLocationLayoutController : ControllerBase
     /// GET /api/warehouses/{warehouseId}/layout/status
     /// </summary>
     [HttpGet("status")]
+    [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF")]
     public async Task<IActionResult> GetLayoutStatus(Guid warehouseId)
     {
         var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;

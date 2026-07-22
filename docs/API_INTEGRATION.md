@@ -5144,6 +5144,9 @@ Authorization: Bearer {accessToken}
       "parcelIds": [
         "1132b4f9-dbac-4fc1-a9f8-b3d9cbb281ff",
         "28ac9bb1-39d2-43bb-a5a4-cbf8cf129aff"
+      ],
+      "inventoryIds": [
+        "8832b4f9-dbac-4fc1-a9f8-b3d9cbb282ee"
       ]
     }
   ]
@@ -5151,7 +5154,8 @@ Authorization: Bearer {accessToken}
 ```
 
 *Lưu ý về phân quyền & dữ liệu nhạy cảm:*
-- Đối với **Warehouse Staff** hoặc **Staff**, danh sách `parcelIds` sẽ được ẩn (`null`) nhằm tránh tiết lộ thông tin nhạy cảm của các kiện hàng.
+- Hỗ trợ các quyền: `OperationsManager`, `Operations`, `Admin`, `WarehouseStaff`, `Staff`.
+- Đối với **Warehouse Staff** hoặc **Staff**, danh sách `parcelIds` và `inventoryIds` sẽ được ẩn (`null`) nhằm tránh tiết lộ thông tin nhạy cảm của các kiện hàng.
 
 **TypeScript Interfaces:**
 
@@ -5172,6 +5176,7 @@ interface WarehouseLayoutStatusDto {
   maxWeight: number | null;
   utilizationRate: number | null;
   parcelIds: string[] | null;
+  inventoryIds: string[] | null;
 }
 ```
 
@@ -5348,13 +5353,121 @@ Authorization: Bearer {token}
    - Nếu xuất **toàn bộ số lượng** tồn hiện có: Chuyển trực tiếp trạng thái bản ghi tồn kho đó sang `RESERVED`. Không tạo thêm dòng mới và không để lại dòng `AVAILABLE` số lượng 0.
    - Nếu xuất **một phần số lượng**: Trừ số lượng khỏi dòng `AVAILABLE` (đảm bảo còn > 0) và khởi tạo bản ghi `RESERVED` mới cho phần được xuất.
 
-2. **Xác nhận Picking (`PUT /api/picking-lists/{pickingListId}/confirm`)**:
-   - Cập nhật đúng số lượng thực tế đã pick. Nếu pick bớt hoặc trả lại, cộng gộp lại dòng `AVAILABLE` hợp lệ thay vì sinh thêm dòng rác.
+---
 
-3. **Hoàn tất Xuất kho (`PUT /api/warehouse-release-requests/{requestId}/complete`)**:
-   - Yêu cầu phiếu picking của WRO phải ở trạng thái `PICKED`. Trả về `400` nếu chưa confirm picking hoặc số lượng xuất không khớp số lượng đã pick.
-   - Trả về `404` nếu không tìm thấy WRO hoặc phiếu picking.
-   - Chuyển trạng thái tồn kho từ `PICKED` sang `RELEASED`.
+## 36. Chuẩn hóa Kho Destination & Phân quyền Vị trí Kho
+
+### 36.1. Ràng buộc Kho Destination đối với Phiếu Tiếp Nhận (Receiving Note)
+
+```http
+POST /api/warehouse-receiving-notes
+Authorization: Bearer {token}
+Content-Type: application/json
+```
+
+- Phiếu tiếp nhận kho (`WarehouseReceivingNote`) chỉ chấp nhận kho có `WarehouseType` là **`DESTINATION`** (Kho đích Việt Nam).
+- Nếu chọn kho `ORIGIN` hoặc kho khác loại: Trả về **`400 Bad Request`**: `"Phiếu tiếp nhận kho chỉ được áp dụng cho kho Destination (Kho đích Việt Nam)."`.
+- Hệ thống hỗ trợ so sánh `WarehouseType` không phân biệt hoa thường (`DESTINATION`, `Destination`, `destination`).
+- Khi khởi tạo/cập nhật kho mới, `WarehouseType` được tự động chuẩn hóa về định dạng in hoa thống nhất (`ORIGIN`, `DESTINATION`, `DOMESTIC`).
+
+### 36.2. Phân quyền Quản lý Vị trí Kho (Zone / Shelf / Bin)
+
+- **Xem danh sách vị trí kho** (`GET /api/warehouses/{warehouseId}/locations`): Mở cho tất cả các role hệ thống (`Admin`, `Sale`, `Staff`, `WarehouseStaff`, `OperationsManager`, `Operations`).
+- **Tạo mới vị trí kho** (`POST /api/warehouses/{warehouseId}/locations`): Mở quyền cho `Admin`, `OperationsManager`, `Operations`, `WarehouseStaff`, `Staff`.
+- **Cập nhật vị trí kho** (`PUT /api/warehouse-locations/{locationId}`): Mở quyền cho `Admin`, `OperationsManager`, `Operations`, `WarehouseStaff`, `Staff`.
+- **Xóa vị trí kho** (`DELETE /api/warehouse-locations/{locationId}`): Giới hạn cho `Admin`, `OperationsManager`, `Operations`.
+- **Quản lý Master Warehouse** (`POST/PUT/DELETE /api/warehouses`): Giữ nguyên phân quyền nghiêm ngặt chỉ dành riêng cho `Admin`.
+
+## 37. Tích hợp Thanh toán (PayOS & SePay)
+
+Hệ thống hỗ trợ song song hai phương thức thanh toán: **PayOS** và **SePay** (Thanh toán qua VietQR tự động nhận diện giao dịch).
+
+### 37.1. Cập nhật Request DTOs cho phép chọn Phương thức thanh toán
+
+Khi gọi các API thanh toán dưới đây, FE có thể gửi thêm trường `paymentMethod` trong body. Nếu để trống hoặc null, mặc định hệ thống sẽ sử dụng `PAYOS`.
+
+```typescript
+export interface ConfirmQuotationPaymentRequest {
+  returnUrl?: string;
+  cancelUrl?: string;
+  paymentMethod?: "PAYOS" | "SEPAY";
+}
+
+export interface ConfirmQuotationAndPayRequestDto {
+  returnUrl?: string;
+  cancelUrl?: string;
+  paymentMethod?: "PAYOS" | "SEPAY";
+}
+
+export interface CreateFinalPaymentRequest {
+  extraFees?: Array<{
+    name: string;
+    amount: number;
+    note?: string;
+  }>;
+  returnUrl?: string;
+  cancelUrl?: string;
+  paymentMethod?: "PAYOS" | "SEPAY";
+}
+```
+
+### 37.2. Tra cứu trạng thái thanh toán (Polling)
+
+Dùng để FE hoặc trang checkout tự động kiểm tra trạng thái thanh toán theo thời gian thực (định kỳ 3-5 giây).
+
+```http
+GET /api/payments/status/{orderCode}
+```
+
+**Response (200 OK):**
+```json
+{
+  "orderCode": 260722152331,
+  "amount": 1500000.0,
+  "status": "PENDING",
+  "paymentMethod": "SEPAY"
+}
+```
+
+### 37.3. Nhận Webhook từ SePay
+
+Endpoint nhận sự kiện chuyển tiền thành công từ hệ thống SePay.
+
+```http
+POST /api/payments/sepay-webhook
+```
+
+**Headers:**
+- `X-SePay-Signature` (Chữ ký HMAC-SHA256)
+- `X-SePay-Timestamp` (Timestamp gửi webhook)
+- `Authorization` (Apikey check)
+
+**Request Body (SePayWebhookDto):**
+```typescript
+interface SePayWebhookDto {
+  id: number;
+  gateway: string;
+  transactionDate: string;
+  accountNumber: string;
+  transferAmount: number;
+  content: string;
+  code: string;
+  referenceCode: string;
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "handled": true
+}
+```
+
+### 37.4. Trang Checkout SePay tự động
+
+Đường dẫn checkout trả về khi chọn `paymentMethod: "SEPAY"` sẽ có dạng `/api/payments/sepay/checkout/{orderCode}` (được định tuyến thông qua máy chủ Backend). Trang này hiển thị mã VietQR đẹp mắt, hỗ trợ copy nhanh số tài khoản/số tiền/nội dung chuyển khoản và tự động redirect về `returnUrl` ngay sau khi thanh toán thành công.
+
 
 
 
