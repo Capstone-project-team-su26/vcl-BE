@@ -2,6 +2,8 @@
 #nullable disable
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
 namespace VCL_DLL.Models;
@@ -11,6 +13,79 @@ public partial class VCLDBContext : DbContext
     public VCLDBContext(DbContextOptions<VCLDBContext> options)
         : base(options)
     {
+    }
+
+    private void UpdateTimestamps()
+    {
+        var entries = ChangeTracker.Entries();
+        var now = DateTime.UtcNow;
+
+        foreach (var entry in entries)
+        {
+            if (entry.State == EntityState.Added)
+            {
+                var createdAtProp = entry.Metadata.FindProperty("CreatedAt");
+                if (createdAtProp != null)
+                {
+                    entry.Property("CreatedAt").CurrentValue = now;
+                }
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                var updatedAtProp = entry.Metadata.FindProperty("UpdatedAt");
+                if (updatedAtProp != null)
+                {
+                    entry.Property("UpdatedAt").CurrentValue = now;
+                }
+
+                // If status changes and we only have CreatedAt (no UpdatedAt), update CreatedAt to reflect status change time
+                var statusProp = entry.Metadata.FindProperty("Status");
+                var paymentStatusProp = entry.Metadata.FindProperty("PaymentStatus");
+                bool isStatusModified = false;
+
+                if (statusProp != null && entry.Property("Status").IsModified)
+                {
+                    isStatusModified = true;
+                }
+                if (paymentStatusProp != null && entry.Property("PaymentStatus").IsModified)
+                {
+                    isStatusModified = true;
+                }
+
+                if (isStatusModified && updatedAtProp == null)
+                {
+                    var createdAtProp = entry.Metadata.FindProperty("CreatedAt");
+                    if (createdAtProp != null)
+                    {
+                        entry.Property("CreatedAt").CurrentValue = now;
+                    }
+                }
+            }
+        }
+    }
+
+    public override int SaveChanges()
+    {
+        UpdateTimestamps();
+        return base.SaveChanges();
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        UpdateTimestamps();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        UpdateTimestamps();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        UpdateTimestamps();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     public virtual DbSet<Bin> Bins { get; set; }
