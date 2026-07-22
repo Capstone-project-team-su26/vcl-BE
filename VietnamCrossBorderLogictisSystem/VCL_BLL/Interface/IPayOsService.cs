@@ -12,6 +12,12 @@ namespace VCL_BLL.Interface
     /// <summary>Dữ liệu thanh toán đã xác thực từ webhook payOS.</summary>
     public record PayOsWebhookResult(bool Success, long OrderCode, string Reference, string Description, string Code, string Desc);
 
+    /// <summary>
+    /// Trạng thái link thanh toán lấy trực tiếp từ payOS.
+    /// Status theo payOS: PENDING | PAID | CANCELLED | EXPIRED.
+    /// </summary>
+    public record PayOsPaymentStatus(long OrderCode, string Status, int AmountPaid, string Reference);
+
     public interface IPayOsService
     {
         Task<PayOsPaymentLink> CreatePaymentLinkAsync(
@@ -24,5 +30,11 @@ namespace VCL_BLL.Interface
 
         /// <summary>Xác thực chữ ký + parse dữ liệu webhook payOS từ JSON thô. Ném lỗi nếu chữ ký không hợp lệ.</summary>
         PayOsWebhookResult VerifyWebhook(string rawJsonBody);
+
+        /// <summary>
+        /// Hỏi trực tiếp payOS xem link thanh toán đã được trả tiền chưa.
+        /// Dùng thay webhook khi payOS không gọi ngược về được.
+        /// </summary>
+        Task<PayOsPaymentStatus> GetPaymentStatusAsync(long orderCode);
     }
 }

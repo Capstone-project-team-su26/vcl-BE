@@ -615,9 +615,48 @@ namespace VCL_BLL.Services
                 return false;
             }
 
+            await MarkPaymentAsPaidAsync(payment, result.Reference);
+            return true;
+        }
+
+        public async Task<string> SyncPaymentStatusAsync(long orderCode)
+        {
+            var paymentRepo = _unitOfWork.Repository<Payment>();
+            var payment = await paymentRepo.FirstOrDefaultAsync(p => p.OrderCode.HasValue && p.OrderCode.Value == orderCode);
+            if (payment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy khoản thanh toán ký gửi với mã đơn {orderCode}.");
+            }
+
+            if (string.Equals(payment.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase))
+            {
+                return "PAID";
+            }
+
+            var status = await _payOsService.GetPaymentStatusAsync(orderCode);
+            _logger.LogInformation(
+                "Synced payOS status for OrderCode={OrderCode}: Status={Status} AmountPaid={AmountPaid}",
+                orderCode, status.Status, status.AmountPaid);
+
+            if (string.Equals(status.Status, "PAID", StringComparison.OrdinalIgnoreCase))
+            {
+                await MarkPaymentAsPaidAsync(payment, status.Reference);
+                return "PAID";
+            }
+
+            return status.Status;
+        }
+
+        /// <summary>
+        /// Ghi nhận thanh toán thành công + đẩy trạng thái đơn/hóa đơn theo đợt thanh toán.
+        /// Dùng chung cho cả webhook lẫn sync chủ động để nghiệp vụ không bị lệch.
+        /// </summary>
+        private async Task MarkPaymentAsPaidAsync(Payment payment, string reference)
+        {
+            var paymentRepo = _unitOfWork.Repository<Payment>();
             payment.PaymentStatus = "PAID";
             payment.PaidAt = DateTime.UtcNow;
-            payment.TransactionCode = result.Reference;
+            payment.TransactionCode = reference;
             paymentRepo.Update(payment);
 
             if (payment.InvoiceId.HasValue)
@@ -654,7 +693,6 @@ namespace VCL_BLL.Services
             }
 
             await _unitOfWork.SaveChangesAsync();
-            return true;
         }
 
         // ---------------------------------------------------------------------
