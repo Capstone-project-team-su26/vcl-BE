@@ -12,6 +12,7 @@ using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
+using VCL_API.Helpers;
 
 namespace VCL_API.Controllers
 {
@@ -267,17 +268,15 @@ namespace VCL_API.Controllers
         /// </summary>
         [HttpPost("api/payments/sepay-webhook")]
         [AllowAnonymous]
-        public async Task<IActionResult> SePayWebhook()
+        [EnableBuffering]
+        public async Task<IActionResult> SePayWebhook([FromBody] SePayWebhookDto dto)
         {
             var signatureHeader = Request.Headers["X-SePay-Signature"].ToString();
             var timestampHeader = Request.Headers["X-SePay-Timestamp"].ToString();
             var authorizationHeader = Request.Headers["Authorization"].ToString();
 
-            string rawBody;
-            using (var reader = new StreamReader(Request.Body))
-            {
-                rawBody = await reader.ReadToEndAsync();
-            }
+            // Get pre-read raw request body from HttpContext.Items
+            var rawBody = HttpContext.Items["RawRequestBody"] as string ?? string.Empty;
 
             _logger.LogInformation("SePay webhook hit. Signature={Sig} Timestamp={Time} Auth={Auth} Body={Body}", 
                 signatureHeader, timestampHeader, authorizationHeader, rawBody);
@@ -295,19 +294,21 @@ namespace VCL_API.Controllers
                 return Unauthorized(new { success = false, message = "Chữ ký hoặc API Key không hợp lệ." });
             }
 
-            // 2. Parse DTO
-            SePayWebhookDto dto;
-            try
+            // 2. Parse/Validate DTO if model state is invalid or null
+            if (dto == null)
             {
-                dto = System.Text.Json.JsonSerializer.Deserialize<SePayWebhookDto>(rawBody, new System.Text.Json.JsonSerializerOptions
+                try
                 {
-                    PropertyNameCaseInsensitive = true
-                }) ?? throw new Exception("Không thể parse dữ liệu giao dịch.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Lỗi deserialize SePay webhook body.");
-                return BadRequest(new { success = false, message = "Dữ liệu JSON không hợp lệ." });
+                    dto = System.Text.Json.JsonSerializer.Deserialize<SePayWebhookDto>(rawBody, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    }) ?? throw new Exception("Không thể parse dữ liệu giao dịch.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Lỗi deserialize SePay webhook body.");
+                    return BadRequest(new { success = false, message = "Dữ liệu JSON không hợp lệ." });
+                }
             }
 
             // 3. Xử lý thanh toán
