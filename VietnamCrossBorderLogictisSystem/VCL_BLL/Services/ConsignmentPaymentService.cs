@@ -197,8 +197,13 @@ namespace VCL_BLL.Services
             {
                 paymentMethodString = "PAYOS";
                 var description = BuildDescription("Coc", consignmentCode);
-                var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
-                var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
+
+                var inputUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], string.Empty);
+                var isLocal = inputUrl.Contains("localhost") || inputUrl.Contains("127.0.0.1") || inputUrl.Contains("5173") || inputUrl.Contains("3000");
+                var baseFrontendUrl = isLocal ? "http://localhost:5173" : "https://logictic.site";
+
+                var returnUrl = $"{baseFrontendUrl}/history/consignment";
+                var cancelUrl = returnUrl;
                 var items = new List<PayOsItem> { new PayOsItem($"Cọc {consignmentCode}", 1, amountInt) };
 
                 PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
@@ -412,8 +417,13 @@ namespace VCL_BLL.Services
             {
                 paymentMethodString = "PAYOS";
                 var description = BuildDescription("Cuoi", consignmentCode);
-                var returnUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], "https://localhost:3000/payment/success");
-                var cancelUrl = FirstNonEmpty(request.CancelUrl, _configuration["PayOS:CancelUrl"], "https://localhost:3000/payment/cancel");
+
+                var inputUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], string.Empty);
+                var isLocal = inputUrl.Contains("localhost") || inputUrl.Contains("127.0.0.1") || inputUrl.Contains("5173") || inputUrl.Contains("3000");
+                var baseFrontendUrl = isLocal ? "http://localhost:5173" : "https://logictic.site";
+
+                var returnUrl = $"{baseFrontendUrl}/history/consignment";
+                var cancelUrl = returnUrl;
                 var items = new List<PayOsItem> { new PayOsItem($"TT cuoi {consignmentCode}", 1, amountInt) };
 
                 PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(

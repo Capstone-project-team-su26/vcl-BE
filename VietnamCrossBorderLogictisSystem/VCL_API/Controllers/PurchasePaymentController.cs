@@ -379,6 +379,7 @@ namespace VCL_API.Controllers
             decimal amount = 0m;
             string paymentMethod = "";
             string status = "";
+            bool isConsignment = false;
 
             var paymentRepo = _unitOfWork.Repository<Payment>();
             var payment = await paymentRepo.FirstOrDefaultAsync(p => p.OrderCode == orderCode);
@@ -387,6 +388,7 @@ namespace VCL_API.Controllers
                 amount = payment.Amount ?? 0m;
                 paymentMethod = payment.PaymentMethod;
                 status = payment.PaymentStatus;
+                isConsignment = true;
             }
             else
             {
@@ -397,6 +399,7 @@ namespace VCL_API.Controllers
                     amount = purchasePayment.Amount;
                     paymentMethod = purchasePayment.PaymentMethod;
                     status = purchasePayment.Status;
+                    isConsignment = false;
                 }
             }
 
@@ -405,8 +408,27 @@ namespace VCL_API.Controllers
                 return NotFound("Không tìm thấy thông tin thanh toán SePay hợp lệ.");
             }
 
-            var returnUrl = _configuration["SePay:ReturnUrl"] ?? _configuration["PayOS:ReturnUrl"] ?? "https://localhost:3000/payment/success";
-            var cancelUrl = _configuration["SePay:CancelUrl"] ?? _configuration["PayOS:CancelUrl"] ?? "https://localhost:3000/payment/cancel";
+            // Determine frontend base URL dynamically
+            var referer = Request.Headers["Referer"].ToString();
+            var frontendBaseUrl = "https://logictic.site";
+            if (!string.IsNullOrEmpty(referer) && (referer.Contains("localhost") || referer.Contains("127.0.0.1")))
+            {
+                frontendBaseUrl = "http://localhost:5173";
+            }
+            else
+            {
+                var host = Request.Host.Host;
+                if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) || host == "127.0.0.1")
+                {
+                    frontendBaseUrl = "http://localhost:5173";
+                }
+            }
+
+            var returnUrl = isConsignment 
+                ? $"{frontendBaseUrl}/history/consignment" 
+                : $"{frontendBaseUrl}/history/buy-on-behalf";
+
+            var cancelUrl = returnUrl;
             if (string.Equals(status, "PAID", StringComparison.OrdinalIgnoreCase))
             {
                 return Redirect(returnUrl);
