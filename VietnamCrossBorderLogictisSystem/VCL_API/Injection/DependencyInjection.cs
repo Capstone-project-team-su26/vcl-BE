@@ -48,6 +48,7 @@ namespace VCL_API.Injection
             services.AddScoped<IPurchaseRequestService, PurchaseRequestService>();
             services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
             services.AddScoped<IPayOsService, PayOsService>();
+            services.AddScoped<ISePayService, SePayService>();
             services.AddScoped<IPurchasePaymentService, PurchasePaymentService>();
             services.AddScoped<IConsignmentPaymentService, ConsignmentPaymentService>();
             services.AddScoped<IProductTypeService, ProductTypeService>();

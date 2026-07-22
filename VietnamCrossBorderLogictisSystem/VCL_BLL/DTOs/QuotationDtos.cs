@@ -276,6 +276,9 @@ namespace VCL_BLL.DTOs
 
         /// <summary>URL FE để payOS chuyển hướng khi khách hủy thanh toán (nếu bỏ trống dùng cấu hình mặc định).</summary>
         public string? CancelUrl { get; set; }
+
+        /// <summary>Phương thức thanh toán: PAYOS hoặc SEPAY. Nếu trống, mặc định dùng PAYOS hoặc theo cấu hình hệ thống.</summary>
+        public string? PaymentMethod { get; set; }
     }
 
     public class ConfirmQuotationPaymentResponse

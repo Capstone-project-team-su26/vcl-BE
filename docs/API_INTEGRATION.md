@@ -5378,5 +5378,96 @@ Content-Type: application/json
 - **Xóa vị trí kho** (`DELETE /api/warehouse-locations/{locationId}`): Giới hạn cho `Admin`, `OperationsManager`, `Operations`.
 - **Quản lý Master Warehouse** (`POST/PUT/DELETE /api/warehouses`): Giữ nguyên phân quyền nghiêm ngặt chỉ dành riêng cho `Admin`.
 
+## 37. Tích hợp Thanh toán (PayOS & SePay)
+
+Hệ thống hỗ trợ song song hai phương thức thanh toán: **PayOS** và **SePay** (Thanh toán qua VietQR tự động nhận diện giao dịch).
+
+### 37.1. Cập nhật Request DTOs cho phép chọn Phương thức thanh toán
+
+Khi gọi các API thanh toán dưới đây, FE có thể gửi thêm trường `paymentMethod` trong body. Nếu để trống hoặc null, mặc định hệ thống sẽ sử dụng `PAYOS`.
+
+```typescript
+export interface ConfirmQuotationPaymentRequest {
+  returnUrl?: string;
+  cancelUrl?: string;
+  paymentMethod?: "PAYOS" | "SEPAY";
+}
+
+export interface ConfirmQuotationAndPayRequestDto {
+  returnUrl?: string;
+  cancelUrl?: string;
+  paymentMethod?: "PAYOS" | "SEPAY";
+}
+
+export interface CreateFinalPaymentRequest {
+  extraFees?: Array<{
+    name: string;
+    amount: number;
+    note?: string;
+  }>;
+  returnUrl?: string;
+  cancelUrl?: string;
+  paymentMethod?: "PAYOS" | "SEPAY";
+}
+```
+
+### 37.2. Tra cứu trạng thái thanh toán (Polling)
+
+Dùng để FE hoặc trang checkout tự động kiểm tra trạng thái thanh toán theo thời gian thực (định kỳ 3-5 giây).
+
+```http
+GET /api/payments/status/{orderCode}
+```
+
+**Response (200 OK):**
+```json
+{
+  "orderCode": 260722152331,
+  "amount": 1500000.0,
+  "status": "PENDING",
+  "paymentMethod": "SEPAY"
+}
+```
+
+### 37.3. Nhận Webhook từ SePay
+
+Endpoint nhận sự kiện chuyển tiền thành công từ hệ thống SePay.
+
+```http
+POST /api/payments/sepay-webhook
+```
+
+**Headers:**
+- `X-SePay-Signature` (Chữ ký HMAC-SHA256)
+- `X-SePay-Timestamp` (Timestamp gửi webhook)
+- `Authorization` (Apikey check)
+
+**Request Body (SePayWebhookDto):**
+```typescript
+interface SePayWebhookDto {
+  id: number;
+  gateway: string;
+  transactionDate: string;
+  accountNumber: string;
+  transferAmount: number;
+  content: string;
+  code: string;
+  referenceCode: string;
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "handled": true
+}
+```
+
+### 37.4. Trang Checkout SePay tự động
+
+Đường dẫn checkout trả về khi chọn `paymentMethod: "SEPAY"` sẽ có dạng `/api/payments/sepay/checkout/{orderCode}` (được định tuyến thông qua máy chủ Backend). Trang này hiển thị mã VietQR đẹp mắt, hỗ trợ copy nhanh số tài khoản/số tiền/nội dung chuyển khoản và tự động redirect về `returnUrl` ngay sau khi thanh toán thành công.
+
+
 
 

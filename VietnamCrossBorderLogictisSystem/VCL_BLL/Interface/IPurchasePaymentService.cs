@@ -11,5 +11,8 @@ namespace VCL_BLL.Interface
 
         /// <summary>Xử lý webhook payOS: xác thực + cập nhật trạng thái thanh toán. Trả true nếu đã ghi nhận thành công.</summary>
         Task<bool> HandlePayOsWebhookAsync(string rawJsonBody);
+
+        /// <summary>Xử lý webhook SePay: xác thực + cập nhật trạng thái thanh toán. Trả true nếu đã ghi nhận thành công.</summary>
+        Task<bool> HandleSePayWebhookAsync(SePayWebhookDto dto);
     }
 }
