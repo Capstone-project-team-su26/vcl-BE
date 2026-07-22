@@ -37,29 +37,6 @@ public partial class VCLDBContext : DbContext
                 {
                     entry.Property("UpdatedAt").CurrentValue = now;
                 }
-
-                // If status changes and we only have CreatedAt (no UpdatedAt), update CreatedAt to reflect status change time
-                var statusProp = entry.Metadata.FindProperty("Status");
-                var paymentStatusProp = entry.Metadata.FindProperty("PaymentStatus");
-                bool isStatusModified = false;
-
-                if (statusProp != null && entry.Property("Status").IsModified)
-                {
-                    isStatusModified = true;
-                }
-                if (paymentStatusProp != null && entry.Property("PaymentStatus").IsModified)
-                {
-                    isStatusModified = true;
-                }
-
-                if (isStatusModified && updatedAtProp == null)
-                {
-                    var createdAtProp = entry.Metadata.FindProperty("CreatedAt");
-                    if (createdAtProp != null)
-                    {
-                        entry.Property("CreatedAt").CurrentValue = now;
-                    }
-                }
             }
         }
     }
