@@ -283,11 +283,39 @@ namespace VCL_BLL.Services
             if (dto == null) return false;
 
             long? orderCode = null;
-            if (!string.IsNullOrWhiteSpace(dto.Code) && long.TryParse(System.Text.RegularExpressions.Regex.Match(dto.Code, @"\d{10,18}").Value, out var parsedCode))
+
+            // 1. Tìm trong Content theo format VCL + số (ví dụ: VCL26072212545433)
+            if (!string.IsNullOrWhiteSpace(dto.Content))
             {
-                orderCode = parsedCode;
+                var vclMatch = System.Text.RegularExpressions.Regex.Match(dto.Content, @"VCL(\d{10,18})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (vclMatch.Success && long.TryParse(vclMatch.Groups[1].Value, out var parsedVclCode))
+                {
+                    orderCode = parsedVclCode;
+                }
             }
-            else if (!string.IsNullOrWhiteSpace(dto.Content))
+
+            // 2. Tìm trong Code theo format VCL + số (ví dụ: VCL26072212545433)
+            if (!orderCode.HasValue && !string.IsNullOrWhiteSpace(dto.Code))
+            {
+                var vclMatch = System.Text.RegularExpressions.Regex.Match(dto.Code, @"VCL(\d{10,18})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (vclMatch.Success && long.TryParse(vclMatch.Groups[1].Value, out var parsedVclCode))
+                {
+                    orderCode = parsedVclCode;
+                }
+            }
+
+            // 3. Fallback: tìm dãy số 10-18 chữ số đầu tiên trong Code
+            if (!orderCode.HasValue && !string.IsNullOrWhiteSpace(dto.Code))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(dto.Code, @"\d{10,18}");
+                if (match.Success && long.TryParse(match.Value, out var parsedCode))
+                {
+                    orderCode = parsedCode;
+                }
+            }
+
+            // 4. Fallback: tìm dãy số 10-18 chữ số đầu tiên trong Content
+            if (!orderCode.HasValue && !string.IsNullOrWhiteSpace(dto.Content))
             {
                 var match = System.Text.RegularExpressions.Regex.Match(dto.Content, @"\d{10,18}");
                 if (match.Success && long.TryParse(match.Value, out var parsedContentCode))
