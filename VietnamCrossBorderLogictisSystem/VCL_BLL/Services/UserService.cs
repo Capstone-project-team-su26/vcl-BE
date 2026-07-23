@@ -36,13 +36,24 @@ namespace VCL_BLL.Services
             await _unitOfWork.SaveChangesAsync();
         }
 
+        private static string NormalizeRole(string? rawRole)
+        {
+            if (string.IsNullOrWhiteSpace(rawRole)) return string.Empty;
+            var trimmed = rawRole.Trim();
+            if (string.Equals(trimmed, "Warehouse Staff", StringComparison.OrdinalIgnoreCase)) return "WarehouseStaff";
+            if (string.Equals(trimmed, "Operations Manager", StringComparison.OrdinalIgnoreCase)) return "OperationsManager";
+            return trimmed;
+        }
+
         public async Task<Guid> CreateEmployeeAsync(RegisterRequest request)
         {
             var userRepo = _unitOfWork.Repository<User>();
             var users = await userRepo.GetAllAsync();
 
+            var normalizedRole = NormalizeRole(request.Role);
+
             // Không cho phép tạo tài khoản role Admin
-            if (string.Equals(request.Role?.Trim(), "Admin", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedRole, "Admin", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Không được phép tạo tài khoản với quyền Admin.");
 
             if (users.Any(u => u.Email.Equals(request.Email, StringComparison.OrdinalIgnoreCase)))
@@ -68,7 +79,7 @@ namespace VCL_BLL.Services
                 Email = request.Email,
                 Phone = request.Phone,
                 Password = PasswordHelper.HashPassword(request.Password),
-                Role = request.Role,
+                Role = normalizedRole,
                 UserType = "Employee",
                 Status = "Active",
                 Region = parsedRegion,
@@ -94,12 +105,14 @@ namespace VCL_BLL.Services
 
         public async Task UpdateUserRoleAsync(Guid userId, string role, string? region = null)
         {
+            var normalizedRole = NormalizeRole(role);
+
             // Không cho phép nâng quyền lên Admin
-            if (string.Equals(role?.Trim(), "Admin", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedRole, "Admin", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Không được phép gán quyền Admin cho tài khoản.");
 
             var user = await GetUserOrThrowAsync(userId);
-            user.Role = role;
+            user.Role = normalizedRole;
 
             if (!string.IsNullOrWhiteSpace(region))
             {
