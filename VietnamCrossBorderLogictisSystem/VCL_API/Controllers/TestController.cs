@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.Helpers;
+using VCL_DLL.Enums;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
 
@@ -25,12 +26,13 @@ namespace VCL_API.Controllers
             var userRepo = _unitOfWork.Repository<User>();
             var allUsers = await userRepo.GetAllAsync();
 
-            // Seed Warehouse Staff
+            // 1. Seed Warehouse Staff (General / JP)
             var staffEmail = "staff@employee.com";
             var existingStaff = allUsers.FirstOrDefault(u => u.Email == staffEmail);
             if (existingStaff != null)
             {
                 existingStaff.Password = PasswordHelper.HashPassword("Employee123");
+                existingStaff.Region = RegionCode.JP;
                 userRepo.Update(existingStaff);
             }
             else
@@ -38,17 +40,105 @@ namespace VCL_API.Controllers
                 var newStaff = new User
                 {
                     Id = Guid.NewGuid(),
-                    FullName = "Test Warehouse Staff",
+                    FullName = "Test Warehouse Staff (JP)",
                     Email = staffEmail,
                     Phone = "0123456789",
                     Password = PasswordHelper.HashPassword("Employee123"),
                     Role = "WarehouseStaff",
                     UserType = "Employee",
                     Status = "Active",
+                    Region = RegionCode.JP,
                     CreatedAt = DateTime.UtcNow,
                     IsEmailVerified = true
                 };
                 await userRepo.AddAsync(newStaff);
+            }
+
+            // 2. Seed Staff JP (Japan)
+            var staffJpEmail = "staff_jp@employee.com";
+            var existingJp = allUsers.FirstOrDefault(u => u.Email.Equals(staffJpEmail, StringComparison.OrdinalIgnoreCase));
+            if (existingJp != null)
+            {
+                existingJp.Password = PasswordHelper.HashPassword("Employee123");
+                existingJp.Region = RegionCode.JP;
+                existingJp.Role = "WarehouseStaff";
+                userRepo.Update(existingJp);
+            }
+            else
+            {
+                var newJp = new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "Nhân viên Kho Nhật Bản",
+                    Email = staffJpEmail,
+                    Phone = "0811111111",
+                    Password = PasswordHelper.HashPassword("Employee123"),
+                    Role = "WarehouseStaff",
+                    UserType = "Employee",
+                    Status = "Active",
+                    Region = RegionCode.JP,
+                    CreatedAt = DateTime.UtcNow,
+                    IsEmailVerified = true
+                };
+                await userRepo.AddAsync(newJp);
+            }
+
+            // 3. Seed Staff CN (China)
+            var staffCnEmail = "staff_cn@employee.com";
+            var existingCn = allUsers.FirstOrDefault(u => u.Email.Equals(staffCnEmail, StringComparison.OrdinalIgnoreCase));
+            if (existingCn != null)
+            {
+                existingCn.Password = PasswordHelper.HashPassword("Employee123");
+                existingCn.Region = RegionCode.CN;
+                existingCn.Role = "WarehouseStaff";
+                userRepo.Update(existingCn);
+            }
+            else
+            {
+                var newCn = new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "Nhân viên Kho Trung Quốc",
+                    Email = staffCnEmail,
+                    Phone = "0822222222",
+                    Password = PasswordHelper.HashPassword("Employee123"),
+                    Role = "WarehouseStaff",
+                    UserType = "Employee",
+                    Status = "Active",
+                    Region = RegionCode.CN,
+                    CreatedAt = DateTime.UtcNow,
+                    IsEmailVerified = true
+                };
+                await userRepo.AddAsync(newCn);
+            }
+
+            // 4. Seed Staff KR (South Korea)
+            var staffKrEmail = "staff_kr@employee.com";
+            var existingKr = allUsers.FirstOrDefault(u => u.Email.Equals(staffKrEmail, StringComparison.OrdinalIgnoreCase));
+            if (existingKr != null)
+            {
+                existingKr.Password = PasswordHelper.HashPassword("Employee123");
+                existingKr.Region = RegionCode.KR;
+                existingKr.Role = "WarehouseStaff";
+                userRepo.Update(existingKr);
+            }
+            else
+            {
+                var newKr = new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "Nhân viên Kho Hàn Quốc",
+                    Email = staffKrEmail,
+                    Phone = "0833333333",
+                    Password = PasswordHelper.HashPassword("Employee123"),
+                    Role = "WarehouseStaff",
+                    UserType = "Employee",
+                    Status = "Active",
+                    Region = RegionCode.KR,
+                    CreatedAt = DateTime.UtcNow,
+                    IsEmailVerified = true
+                };
+                await userRepo.AddAsync(newKr);
             }
 
             // Seed Sales Staff
@@ -81,7 +171,10 @@ namespace VCL_API.Controllers
 
             return Ok(new 
             { 
-                message = "Created WarehouseStaff and Sales staff successfully.", 
+                message = "Created JP, CN, KR WarehouseStaff and Sales staff successfully.", 
+                staffJpEmail = staffJpEmail,
+                staffCnEmail = staffCnEmail,
+                staffKrEmail = staffKrEmail,
                 staffEmail = staffEmail, 
                 staffPassword = "Employee123",
                 salesEmail = salesEmail,
