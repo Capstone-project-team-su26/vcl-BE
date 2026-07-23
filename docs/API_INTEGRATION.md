@@ -383,7 +383,8 @@ Yêu cầu JWT có role chính xác là `Admin`.
   "email": "sale01@employee.com",
   "password": "Employee123",
   "phone": "0999999999",
-  "role": "Sale"
+  "role": "Sale",
+  "region": "JP"
 }
 ```
 
@@ -400,6 +401,7 @@ Tài khoản được tạo với:
 - `userType = "Employee"`
 - `status = "Active"`
 - `role` lấy từ request
+- `region` lấy từ request (tùy chọn: `CN`, `JP`, `KR`, `VN`, v.v.)
 
 Response:
 
@@ -407,9 +409,10 @@ Response:
 |---|---|
 | `401` | Thiếu/sai/hết hạn token |
 | `403` | Token không có role `Admin` |
+| `400` | Mã khu vực (`region`) không hợp lệ |
 | `409` | Email đã được sử dụng |
 
-Lưu ý: backend hiện chưa giới hạn danh sách role nhân viên. FE nên dùng đúng role do nghiệp vụ thống nhất, ví dụ `Sale`, `WarehouseStaff`, `OperationsManager`, `Delivery`.
+Lưu ý: backend hiện hỗ trợ thiết lập khu vực (`region`) cho nhân viên kho / nhân viên vận hành (ví dụ: `JP`, `KR`, `CN`, `VN`). FE nên dùng đúng role và region do nghiệp vụ thống nhất.
 
 ## 8. Khóa và mở khóa tài khoản
 

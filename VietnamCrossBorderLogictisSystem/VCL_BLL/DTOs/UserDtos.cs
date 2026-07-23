@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace VCL_BLL.DTOs
 {
-    public record RegisterRequest(string FullName, string Email, string Password, string Phone, string Role);
+    public record RegisterRequest(string FullName, string Email, string Password, string Phone, string Role, string? Region = null);
 
     public class UserResponse
     {
@@ -14,6 +14,7 @@ namespace VCL_BLL.DTOs
         public string Role { get; set; }
         public string UserType { get; set; }
         public string Status { get; set; }
+        public string? Region { get; set; }
         public DateTime? CreatedAt { get; set; }
     }
 
@@ -21,6 +22,7 @@ namespace VCL_BLL.DTOs
     {
         [Required]
         public string Role { get; set; }
+        public string? Region { get; set; }
     }
 
     public class UserProfileResponse
@@ -32,6 +34,7 @@ namespace VCL_BLL.DTOs
         public string Role { get; set; }
         public string UserType { get; set; }
         public string Status { get; set; }
+        public string? Region { get; set; }
         public DateTime? CreatedAt { get; set; }
         
         // Customer-specific fields (null for employees)

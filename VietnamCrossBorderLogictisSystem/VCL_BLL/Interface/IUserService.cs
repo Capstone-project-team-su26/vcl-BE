@@ -12,7 +12,7 @@ namespace VCL_BLL.Interface
         Task<Guid> CreateEmployeeAsync(RegisterRequest request);
         Task<IEnumerable<UserResponse>> GetAllUsersAsync();
         Task<UserResponse> GetUserByIdAsync(Guid userId);
-        Task UpdateUserRoleAsync(Guid userId, string role);
+        Task UpdateUserRoleAsync(Guid userId, string role, string? region = null);
         Task<UserProfileResponse> GetProfileAsync(Guid userId);
         Task UpdateProfileAsync(Guid userId, UpdateProfileRequest request);
     }

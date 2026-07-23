@@ -80,8 +80,8 @@ namespace VCL_API.Controllers
         {
             try
             {
-                await _userService.UpdateUserRoleAsync(id, request.Role);
-                return Ok(new { message = "Cập nhật role thành công." });
+                await _userService.UpdateUserRoleAsync(id, request.Role, request.Region);
+                return Ok(new { message = "Cập nhật role và region thành công." });
             }
             catch (ArgumentException ex)
             {

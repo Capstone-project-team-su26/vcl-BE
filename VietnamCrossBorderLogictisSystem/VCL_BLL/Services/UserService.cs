@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
+using VCL_DLL.Enums;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
 
@@ -47,6 +48,19 @@ namespace VCL_BLL.Services
             if (users.Any(u => u.Email.Equals(request.Email, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("Email đã được sử dụng.");
 
+            RegionCode? parsedRegion = null;
+            if (!string.IsNullOrWhiteSpace(request.Region))
+            {
+                if (Enum.TryParse<RegionCode>(request.Region.Trim(), true, out var r))
+                {
+                    parsedRegion = r;
+                }
+                else
+                {
+                    throw new ArgumentException($"Mã vùng/quốc gia '{request.Region}' không hợp lệ.");
+                }
+            }
+
             var user = new User
             {
                 Id = Guid.NewGuid(),
@@ -57,6 +71,7 @@ namespace VCL_BLL.Services
                 Role = request.Role,
                 UserType = "Employee",
                 Status = "Active",
+                Region = parsedRegion,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -77,7 +92,7 @@ namespace VCL_BLL.Services
             return MapToResponse(user);
         }
 
-        public async Task UpdateUserRoleAsync(Guid userId, string role)
+        public async Task UpdateUserRoleAsync(Guid userId, string role, string? region = null)
         {
             // Không cho phép nâng quyền lên Admin
             if (string.Equals(role?.Trim(), "Admin", StringComparison.OrdinalIgnoreCase))
@@ -85,6 +100,19 @@ namespace VCL_BLL.Services
 
             var user = await GetUserOrThrowAsync(userId);
             user.Role = role;
+
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                if (Enum.TryParse<RegionCode>(region.Trim(), true, out var parsedRegion))
+                {
+                    user.Region = parsedRegion;
+                }
+                else
+                {
+                    throw new ArgumentException($"Mã vùng/quốc gia '{region}' không hợp lệ.");
+                }
+            }
+
             _unitOfWork.Repository<User>().Update(user);
             await _unitOfWork.SaveChangesAsync();
         }
@@ -102,6 +130,7 @@ namespace VCL_BLL.Services
                 Role = user.Role,
                 UserType = user.UserType,
                 Status = user.Status,
+                Region = user.Region?.ToString(),
                 CreatedAt = user.CreatedAt
             };
 
@@ -165,6 +194,7 @@ namespace VCL_BLL.Services
             Role = u.Role,
             UserType = u.UserType,
             Status = u.Status,
+            Region = u.Region?.ToString(),
             CreatedAt = u.CreatedAt
         };
     }
