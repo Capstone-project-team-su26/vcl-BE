@@ -2595,7 +2595,7 @@ Authorization: Bearer {accessToken}
 
 ### 24.2. Staff duyệt hoặc từ chối yêu cầu xuất kho
 
-Nhân viên (Staff/Operations) duyệt (`APPROVED`) hoặc từ chối (`REJECTED`) yêu cầu xuất kho. Khi từ chối, bắt buộc phải cung cấp lý do từ chối.
+Nhân viên (Staff/Operations) duyệt (`RELEASE_APPROVED`) hoặc từ chối (`RELEASE_REJECTED`) yêu cầu xuất kho. Khi từ chối, bắt buộc phải cung cấp lý do từ chối.
 
 ```http
 PUT /api/warehouse-release-requests/{requestId}/status
@@ -2613,15 +2613,15 @@ Content-Type: application/json
 
 ```json
 {
-  "status": "REJECTED",
+  "status": "RELEASE_REJECTED",
   "rejectionReason": "Hàng hóa bị hư hỏng không đủ xuất kho"
 }
 ```
 
 | Field | Ràng buộc | Mô tả |
 |---|---|---|
-| `status` | Bắt buộc. Phải là `APPROVED` hoặc `REJECTED`. | Trạng thái mới của yêu cầu xuất kho |
-| `rejectionReason` | Bắt buộc nếu trạng thái là `REJECTED`. | Lý do từ chối yêu cầu |
+| `status` | Bắt buộc. Phải là `RELEASE_APPROVED` hoặc `RELEASE_REJECTED`. | Trạng thái mới của yêu cầu xuất kho |
+| `rejectionReason` | Bắt buộc nếu trạng thái là `RELEASE_REJECTED`. | Lý do từ chối yêu cầu |
 
 **Response thành công (200 OK):**
 
@@ -2631,7 +2631,7 @@ Content-Type: application/json
   "data": {
     "wroId": "e14b21a7-...",
     "wroCode": "WRO-20260629-8439",
-    "status": "REJECTED"
+    "status": "RELEASE_REJECTED"
   }
 }
 ```
@@ -2640,15 +2640,15 @@ Content-Type: application/json
 
 | Status | Trường hợp | Message |
 |---|---|---|
-| `400` | Trạng thái mới không hợp lệ hoặc thiếu lý do từ chối | `"Trạng thái mới không hợp lệ..."` hoặc `"Vui lòng cung cấp lý do từ chối (RejectionReason)."` |
-| `400` | Yêu cầu đã duyệt/từ chối trước đó (không ở trạng thái PENDING_REVIEW) | `"Không thể cập nhật trạng thái yêu cầu xuất kho do yêu cầu đã ở trạng thái {status}"` |
+| `400` | Trạng thái mới không hợp lệ hoặc thiếu lý do từ chối | `"Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: RELEASE_APPROVED, RELEASE_REJECTED."` hoặc `"Vui lòng cung cấp lý do từ chối (RejectionReason)."` |
+| `400` | Yêu cầu đã duyệt/từ chối trước đó (không ở trạng thái RELEASE_PENDING) | `"Không thể cập nhật trạng thái yêu cầu xuất kho do yêu cầu đã ở trạng thái {status}"` |
 | `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
 | `403` | Khách hàng thực hiện thao tác (chỉ Staff/Ops được thao tác) | `"Bạn không có quyền cập nhật trạng thái yêu cầu xuất kho."` |
 | `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
 
 ### 24.3. Tạo phiếu picking cho yêu cầu xuất kho
 
-Nhân viên (Staff/Operations) tạo phiếu picking từ yêu cầu xuất kho đã được duyệt (`APPROVED`). Trạng thái của yêu cầu xuất kho sẽ chuyển sang `PICKING`, và trạng thái ban đầu của phiếu picking là `PENDING`.
+Nhân viên (Staff/Operations) tạo phiếu picking từ yêu cầu xuất kho đã được duyệt (`RELEASE_APPROVED`). Trạng thái của yêu cầu xuất kho sẽ chuyển sang `PICKING`, và trạng thái ban đầu của phiếu picking là `PENDING`.
 
 ```http
 POST /api/warehouse-release-requests/{requestId}/picking-list
@@ -2695,7 +2695,7 @@ Authorization: Bearer {accessToken}
 
 | Status | Trường hợp | Message |
 |---|---|---|
-| `400` | Yêu cầu xuất kho chưa được duyệt (không ở trạng thái `APPROVED`) | `"Chỉ có thể tạo phiếu picking cho yêu cầu xuất kho đã được duyệt (APPROVED)."` |
+| `400` | Yêu cầu xuất kho chưa được duyệt (không ở trạng thái `RELEASE_APPROVED`) | `"Chỉ có thể tạo phiếu picking cho yêu cầu xuất kho đã được duyệt (RELEASE_APPROVED)."` |
 | `400` | Đã tồn tại phiếu picking cho yêu cầu này | `"Phiếu picking cho yêu cầu xuất kho này đã tồn tại."` |
 | `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
 | `403` | Khách hàng thực hiện thao tác (chỉ Staff/Ops được thao tác) | `"Bạn không có quyền tạo phiếu picking."` |

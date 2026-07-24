@@ -109,7 +109,7 @@ namespace VCL_BLL.Services
                 ReceiverPhone = request.ReceiverPhone,
                 DeliveryAddress = request.DeliveryAddress,
                 ShelfCode = request.ShelfCode,
-                Status = "PENDING_REVIEW",
+                Status = "RELEASE_PENDING",
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -347,20 +347,20 @@ namespace VCL_BLL.Services
 
             // 2. Validate trạng thái mới
             var targetStatus = request.Status.Trim().ToUpperInvariant();
-            var validStatuses = new[] { "APPROVED", "REJECTED" };
+            var validStatuses = new[] { "RELEASE_APPROVED", "RELEASE_REJECTED" };
             if (!validStatuses.Contains(targetStatus))
             {
-                throw new ArgumentException("Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: APPROVED, REJECTED.");
+                throw new ArgumentException("Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: RELEASE_APPROVED, RELEASE_REJECTED.");
             }
 
-            // 3. Kiểm tra trạng thái hiện tại (Không cho cập nhật nếu không ở trạng thái PENDING_REVIEW)
-            if (!string.Equals(wroRequest.Status, "PENDING_REVIEW", StringComparison.OrdinalIgnoreCase))
+            // 3. Kiểm tra trạng thái hiện tại (Không cho cập nhật nếu không ở trạng thái RELEASE_PENDING)
+            if (!string.Equals(wroRequest.Status, "RELEASE_PENDING", StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException($"Không thể cập nhật trạng thái yêu cầu xuất kho do yêu cầu đã ở trạng thái {wroRequest.Status}");
             }
 
-            // 4. Xử lý lưu lý do từ chối nếu REJECTED
-            if (targetStatus == "REJECTED")
+            // 4. Xử lý lưu lý do từ chối nếu RELEASE_REJECTED
+            if (targetStatus == "RELEASE_REJECTED")
             {
                 if (string.IsNullOrWhiteSpace(request.RejectionReason))
                 {
@@ -372,8 +372,8 @@ namespace VCL_BLL.Services
             wroRequest.Status = targetStatus;
             wroRequestRepo.Update(wroRequest);
 
-            // 5. Nếu REJECTED -> Hoàn lại số lượng tồn kho khả dụng từ RESERVED về AVAILABLE
-            if (targetStatus == "REJECTED")
+            // 5. Nếu RELEASE_REJECTED -> Hoàn lại số lượng tồn kho khả dụng từ RESERVED về AVAILABLE
+            if (targetStatus == "RELEASE_REJECTED")
             {
                 var wroItemRepo = _unitOfWork.Repository<WroItem>();
                 var allWroItems = await wroItemRepo.GetAllAsync();
@@ -443,10 +443,10 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
             }
 
-            // 2. Kiểm tra trạng thái yêu cầu xuất kho (Phải là APPROVED)
-            if (!string.Equals(wroRequest.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            // 2. Kiểm tra trạng thái yêu cầu xuất kho (Phải là RELEASE_APPROVED)
+            if (!string.Equals(wroRequest.Status, "RELEASE_APPROVED", StringComparison.OrdinalIgnoreCase))
             {
-                throw new ArgumentException("Chỉ có thể tạo phiếu picking cho yêu cầu xuất kho đã được duyệt (APPROVED).");
+                throw new ArgumentException("Chỉ có thể tạo phiếu picking cho yêu cầu xuất kho đã được duyệt (RELEASE_APPROVED).");
             }
 
             // 3. Kiểm tra xem phiếu picking cho yêu cầu này đã tồn tại chưa
