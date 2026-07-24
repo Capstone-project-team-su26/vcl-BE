@@ -1855,6 +1855,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("note");
 
+                    b.Property<string>("PricingRuleIds")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("pricing_rule_ids");
+
                     b.Property<string>("PurchaseCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")

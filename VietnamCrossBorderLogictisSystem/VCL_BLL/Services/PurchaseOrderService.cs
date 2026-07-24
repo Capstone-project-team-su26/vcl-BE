@@ -87,7 +87,7 @@ namespace VCL_BLL.Services
                 Id = Guid.NewGuid(),
                 PurchaseRequestId = requestId,
                 PurchaseQuotationId = acceptedQuotation.Id,
-                PurchaseOrderCode = $"PO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}",
+                PurchaseOrderCode = GenerateUniquePurchaseOrderCode(allOrders),
                 SupplierName = request.SupplierName,
                 PurchaseNote = request.PurchaseNote,
                 TotalAmount = acceptedQuotation.TotalAmount,
@@ -207,6 +207,27 @@ namespace VCL_BLL.Services
         {
             return !string.IsNullOrWhiteSpace(userRole)
                 && BuyingRoles.Contains(userRole.Trim().ToUpperInvariant());
+        }
+
+        /// <summary>
+        /// Sinh mã đơn mua hàng không trùng với mã đã có (cùng quy ước với mã ký gửi / mua hộ).
+        /// Nhận sẵn danh sách đơn hiện có để khỏi query lại toàn bảng.
+        /// </summary>
+        private static string GenerateUniquePurchaseOrderCode(IEnumerable<PurchaseOrder> existingOrders)
+        {
+            var existingCodes = existingOrders
+                .Where(o => !string.IsNullOrEmpty(o.PurchaseOrderCode))
+                .Select(o => o.PurchaseOrderCode)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var random = new Random();
+            string code;
+            do
+            {
+                code = $"PO-{DateTime.UtcNow:yyyyMMddHHmmss}-{random.Next(100000, 999999)}";
+            } while (existingCodes.Contains(code));
+
+            return code;
         }
     }
 }
