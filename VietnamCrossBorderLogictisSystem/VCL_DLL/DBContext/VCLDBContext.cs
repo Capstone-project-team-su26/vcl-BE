@@ -1925,6 +1925,9 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Route)
                 .HasMaxLength(100)
                 .HasColumnName("route");
+            entity.Property(e => e.ShippingOption)
+                .HasMaxLength(100)
+                .HasColumnName("shipping_option");
             entity.Property(e => e.ReceiverName)
                 .HasMaxLength(255)
                 .HasColumnName("receiver_name");
@@ -1938,6 +1941,12 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("requires_inspection");
             entity.Property(e => e.RequiresQuantityCheck)
                 .HasColumnName("requires_quantity_check");
+            entity.Property(e => e.RequiresPacking)
+                .HasColumnName("requires_packing");
+            entity.Property(e => e.RequiresWoodenCrate)
+                .HasColumnName("requires_wooden_crate");
+            entity.Property(e => e.RequiresInsurance)
+                .HasColumnName("requires_insurance");
             entity.Property(e => e.GeneralNote)
                 .HasMaxLength(1000)
                 .HasColumnName("note");

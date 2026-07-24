@@ -9,11 +9,12 @@ namespace VCL_BLL.DTOs
         [Required(ErrorMessage = "Link sản phẩm không được để trống.")]
         public string ProductLink { get; set; } = string.Empty;
 
-        /// <summary>Website/sàn nguồn sản phẩm (VD: Taobao, 1688, Tmall).</summary>
+        /// <summary>Website/sàn nguồn sản phẩm — tùy tuyến (VD: Taobao, 1688, Amazon, Coupang, Rakuten).</summary>
         public string? SourceWebsite { get; set; }
 
-        /// <summary>Loại hàng (lấy từ dropdown /api/product-types).</summary>
-        public string? ProductType { get; set; }
+        /// <summary>Loại hàng (lấy từ dropdown /api/product-types) — dùng để đối chiếu hàng cấm/hạn chế.</summary>
+        [Required(ErrorMessage = "Vui lòng chọn loại hàng.")]
+        public string ProductType { get; set; } = string.Empty;
 
         public string? ProductName { get; set; }
 
@@ -26,17 +27,26 @@ namespace VCL_BLL.DTOs
         /// <summary>Ghi chú riêng cho từng sản phẩm (nếu có).</summary>
         public string? Note { get; set; }
 
-        /// <summary>Hình ảnh tham khảo (nếu có).</summary>
-        public string? ImageUrl { get; set; }
-
-        /// <summary>Danh sách hình ảnh tham khảo (nếu có nhiều ảnh).</summary>
+        /// <summary>Danh sách hình ảnh tham khảo (upload qua POST /api/uploads/images).</summary>
         public List<string>? ImageUrls { get; set; }
     }
 
     public class CreatePurchaseRequestDto
     {
-        /// <summary>Tuyến hàng (lấy từ dropdown /api/orders/consignments/routes).</summary>
-        public string? Route { get; set; }
+        /// <summary>
+        /// Tuyến hàng (lấy từ dropdown GET /api/orders/consignments/routes) — không giới hạn ở tuyến Trung Quốc,
+        /// mà theo đúng các tuyến quốc tế hệ thống đang khai thác trong bảng cấu hình giá.
+        /// Nhận cả mã tuyến ("CN-VN", "KR-VN"...) lẫn tên hiển thị của dropdown.
+        /// </summary>
+        [Required(ErrorMessage = "Vui lòng chọn tuyến hàng.")]
+        public string Route { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Phương án vận chuyển (VD: EXPRESS, STANDARD). Phải khớp một cấu hình giá active theo Route đã chọn —
+        /// FE lấy danh sách từ GET /api/orders/consignments/shipping-options?route=...
+        /// </summary>
+        [Required(ErrorMessage = "Vui lòng chọn phương án vận chuyển.")]
+        public string ShippingOption { get; set; } = string.Empty;
 
         /// <summary>Tên người nhận.</summary>
         public string? ReceiverName { get; set; }
@@ -47,11 +57,14 @@ namespace VCL_BLL.DTOs
         /// <summary>Địa chỉ nhận hàng.</summary>
         public string? ReceiverAddress { get; set; }
 
-        /// <summary>Yêu cầu kiểm tra hàng.</summary>
-        public bool RequiresInspection { get; set; }
+        /// <summary>Khách yêu cầu đóng gói lại (map rule PACKING).</summary>
+        public bool RequiresPacking { get; set; }
 
-        /// <summary>Yêu cầu kiểm tra số lượng.</summary>
-        public bool RequiresQuantityCheck { get; set; }
+        /// <summary>Khách yêu cầu đóng thùng gỗ (map rule WOODEN_BOX).</summary>
+        public bool RequiresWoodenCrate { get; set; }
+
+        /// <summary>Khách đăng ký bảo hiểm (map rule INSURANCE).</summary>
+        public bool RequiresInsurance { get; set; }
 
         /// <summary>Ghi chú mua hộ chung cho cả yêu cầu (nếu có).</summary>
         public string? GeneralNote { get; set; }
@@ -71,7 +84,6 @@ namespace VCL_BLL.DTOs
         public int Quantity { get; set; }
         public string? Attributes { get; set; }
         public string? Note { get; set; }
-        public string? ImageUrl { get; set; }
         public List<string> ImageUrls { get; set; } = new();
     }
 
@@ -80,16 +92,32 @@ namespace VCL_BLL.DTOs
         public Guid PurchaseRequestId { get; set; }
         public string PurchaseCode { get; set; } = string.Empty;
         public Guid? CustomerId { get; set; }
+
+        /// <summary>ID user (tài khoản) của khách — FE cần để xử lý.</summary>
+        public Guid? UserId { get; set; }
+
         public string? Route { get; set; }
+        public string? ShippingOption { get; set; }
         public string? ReceiverName { get; set; }
         public string? ReceiverPhone { get; set; }
         public string? ReceiverAddress { get; set; }
-        public bool RequiresInspection { get; set; }
-        public bool RequiresQuantityCheck { get; set; }
+        public bool RequiresPacking { get; set; }
+        public bool RequiresWoodenCrate { get; set; }
+        public bool RequiresInsurance { get; set; }
         public string? GeneralNote { get; set; }
         public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>Tổng số lượng sản phẩm của yêu cầu.</summary>
+        public int ItemCount { get; set; }
+
+        /// <summary>ID các quy định giá/dịch vụ phụ khớp với các cờ khách đã tick — Sales dùng khi lên báo giá.</summary>
+        public List<Guid> PricingRuleIds { get; set; } = new();
+
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
+
+        /// <summary>Cảnh báo hàng hạn chế (Restricted). Hàng cấm (Banned) sẽ bị chặn tạo.</summary>
+        public List<RestrictedItemWarning> Warnings { get; set; } = new();
     }
 
     public class PurchaseRequestDetailResponseDto
@@ -100,11 +128,13 @@ namespace VCL_BLL.DTOs
         public string CustomerName { get; set; } = string.Empty;
         public string CreatedByName { get; set; } = string.Empty;
         public string? Route { get; set; }
+        public string? ShippingOption { get; set; }
         public string? ReceiverName { get; set; }
         public string? ReceiverPhone { get; set; }
         public string? ReceiverAddress { get; set; }
-        public bool RequiresInspection { get; set; }
-        public bool RequiresQuantityCheck { get; set; }
+        public bool RequiresPacking { get; set; }
+        public bool RequiresWoodenCrate { get; set; }
+        public bool RequiresInsurance { get; set; }
         public string? GeneralNote { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? Reason { get; set; }

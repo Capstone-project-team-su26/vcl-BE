@@ -73,6 +73,14 @@ namespace VCL_BLL.Services
             return code;
         }
 
+        public async Task<List<Guid>> ResolveServiceFlagRuleIdsAsync(
+            bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance)
+        {
+            var rules = new List<PricingRule>();
+            await AddRulesFromServiceFlagsAsync(rules, requiresInspection, requiresPacking, requiresWoodenCrate, requiresInsurance);
+            return rules.Select(r => r.Id).ToList();
+        }
+
         private async Task AddRulesFromServiceFlagsAsync(
             List<PricingRule> selectedRules,
             bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance)
