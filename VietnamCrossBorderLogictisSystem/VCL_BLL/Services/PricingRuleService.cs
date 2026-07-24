@@ -21,6 +21,8 @@ namespace VCL_BLL.Services
 
         public async Task<IEnumerable<PricingRuleDto>> GetAllAsync()
         {
+            await EnsureDefaultRulesAsync();
+
             var pricingRepo = _unitOfWork.Repository<PricingRule>();
             var rules = await pricingRepo.GetAllAsync();
 
@@ -43,6 +45,58 @@ namespace VCL_BLL.Services
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt
             });
+        }
+
+        private async Task EnsureDefaultRulesAsync()
+        {
+            var pricingRepo = _unitOfWork.Repository<PricingRule>();
+            var existingRules = await pricingRepo.GetAllAsync();
+            bool hasChanges = false;
+
+            // 1. Phí vận chuyển nội địa
+            if (!existingRules.Any(r => string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                         string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase)))
+            {
+                await pricingRepo.AddAsync(new PricingRule
+                {
+                    Id = Guid.NewGuid(),
+                    RuleName = "Phí vận chuyển nội địa",
+                    RuleCode = "DOMESTIC_FEE",
+                    RuleType = "DOMESTIC_FEE",
+                    CalculationType = "FIXED",
+                    Value = 5000m,
+                    IsRequired = true,
+                    Status = "ACTIVE",
+                    Description = "Phí vận chuyển nội địa Việt Nam ước tính mặc định",
+                    CreatedAt = DateTime.UtcNow
+                });
+                hasChanges = true;
+            }
+
+            // 2. Thuế và phí nhập khẩu (VAT)
+            if (!existingRules.Any(r => string.Equals(r.RuleCode, "VAT", StringComparison.OrdinalIgnoreCase) ||
+                                         string.Equals(r.RuleType, "VAT", StringComparison.OrdinalIgnoreCase)))
+            {
+                await pricingRepo.AddAsync(new PricingRule
+                {
+                    Id = Guid.NewGuid(),
+                    RuleName = "Thuế và phí nhập khẩu (VAT 8%)",
+                    RuleCode = "VAT",
+                    RuleType = "VAT",
+                    CalculationType = "PERCENTAGE",
+                    Value = 8m,
+                    IsRequired = true,
+                    Status = "ACTIVE",
+                    Description = "Thuế giá trị gia tăng và phí làm thủ tục nhập khẩu mặc định (8%)",
+                    CreatedAt = DateTime.UtcNow
+                });
+                hasChanges = true;
+            }
+
+            if (hasChanges)
+            {
+                await _unitOfWork.SaveChangesAsync();
+            }
         }
 
         public async Task<PricingRuleDto> GetByIdAsync(Guid id)
