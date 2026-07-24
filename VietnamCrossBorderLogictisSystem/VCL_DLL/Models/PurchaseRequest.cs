@@ -16,6 +16,8 @@ public partial class PurchaseRequest
 
     public string Route { get; set; }
 
+    public string ShippingOption { get; set; }
+
     public string ReceiverName { get; set; }
 
     public string ReceiverPhone { get; set; }
@@ -25,6 +27,12 @@ public partial class PurchaseRequest
     public bool RequiresInspection { get; set; }
 
     public bool RequiresQuantityCheck { get; set; }
+
+    public bool RequiresPacking { get; set; }
+
+    public bool RequiresWoodenCrate { get; set; }
+
+    public bool RequiresInsurance { get; set; }
 
     public string GeneralNote { get; set; }
 

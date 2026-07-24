@@ -13,13 +13,18 @@ namespace VCL_BLL.Services
     public class PurchaseRequestService : IPurchaseRequestService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IOrderService _orderService;
 
         // Các role được phép xem toàn bộ yêu cầu mua hộ cần xử lý (Staff/Sales)
         private static readonly string[] StaffRoles = { "ADMIN", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
 
-        public PurchaseRequestService(IUnitOfWork unitOfWork)
+        // Ký tự phân cách danh sách ảnh khi lưu DB (dùng chung quy ước với ký gửi)
+        private const char ImageUrlSeparator = '|';
+
+        public PurchaseRequestService(IUnitOfWork unitOfWork, IOrderService orderService)
         {
             _unitOfWork = unitOfWork;
+            _orderService = orderService;
         }
 
         public async Task<PurchaseRequestResponseDto> CreatePurchaseRequestAsync(Guid userId, string userRole, CreatePurchaseRequestDto request)
@@ -54,34 +59,52 @@ namespace VCL_BLL.Services
                 {
                     throw new ArgumentException("Link sản phẩm không được để trống.");
                 }
+                if (string.IsNullOrWhiteSpace(item.ProductType))
+                {
+                    throw new ArgumentException("Vui lòng chọn loại hàng cho từng sản phẩm.");
+                }
                 if (item.Quantity <= 0)
                 {
                     throw new ArgumentException("Số lượng sản phẩm phải lớn hơn 0.");
                 }
             }
 
-            // 4. Khởi tạo yêu cầu mua hộ
-            var purchaseCode = $"PUR-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
+            // 4. Validate tuyến hàng + phương án vận chuyển theo bảng cấu hình giá (giống luồng ký gửi)
+            var (route, shippingOption) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
+
+            // 5. Đối chiếu hàng cấm / hạn chế (dùng chung logic với ký gửi)
+            var warnings = await ValidateAgainstRestrictedItemsAsync(request.Items);
+
+            // 6. Khởi tạo yêu cầu mua hộ
+            var purchaseCode = await GenerateUniquePurchaseCodeAsync();
             var purchaseRequest = new PurchaseRequest
             {
                 Id = Guid.NewGuid(),
                 UserId = userId,
                 CustomerId = customer.Id,
                 PurchaseCode = purchaseCode,
-                Route = OrderService.NormalizeRoute(request.Route),
-                ReceiverName = request.ReceiverName,
-                ReceiverPhone = request.ReceiverPhone,
-                ReceiverAddress = request.ReceiverAddress,
-                RequiresInspection = request.RequiresInspection,
-                RequiresQuantityCheck = request.RequiresQuantityCheck,
-                GeneralNote = request.GeneralNote,
+                Route = route,
+                ShippingOption = shippingOption,
+                ReceiverName = request.ReceiverName?.Trim(),
+                ReceiverPhone = request.ReceiverPhone?.Trim(),
+                ReceiverAddress = request.ReceiverAddress?.Trim(),
+                RequiresPacking = request.RequiresPacking,
+                RequiresWoodenCrate = request.RequiresWoodenCrate,
+                RequiresInsurance = request.RequiresInsurance,
+                GeneralNote = BuildGeneralNote(request),
                 Status = "PENDING_REVIEW",
                 CreatedAt = DateTime.UtcNow
             };
 
+            // Quy đổi các cờ dịch vụ phụ sang PricingRule để Sales dùng khi lên báo giá.
+            // Mua hộ không có dịch vụ kiểm hàng -> luôn truyền false cho cờ INSPECTION.
+            var pricingRuleIds = await _orderService.ResolveServiceFlagRuleIdsAsync(
+                false, request.RequiresPacking,
+                request.RequiresWoodenCrate, request.RequiresInsurance);
+
             await _unitOfWork.Repository<PurchaseRequest>().AddAsync(purchaseRequest);
 
-            // 5. Tạo các sản phẩm liên kết
+            // 7. Tạo các sản phẩm liên kết
             var itemRepo = _unitOfWork.Repository<PurchaseRequestItem>();
             var resultItems = new List<PurchaseRequestItemResponseDto>();
 
@@ -91,27 +114,18 @@ namespace VCL_BLL.Services
                 {
                     Id = Guid.NewGuid(),
                     PurchaseRequestId = purchaseRequest.Id,
-                    ProductLink = item.ProductLink,
-                    SourceWebsite = item.SourceWebsite,
-                    ProductType = item.ProductType,
-                    ProductName = item.ProductName,
+                    ProductLink = item.ProductLink.Trim(),
+                    SourceWebsite = item.SourceWebsite?.Trim(),
+                    ProductType = item.ProductType.Trim(),
+                    ProductName = item.ProductName?.Trim(),
                     Quantity = item.Quantity,
-                    Attributes = item.Attributes,
-                    Note = item.Note,
-                    ImageUrl = (item.ImageUrls != null && item.ImageUrls.Any())
-                        ? string.Join(",", item.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
-                        : (item.ImageUrl ?? string.Empty)
+                    Attributes = item.Attributes?.Trim(),
+                    Note = item.Note?.Trim(),
+                    ImageUrl = CombineImageUrls(item)
                 };
                 await itemRepo.AddAsync(requestItem);
 
-                var returnedImageUrls = new List<string>();
-                if (!string.IsNullOrWhiteSpace(requestItem.ImageUrl))
-                {
-                    returnedImageUrls = requestItem.ImageUrl
-                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(u => u.Trim())
-                        .ToList();
-                }
+                var returnedImageUrls = SplitImageUrls(requestItem.ImageUrl);
 
                 resultItems.Add(new PurchaseRequestItemResponseDto
                 {
@@ -123,30 +137,204 @@ namespace VCL_BLL.Services
                     Quantity = requestItem.Quantity,
                     Attributes = requestItem.Attributes,
                     Note = requestItem.Note,
-                    ImageUrl = requestItem.ImageUrl,
                     ImageUrls = returnedImageUrls
                 });
             }
 
             await _unitOfWork.SaveChangesAsync();
 
-            // 6. Trả về thông tin yêu cầu mua hộ vừa tạo
+            // 8. Trả về thông tin yêu cầu mua hộ vừa tạo
             return new PurchaseRequestResponseDto
             {
                 PurchaseRequestId = purchaseRequest.Id,
                 PurchaseCode = purchaseRequest.PurchaseCode,
                 CustomerId = purchaseRequest.CustomerId,
+                UserId = customer.UserId,
                 Route = OrderService.MapRouteToDisplayName(purchaseRequest.Route),
+                ShippingOption = purchaseRequest.ShippingOption,
                 ReceiverName = purchaseRequest.ReceiverName,
                 ReceiverPhone = purchaseRequest.ReceiverPhone,
                 ReceiverAddress = purchaseRequest.ReceiverAddress,
-                RequiresInspection = purchaseRequest.RequiresInspection,
-                RequiresQuantityCheck = purchaseRequest.RequiresQuantityCheck,
+                RequiresPacking = purchaseRequest.RequiresPacking,
+                RequiresWoodenCrate = purchaseRequest.RequiresWoodenCrate,
+                RequiresInsurance = purchaseRequest.RequiresInsurance,
                 GeneralNote = purchaseRequest.GeneralNote,
                 Status = purchaseRequest.Status,
                 CreatedAt = purchaseRequest.CreatedAt ?? DateTime.UtcNow,
-                Items = resultItems
+                ItemCount = request.Items.Sum(i => i.Quantity),
+                PricingRuleIds = pricingRuleIds,
+                Items = resultItems,
+                Warnings = warnings
             };
+        }
+
+        /// <summary>
+        /// Chuẩn hóa tuyến hàng và đối chiếu với bảng cấu hình giá đang active (cùng quy tắc với ký gửi).
+        /// </summary>
+        private async Task<(string Route, string ShippingOption)> ResolveRouteAndShippingOptionAsync(
+            string? requestedRoute, string? requestedShippingOption)
+        {
+            if (string.IsNullOrWhiteSpace(requestedRoute))
+                throw new ArgumentException("Vui lòng chọn tuyến hàng (route).");
+            if (string.IsNullOrWhiteSpace(requestedShippingOption))
+                throw new ArgumentException("Vui lòng chọn phương án vận chuyển (shippingOption).");
+
+            var routeInput = requestedRoute.Trim();
+            var optionInput = requestedShippingOption.Trim();
+            var canonicalRoute = OrderService.NormalizeRoute(routeInput);
+
+            var servicePricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync())
+                .Where(p => !p.IsDeleted
+                    && !string.IsNullOrWhiteSpace(p.OriginCountry)
+                    && !string.IsNullOrWhiteSpace(p.DestinationCountry))
+                .ToList();
+
+            // Chưa có cấu hình giá nào (môi trường dev/seed trống) -> không chặn
+            if (!servicePricings.Any())
+                return (canonicalRoute, optionInput.ToUpperInvariant());
+
+            // Đối chiếu với đúng các tuyến đang lưu trong DB. Chấp nhận cả 3 dạng FE có thể gửi:
+            // mã tuyến ("US-VN"), chỉ nước đi ("US"), hoặc tên hiển thị lấy từ dropdown routes.
+            bool MatchesRoute(ServicePricing p)
+            {
+                var storedRoute = $"{p.OriginCountry}-{p.DestinationCountry}";
+                return string.Equals(storedRoute, canonicalRoute, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(storedRoute, routeInput, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(p.OriginCountry, canonicalRoute, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(p.OriginCountry, routeInput, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(OrderService.MapRouteToDisplayName(storedRoute), routeInput, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var pricingsOnRoute = servicePricings.Where(MatchesRoute).ToList();
+            if (!pricingsOnRoute.Any())
+            {
+                var availableRoutes = string.Join(", ", servicePricings
+                    .Select(p => OrderService.MapRouteToDisplayName($"{p.OriginCountry}-{p.DestinationCountry}"))
+                    .Distinct(StringComparer.OrdinalIgnoreCase));
+
+                throw new ArgumentException(
+                    $"Tuyến '{requestedRoute}' không nằm trong các tuyến hệ thống đang khai thác. Các tuyến hiện có: {availableRoutes}.");
+            }
+
+            // Phương án vận chuyển phải thuộc đúng tuyến đã chọn (Express của tuyến này ≠ tuyến khác)
+            var matchedPricing = pricingsOnRoute.FirstOrDefault(p =>
+                !string.IsNullOrWhiteSpace(p.ServiceType)
+                && p.ServiceType.Equals(optionInput, StringComparison.OrdinalIgnoreCase));
+
+            if (matchedPricing == null)
+            {
+                var availableOptions = string.Join(", ", pricingsOnRoute
+                    .Where(p => !string.IsNullOrWhiteSpace(p.ServiceType))
+                    .Select(p => p.ServiceType)
+                    .Distinct(StringComparer.OrdinalIgnoreCase));
+
+                throw new ArgumentException(
+                    $"Phương án '{requestedShippingOption}' không áp dụng cho tuyến '{requestedRoute}'. Các phương án hiện có: {availableOptions}.");
+            }
+
+            // Luôn lưu theo đúng giá trị chuẩn trong DB, không phụ thuộc cách FE gửi lên
+            var resolvedRoute = $"{matchedPricing.OriginCountry}-{matchedPricing.DestinationCountry}".ToUpperInvariant();
+            return (resolvedRoute, matchedPricing.ServiceType);
+        }
+
+        /// <summary>
+        /// Đối chiếu sản phẩm mua hộ với danh mục hàng cấm/hạn chế.
+        /// Hàng cấm (BANNED) chặn tạo; hàng hạn chế/cảnh báo trả về cho khách qua Warnings.
+        /// </summary>
+        private async Task<List<RestrictedItemWarning>> ValidateAgainstRestrictedItemsAsync(List<CreatePurchaseRequestItemDto> items)
+        {
+            var validationRequest = new ValidateItemsRequest
+            {
+                Items = items.Select(i => new ConsignmentItemRequest
+                {
+                    ProductName = i.ProductName ?? string.Empty,
+                    ProductType = i.ProductType ?? string.Empty,
+                    Quantity = i.Quantity
+                }).ToList()
+            };
+
+            var validation = await _orderService.ValidateConsignmentItemsAsync(validationRequest);
+
+            var banned = validation.Results.Where(r => r.Level == "BANNED").ToList();
+            if (banned.Count > 0)
+            {
+                var names = string.Join(", ", banned.Select(b => string.IsNullOrWhiteSpace(b.ProductName) ? b.MatchedItem : b.ProductName).Distinct());
+                throw new ArgumentException($"Không thể tạo yêu cầu mua hộ. Các mặt hàng sau thuộc danh mục cấm: {names}");
+            }
+
+            return validation.Results
+                .Where(r => r.Level != "BANNED")
+                .Select(r => new RestrictedItemWarning
+                {
+                    ProductName = r.ProductName,
+                    MatchedItem = r.MatchedItem,
+                    RestrictionType = r.Level,
+                    Note = r.Reason
+                })
+                .ToList();
+        }
+
+        /// <summary>
+        /// Ghép ghi chú chung với các dịch vụ khách đã tick (cùng cách trình bày với ký gửi).
+        /// </summary>
+        private static string? BuildGeneralNote(CreatePurchaseRequestDto request)
+        {
+            var noteParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(request.GeneralNote))
+                noteParts.Add(request.GeneralNote.Trim());
+            if (request.RequiresPacking)
+                noteParts.Add("Yêu cầu đóng gói lại");
+            if (request.RequiresWoodenCrate)
+                noteParts.Add("Yêu cầu đóng thùng gỗ");
+            if (request.RequiresInsurance)
+                noteParts.Add("Đăng ký bảo hiểm");
+
+            return noteParts.Any() ? string.Join(". ", noteParts) : null;
+        }
+
+        /// <summary>Sinh mã yêu cầu mua hộ không trùng với mã đã có.</summary>
+        private async Task<string> GenerateUniquePurchaseCodeAsync()
+        {
+            var existingCodes = (await _unitOfWork.Repository<PurchaseRequest>().GetAllAsync())
+                .Where(r => !string.IsNullOrEmpty(r.PurchaseCode))
+                .Select(r => r.PurchaseCode)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var random = new Random();
+            string code;
+            do
+            {
+                code = $"PUR-{DateTime.UtcNow:yyyyMMddHHmmss}-{random.Next(100000, 999999)}";
+            } while (existingCodes.Contains(code));
+
+            return code;
+        }
+
+        /// <summary>Gộp danh sách ảnh thành 1 chuỗi lưu DB (phân cách "|"), bỏ trùng/rỗng.</summary>
+        private static string CombineImageUrls(CreatePurchaseRequestItemDto item)
+        {
+            if (item.ImageUrls == null) return string.Empty;
+
+            var distinct = item.ImageUrls
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Select(u => u.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return distinct.Any() ? string.Join(ImageUrlSeparator.ToString(), distinct) : string.Empty;
+        }
+
+        /// <summary>Tách chuỗi ảnh lưu DB thành danh sách URL. Hỗ trợ cả dữ liệu cũ phân cách bằng ",".</summary>
+        internal static List<string> SplitImageUrls(string? stored)
+        {
+            if (string.IsNullOrWhiteSpace(stored))
+                return new List<string>();
+
+            return stored
+                .Split(new[] { ImageUrlSeparator, ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim())
+                .Where(u => u.Length > 0)
+                .ToList();
         }
 
         public async Task<PaginatedResponse<PurchaseRequestListItemDto>> GetPurchaseRequestsAsync(
@@ -304,14 +492,7 @@ namespace VCL_BLL.Services
             var relatedItems = allItems.Where(i => i.PurchaseRequestId == requestId).ToList();
 
             var itemDtos = relatedItems.Select(i => {
-                var urls = new List<string>();
-                if (!string.IsNullOrWhiteSpace(i.ImageUrl))
-                {
-                    urls = i.ImageUrl
-                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(u => u.Trim())
-                        .ToList();
-                }
+                var urls = SplitImageUrls(i.ImageUrl);
                 return new PurchaseRequestItemResponseDto
                 {
                     ItemId = i.Id,
@@ -322,7 +503,6 @@ namespace VCL_BLL.Services
                     Quantity = i.Quantity,
                     Attributes = i.Attributes,
                     Note = i.Note,
-                    ImageUrl = i.ImageUrl,
                     ImageUrls = urls
                 };
             }).ToList();
@@ -395,11 +575,13 @@ namespace VCL_BLL.Services
                 CustomerName = owner?.FullName ?? string.Empty,
                 CreatedByName = createdByName,
                 Route = OrderService.MapRouteToDisplayName(request.Route),
+                ShippingOption = request.ShippingOption,
                 ReceiverName = request.ReceiverName,
                 ReceiverPhone = request.ReceiverPhone,
                 ReceiverAddress = request.ReceiverAddress,
-                RequiresInspection = request.RequiresInspection,
-                RequiresQuantityCheck = request.RequiresQuantityCheck,
+                RequiresPacking = request.RequiresPacking,
+                RequiresWoodenCrate = request.RequiresWoodenCrate,
+                RequiresInsurance = request.RequiresInsurance,
                 GeneralNote = request.GeneralNote,
                 Status = request.Status ?? string.Empty,
                 Reason = request.Reason,

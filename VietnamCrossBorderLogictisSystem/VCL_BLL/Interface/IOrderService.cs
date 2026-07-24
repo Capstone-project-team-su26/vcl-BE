@@ -18,5 +18,11 @@ namespace VCL_BLL.Interface
         Task<List<string>> GetShippingOptionsAsync(string? route);
         List<ConsignmentStatusDto> GetConsignmentStatuses();
         Task<PublicTrackingResponse> TrackConsignmentByCodeAsync(string code);
+
+        /// <summary>
+        /// Quy đổi các cờ dịch vụ phụ (kiểm hàng / đóng gói / thùng gỗ / bảo hiểm) sang ID các PricingRule
+        /// đang active tương ứng. Dùng chung cho ký gửi và mua hộ để một cờ luôn khớp cùng một quy định giá.
+        /// </summary>
+        Task<List<Guid>> ResolveServiceFlagRuleIdsAsync(bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance);
     }
 }

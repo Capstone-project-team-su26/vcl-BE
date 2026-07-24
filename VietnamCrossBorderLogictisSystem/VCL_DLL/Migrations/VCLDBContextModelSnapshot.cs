@@ -1884,14 +1884,31 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("requires_inspection");
 
+                    b.Property<bool>("RequiresInsurance")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_insurance");
+
+                    b.Property<bool>("RequiresPacking")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_packing");
+
                     b.Property<bool>("RequiresQuantityCheck")
                         .HasColumnType("bit")
                         .HasColumnName("requires_quantity_check");
+
+                    b.Property<bool>("RequiresWoodenCrate")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_wooden_crate");
 
                     b.Property<string>("Route")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("route");
+
+                    b.Property<string>("ShippingOption")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("shipping_option");
 
                     b.Property<string>("Status")
                         .HasMaxLength(50)

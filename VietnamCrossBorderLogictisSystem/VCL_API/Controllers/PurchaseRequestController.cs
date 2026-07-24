@@ -22,7 +22,7 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Customer tạo yêu cầu mua hộ hàng Trung Quốc
+        /// Customer tạo yêu cầu mua hộ hàng quốc tế.
         /// </summary>
         [HttpPost]
         public async Task<IActionResult> CreatePurchaseRequest([FromBody] CreatePurchaseRequestDto request)
