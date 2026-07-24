@@ -22,6 +22,11 @@ public partial class PurchasePayment
     /// <summary>PENDING | PAID | CANCELLED | EXPIRED.</summary>
     public string Status { get; set; }
 
+    /// <summary>
+    /// Đợt thanh toán: FULL_PAYMENT (trả toàn bộ giá trị báo giá) | FINAL_PAYMENT (chi phí phát sinh sau khi hàng về).
+    /// </summary>
+    public string PaymentType { get; set; }
+
     /// <summary>Id link thanh toán do payOS trả về.</summary>
     public string PaymentLinkId { get; set; }
 

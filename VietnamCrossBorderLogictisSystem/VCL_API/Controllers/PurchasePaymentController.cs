@@ -81,6 +81,87 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Staff/Sales chốt chi phí phát sinh (lưu kho, giao lại...) và tạo đợt thanh toán cuối cho đơn mua hộ.
+        /// Không có phát sinh thì đơn chuyển COMPLETED luôn.
+        /// </summary>
+        [HttpPost("api/purchase-requests/{requestId}/final-payment")]
+        [Authorize]
+        public async Task<IActionResult> CreateFinalPayment(Guid requestId, [FromBody] CreatePurchaseFinalPaymentRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchasePaymentService.CreateFinalPaymentAsync(requestId, userId, userRole, request);
+                var message = result.FinalAmount > 0
+                    ? "Tạo thanh toán cuối thành công."
+                    : "Không có chi phí phát sinh, đơn mua hộ đã hoàn tất.";
+                return Ok(new { message, data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Lịch sử thanh toán của một đơn mua hộ (Customer xem đơn của mình, Staff/Sales xem tất cả).
+        /// </summary>
+        [HttpGet("api/purchase-requests/{requestId}/payments")]
+        [Authorize]
+        public async Task<IActionResult> GetPurchasePayments(Guid requestId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchasePaymentService.GetPaymentHistoryAsync(requestId, userId, userRole);
+                return Ok(new { message = "Lấy lịch sử thanh toán mua hộ thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Đồng bộ trạng thái thanh toán trực tiếp từ payOS (không cần chờ webhook).
         /// FE gọi sau khi khách thanh toán xong và được payOS chuyển về ReturnUrl.
         /// Tự động thử cả thanh toán mua hộ lẫn thanh toán ký gửi theo orderCode.

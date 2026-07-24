@@ -20,6 +20,19 @@ namespace VCL_BLL.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<PurchasePaymentService> _logger;
 
+        /// <summary>Đợt 1: khách trả toàn bộ giá trị báo giá (mua hộ không thu cọc như ký gửi).</summary>
+        private const string PaymentTypeFull = "FULL_PAYMENT";
+
+        /// <summary>Đợt 2: chi phí phát sinh sau khi hàng về (lưu kho, giao lại...).</summary>
+        private const string PaymentTypeFinal = "FINAL_PAYMENT";
+
+        // Các role được phép tạo đợt thanh toán cuối
+        private static readonly string[] StaffRoles =
+            { "ADMIN", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
+
+        // Đơn mua hàng phải tới bước này thì mới được chốt chi phí phát sinh
+        private const string PurchaseOrderReadyForFinal = "WAITING_WAREHOUSE_RECEIVE";
+
         public PurchasePaymentService(
             IUnitOfWork unitOfWork,
             IPayOsService payOsService,
@@ -86,41 +99,10 @@ namespace VCL_BLL.Services
             var allPayments = await paymentRepo.GetAllAsync();
             long orderCode = await GenerateUniqueOrderCode(allPayments);
 
-            // 6. Tạo link thanh toán theo phương thức đã chọn
-            var amountInt = (int)Math.Round(quotation.TotalAmount, MidpointRounding.AwayFromZero);
+            // 6. Tạo link thanh toán theo phương thức đã chọn — khách trả toàn bộ giá trị báo giá
             var purchaseCode = purchaseRequest.PurchaseCode ?? string.Empty;
-            var isSePay = string.Equals(request.PaymentMethod, "SEPAY", StringComparison.OrdinalIgnoreCase);
-
-            string checkoutUrl;
-            string paymentLinkId;
-            string paymentMethodString;
-
-            if (isSePay)
-            {
-                paymentMethodString = "SEPAY";
-                paymentLinkId = $"SEPAY-{orderCode}";
-                var baseUrl = _configuration["SePay:BaseUrl"] ?? string.Empty;
-                checkoutUrl = $"{baseUrl}/api/payments/sepay/checkout/{orderCode}";
-            }
-            else
-            {
-                paymentMethodString = "PAYOS";
-                var description = BuildDescription(purchaseCode);
-
-                var inputUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], string.Empty);
-                var isLocal = inputUrl.Contains("localhost") || inputUrl.Contains("127.0.0.1") || inputUrl.Contains("5173") || inputUrl.Contains("3000");
-                var baseFrontendUrl = isLocal ? "http://localhost:5173" : "https://logictic.site";
-
-                var returnUrl = $"{baseFrontendUrl}/history/buy-on-behalf";
-                var cancelUrl = returnUrl;
-                var items = new List<PayOsItem> { new PayOsItem(BuildItemName(purchaseCode), 1, amountInt) };
-
-                PayOsPaymentLink link = await _payOsService.CreatePaymentLinkAsync(
-                    orderCode, amountInt, description, returnUrl, cancelUrl, items);
-
-                checkoutUrl = link.CheckoutUrl;
-                paymentLinkId = link.PaymentLinkId;
-            }
+            var (checkoutUrl, paymentLinkId, paymentMethodString) = await CreatePaymentLinkAsync(
+                orderCode, quotation.TotalAmount, purchaseCode, request.PaymentMethod, request.ReturnUrl);
 
             // 7. Lưu khoản thanh toán ở trạng thái PENDING
             var payment = new PurchasePayment
@@ -132,6 +114,7 @@ namespace VCL_BLL.Services
                 Amount = quotation.TotalAmount,
                 PaymentMethod = paymentMethodString,
                 Status = "PENDING",
+                PaymentType = PaymentTypeFull,
                 PaymentLinkId = paymentLinkId,
                 CheckoutUrl = checkoutUrl,
                 CreatedAt = DateTime.UtcNow
@@ -162,6 +145,305 @@ namespace VCL_BLL.Services
                 CheckoutUrl = payment.CheckoutUrl,
                 PaymentLinkId = payment.PaymentLinkId
             };
+        }
+
+        public async Task<CreatePurchaseFinalPaymentResponseDto> CreateFinalPaymentAsync(
+            Guid requestId, Guid userId, string userRole, CreatePurchaseFinalPaymentRequestDto request)
+        {
+            request ??= new CreatePurchaseFinalPaymentRequestDto();
+
+            // 1. Phân quyền: chỉ Staff/Sales được chốt chi phí phát sinh
+            if (string.IsNullOrWhiteSpace(userRole) || !StaffRoles.Contains(userRole.Trim().ToUpperInvariant()))
+            {
+                throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được tạo thanh toán cuối cho đơn mua hộ.");
+            }
+
+            // 2. Tìm yêu cầu mua hộ
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId);
+            if (purchaseRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+            }
+
+            var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (currentStatus == "COMPLETED")
+            {
+                throw new ArgumentException("Đơn mua hộ đã hoàn tất thanh toán.");
+            }
+            if (currentStatus == "CANCELLED" || currentStatus == "REJECTED")
+            {
+                throw new ArgumentException($"Không thể tạo thanh toán cuối do đơn đang ở trạng thái {purchaseRequest.Status}.");
+            }
+
+            // 3. Phải thanh toán xong đợt đầu (toàn bộ giá trị báo giá) mới được chốt phát sinh
+            var paymentRepo = _unitOfWork.Repository<PurchasePayment>();
+            var allPayments = await paymentRepo.GetAllAsync();
+            var requestPayments = allPayments.Where(p => p.PurchaseRequestId == requestId).ToList();
+
+            bool fullPaymentDone = requestPayments.Any(p =>
+                IsPaymentType(p, PaymentTypeFull) && IsPaid(p));
+            if (!fullPaymentDone)
+            {
+                throw new ArgumentException("Chưa thể tạo thanh toán cuối: khách chưa thanh toán giá trị đơn mua hộ.");
+            }
+
+            // 4. Không cho trùng đợt cuối
+            if (requestPayments.Any(p => IsPaymentType(p, PaymentTypeFinal) && IsPaid(p)))
+            {
+                throw new ArgumentException("Đơn mua hộ đã hoàn tất thanh toán cuối.");
+            }
+            if (requestPayments.Any(p => IsPaymentType(p, PaymentTypeFinal)
+                && string.Equals(p.Status, "PENDING", StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ArgumentException("Đơn mua hộ đã có một đợt thanh toán cuối đang chờ khách thanh toán.");
+            }
+
+            // 5. Điều kiện trigger: đơn mua hàng đã tới bước chờ kho nhận
+            var purchaseOrders = (await _unitOfWork.Repository<PurchaseOrder>().GetAllAsync())
+                .Where(o => o.PurchaseRequestId == requestId
+                    && !string.Equals(o.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!purchaseOrders.Any(o => string.Equals(o.Status, PurchaseOrderReadyForFinal, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ArgumentException(
+                    $"Chưa thể tạo thanh toán cuối: đơn mua hàng chưa ở trạng thái {PurchaseOrderReadyForFinal}.");
+            }
+
+            // 6. Lấy báo giá đã được khách xác nhận
+            var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
+            var quotation = (await quotationRepo.GetAllAsync())
+                .Where(q => q.PurchaseRequestId == requestId
+                    && string.Equals(q.Status, "ACCEPTED", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(q => q.CreatedAt)
+                .FirstOrDefault();
+
+            if (quotation == null)
+            {
+                throw new ArgumentException("Đơn mua hộ chưa có báo giá được khách xác nhận.");
+            }
+
+            // 7. Ghi nhận chi phí phát sinh vào chính báo giá đã chốt + cộng dồn tổng bill
+            var feeRepo = _unitOfWork.Repository<QuotationFee>();
+            decimal extrasTotal = 0m;
+
+            foreach (var fee in request.ExtraFees ?? new List<ExtraFeeLineDto>())
+            {
+                if (fee.Amount <= 0m) continue;
+
+                extrasTotal += fee.Amount;
+                await feeRepo.AddAsync(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    PurchaseQuotationId = quotation.Id,
+                    FeeName = fee.Name,
+                    FeeType = "EXTRA",
+                    CalculationType = "FIXED",
+                    Value = fee.Amount,
+                    Amount = fee.Amount,
+                    Note = fee.Note,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            var totalPaid = requestPayments.Where(IsPaid).Sum(p => p.Amount);
+            var newGrandTotal = quotation.TotalAmount + extrasTotal;
+            quotation.TotalAmount = newGrandTotal;
+            quotationRepo.Update(quotation);
+
+            var finalAmount = newGrandTotal - totalPaid;
+            if (finalAmount < 0m) finalAmount = 0m;
+
+            var purchaseCode = purchaseRequest.PurchaseCode ?? string.Empty;
+
+            // 8a. Không phát sinh gì -> đơn hoàn tất luôn, không bắt khách thanh toán thêm
+            if (finalAmount <= 0m)
+            {
+                var zeroPayment = new PurchasePayment
+                {
+                    Id = Guid.NewGuid(),
+                    PurchaseRequestId = requestId,
+                    PurchaseQuotationId = quotation.Id,
+                    OrderCode = await GenerateUniqueOrderCode(allPayments),
+                    Amount = 0m,
+                    PaymentMethod = "NONE",
+                    Status = "PAID",
+                    PaymentType = PaymentTypeFinal,
+                    TransactionCode = "NO_ADDITIONAL_PAYMENT",
+                    PaidAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await paymentRepo.AddAsync(zeroPayment);
+
+                purchaseRequest.Status = "COMPLETED";
+                requestRepo.Update(purchaseRequest);
+                await _unitOfWork.SaveChangesAsync();
+
+                return new CreatePurchaseFinalPaymentResponseDto
+                {
+                    PurchaseRequestId = requestId,
+                    PurchaseCode = purchaseCode,
+                    RequestStatus = purchaseRequest.Status,
+                    QuotationId = quotation.Id,
+                    TotalBillAmount = newGrandTotal,
+                    AlreadyPaid = totalPaid,
+                    ExtraFeesTotal = extrasTotal,
+                    FinalAmount = 0m,
+                    PaymentId = zeroPayment.Id,
+                    OrderCode = null,
+                    PaymentStatus = "PAID",
+                    PaymentMethod = zeroPayment.PaymentMethod,
+                    CheckoutUrl = null,
+                    PaymentLinkId = null
+                };
+            }
+
+            // 8b. Có phát sinh -> tạo link thanh toán đợt cuối
+            long orderCode = await GenerateUniqueOrderCode(allPayments);
+            var (checkoutUrl, paymentLinkId, paymentMethodString) = await CreatePaymentLinkAsync(
+                orderCode, finalAmount, purchaseCode, request.PaymentMethod, request.ReturnUrl);
+
+            var finalPayment = new PurchasePayment
+            {
+                Id = Guid.NewGuid(),
+                PurchaseRequestId = requestId,
+                PurchaseQuotationId = quotation.Id,
+                OrderCode = orderCode,
+                Amount = finalAmount,
+                PaymentMethod = paymentMethodString,
+                Status = "PENDING",
+                PaymentType = PaymentTypeFinal,
+                PaymentLinkId = paymentLinkId,
+                CheckoutUrl = checkoutUrl,
+                CreatedAt = DateTime.UtcNow
+            };
+            await paymentRepo.AddAsync(finalPayment);
+
+            purchaseRequest.Status = "WAITING_FINAL_PAYMENT";
+            requestRepo.Update(purchaseRequest);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new CreatePurchaseFinalPaymentResponseDto
+            {
+                PurchaseRequestId = requestId,
+                PurchaseCode = purchaseCode,
+                RequestStatus = purchaseRequest.Status,
+                QuotationId = quotation.Id,
+                TotalBillAmount = newGrandTotal,
+                AlreadyPaid = totalPaid,
+                ExtraFeesTotal = extrasTotal,
+                FinalAmount = finalAmount,
+                PaymentId = finalPayment.Id,
+                OrderCode = finalPayment.OrderCode,
+                PaymentStatus = finalPayment.Status,
+                PaymentMethod = finalPayment.PaymentMethod,
+                CheckoutUrl = finalPayment.CheckoutUrl,
+                PaymentLinkId = finalPayment.PaymentLinkId
+            };
+        }
+
+        public async Task<PurchasePaymentHistoryResponseDto> GetPaymentHistoryAsync(
+            Guid requestId, Guid userId, string userRole)
+        {
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId);
+            if (purchaseRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+            }
+
+            // Customer chỉ được xem đơn của chính mình; Staff/Sales xem tất cả
+            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
+                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            if (!isStaff)
+            {
+                var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+                var customer = customers.FirstOrDefault(c => c.UserId == userId);
+                if (customer == null || purchaseRequest.CustomerId != customer.Id)
+                {
+                    throw new UnauthorizedAccessException("Bạn không có quyền xem thanh toán của đơn mua hộ này.");
+                }
+            }
+
+            var payments = (await _unitOfWork.Repository<PurchasePayment>().GetAllAsync())
+                .Where(p => p.PurchaseRequestId == requestId)
+                .OrderBy(p => p.CreatedAt)
+                .ToList();
+
+            var quotation = (await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync())
+                .Where(q => q.PurchaseRequestId == requestId)
+                .OrderByDescending(q => q.CreatedAt)
+                .FirstOrDefault();
+
+            var totalBill = quotation?.TotalAmount ?? 0m;
+            var totalPaid = payments.Where(IsPaid).Sum(p => p.Amount);
+            var outstanding = totalBill - totalPaid;
+            if (outstanding < 0m) outstanding = 0m;
+
+            return new PurchasePaymentHistoryResponseDto
+            {
+                PurchaseRequestId = requestId,
+                PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
+                RequestStatus = purchaseRequest.Status ?? string.Empty,
+                TotalBillAmount = totalBill,
+                TotalPaid = totalPaid,
+                Outstanding = outstanding,
+                Payments = payments.Select(p => new PurchasePaymentHistoryItemDto
+                {
+                    PaymentId = p.Id,
+                    OrderCode = p.OrderCode,
+                    PaymentType = string.IsNullOrWhiteSpace(p.PaymentType) ? PaymentTypeFull : p.PaymentType,
+                    Amount = p.Amount,
+                    PaymentMethod = p.PaymentMethod,
+                    Status = p.Status ?? string.Empty,
+                    CheckoutUrl = p.CheckoutUrl,
+                    TransactionCode = p.TransactionCode,
+                    CreatedAt = p.CreatedAt,
+                    PaidAt = p.PaidAt
+                }).ToList()
+            };
+        }
+
+        private static bool IsPaid(PurchasePayment payment)
+            => string.Equals(payment.Status, "PAID", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Dữ liệu cũ (trước khi có cột payment_type) để trống -> coi như đợt thanh toán đầu.
+        /// </summary>
+        private static bool IsPaymentType(PurchasePayment payment, string type)
+        {
+            var actual = string.IsNullOrWhiteSpace(payment.PaymentType) ? PaymentTypeFull : payment.PaymentType;
+            return string.Equals(actual, type, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Tạo link thanh toán (payOS hoặc SePay) dùng chung cho cả đợt đầu lẫn đợt cuối.
+        /// </summary>
+        private async Task<(string CheckoutUrl, string PaymentLinkId, string PaymentMethod)> CreatePaymentLinkAsync(
+            long orderCode, decimal amount, string purchaseCode, string? requestedMethod, string? requestedReturnUrl)
+        {
+            var amountInt = (int)Math.Round(amount, MidpointRounding.AwayFromZero);
+
+            if (string.Equals(requestedMethod, "SEPAY", StringComparison.OrdinalIgnoreCase))
+            {
+                var baseUrl = _configuration["SePay:BaseUrl"] ?? string.Empty;
+                return ($"{baseUrl}/api/payments/sepay/checkout/{orderCode}", $"SEPAY-{orderCode}", "SEPAY");
+            }
+
+            var description = BuildDescription(purchaseCode);
+
+            var inputUrl = FirstNonEmpty(requestedReturnUrl, _configuration["PayOS:ReturnUrl"], string.Empty);
+            var isLocal = inputUrl.Contains("localhost") || inputUrl.Contains("127.0.0.1") || inputUrl.Contains("5173") || inputUrl.Contains("3000");
+            var baseFrontendUrl = isLocal ? "http://localhost:5173" : "https://logictic.site";
+
+            var returnUrl = $"{baseFrontendUrl}/history/buy-on-behalf";
+            var items = new List<PayOsItem> { new PayOsItem(BuildItemName(purchaseCode), 1, amountInt) };
+
+            PayOsPaymentLink link = await _payOsService.CreatePaymentLinkAsync(
+                orderCode, amountInt, description, returnUrl, returnUrl, items);
+
+            return (link.CheckoutUrl, link.PaymentLinkId, "PAYOS");
         }
 
         public async Task<bool> HandlePayOsWebhookAsync(string rawJsonBody)
@@ -244,7 +526,8 @@ namespace VCL_BLL.Services
             var purchaseRequest = await requestRepo.GetByIdAsync(payment.PurchaseRequestId);
             if (purchaseRequest != null)
             {
-                purchaseRequest.Status = "PAID";
+                // Đợt cuối trả xong -> kết thúc luồng mua hộ; đợt đầu -> chờ mua hàng & vận chuyển
+                purchaseRequest.Status = IsPaymentType(payment, PaymentTypeFinal) ? "COMPLETED" : "PAID";
                 requestRepo.Update(purchaseRequest);
             }
 
@@ -356,20 +639,8 @@ namespace VCL_BLL.Services
                 return false;
             }
 
-            payment.Status = "PAID";
-            payment.PaidAt = DateTime.UtcNow;
-            payment.TransactionCode = dto.ReferenceCode;
-            paymentRepo.Update(payment);
-
-            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
-            var purchaseRequest = await requestRepo.GetByIdAsync(payment.PurchaseRequestId);
-            if (purchaseRequest != null)
-            {
-                purchaseRequest.Status = "PAID";
-                requestRepo.Update(purchaseRequest);
-            }
-
-            await _unitOfWork.SaveChangesAsync();
+            // Dùng chung đường ghi nhận với payOS/sync để trạng thái nghiệp vụ không bị lệch
+            await MarkPaymentAsPaidAsync(payment, dto.ReferenceCode);
             return true;
         }
     }

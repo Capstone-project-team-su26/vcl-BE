@@ -348,6 +348,86 @@ namespace VCL_BLL.DTOs
         public string? PaymentMethod { get; set; }
     }
 
+    /// <summary>
+    /// Staff tạo đợt thanh toán cuối cho đơn mua hộ khi phát sinh chi phí thêm
+    /// (lưu kho, giao lại, đóng gói thêm...) sau khi hàng đã về.
+    /// </summary>
+    public class CreatePurchaseFinalPaymentRequestDto
+    {
+        /// <summary>Danh sách chi phí phát sinh. Để trống nghĩa là không phát sinh gì -> đơn hoàn tất luôn.</summary>
+        public List<ExtraFeeLineDto> ExtraFees { get; set; } = new();
+
+        public string? ReturnUrl { get; set; }
+        public string? CancelUrl { get; set; }
+
+        /// <summary>Phương thức thanh toán: PAYOS hoặc SEPAY. Bỏ trống thì mặc định PAYOS.</summary>
+        public string? PaymentMethod { get; set; }
+    }
+
+    public class CreatePurchaseFinalPaymentResponseDto
+    {
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public string RequestStatus { get; set; } = string.Empty;
+
+        public Guid QuotationId { get; set; }
+
+        /// <summary>Tổng bill sau khi cộng chi phí phát sinh.</summary>
+        public decimal TotalBillAmount { get; set; }
+
+        /// <summary>Số tiền khách đã thanh toán trước đó.</summary>
+        public decimal AlreadyPaid { get; set; }
+
+        /// <summary>Tổng chi phí phát sinh lần này.</summary>
+        public decimal ExtraFeesTotal { get; set; }
+
+        /// <summary>Số tiền cần thanh toán nốt. Bằng 0 nghĩa là không phát sinh, đơn hoàn tất luôn.</summary>
+        public decimal FinalAmount { get; set; }
+
+        public Guid PaymentId { get; set; }
+        public long? OrderCode { get; set; }
+        public string PaymentStatus { get; set; } = string.Empty;
+        public string? PaymentMethod { get; set; }
+        public string? CheckoutUrl { get; set; }
+        public string? PaymentLinkId { get; set; }
+    }
+
+    /// <summary>Một khoản thanh toán trong lịch sử thanh toán của đơn mua hộ.</summary>
+    public class PurchasePaymentHistoryItemDto
+    {
+        public Guid PaymentId { get; set; }
+        public long OrderCode { get; set; }
+
+        /// <summary>FULL_PAYMENT | FINAL_PAYMENT.</summary>
+        public string PaymentType { get; set; } = string.Empty;
+
+        public decimal Amount { get; set; }
+        public string? PaymentMethod { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? CheckoutUrl { get; set; }
+        public string? TransactionCode { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public DateTime? PaidAt { get; set; }
+    }
+
+    /// <summary>Tổng hợp tình hình thanh toán của một đơn mua hộ.</summary>
+    public class PurchasePaymentHistoryResponseDto
+    {
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public string RequestStatus { get; set; } = string.Empty;
+
+        /// <summary>Tổng bill hiện tại (đã gồm chi phí phát sinh nếu có).</summary>
+        public decimal TotalBillAmount { get; set; }
+
+        public decimal TotalPaid { get; set; }
+
+        /// <summary>Số tiền còn thiếu. Bằng 0 là đã thanh toán đủ.</summary>
+        public decimal Outstanding { get; set; }
+
+        public List<PurchasePaymentHistoryItemDto> Payments { get; set; } = new();
+    }
+
     public class ConfirmQuotationAndPayResponseDto
     {
         public Guid PurchaseRequestId { get; set; }

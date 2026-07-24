@@ -1896,6 +1896,10 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Amount).HasColumnType("decimal(18, 2)").HasColumnName("amount");
             entity.Property(e => e.PaymentMethod).HasMaxLength(50).HasColumnName("payment_method");
             entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");
+            entity.Property(e => e.PaymentType)
+                .HasMaxLength(30)
+                .HasDefaultValue("FULL_PAYMENT")
+                .HasColumnName("payment_type");
             entity.Property(e => e.PaymentLinkId).HasMaxLength(100).HasColumnName("payment_link_id");
             entity.Property(e => e.CheckoutUrl).HasMaxLength(1000).HasColumnName("checkout_url");
             entity.Property(e => e.TransactionCode).HasMaxLength(100).HasColumnName("transaction_code");
