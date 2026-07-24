@@ -108,8 +108,11 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
 
-        /// <summary>Tổng số lượng sản phẩm của yêu cầu.</summary>
+        /// <summary>Số dòng sản phẩm trong yêu cầu.</summary>
         public int ItemCount { get; set; }
+
+        /// <summary>Tổng số lượng của tất cả sản phẩm.</summary>
+        public int TotalQuantity { get; set; }
 
         /// <summary>ID các quy định giá/dịch vụ phụ khớp với các cờ khách đã tick — Sales dùng khi lên báo giá.</summary>
         public List<Guid> PricingRuleIds { get; set; } = new();
@@ -254,8 +257,15 @@ namespace VCL_BLL.DTOs
         public Guid PurchaseRequestId { get; set; }
         public string PurchaseCode { get; set; } = string.Empty;
         public Guid? CustomerId { get; set; }
+        public string? Route { get; set; }
+        public string? ShippingOption { get; set; }
         public string ReceiverName { get; set; } = string.Empty;
+
+        /// <summary>Số dòng sản phẩm trong yêu cầu.</summary>
         public int ItemCount { get; set; }
+
+        /// <summary>Tổng số lượng của tất cả sản phẩm.</summary>
+        public int TotalQuantity { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? GeneralNote { get; set; }
         public DateTime CreatedAt { get; set; }
