@@ -34,6 +34,9 @@ public partial class PurchaseRequest
 
     public bool RequiresInsurance { get; set; }
 
+    /// <summary>ID các PricingRule khách chọn, nối bằng "|".</summary>
+    public string PricingRuleIds { get; set; }
+
     public string GeneralNote { get; set; }
 
     public string Status { get; set; }

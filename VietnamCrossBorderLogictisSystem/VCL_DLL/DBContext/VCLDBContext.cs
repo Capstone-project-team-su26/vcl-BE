@@ -1947,6 +1947,9 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("requires_wooden_crate");
             entity.Property(e => e.RequiresInsurance)
                 .HasColumnName("requires_insurance");
+            entity.Property(e => e.PricingRuleIds)
+                .HasMaxLength(1000)
+                .HasColumnName("pricing_rule_ids");
             entity.Property(e => e.GeneralNote)
                 .HasMaxLength(1000)
                 .HasColumnName("note");

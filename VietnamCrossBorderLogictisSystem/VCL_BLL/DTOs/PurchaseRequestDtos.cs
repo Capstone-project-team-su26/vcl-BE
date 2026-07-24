@@ -57,6 +57,12 @@ namespace VCL_BLL.DTOs
         /// <summary>Địa chỉ nhận hàng.</summary>
         public string? ReceiverAddress { get; set; }
 
+        /// <summary>
+        /// Danh sách ID cấu hình bảng giá/dịch vụ phụ khách chọn (đóng gỗ, bảo hiểm...).
+        /// Hợp nhất với các cờ boolean bên dưới — FE dùng cách nào cũng được.
+        /// </summary>
+        public List<Guid> PricingRuleIds { get; set; } = new();
+
         /// <summary>Khách yêu cầu đóng gói lại (map rule PACKING).</summary>
         public bool RequiresPacking { get; set; }
 
@@ -138,6 +144,10 @@ namespace VCL_BLL.DTOs
         public bool RequiresPacking { get; set; }
         public bool RequiresWoodenCrate { get; set; }
         public bool RequiresInsurance { get; set; }
+
+        /// <summary>ID các quy định giá/dịch vụ phụ khách đã chọn — Sales dùng khi lên báo giá.</summary>
+        public List<Guid> PricingRuleIds { get; set; } = new();
+
         public string? GeneralNote { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? Reason { get; set; }

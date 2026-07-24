@@ -18,8 +18,8 @@ namespace VCL_BLL.Services
         // Các role được phép xem toàn bộ yêu cầu mua hộ cần xử lý (Staff/Sales)
         private static readonly string[] StaffRoles = { "ADMIN", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
 
-        // Ký tự phân cách danh sách ảnh khi lưu DB (dùng chung quy ước với ký gửi)
-        private const char ImageUrlSeparator = '|';
+        // Ký tự phân cách các danh sách lưu gộp trong 1 cột DB (dùng chung quy ước với ký gửi)
+        private const char ListSeparator = '|';
 
         public PurchaseRequestService(IUnitOfWork unitOfWork, IOrderService orderService)
         {
@@ -78,7 +78,7 @@ namespace VCL_BLL.Services
             // 6. Đối chiếu hàng cấm / hạn chế (dùng chung logic với ký gửi)
             var warnings = await ValidateAgainstRestrictedItemsAsync(request.Items);
 
-            // 6. Khởi tạo yêu cầu mua hộ
+            // 7. Khởi tạo yêu cầu mua hộ
             var purchaseCode = await GenerateUniquePurchaseCodeAsync();
             var purchaseRequest = new PurchaseRequest
             {
@@ -99,15 +99,25 @@ namespace VCL_BLL.Services
                 CreatedAt = DateTime.UtcNow
             };
 
-            // Quy đổi các cờ dịch vụ phụ sang PricingRule để Sales dùng khi lên báo giá.
+            // Quy đổi các cờ dịch vụ phụ sang PricingRule, rồi hợp nhất với danh sách FE gửi thẳng.
             // Mua hộ không có dịch vụ kiểm hàng -> luôn truyền false cho cờ INSPECTION.
             var pricingRuleIds = await _orderService.ResolveServiceFlagRuleIdsAsync(
                 false, request.RequiresPacking,
                 request.RequiresWoodenCrate, request.RequiresInsurance);
 
+            foreach (var ruleId in await ResolveSelectedPricingRuleIdsAsync(request.PricingRuleIds))
+            {
+                if (!pricingRuleIds.Contains(ruleId))
+                    pricingRuleIds.Add(ruleId);
+            }
+
+            purchaseRequest.PricingRuleIds = pricingRuleIds.Any()
+                ? string.Join(ListSeparator, pricingRuleIds)
+                : null;
+
             await _unitOfWork.Repository<PurchaseRequest>().AddAsync(purchaseRequest);
 
-            // 7. Tạo các sản phẩm liên kết
+            // 8. Tạo các sản phẩm liên kết
             var itemRepo = _unitOfWork.Repository<PurchaseRequestItem>();
             var resultItems = new List<PurchaseRequestItemResponseDto>();
 
@@ -146,7 +156,7 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            // 8. Trả về thông tin yêu cầu mua hộ vừa tạo
+            // 9. Trả về thông tin yêu cầu mua hộ vừa tạo
             return new PurchaseRequestResponseDto
             {
                 PurchaseRequestId = purchaseRequest.Id,
@@ -239,6 +249,39 @@ namespace VCL_BLL.Services
             // Luôn lưu theo đúng giá trị chuẩn trong DB, không phụ thuộc cách FE gửi lên
             var resolvedRoute = $"{matchedPricing.OriginCountry}-{matchedPricing.DestinationCountry}".ToUpperInvariant();
             return (resolvedRoute, matchedPricing.ServiceType);
+        }
+
+        /// <summary>
+        /// Kiểm tra danh sách PricingRule khách chọn: phải tồn tại và đang ACTIVE.
+        /// Bỏ qua phí bắt buộc / phí nội địa vì hệ thống tự áp, khách không cần chọn.
+        /// </summary>
+        private async Task<List<Guid>> ResolveSelectedPricingRuleIdsAsync(List<Guid>? requestedRuleIds)
+        {
+            var resolved = new List<Guid>();
+            if (requestedRuleIds == null || !requestedRuleIds.Any())
+                return resolved;
+
+            var ruleRepo = _unitOfWork.Repository<PricingRule>();
+
+            foreach (var ruleId in requestedRuleIds.Distinct())
+            {
+                if (ruleId == Guid.Empty) continue;
+
+                var rule = await ruleRepo.GetByIdAsync(ruleId);
+                if (rule == null)
+                    throw new ArgumentException($"Không tìm thấy quy định phí với ID: {ruleId}");
+
+                if (!string.Equals(rule.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
+
+                // Phí hệ thống tự áp -> không đưa vào danh sách khách tự chọn
+                if (rule.IsRequired || string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                resolved.Add(rule.Id);
+            }
+
+            return resolved;
         }
 
         /// <summary>
@@ -363,7 +406,21 @@ namespace VCL_BLL.Services
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            return distinct.Any() ? string.Join(ImageUrlSeparator.ToString(), distinct) : string.Empty;
+            return distinct.Any() ? string.Join(ListSeparator.ToString(), distinct) : string.Empty;
+        }
+
+        /// <summary>Tách chuỗi ID quy định phí lưu DB thành danh sách Guid, bỏ qua giá trị hỏng.</summary>
+        internal static List<Guid> SplitPricingRuleIds(string? stored)
+        {
+            if (string.IsNullOrWhiteSpace(stored))
+                return new List<Guid>();
+
+            return stored
+                .Split(new[] { ListSeparator, ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => Guid.TryParse(part.Trim(), out var id) ? id : Guid.Empty)
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .ToList();
         }
 
         /// <summary>Tách chuỗi ảnh lưu DB thành danh sách URL. Hỗ trợ cả dữ liệu cũ phân cách bằng ",".</summary>
@@ -373,7 +430,7 @@ namespace VCL_BLL.Services
                 return new List<string>();
 
             return stored
-                .Split(new[] { ImageUrlSeparator, ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Split(new[] { ListSeparator, ',' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(u => u.Trim())
                 .Where(u => u.Length > 0)
                 .ToList();
@@ -627,6 +684,7 @@ namespace VCL_BLL.Services
                 RequiresPacking = request.RequiresPacking,
                 RequiresWoodenCrate = request.RequiresWoodenCrate,
                 RequiresInsurance = request.RequiresInsurance,
+                PricingRuleIds = SplitPricingRuleIds(request.PricingRuleIds),
                 GeneralNote = request.GeneralNote,
                 Status = request.Status ?? string.Empty,
                 Reason = request.Reason,
