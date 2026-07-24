@@ -72,7 +72,10 @@ namespace VCL_BLL.Services
             // 4. Validate tuyến hàng + phương án vận chuyển theo bảng cấu hình giá (giống luồng ký gửi)
             var (route, shippingOption) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
 
-            // 5. Đối chiếu hàng cấm / hạn chế (dùng chung logic với ký gửi)
+            // 5. Đối chiếu loại hàng với danh mục PRODUCT_TYPES (chuẩn hóa về đúng tên trong danh mục)
+            var canonicalProductTypes = await ResolveProductTypesAsync(request.Items);
+
+            // 6. Đối chiếu hàng cấm / hạn chế (dùng chung logic với ký gửi)
             var warnings = await ValidateAgainstRestrictedItemsAsync(request.Items);
 
             // 6. Khởi tạo yêu cầu mua hộ
@@ -116,7 +119,7 @@ namespace VCL_BLL.Services
                     PurchaseRequestId = purchaseRequest.Id,
                     ProductLink = item.ProductLink.Trim(),
                     SourceWebsite = item.SourceWebsite?.Trim(),
-                    ProductType = item.ProductType.Trim(),
+                    ProductType = canonicalProductTypes[item],
                     ProductName = item.ProductName?.Trim(),
                     Quantity = item.Quantity,
                     Attributes = item.Attributes?.Trim(),
@@ -161,7 +164,8 @@ namespace VCL_BLL.Services
                 GeneralNote = purchaseRequest.GeneralNote,
                 Status = purchaseRequest.Status,
                 CreatedAt = purchaseRequest.CreatedAt ?? DateTime.UtcNow,
-                ItemCount = request.Items.Sum(i => i.Quantity),
+                ItemCount = request.Items.Count,
+                TotalQuantity = request.Items.Sum(i => i.Quantity),
                 PricingRuleIds = pricingRuleIds,
                 Items = resultItems,
                 Warnings = warnings
@@ -235,6 +239,44 @@ namespace VCL_BLL.Services
             // Luôn lưu theo đúng giá trị chuẩn trong DB, không phụ thuộc cách FE gửi lên
             var resolvedRoute = $"{matchedPricing.OriginCountry}-{matchedPricing.DestinationCountry}".ToUpperInvariant();
             return (resolvedRoute, matchedPricing.ServiceType);
+        }
+
+        /// <summary>
+        /// Đối chiếu loại hàng từng sản phẩm với danh mục PRODUCT_TYPES (nhận cả Id lẫn tên).
+        /// Chuẩn hóa về đúng tên trong danh mục để bước báo giá tra được thuế nhập khẩu.
+        /// </summary>
+        private async Task<Dictionary<CreatePurchaseRequestItemDto, string>> ResolveProductTypesAsync(
+            List<CreatePurchaseRequestItemDto> items)
+        {
+            var productTypes = (await _unitOfWork.Repository<ProductType>().GetAllAsync())
+                .Where(t => t.IsActive)
+                .ToList();
+
+            // Danh mục chưa được cấu hình -> giữ nguyên giá trị khách gửi, không chặn
+            if (!productTypes.Any())
+                return items.ToDictionary(i => i, i => i.ProductType.Trim());
+
+            var resolved = new Dictionary<CreatePurchaseRequestItemDto, string>();
+
+            foreach (var item in items)
+            {
+                var input = item.ProductType.Trim();
+
+                var matched = Guid.TryParse(input, out var typeId)
+                    ? productTypes.FirstOrDefault(t => t.Id == typeId)
+                    : productTypes.FirstOrDefault(t => string.Equals(t.Name?.Trim(), input, StringComparison.OrdinalIgnoreCase));
+
+                if (matched == null)
+                {
+                    var available = string.Join(", ", productTypes.Select(t => t.Name).Where(n => !string.IsNullOrWhiteSpace(n)));
+                    throw new ArgumentException(
+                        $"Loại hàng '{item.ProductType}' không có trong danh mục. Các loại hàng hiện có: {available}.");
+                }
+
+                resolved[item] = matched.Name?.Trim() ?? input;
+            }
+
+            return resolved;
         }
 
         /// <summary>
@@ -425,8 +467,11 @@ namespace VCL_BLL.Services
                     PurchaseRequestId = r.Id,
                     PurchaseCode = r.PurchaseCode ?? string.Empty,
                     CustomerId = r.CustomerId,
+                    Route = OrderService.MapRouteToDisplayName(r.Route),
+                    ShippingOption = r.ShippingOption,
                     ReceiverName = r.ReceiverName ?? string.Empty,
                     ItemCount = products.Count,
+                    TotalQuantity = products.Sum(p => p.Quantity),
                     Status = r.Status ?? string.Empty,
                     GeneralNote = r.GeneralNote,
                     CreatedAt = r.CreatedAt ?? DateTime.MinValue,
