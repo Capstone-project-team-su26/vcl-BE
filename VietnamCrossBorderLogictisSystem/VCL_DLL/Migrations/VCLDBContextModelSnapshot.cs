@@ -1706,6 +1706,13 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("payment_method");
 
+                    b.Property<string>("PaymentType")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("FULL_PAYMENT")
+                        .HasColumnName("payment_type");
+
                     b.Property<Guid>("PurchaseQuotationId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("purchase_quotation_id");
@@ -1854,6 +1861,11 @@ namespace VCL_DLL.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("note");
+
+                    b.Property<string>("PricingRuleIds")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("pricing_rule_ids");
 
                     b.Property<string>("PurchaseCode")
                         .HasMaxLength(100)
