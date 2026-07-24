@@ -2143,6 +2143,31 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValue("ACTIVE").HasColumnName("status");
         });
 
+        modelBuilder.Entity<PricingRule>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PRICING_RULES");
+            entity.ToTable("PRICING_RULES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.ServicePricingId).HasColumnName("service_pricing_id");
+            entity.Property(e => e.RuleName).IsRequired().HasMaxLength(150).HasColumnName("rule_name");
+            entity.Property(e => e.RuleCode).IsRequired().HasMaxLength(50).HasColumnName("rule_code");
+            entity.Property(e => e.RuleType).IsRequired().HasMaxLength(50).HasColumnName("rule_type");
+            entity.Property(e => e.ConditionType).HasMaxLength(50).HasColumnName("condition_type");
+            entity.Property(e => e.ConditionValue).HasMaxLength(255).HasColumnName("condition_value");
+            entity.Property(e => e.CalculationType).IsRequired().HasMaxLength(50).HasColumnName("calculation_type");
+            entity.Property(e => e.Value).HasColumnType("decimal(18, 2)").HasColumnName("value");
+            entity.Property(e => e.MinAmount).HasColumnType("decimal(18, 2)").HasColumnName("min_amount");
+            entity.Property(e => e.MaxAmount).HasColumnType("decimal(18, 2)").HasColumnName("max_amount");
+            entity.Property(e => e.IsRequired).HasDefaultValue(false).HasColumnName("is_required");
+            entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValue("ACTIVE").HasColumnName("status");
+            entity.Property(e => e.Description).HasMaxLength(1000).HasColumnName("description");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.RuleCode).IsUnique().HasDatabaseName("UQ_PRICING_RULES_RULE_CODE");
+        });
+
         OnModelCreatingPartial(modelBuilder);
     }
 
