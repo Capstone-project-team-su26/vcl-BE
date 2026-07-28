@@ -317,6 +317,21 @@ namespace VCL_BLL.DTOs
         /// <summary>Danh sách ID cấu hình bảng giá/dịch vụ phụ (ví dụ: đóng gỗ, kiểm hàng, bảo hiểm...).</summary>
         public List<Guid> PricingRuleIds { get; set; } = new();
 
+        // --- Các cờ dịch vụ phụ dạng boolean (Sale tick hộ khách thay vì gửi PricingRuleIds).
+        // BE map cờ -> PricingRule active theo RuleType tương ứng, union với PricingRuleIds.
+
+        /// <summary>Khách yêu cầu kiểm hàng (map rule INSPECTION).</summary>
+        public bool RequiresInspection { get; set; }
+
+        /// <summary>Khách yêu cầu đóng gói lại (map rule PACKING).</summary>
+        public bool RequiresPacking { get; set; }
+
+        /// <summary>Khách yêu cầu đóng thùng gỗ (map rule WOODEN_BOX).</summary>
+        public bool RequiresWoodenCrate { get; set; }
+
+        /// <summary>Khách đăng ký bảo hiểm (map rule INSURANCE).</summary>
+        public bool RequiresInsurance { get; set; }
+
         /// <summary>Ghi chú từ Sales/Khách hàng.</summary>
         public string? Note { get; set; }
 
