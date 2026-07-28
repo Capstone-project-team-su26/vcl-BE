@@ -64,6 +64,52 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Sales tạo yêu cầu mua hộ thay cho Customer.
+        /// </summary>
+        /// <param name="request">Thông tin khách hàng, tuyến hàng và danh sách sản phẩm cần mua hộ</param>
+        /// <response code="201">Tạo yêu cầu mua hộ thành công</response>
+        /// <response code="400">Dữ liệu không hợp lệ hoặc chứa hàng cấm</response>
+        /// <response code="403">Không phải nhân viên Sales</response>
+        /// <response code="404">Không tìm thấy Customer</response>
+        [HttpPost("~/api/staff/purchase-requests")]
+        [Authorize(Roles = "Sale")]
+        public async Task<IActionResult> CreatePurchaseRequestByStaff([FromBody] CreatePurchaseRequestByStaffDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var staffUserId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng nhân viên." });
+            }
+
+            try
+            {
+                var result = await _purchaseRequestService.CreatePurchaseRequestByStaffAsync(staffUserId, request);
+                return Created(string.Empty, new { message = "Tạo yêu cầu mua hộ thay khách hàng thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Lấy danh sách yêu cầu mua hộ (Customer xem của mình, Staff/Sales xem tất cả)
         /// </summary>
         [HttpGet]

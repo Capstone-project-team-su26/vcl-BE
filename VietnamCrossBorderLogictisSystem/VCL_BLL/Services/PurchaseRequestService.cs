@@ -47,6 +47,64 @@ namespace VCL_BLL.Services
                 throw new UnauthorizedAccessException("Không tìm thấy thông tin khách hàng tương ứng với tài khoản.");
             }
 
+            return await CreateForCustomerAsync(customer, request, createdByStaff: false);
+        }
+
+        /// <summary>
+        /// Sale tạo yêu cầu mua hộ thay cho khách hàng (đối xứng với luồng ký gửi
+        /// POST /api/staff/consignments). Đơn tạo ra thuộc về khách được chỉ định và
+        /// đi theo đúng trạng thái ban đầu như khi khách tự tạo.
+        /// </summary>
+        public async Task<PurchaseRequestResponseDto> CreatePurchaseRequestByStaffAsync(
+            Guid staffUserId, CreatePurchaseRequestByStaffDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Yêu cầu mua hộ không được để trống.");
+
+            var customer = await ResolveCustomerForStaffAsync(request);
+            return await CreateForCustomerAsync(customer, request, createdByStaff: true);
+        }
+
+        /// <summary>
+        /// Tìm khách hàng mà Sale tạo đơn hộ: theo ID được chọn, hoặc tra theo số điện thoại/email.
+        /// </summary>
+        private async Task<Customer> ResolveCustomerForStaffAsync(CreatePurchaseRequestByStaffDto request)
+        {
+            var allCustomers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+
+            if (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty)
+            {
+                var byId = allCustomers.FirstOrDefault(c => c.Id == request.CustomerId.Value);
+                if (byId == null)
+                    throw new NotFoundException($"Không tìm thấy khách hàng với ID {request.CustomerId.Value}");
+                return byId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
+            {
+                var byPhone = allCustomers.FirstOrDefault(c => string.Equals(c.Phone, request.CustomerPhone.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (byPhone == null)
+                    throw new NotFoundException($"Không tìm thấy khách hàng với số điện thoại {request.CustomerPhone}");
+                return byPhone;
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.CustomerEmail))
+            {
+                var byEmail = allCustomers.FirstOrDefault(c => string.Equals(c.Email, request.CustomerEmail.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (byEmail == null)
+                    throw new NotFoundException($"Không tìm thấy khách hàng với email {request.CustomerEmail}");
+                return byEmail;
+            }
+
+            throw new ArgumentException("Vui lòng chọn khách hàng có sẵn hoặc nhập email/số điện thoại để tìm kiếm.");
+        }
+
+        /// <summary>
+        /// Phần lõi dùng chung cho cả 2 luồng tạo yêu cầu mua hộ (khách tự tạo và Sale tạo hộ).
+        /// </summary>
+        private async Task<PurchaseRequestResponseDto> CreateForCustomerAsync(
+            Customer customer, CreatePurchaseRequestDto request, bool createdByStaff)
+        {
             // 3. Validate danh sách sản phẩm
             if (request.Items == null || request.Items.Count == 0)
             {
@@ -83,7 +141,8 @@ namespace VCL_BLL.Services
             var purchaseRequest = new PurchaseRequest
             {
                 Id = Guid.NewGuid(),
-                UserId = userId,
+                // Đơn luôn thuộc về tài khoản của khách, kể cả khi Sale là người lên đơn hộ.
+                UserId = customer.UserId,
                 CustomerId = customer.Id,
                 PurchaseCode = purchaseCode,
                 Route = route,
@@ -94,7 +153,11 @@ namespace VCL_BLL.Services
                 RequiresPacking = request.RequiresPacking,
                 RequiresWoodenCrate = request.RequiresWoodenCrate,
                 RequiresInsurance = request.RequiresInsurance,
-                GeneralNote = BuildGeneralNote(request),
+                // Chưa có cột CreatedById trên PURCHASE_REQUESTS nên đánh dấu vào ghi chú
+                // để biết đơn do nhân viên lên hộ.
+                GeneralNote = createdByStaff
+                    ? AppendStaffMark(BuildGeneralNote(request))
+                    : BuildGeneralNote(request),
                 Status = "PENDING_REVIEW",
                 CreatedAt = DateTime.UtcNow
             };
@@ -376,6 +439,11 @@ namespace VCL_BLL.Services
 
             return noteParts.Any() ? string.Join(". ", noteParts) : null;
         }
+
+        private const string StaffCreatedMark = "Đơn do nhân viên lên hộ khách";
+
+        private static string AppendStaffMark(string? note) =>
+            string.IsNullOrWhiteSpace(note) ? StaffCreatedMark : $"{note}. {StaffCreatedMark}";
 
         /// <summary>Sinh mã yêu cầu mua hộ không trùng với mã đã có.</summary>
         private async Task<string> GenerateUniquePurchaseCodeAsync()
