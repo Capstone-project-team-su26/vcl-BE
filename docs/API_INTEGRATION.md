@@ -514,7 +514,7 @@ Response `200 OK`:
   "message": "Cập nhật thông tin cá nhân thành công."
 }
 ```
-## 9.5. Xem báo giá mới nhất của đơn hàng (Get Latest Quotation)
+## 9. Xem báo giá mới nhất của đơn hàng (Get Latest Quotation)
 
 Khách hàng xem thông tin báo giá mới nhất của đơn hàng. Trả về báo giá ở trạng thái `SENT`, `PENDING`, `DRAFT` hoặc `ACCEPTED`.
 
@@ -581,7 +581,7 @@ Authorization: Bearer {token}
 }
 ```
 
-### 9.5. Chi tiết báo giá theo ID báo giá (Get Quotation By ID)
+### 9.1. Chi tiết báo giá theo ID báo giá (Get Quotation By ID)
 
 Lấy thông tin chi tiết của một báo giá bằng ID báo giá, trả về đầy đủ các chi phí và thông tin tính cước theo từng kiện hàng (nếu có).
 
@@ -721,7 +721,7 @@ Authorization: Bearer {staffToken}
 | `status` | Bắt buộc. Các giá trị hợp lệ: `PENDING_REVIEW`, `APPROVED`, `REJECTED` |
 | `rejectionReason` | Bắt buộc khi `status` là `REJECTED`. Lưu vào trường `Note` của yêu cầu. |
 
-### 11.1 Response thành công
+### 11.1. Response thành công
 
 Response `200 OK`:
 
@@ -739,7 +739,7 @@ Response `200 OK`:
 - Khi trạng thái là `PENDING_REVIEW` hoặc `REJECTED`, hệ thống không phát sinh mã gửi hàng mới.
 - Response trả về trạng thái mới cập nhật (`status`) và mã gửi hàng (`consignmentCode`).
 
-### 11.2 Response lỗi
+### 11.2. Response lỗi
 
 | Status | Trường hợp | Message |
 |---|---|---|
@@ -768,7 +768,7 @@ Authorization: Bearer {token}
 | `status` | `string` | Lọc theo trạng thái yêu cầu (tuỳ chọn) |
 | `searchCode` | `string` | Tìm kiếm theo mã yêu cầu ký gửi (tuỳ chọn) |
 
-### 12.1 Response thành công
+### 12.1. Response thành công
 
 Response `200 OK`:
 
@@ -796,13 +796,13 @@ Response `200 OK`:
 }
 ```
 
-### 12.2 Response lỗi
+### 12.2. Response lỗi
 
 | Status | Trường hợp | Message |
 |---|---|---|
 | `401` | Chưa đăng nhập hoặc token không hợp lệ / Người dùng không hợp lệ | Tự động bởi middleware JWT hoặc `"Người dùng không hợp lệ."` |
 
-### 12.3 Xem chi tiết một yêu cầu ký gửi
+### 12.3. Xem chi tiết một yêu cầu ký gửi
 
 Xem thông tin chi tiết của một yêu cầu ký gửi cụ thể bằng ID. Customer chỉ được xem đơn hàng của mình; các tài khoản thuộc nhóm Staff được xem mọi đơn hàng.
 
@@ -908,7 +908,7 @@ Authorization: Bearer {customerToken}
 |---|---|
 | `cancelReason` | Không bắt buộc. Lý do hủy đơn. |
 
-### 13.1 Response thành công
+### 13.1. Response thành công
 
 Response `200 OK`:
 
@@ -920,7 +920,7 @@ Response `200 OK`:
 }
 ```
 
-### 13.2 Response lỗi
+### 13.2. Response lỗi
 
 | Status | Trường hợp | Message |
 |---|---|---|
@@ -1455,7 +1455,7 @@ Authorization: Bearer {salesToken}
 > BE hợp nhất lại và loại trùng. Cờ boolean tiện khi màn hình chỉ có checkbox; `pricingRuleIds` chính xác hơn
 > khi cần chọn đúng một cấu hình cụ thể. Endpoint khách tự tạo (`POST /api/orders/consignments`) nhận cùng bộ field này.
 
-### 19.1 Response thành công
+### 19.1. Response thành công
 
 Response `201 Created`:
 
@@ -1493,7 +1493,7 @@ Response `201 Created`:
 - Nếu trạng thái là `APPROVED`, hệ thống tự sinh mã gửi hàng (`consignmentCode`) giống luồng duyệt của Staff.
 - Trả về báo giá tạm tính tương tự như khi khách hàng tự tạo yêu cầu.
 
-### 19.2 Response lỗi
+### 19.2. Response lỗi
 
 | Status | Trường hợp | Message |
 |---|---|---|
@@ -2224,7 +2224,7 @@ export interface CreateLocationRequest {
 }
 ```
 
-## 22. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
+## 21. Ghi nhận tồn kho khả dụng từ kiện hàng (Warehouse Inventory)
 
 Staff/WarehouseStaff ghi nhận tồn kho khả dụng sau khi Parcel đã được nhập vào vị trí kho thành công để chuẩn bị cho quy trình xuất kho.
 
@@ -2270,7 +2270,7 @@ Authorization: Bearer {staffToken}
 
 ---
 
-## 23. Axios integration
+## 22. Axios integration
 
 ```typescript
 import axios from 'axios';
@@ -2498,7 +2498,7 @@ export async function getActiveWarehouseLocations(warehouseId: string) {
 }
 ```
 
-## 24. Tạo yêu cầu xuất kho từ tồn kho (Warehouse Release Request - WRO)
+## 23. Tạo yêu cầu xuất kho từ tồn kho (Warehouse Release Request - WRO)
 
 Người dùng (Customer/Staff) tạo yêu cầu xuất kho từ hàng đã có tồn kho khả dụng (`AVAILABLE`).
 
@@ -2564,7 +2564,7 @@ Content-Type: application/json
 | `403` | Xuất hàng không thuộc sở hữu của mình | `"Bạn không có quyền tạo yêu cầu xuất kho cho tồn kho {id} do không thuộc sở hữu của bạn."` |
 | `404` | Không tìm thấy Inventory ID | `"Không tìm thấy tồn kho với ID: {id}"` |
 
-### 24.1. Xem chi tiết yêu cầu xuất kho
+### 23.1. Xem chi tiết yêu cầu xuất kho
 
 Backend cung cấp API để lấy chi tiết của một yêu cầu xuất kho (WRO). Staff/Operations xem được mọi yêu cầu, Customer chỉ xem được yêu cầu của chính mình.
 
@@ -2622,7 +2622,7 @@ Authorization: Bearer {accessToken}
 | `403` | Không có quyền xem yêu cầu xuất kho này (Customer xem của người khác) | `"Bạn không có quyền xem yêu cầu xuất kho này."` |
 | `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
 
-### 24.2. Staff duyệt hoặc từ chối yêu cầu xuất kho
+### 23.2. Staff duyệt hoặc từ chối yêu cầu xuất kho
 
 Nhân viên (Staff/Operations) duyệt (`RELEASE_APPROVED`) hoặc từ chối (`RELEASE_REJECTED`) yêu cầu xuất kho. Khi từ chối, bắt buộc phải cung cấp lý do từ chối.
 
@@ -2675,7 +2675,7 @@ Content-Type: application/json
 | `403` | Khách hàng thực hiện thao tác (chỉ Staff/Ops được thao tác) | `"Bạn không có quyền cập nhật trạng thái yêu cầu xuất kho."` |
 | `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |
 
-### 24.3. Tạo phiếu picking cho yêu cầu xuất kho
+### 23.3. Tạo phiếu picking cho yêu cầu xuất kho
 
 Nhân viên (Staff/Operations) tạo phiếu picking từ yêu cầu xuất kho đã được duyệt (`RELEASE_APPROVED`). Trạng thái của yêu cầu xuất kho sẽ chuyển sang `PICKING`, và trạng thái ban đầu của phiếu picking là `PENDING`.
 
@@ -2732,7 +2732,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 24.4. Xác nhận picking hàng khỏi vị trí kho
+### 23.4. Xác nhận picking hàng khỏi vị trí kho
 
 Nhân viên kho (WarehouseStaff/Staff/Operations) xác nhận đã lấy hàng khỏi vị trí kho theo phiếu picking. Trạng thái của phiếu picking sẽ chuyển thành `PICKED`, và trạng thái của yêu cầu xuất kho tương ứng chuyển sang `PACKING`. Đồng thời, trạng thái của tồn kho được picking sẽ cập nhật sang `PICKED`.
 
@@ -2801,7 +2801,7 @@ Content-Type: application/json
 
 ---
 
-### 24.5. Xác nhận đóng gói và hoàn tất xuất kho
+### 23.5. Xác nhận đóng gói và hoàn tất xuất kho
 
 Nhân viên kho (WarehouseStaff/Staff/Operations) xác nhận đóng gói và hoàn tất xuất kho sau khi hàng đã được picking. Trạng thái của phiếu picking tương ứng sẽ chuyển thành `RELEASED` hoặc `OUTBOUND` tùy loại hàng, và trạng thái của yêu cầu xuất kho tương ứng chuyển sang `RELEASED`.
 
@@ -2871,11 +2871,11 @@ Content-Type: application/json
 
 ---
 
-## 25. Quản lý bảng giá dịch vụ chính (Service Pricing)
+## 24. Quản lý bảng giá dịch vụ chính (Service Pricing)
 
 Admin hệ thống quản lý bảng giá cước vận chuyển chính chặng quốc tế cho các tuyến đường (route).
 
-### 25.1. Xem danh sách bảng giá dịch vụ chính
+### 24.1. Xem danh sách bảng giá dịch vụ chính
 
 ```http
 GET /api/service-pricings
@@ -2914,7 +2914,7 @@ GET /api/service-pricings
 ]
 ```
 
-### 25.2. Lấy chi tiết bảng giá dịch vụ theo ID
+### 24.2. Lấy chi tiết bảng giá dịch vụ theo ID
 
 ```http
 GET /api/service-pricings/{id}
@@ -2951,7 +2951,7 @@ GET /api/service-pricings/{id}
 }
 ```
 
-### 25.3. Thêm cấu hình bảng giá dịch vụ mới (Admin)
+### 24.3. Thêm cấu hình bảng giá dịch vụ mới (Admin)
 
 ```http
 POST /api/service-pricings
@@ -2975,7 +2975,7 @@ Authorization: Bearer {accessToken}
 
 **Response thành công (201 Created):** Trả về đối tượng vừa tạo kèm header `Location`.
 
-### 25.4. Cập nhật cấu hình bảng giá dịch vụ (Admin)
+### 24.4. Cập nhật cấu hình bảng giá dịch vụ (Admin)
 
 ```http
 PUT /api/service-pricings/{id}
@@ -3005,7 +3005,7 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-### 25.5. Xóa cấu hình bảng giá dịch vụ (Admin)
+### 24.5. Xóa cấu hình bảng giá dịch vụ (Admin)
 
 ```http
 DELETE /api/service-pricings/{id}
@@ -3022,11 +3022,11 @@ Authorization: Bearer {accessToken}
 
 ---
 
-## 26. Quản lý đơn vị vận chuyển (Carrier Management)
+## 25. Quản lý đơn vị vận chuyển (Carrier Management)
 
 Admin quản lý danh sách các đơn vị vận chuyển hoặc forwarder được sử dụng trong hệ thống. Dữ liệu này dùng cho Staff hoặc Operations chọn khi tạo lô vận chuyển quốc tế, cập nhật trạng thái vận chuyển hoặc ghi nhận thông tin vận chuyển.
 
-### 26.1. Lấy danh sách tất cả các đơn vị vận chuyển (Admin only)
+### 25.1. Lấy danh sách tất cả các đơn vị vận chuyển (Admin only)
 
 ```http
 GET /api/carriers
@@ -3053,7 +3053,7 @@ Authorization: Bearer {accessToken}
 ]
 ```
 
-### 26.2. Lấy danh sách các đơn vị vận chuyển đang hoạt động (Nghiệp vụ)
+### 25.2. Lấy danh sách các đơn vị vận chuyển đang hoạt động (Nghiệp vụ)
 
 Tất cả các tài khoản nhân viên (Admin, Staff, Operations, WarehouseStaff) đều có thể gọi để chọn đơn vị vận chuyển khi tạo lô hoặc cập nhật trạng thái.
 
@@ -3064,14 +3064,14 @@ Authorization: Bearer {accessToken}
 
 **Response tương tự như GET /api/carriers nhưng chỉ lọc các bản ghi có `isActive = true`.**
 
-### 26.3. Lấy thông tin chi tiết một đơn vị vận chuyển theo ID (Admin only)
+### 25.3. Lấy thông tin chi tiết một đơn vị vận chuyển theo ID (Admin only)
 
 ```http
 GET /api/carriers/{id}
 Authorization: Bearer {accessToken}
 ```
 
-### 26.4. Tạo mới một đơn vị vận chuyển (Admin only)
+### 25.4. Tạo mới một đơn vị vận chuyển (Admin only)
 
 ```http
 POST /api/carriers
@@ -3098,7 +3098,7 @@ Content-Type: application/json
 
 **Response thành công (201 Created):** Trả về đối tượng vừa tạo kèm ID và Header `Location`.
 
-### 26.5. Cập nhật thông tin đơn vị vận chuyển (Admin only)
+### 25.5. Cập nhật thông tin đơn vị vận chuyển (Admin only)
 
 ```http
 PUT /api/carriers/{id}
@@ -3127,7 +3127,7 @@ Content-Type: application/json
 }
 ```
 
-### 26.6. Xóa đơn vị vận chuyển (Admin only)
+### 25.6. Xóa đơn vị vận chuyển (Admin only)
 
 Xóa hoàn toàn một đơn vị vận chuyển khỏi hệ thống nếu không có ràng buộc dữ liệu lịch sử.
 
@@ -3190,11 +3190,11 @@ interface UpdateCarrierRequestDto {
 
 ---
 
-## 27. Quản lý kho và vị trí lưu trữ (Warehouse & Location Management)
+## 26. Quản lý kho và vị trí lưu trữ (Warehouse & Location Management)
 
 Admin quản lý các kho vận hành, thiết lập Zone/Shelf/Bin trong kho. Cung cấp API lấy danh sách kho/vị trí hoạt động (active) cho các nghiệp vụ check-in, put-away, picking, xuất kho và tạo lô vận chuyển.
 
-### 27.1. Lấy danh sách tất cả các kho vận hành (Admin)
+### 26.1. Lấy danh sách tất cả các kho vận hành (Admin)
 
 ```http
 GET /api/warehouses
@@ -3219,7 +3219,7 @@ Authorization: Bearer {adminToken}
 }
 ```
 
-### 27.2. Lấy danh sách kho đang hoạt động (Nghiệp vụ)
+### 26.2. Lấy danh sách kho đang hoạt động (Nghiệp vụ)
 
 Tất cả các tài khoản nhân viên (Admin, Sale, Staff, WarehouseStaff, Operations) đều có thể gọi để chọn kho đi, kho đến.
 
@@ -3228,7 +3228,7 @@ GET /api/warehouses/active
 Authorization: Bearer {accessToken}
 ```
 
-### 27.3. Tạo kho mới (Admin)
+### 26.3. Tạo kho mới (Admin)
 
 ```http
 POST /api/warehouses
@@ -3247,7 +3247,7 @@ Content-Type: application/json
 
 **Ràng buộc:** Không cho tạo trùng mã kho (`code`). Nếu trùng trả về `400 Bad Request`.
 
-### 27.4. Cập nhật thông tin kho (Admin)
+### 26.4. Cập nhật thông tin kho (Admin)
 
 ```http
 PUT /api/warehouses/{warehouseId}
@@ -3268,7 +3268,7 @@ Content-Type: application/json
 - Không cho cập nhật trùng mã kho của kho khác.
 - Không cho vô hiệu hóa (`isActive = false`) nếu kho đó đang chứa hàng hóa lưu trữ có số lượng > 0, hoặc có yêu cầu xuất kho đang xử lý, hoặc có phiếu tiếp nhận hàng chưa hoàn tất. Trả về `400 Bad Request`.
 
-### 27.5. Xóa kho (Admin)
+### 26.5. Xóa kho (Admin)
 
 ```http
 DELETE /api/warehouses/{warehouseId}
@@ -3277,7 +3277,7 @@ Authorization: Bearer {adminToken}
 
 **Ràng buộc:** Không cho xóa kho đã có lịch sử kiện hàng hoặc lịch sử tồn kho. Trả về `400 Bad Request`.
 
-### 27.6. Lấy danh sách vị trí lưu trữ trong kho (Admin)
+### 26.6. Lấy danh sách vị trí lưu trữ trong kho (Admin)
 
 ```http
 GET /api/warehouses/{warehouseId}/locations
@@ -3307,7 +3307,7 @@ Authorization: Bearer {adminToken}
 }
 ```
 
-### 27.7. Tạo vị trí lưu trữ mới (Admin)
+### 26.7. Tạo vị trí lưu trữ mới (Admin)
 
 ```http
 POST /api/warehouses/{warehouseId}/locations
@@ -3329,7 +3329,7 @@ Content-Type: application/json
 - Tự động tìm hoặc tạo Zone/Shelf theo tên/mã gửi lên.
 - Không cho tạo trùng mã vị trí lưu trữ (`binCode`) trong cùng một kho. Nếu trùng trả về `400 Bad Request`.
 
-### 27.8. Cập nhật vị trí lưu trữ (Admin)
+### 26.8. Cập nhật vị trí lưu trữ (Admin)
 
 ```http
 PUT /api/warehouse-locations/{locationId}
@@ -3351,7 +3351,7 @@ Content-Type: application/json
 - Không cho cập nhật trùng mã vị trí lưu trữ trong cùng một kho.
 - Không cho vô hiệu hóa (`isActive = false`) nếu vị trí đó đang chứa hàng hóa khả dụng (`Inventory.Quantity > 0`) hoặc đang liên kết với kiện hàng. Trả về `400 Bad Request`.
 
-### 27.9. Xóa vị trí lưu trữ (Admin)
+### 26.9. Xóa vị trí lưu trữ (Admin)
 
 ```http
 DELETE /api/warehouse-locations/{locationId}
@@ -3360,7 +3360,7 @@ Authorization: Bearer {adminToken}
 
 **Ràng buộc:** Không cho xóa vị trí đang chứa hàng hoặc liên kết với kiện hàng. Trả về `400 Bad Request`.
 
-### 27.10. Lấy danh sách vị trí đang hoạt động trong kho (Nghiệp vụ)
+### 26.10. Lấy danh sách vị trí đang hoạt động trong kho (Nghiệp vụ)
 
 Tất cả các tài khoản nhân viên đều có thể gọi khi thực hiện put-away hoặc picking.
 
@@ -3371,11 +3371,11 @@ Authorization: Bearer {accessToken}
 
 ---
 
-## 28. Gom hàng và đóng bao (Consolidation - MasterBox)
+## 27. Gom hàng và đóng bao (Consolidation - MasterBox)
 
 Tài khoản nhân viên (Staff, WarehouseStaff, Admin, OperationsManager) sử dụng các API này để thực hiện quy trình gom nhiều đơn hàng ký gửi của khách hàng vào một MasterBox (mã bao hàng gom chung) trước khi làm thủ tục xuất khẩu hoặc vận chuyển xuyên biên giới.
 
-### 28.1. Tạo lô gom hàng mới
+### 27.1. Tạo lô gom hàng mới
 
 Gom hàng bằng cách truyền lên danh sách các Order ID của các đơn hàng. Hệ thống sẽ tự động tìm kiếm các kiện hàng (Parcels) tương ứng của các đơn hàng này, kiểm tra tính hợp lệ và tự động sinh ra một mã `MasterCode` duy nhất định dạng `MBX-yyyyMMddHHmmss-XXXXXX`.
 
@@ -3434,14 +3434,14 @@ Trả về chi tiết MasterBox đã tạo cùng danh sách đơn hàng và ki�
 }
 ```
 
-### 28.2. Lấy chi tiết lô gom hàng theo ID
+### 27.2. Lấy chi tiết lô gom hàng theo ID
 
 ```http
 GET /api/consolidation/{id}
 Authorization: Bearer {accessToken}
 ```
 
-### 28.3. Lấy danh sách các lô gom hàng
+### 27.3. Lấy danh sách các lô gom hàng
 
 ```http
 GET /api/consolidation?status=CONSOLIDATED&search=MBX-SPECIAL
@@ -3452,7 +3452,7 @@ Authorization: Bearer {accessToken}
 - `status`: Lọc theo trạng thái của MasterBox (ví dụ: `CONSOLIDATED`, `IN_TRANSIT`, v.v.).
 - `search`: Tìm kiếm tương đối theo mã `MasterCode`.
 
-### 28.4. Cập nhật lô gom hàng
+### 27.4. Cập nhật lô gom hàng
 
 Cho phép thay đổi mã bao hàng, trạng thái vận chuyển, hoặc cập nhật lại danh sách các đơn hàng nằm trong bao gom hàng đó. Khi cập nhật danh sách đơn hàng mới, các kiện hàng cũ không nằm trong danh sách mới sẽ được gỡ bỏ khỏi MasterBox (`masterBoxId = null`).
 
@@ -3471,7 +3471,7 @@ Content-Type: application/json
 }
 ```
 
-### 28.5. Hủy gom hàng (Xóa MasterBox)
+### 27.5. Hủy gom hàng (Xóa MasterBox)
 
 Khi thực hiện xóa MasterBox, hệ thống sẽ tự động giải tán tất cả các kiện hàng đang liên kết với nó (đặt `MasterBoxId = null`) để trở lại trạng thái tự do chờ gom lô mới.
 
@@ -3482,7 +3482,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-## 29. Tạo yêu cầu mua hộ (Purchase Request)
+## 28. Tạo yêu cầu mua hộ (Purchase Request)
 
 Customer tạo yêu cầu mua hộ hàng Trung Quốc. Khách nhập thông tin nhận hàng + danh sách sản phẩm cần mua; hệ thống ghi nhận yêu cầu ở trạng thái `PENDING_REVIEW` để Staff/Sales tiếp nhận và xử lý báo giá ở bước sau.
 
@@ -3623,7 +3623,7 @@ interface CreatePurchaseRequestDto {
   items: CreatePurchaseRequestItemDto[];
 }
 
-/** POST /api/staff/purchase-requests — Sales tạo hộ khách (xem mục 29.5). */
+/** POST /api/staff/purchase-requests — Sales tạo hộ khách (xem mục 28.5). */
 interface CreatePurchaseRequestByStaffDto extends CreatePurchaseRequestDto {
   customerId?: string;
   customerPhone?: string;
@@ -3659,7 +3659,7 @@ interface PurchaseRequestResponseDto {
 }
 ```
 
-### 29.1. Lấy danh sách yêu cầu mua hộ
+### 28.1. Lấy danh sách yêu cầu mua hộ
 
 Lấy danh sách yêu cầu mua hộ có phân trang. **Customer** chỉ thấy yêu cầu của chính mình; **Staff/Sales/Admin/Operations** thấy toàn bộ yêu cầu cần xử lý. Yêu cầu ở trạng thái `PENDING_REVIEW` được ưu tiên hiển thị lên đầu.
 
@@ -3741,7 +3741,7 @@ interface PaginatedResponse<T> {
 }
 ```
 
-### 29.2. Lấy chi tiết yêu cầu mua hộ
+### 28.2. Lấy chi tiết yêu cầu mua hộ
 
 Lấy chi tiết đầy đủ một yêu cầu mua hộ theo `requestId`. **Customer** chỉ xem được yêu cầu của chính mình; **Staff/Sales/Admin/Operations** xem được mọi yêu cầu.
 
@@ -3821,7 +3821,7 @@ interface PurchaseRequestDetailResponseDto {
 }
 ```
 
-### 29.3. Staff cập nhật trạng thái yêu cầu mua hộ
+### 28.3. Staff cập nhật trạng thái yêu cầu mua hộ
 
 Staff/Sales tiếp nhận và cập nhật trạng thái một yêu cầu mua hộ. Dùng để chuyển sang đang xử lý, yêu cầu khách bổ sung thông tin, hoặc từ chối.
 
@@ -3861,7 +3861,7 @@ Content-Type: application/json
 - Chỉ **Staff/Sales** (Admin/Sale/Staff/Operations) được thao tác — Customer gọi trả `403`.
 - **Không** cho cập nhật nếu yêu cầu đã ở `QUOTATION_SENT` (đã sang bước báo giá) hoặc `CANCELLED` (đã hủy).
 - `reason` chỉ được lưu khi status là `NEED_MORE_INFO`/`REJECTED`; các trạng thái khác reason sẽ được xoá.
-- Trường `reason` này trả về trong API chi tiết (mục 29.2) để Customer xem lại.
+- Trường `reason` này trả về trong API chi tiết (mục 28.2) để Customer xem lại.
 
 **Response lỗi:**
 
@@ -3889,7 +3889,7 @@ interface UpdatePurchaseRequestStatusResponseDto {
 }
 ```
 
-### 29.4. Staff tạo báo giá mua hộ
+### 28.4. Staff tạo báo giá mua hộ
 
 Staff/Sales tạo báo giá cho một yêu cầu mua hộ. Mỗi sản phẩm nhập đơn giá (`unitPrice`), số lượng lấy theo yêu cầu; hệ thống tính `lineTotal = unitPrice × quantity`, `productsSubtotal = Σ lineTotal`, và `totalAmount = productsSubtotal + purchaseFee + shippingFee + Σ additionalFees.amount`.
 
@@ -4045,7 +4045,7 @@ interface PurchaseQuotationResponseDto {
 
 ---
 
-### 29.5. Sales tạo yêu cầu mua hộ thay cho khách hàng
+### 28.5. Sales tạo yêu cầu mua hộ thay cho khách hàng
 
 Đối xứng với `POST /api/staff/consignments` bên ký gửi — dùng khi khách đặt mua hộ qua điện thoại, chat hoặc tại quầy.
 
@@ -4112,11 +4112,11 @@ Thứ tự ưu tiên tra cứu: `customerId` → `customerPhone` → `customerEm
 
 ---
 
-## 30. Dropdown dữ liệu cho form ký gửi (Consignment dropdowns)
+## 29. Dropdown dữ liệu cho form ký gửi (Consignment dropdowns)
 
 Nhóm API `GET` cung cấp dữ liệu đổ dropdown cho form tạo yêu cầu ký gửi (`route`, `shippingOption`, `productType`). Tất cả đều **public** (không cần token) và trả về `data` là mảng.
 
-### 30.1. Danh sách tuyến hàng (route)
+### 29.1. Danh sách tuyến hàng (route)
 
 ```http
 GET /api/orders/consignments/routes
@@ -4131,7 +4131,7 @@ GET /api/orders/consignments/routes
 
 Giá trị route trả về duy nhất tuyến `"Trung quốc --> Việt Nam"`. Khi gửi yêu cầu ký gửi lên hệ thống, tuyến này sẽ được chuẩn hóa nội bộ thành mã `"CN-VN"`.
 
-### 30.2. Danh sách phương án vận chuyển (shippingOption)
+### 29.2. Danh sách phương án vận chuyển (shippingOption)
 
 ```http
 GET /api/orders/consignments/shipping-options
@@ -4148,7 +4148,7 @@ GET /api/orders/consignments/shipping-options?route=Trung quốc --> Việt Nam
 - Không truyền `route` → trả về toàn bộ phương án vận chuyển khả dụng (Express, Standard).
 - Truyền `route` → chỉ trả về các phương án khả dụng cho tuyến đó (ví dụ `"Trung quốc --> Việt Nam"` sẽ trả về `["Express", "Standard"]`).
 
-### 30.3. Danh sách loại hàng (productType)
+### 29.3. Danh sách loại hàng (productType)
 
 ```http
 GET /api/product-types
@@ -4166,7 +4166,7 @@ GET /api/product-types
 
 Lấy từ bảng `PRODUCT_TYPES` (chỉ các loại `isActive = true`), sắp xếp theo tên. Admin có thể mở rộng danh sách này về sau.
 
-### 30.4. Danh sách trạng thái yêu cầu ký gửi (statuses)
+### 29.4. Danh sách trạng thái yêu cầu ký gửi (statuses)
 
 ```http
 GET /api/orders/consignments/statuses
@@ -4212,11 +4212,11 @@ interface ConsignmentStatusDto {
 
 ---
 
-## 31. Hỗ trợ trao đổi giữa Customer và Sales (SignalR Chat)
+## 30. Hỗ trợ trao đổi giữa Customer và Sales (SignalR Chat)
 
 Chức năng nhắn tin trực tuyến thời gian thực tích hợp giữa REST API lưu trữ dữ liệu và SignalR Hub để truyền tin tức thời.
 
-### 31.1. Tạo cuộc trao đổi mới (Customer only)
+### 30.1. Tạo cuộc trao đổi mới (Customer only)
 
 Khách hàng bắt đầu một cuộc hội thoại mới, có thể gắn với một Consignment (Yêu cầu ký gửi), Purchase Request (Yêu cầu mua hộ) hoặc Quotation (Báo giá).
 
@@ -4260,7 +4260,7 @@ Content-Type: application/json
 }
 ```
 
-### 31.2. Lấy danh sách cuộc trao đổi
+### 30.2. Lấy danh sách cuộc trao đổi
 
 - **Customer:** Chỉ lấy danh sách cuộc trao đổi của chính mình.
 - **Sales/Admin:** Lấy danh sách các cuộc trao đổi chưa được phân công (`salesId = null`) hoặc cuộc trao đổi do chính mình đảm nhận (`salesId = currentUserId`).
@@ -4292,7 +4292,7 @@ Authorization: Bearer {accessToken}
 ]
 ```
 
-### 31.3. Lấy chi tiết lịch sử tin nhắn cuộc trao đổi
+### 30.3. Lấy chi tiết lịch sử tin nhắn cuộc trao đổi
 
 Truy cập chi tiết một cuộc trao đổi và danh sách tin nhắn. Chỉ cho phép các bên liên quan truy cập (Customer của chat hoặc Sales được phân công / chưa phân công).
 
@@ -4343,7 +4343,7 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-### 31.4. Gửi tin nhắn mới
+### 30.4. Gửi tin nhắn mới
 
 Gửi tin nhắn vào cuộc trao đổi hiện tại. 
 - Nếu Sales gửi tin nhắn vào một cuộc trao đổi chưa được phân công (`salesId` rỗng), hệ thống tự động gán cuộc trao đổi này cho Sales đó.
@@ -4380,7 +4380,7 @@ Content-Type: application/json
 }
 ```
 
-### 31.5. Đánh dấu đã đọc các tin nhắn
+### 30.5. Đánh dấu đã đọc các tin nhắn
 
 Đánh dấu tất cả tin nhắn do đối phương gửi đến trong cuộc hội thoại là đã đọc.
 
@@ -4399,7 +4399,7 @@ Authorization: Bearer {accessToken}
 
 ---
 
-### 31.6. Kết nối SignalR Hub (Real-time WebSockets)
+### 30.6. Kết nối SignalR Hub (Real-time WebSockets)
 
 - **Hub Endpoint:** `/hubs/chat`
 - **Giao thức bắt tay (Handshake & Auth):** Vì trình duyệt không hỗ trợ custom header trong WebSocket handshake, FE phải truyền JWT token qua query parameter:
@@ -4528,86 +4528,6 @@ interface InternationalShipmentResponseDto {
 
 ---
 
-## 32. Customer tra cứu kiện hàng (Customer Parcels)
-
-Customer xem danh sách kiện hàng thuộc yêu cầu ký gửi của mình sau khi kho đã check-in (`RECEIVED`) hoặc nhập vị trí (`STORED`). Chỉ trả về kiện thuộc Customer đang đăng nhập.
-
-```http
-GET /api/customer/parcels?consignmentCode=VCL-2026...&searchCode=PCL-2026
-Authorization: Bearer {accessToken}
-```
-
-**Query params (đều tùy chọn):**
-
-| Name | Type | Mô tả |
-|---|---|---|
-| `consignmentCode` | `string` | Lọc theo mã yêu cầu ký gửi |
-| `searchCode` | `string` | Tìm theo mã kiện hàng (`packageCode`) |
-
-**Response thành công (200 OK):**
-
-```json
-{
-  "message": "Lấy danh sách kiện hàng thành công.",
-  "data": [
-    {
-      "parcelId": "d5e243d7-...",
-      "packageCode": "PCL-20260701-1234",
-      "consignmentId": "e14b21a7-...",
-      "consignmentCode": "VCL-20260701-5678",
-      "packageStatus": "STORED",
-      "actualWeight": 1.5,
-      "length": 30,
-      "width": 20,
-      "height": 15,
-      "volumetricWeight": 1.8,
-      "chargeableWeight": 1.8,
-      "checkInTime": "2026-07-01T09:00:00Z",
-      "putAwayTime": "2026-07-01T10:30:00Z",
-      "saleNote": "Hàng dễ vỡ",
-      "items": [
-        { "productName": "Loa Bluetooth", "quantity": 4, "declaredValue": 800000 }
-      ]
-    }
-  ]
-}
-```
-
-**Lưu ý nghiệp vụ:**
-- Chỉ trả về kiện đã check-in (`RECEIVED`) hoặc đã nhập vị trí (`STORED`); `putAwayTime` chỉ có khi đã `STORED`.
-- Trả về `data: []` nếu Customer chưa có kiện nào được check-in (không phải lỗi).
-- Nếu lọc bằng `consignmentCode` của yêu cầu **không thuộc** Customer → trả `403`.
-- `saleNote` lấy từ ghi chú của yêu cầu ký gửi; `items` là danh sách sản phẩm khai báo của yêu cầu (tên, số lượng, giá trị).
-
-**TypeScript interface:**
-
-```typescript
-interface CustomerParcelItemDto {
-  productName: string;
-  quantity: number;
-  declaredValue?: number | null;
-}
-
-interface CustomerParcelDto {
-  parcelId: string;
-  packageCode: string;
-  consignmentId?: string | null;
-  consignmentCode: string;
-  packageStatus: string;
-  actualWeight?: number | null;
-  length?: number | null;
-  width?: number | null;
-  height?: number | null;
-  volumetricWeight?: number | null;
-  chargeableWeight?: number | null;
-  checkInTime?: string | null;
-  putAwayTime?: string | null;
-  saleNote?: string | null;
-  items: CustomerParcelItemDto[];
-}
-```
-
----
 
 ### 31.1. Cập nhật trạng thái lô vận chuyển quốc tế
 
@@ -4836,6 +4756,86 @@ interface DestinationReceivingResponseDto {
   note?: string | null;
   receivedCount: number;
   parcels: { parcelId: string; packageCode: string; packageStatus: string }[];
+}
+```
+
+---
+## 32. Customer tra cứu kiện hàng (Customer Parcels)
+
+Customer xem danh sách kiện hàng thuộc yêu cầu ký gửi của mình sau khi kho đã check-in (`RECEIVED`) hoặc nhập vị trí (`STORED`). Chỉ trả về kiện thuộc Customer đang đăng nhập.
+
+```http
+GET /api/customer/parcels?consignmentCode=VCL-2026...&searchCode=PCL-2026
+Authorization: Bearer {accessToken}
+```
+
+**Query params (đều tùy chọn):**
+
+| Name | Type | Mô tả |
+|---|---|---|
+| `consignmentCode` | `string` | Lọc theo mã yêu cầu ký gửi |
+| `searchCode` | `string` | Tìm theo mã kiện hàng (`packageCode`) |
+
+**Response thành công (200 OK):**
+
+```json
+{
+  "message": "Lấy danh sách kiện hàng thành công.",
+  "data": [
+    {
+      "parcelId": "d5e243d7-...",
+      "packageCode": "PCL-20260701-1234",
+      "consignmentId": "e14b21a7-...",
+      "consignmentCode": "VCL-20260701-5678",
+      "packageStatus": "STORED",
+      "actualWeight": 1.5,
+      "length": 30,
+      "width": 20,
+      "height": 15,
+      "volumetricWeight": 1.8,
+      "chargeableWeight": 1.8,
+      "checkInTime": "2026-07-01T09:00:00Z",
+      "putAwayTime": "2026-07-01T10:30:00Z",
+      "saleNote": "Hàng dễ vỡ",
+      "items": [
+        { "productName": "Loa Bluetooth", "quantity": 4, "declaredValue": 800000 }
+      ]
+    }
+  ]
+}
+```
+
+**Lưu ý nghiệp vụ:**
+- Chỉ trả về kiện đã check-in (`RECEIVED`) hoặc đã nhập vị trí (`STORED`); `putAwayTime` chỉ có khi đã `STORED`.
+- Trả về `data: []` nếu Customer chưa có kiện nào được check-in (không phải lỗi).
+- Nếu lọc bằng `consignmentCode` của yêu cầu **không thuộc** Customer → trả `403`.
+- `saleNote` lấy từ ghi chú của yêu cầu ký gửi; `items` là danh sách sản phẩm khai báo của yêu cầu (tên, số lượng, giá trị).
+
+**TypeScript interface:**
+
+```typescript
+interface CustomerParcelItemDto {
+  productName: string;
+  quantity: number;
+  declaredValue?: number | null;
+}
+
+interface CustomerParcelDto {
+  parcelId: string;
+  packageCode: string;
+  consignmentId?: string | null;
+  consignmentCode: string;
+  packageStatus: string;
+  actualWeight?: number | null;
+  length?: number | null;
+  width?: number | null;
+  height?: number | null;
+  volumetricWeight?: number | null;
+  chargeableWeight?: number | null;
+  checkInTime?: string | null;
+  putAwayTime?: string | null;
+  saleNote?: string | null;
+  items: CustomerParcelItemDto[];
 }
 ```
 
@@ -5400,7 +5400,7 @@ export type UpdateDeliveryAddressRequest = CreateDeliveryAddressRequest;
 
 ---
 
-## 26. Lưu ý tích hợp FE
+## 40. Lưu ý tích hợp FE
 
 - Backend đã cấu hình CORS. Whitelisted origins bao gồm: `https://vcl.zushin.io.vn`, `https://vietnamlogictic.vercel.app`, `https://vcl-forntend.vercel.app`, `https://logictic.site`, `http://logictic.site`, `https://www.logictic.site`, `http://www.logictic.site`, và `localhost`.
 - Email OTP đặt lại mật khẩu có thể bị Gmail đưa vào Spam trong môi trường test.
@@ -5457,9 +5457,9 @@ export type UpdateDeliveryAddressRequest = CreateDeliveryAddressRequest;
 | `/customer/chat/{id}` | `GET /api/conversations/{id}`, `POST /api/conversations/{id}/messages`, `PUT /api/conversations/{id}/read` |
 | `/sales/chat` | `GET /api/conversations` |
 
-## 26. AI Assistant Endpoints
+## 41. AI Assistant Endpoints
 
-### 26.1 AI hỗ trợ Sales tra cứu tình trạng đơn hàng
+### 41.1. AI hỗ trợ Sales tra cứu tình trạng đơn hàng
 
 Sales/Staff gửi câu hỏi tự nhiên để AI tổng hợp và trả lời tình trạng đơn ký gửi, đơn mua hộ, kiện hàng, kho, vận chuyển và thanh toán mà không làm thay đổi dữ liệu đơn.
 
@@ -5529,11 +5529,11 @@ interface SalesOrderStatusQueryResponse {
 
 ---
 
-## 35. Tồn kho & Quy tắc Xuất kho (Zombie Inventory Prevention)
+## 42. Tồn kho & Quy tắc Xuất kho (Zombie Inventory Prevention)
 
 Hệ thống quản lý tồn kho chặt chẽ, loại bỏ hoàn toàn các dòng tồn kho rác/zombie (`AVAILABLE` với số lượng `= 0` hoặc trùng lặp `parcelId + orderItemId`).
 
-### 35.1. Lấy danh sách hàng tồn kho
+### 42.1. Lấy danh sách hàng tồn kho
 
 ```http
 GET /api/inventories?status=AVAILABLE&customerId={customerId}
@@ -5564,7 +5564,7 @@ Authorization: Bearer {token}
 }
 ```
 
-### 35.2. Quy tắc xuất kho (WRO & Picking List)
+### 42.2. Quy tắc xuất kho (WRO & Picking List)
 
 1. **Khởi tạo WRO (`POST /api/warehouse-release-requests`)**:
    - Chỉ cho phép xuất từ tồn kho `AVAILABLE` có `quantity > 0`.
@@ -5573,9 +5573,9 @@ Authorization: Bearer {token}
 
 ---
 
-## 36. Chuẩn hóa Kho Destination & Phân quyền Vị trí Kho
+## 43. Chuẩn hóa Kho Destination & Phân quyền Vị trí Kho
 
-### 36.1. Ràng buộc Kho Destination đối với Phiếu Tiếp Nhận (Receiving Note)
+### 43.1. Ràng buộc Kho Destination đối với Phiếu Tiếp Nhận (Receiving Note)
 
 ```http
 POST /api/warehouse-receiving-notes
@@ -5588,7 +5588,7 @@ Content-Type: application/json
 - Hệ thống hỗ trợ so sánh `WarehouseType` không phân biệt hoa thường (`DESTINATION`, `Destination`, `destination`).
 - Khi khởi tạo/cập nhật kho mới, `WarehouseType` được tự động chuẩn hóa về định dạng in hoa thống nhất (`ORIGIN`, `DESTINATION`, `DOMESTIC`).
 
-### 36.2. Phân quyền Quản lý Vị trí Kho (Zone / Shelf / Bin)
+### 43.2. Phân quyền Quản lý Vị trí Kho (Zone / Shelf / Bin)
 
 - **Xem danh sách vị trí kho** (`GET /api/warehouses/{warehouseId}/locations`): Mở cho tất cả các role hệ thống (`Admin`, `Sale`, `Staff`, `WarehouseStaff`, `OperationsManager`, `Operations`).
 - **Tạo mới vị trí kho** (`POST /api/warehouses/{warehouseId}/locations`): Mở quyền cho `Admin`, `OperationsManager`, `Operations`, `WarehouseStaff`, `Staff`.
@@ -5596,11 +5596,11 @@ Content-Type: application/json
 - **Xóa vị trí kho** (`DELETE /api/warehouse-locations/{locationId}`): Giới hạn cho `Admin`, `OperationsManager`, `Operations`.
 - **Quản lý Master Warehouse** (`POST/PUT/DELETE /api/warehouses`): Giữ nguyên phân quyền nghiêm ngặt chỉ dành riêng cho `Admin`.
 
-## 37. Tích hợp Thanh toán (PayOS & SePay)
+## 44. Tích hợp Thanh toán (PayOS & SePay)
 
 Hệ thống hỗ trợ song song hai phương thức thanh toán: **PayOS** và **SePay** (Thanh toán qua VietQR tự động nhận diện giao dịch).
 
-### 37.1. Cập nhật Request DTOs cho phép chọn Phương thức thanh toán
+### 44.1. Cập nhật Request DTOs cho phép chọn Phương thức thanh toán
 
 Khi gọi các API thanh toán dưới đây, FE có thể gửi thêm trường `paymentMethod` trong body. Nếu để trống hoặc null, mặc định hệ thống sẽ sử dụng `PAYOS`.
 
@@ -5629,7 +5629,7 @@ export interface CreateFinalPaymentRequest {
 }
 ```
 
-### 37.2. Tra cứu trạng thái thanh toán (Polling)
+### 44.2. Tra cứu trạng thái thanh toán (Polling)
 
 Dùng để FE hoặc trang checkout tự động kiểm tra trạng thái thanh toán theo thời gian thực (định kỳ 3-5 giây).
 
@@ -5647,7 +5647,7 @@ GET /api/payments/status/{orderCode}
 }
 ```
 
-### 37.3. Nhận Webhook từ SePay
+### 44.3. Nhận Webhook từ SePay
 
 Endpoint nhận sự kiện chuyển tiền thành công từ hệ thống SePay.
 
@@ -5682,7 +5682,7 @@ interface SePayWebhookDto {
 }
 ```
 
-### 37.4. Trang Checkout SePay tự động
+### 44.4. Trang Checkout SePay tự động
 
 Đường dẫn checkout trả về khi chọn `paymentMethod: "SEPAY"` sẽ có dạng `/api/payments/sepay/checkout/{orderCode}` (được định tuyến thông qua máy chủ Backend). Trang này hiển thị mã VietQR đẹp mắt, hỗ trợ copy nhanh số tài khoản/số tiền/nội dung chuyển khoản và tự động redirect về `returnUrl` ngay sau khi thanh toán thành công.
 
