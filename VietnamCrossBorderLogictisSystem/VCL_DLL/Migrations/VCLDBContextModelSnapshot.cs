@@ -1363,13 +1363,13 @@ namespace VCL_DLL.Migrations
 
                     b.Property<string>("CalculationType")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
                         .HasColumnName("calculation_type");
 
                     b.Property<string>("ConditionType")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
                         .HasColumnName("condition_type");
 
                     b.Property<string>("ConditionValue")
@@ -1384,8 +1384,8 @@ namespace VCL_DLL.Migrations
                         .HasDefaultValueSql("(getutcdate())");
 
                     b.Property<string>("Description")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
                         .HasColumnName("description");
 
                     b.Property<bool>("IsRequired")
@@ -1404,20 +1404,20 @@ namespace VCL_DLL.Migrations
 
                     b.Property<string>("RuleCode")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
                         .HasColumnName("rule_code");
 
                     b.Property<string>("RuleName")
                         .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)")
                         .HasColumnName("rule_name");
 
                     b.Property<string>("RuleType")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
                         .HasColumnName("rule_type");
 
                     b.Property<Guid?>("ServicePricingId")
@@ -1450,6 +1450,21 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("ServicePricingId");
 
                     b.ToTable("PRICING_RULES", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("7f8dcbac-c9fb-4c25-802b-dacc74751a7b"),
+                            CalculationType = "FIXED",
+                            CreatedAt = new DateTime(2026, 7, 9, 5, 19, 29, 0, DateTimeKind.Utc),
+                            Description = "Phụ phí đóng lại kiện carton",
+                            IsRequired = false,
+                            RuleCode = "CARTON_REPACK",
+                            RuleName = "Phí đóng lại kiện carton",
+                            RuleType = "PACKING",
+                            Status = "ACTIVE",
+                            Value = 25500m
+                        });
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.ProductType", b =>
