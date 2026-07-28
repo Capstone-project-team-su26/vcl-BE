@@ -93,6 +93,25 @@ namespace VCL_BLL.Services
                 hasChanges = true;
             }
 
+            // 3. Phí đóng lại kiện carton
+            if (!existingRules.Any(r => string.Equals(r.RuleCode, "CARTON_REPACK", StringComparison.OrdinalIgnoreCase)))
+            {
+                await pricingRepo.AddAsync(new PricingRule
+                {
+                    Id = Guid.NewGuid(),
+                    RuleName = "Phí đóng lại kiện carton",
+                    RuleCode = "CARTON_REPACK",
+                    RuleType = "PACKING",
+                    CalculationType = "FIXED",
+                    Value = 25500m,
+                    IsRequired = false,
+                    Status = "ACTIVE",
+                    Description = "Phụ phí đóng lại kiện carton",
+                    CreatedAt = DateTime.UtcNow
+                });
+                hasChanges = true;
+            }
+
             if (hasChanges)
             {
                 await _unitOfWork.SaveChangesAsync();

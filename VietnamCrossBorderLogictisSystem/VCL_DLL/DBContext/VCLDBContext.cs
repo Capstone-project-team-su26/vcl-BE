@@ -2166,6 +2166,20 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
 
             entity.HasIndex(e => e.RuleCode).IsUnique().HasDatabaseName("UQ_PRICING_RULES_RULE_CODE");
+
+            entity.HasData(new PricingRule
+            {
+                Id = new Guid("7f8dcbac-c9fb-4c25-802b-dacc74751a7b"),
+                RuleName = "Phí đóng lại kiện carton",
+                RuleCode = "CARTON_REPACK",
+                RuleType = "PACKING",
+                CalculationType = "FIXED",
+                Value = 25500m,
+                IsRequired = false,
+                Status = "ACTIVE",
+                Description = "Phụ phí đóng lại kiện carton",
+                CreatedAt = new DateTime(2026, 7, 9, 5, 19, 29, DateTimeKind.Utc)
+            });
         });
 
         OnModelCreatingPartial(modelBuilder);

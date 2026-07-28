@@ -110,7 +110,7 @@ namespace VCL_BLL.Services
             }
 
             if (requiresInspection) AddMatches(r => MatchType(r, "INSPECTION"));
-            if (requiresPacking) AddMatches(r => MatchType(r, "PACKING", "REPACK"));
+            if (requiresPacking) AddMatches(r => MatchType(r, "PACKING", "REPACK", "CARTON"));
             if (requiresWoodenCrate) AddMatches(r => MatchType(r, "WOODEN_BOX", "WOODEN", "CRATE"));
             if (requiresInsurance) AddMatches(r => MatchType(r, "INSURANCE"));
         }
