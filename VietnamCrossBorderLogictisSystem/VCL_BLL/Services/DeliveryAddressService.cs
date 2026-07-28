@@ -30,6 +30,25 @@ namespace VCL_BLL.Services
                 .ToList();
         }
 
+        /// <summary>
+        /// Nhân viên (Sale/Admin) xem sổ địa chỉ của một khách hàng cụ thể — dùng khi cần
+        /// lấy địa chỉ bàn giao cho đơn vị vận chuyển thứ 3 (GHN/GHTK...).
+        /// </summary>
+        public async Task<IEnumerable<DeliveryAddressResponse>> GetAddressesByCustomerIdAsync(Guid customerId)
+        {
+            var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+            var customer = customers.FirstOrDefault(c => c.Id == customerId);
+            if (customer == null)
+                throw new NotFoundException($"Không tìm thấy khách hàng với ID {customerId}");
+
+            var all = await _unitOfWork.Repository<DeliveryAddress>().GetAllAsync();
+            return all
+                .Where(a => a.CustomerId == customer.Id)
+                .OrderByDescending(a => a.CreatedAt)
+                .Select(MapToResponse)
+                .ToList();
+        }
+
         public async Task<DeliveryAddressResponse> CreateAsync(Guid userId, CreateDeliveryAddressRequest request)
         {
             var customer = await GetCustomerOrThrowAsync(userId);

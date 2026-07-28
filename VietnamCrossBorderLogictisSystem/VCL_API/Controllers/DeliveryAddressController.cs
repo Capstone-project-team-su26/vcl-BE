@@ -11,7 +11,7 @@ namespace VCL_API.Controllers
 {
     [Route("api/delivery-addresses")]
     [ApiController]
-    [Authorize(Roles = "Customer")]
+    [Authorize]
     public class DeliveryAddressController : ControllerBase
     {
         private readonly IDeliveryAddressService _service;
@@ -30,6 +30,7 @@ namespace VCL_API.Controllers
 
         /// <summary>Lấy sổ địa chỉ nhận hàng của khách đang đăng nhập.</summary>
         [HttpGet]
+        [Authorize(Roles = "Customer")]
         public async Task<IActionResult> GetMyAddresses()
         {
             if (!TryGetUserId(out var userId))
@@ -45,8 +46,34 @@ namespace VCL_API.Controllers
             }
         }
 
+        /// <summary>
+        /// Nhân viên xem sổ địa chỉ nhận hàng của một khách hàng cụ thể.
+        /// Dùng khi cần lấy địa chỉ để bàn giao cho đơn vị vận chuyển thứ 3 (GHN/GHTK...).
+        /// </summary>
+        /// <param name="customerId">ID khách hàng (lấy từ chi tiết đơn hoặc danh sách khách).</param>
+        /// <response code="200">Lấy danh sách địa chỉ thành công</response>
+        /// <response code="403">Không phải nhân viên nội bộ</response>
+        /// <response code="404">Không tìm thấy khách hàng</response>
+        [HttpGet("~/api/customers/{customerId}/delivery-addresses")]
+        // Nhân viên kho dùng chung một role "WarehouseStaff"; kho nào thì phân biệt bằng
+        // User.Region, không tách thành role riêng.
+        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager")]
+        public async Task<IActionResult> GetByCustomerId(Guid customerId)
+        {
+            try
+            {
+                var data = await _service.GetAddressesByCustomerIdAsync(customerId);
+                return Ok(new { message = "Lấy sổ địa chỉ của khách hàng thành công.", data });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
         /// <summary>Thêm địa chỉ nhận hàng mới.</summary>
         [HttpPost]
+        [Authorize(Roles = "Customer")]
         public async Task<IActionResult> Create([FromBody] CreateDeliveryAddressRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -65,6 +92,7 @@ namespace VCL_API.Controllers
 
         /// <summary>Cập nhật một địa chỉ nhận hàng.</summary>
         [HttpPut("{id}")]
+        [Authorize(Roles = "Customer")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDeliveryAddressRequest request)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -87,6 +115,7 @@ namespace VCL_API.Controllers
 
         /// <summary>Xóa một địa chỉ nhận hàng.</summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Customer")]
         public async Task<IActionResult> Delete(Guid id)
         {
             if (!TryGetUserId(out var userId))
