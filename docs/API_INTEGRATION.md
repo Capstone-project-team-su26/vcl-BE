@@ -91,6 +91,11 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/service-pricings` | Admin | Thêm cấu hình bảng giá dịch vụ mới |
 | `PUT` | `/api/service-pricings/{id}` | Admin | Cập nhật cấu hình bảng giá dịch vụ |
 | `DELETE` | `/api/service-pricings/{id}` | Admin | Xóa cấu hình bảng giá dịch vụ |
+| `GET` | `/api/additional-service-fees` | Public | Xem danh sách cấu hình phí dịch vụ bổ sung (`?activeOnly=true|false`) |
+| `GET` | `/api/additional-service-fees/{id}` | Public | Lấy chi tiết một loại phí dịch vụ bổ sung |
+| `POST` | `/api/additional-service-fees` | Admin | Tạo mới một loại phí dịch vụ bổ sung |
+| `PUT` | `/api/additional-service-fees/{id}` | Admin | Cập nhật thông tin/trạng thái phí dịch vụ bổ sung |
+| `DELETE` | `/api/additional-service-fees/{id}` | Admin | Xóa loại phí dịch vụ bổ sung |
 | `POST` | `/api/parcels/check-in` | Staff/WarehouseStaff | Check-in kiện hàng thực tế bằng mã gửi hàng |
 | `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
