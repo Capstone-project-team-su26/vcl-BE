@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_DLL.Models;
 
 namespace VCL_BLL.Services
@@ -117,32 +118,8 @@ namespace VCL_BLL.Services
         private async Task<Customer> ResolveCustomerForStaffAsync(CreateConsignmentByStaffRequest request)
         {
             var allCustomers = await _unitOfWork.Repository<Customer>().GetAllAsync();
-
-            if (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty)
-            {
-                var byId = allCustomers.FirstOrDefault(c => c.Id == request.CustomerId.Value);
-                if (byId == null)
-                    throw new NotFoundException($"Không tìm thấy khách hàng với ID {request.CustomerId.Value}");
-                return byId;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
-            {
-                var byPhone = allCustomers.FirstOrDefault(c => string.Equals(c.Phone, request.CustomerPhone.Trim(), StringComparison.OrdinalIgnoreCase));
-                if (byPhone == null)
-                    throw new NotFoundException($"Không tìm thấy khách hàng với số điện thoại {request.CustomerPhone}");
-                return byPhone;
-            }
-
-            if (!string.IsNullOrWhiteSpace(request.CustomerEmail))
-            {
-                var byEmail = allCustomers.FirstOrDefault(c => string.Equals(c.Email, request.CustomerEmail.Trim(), StringComparison.OrdinalIgnoreCase));
-                if (byEmail == null)
-                    throw new NotFoundException($"Không tìm thấy khách hàng với email {request.CustomerEmail}");
-                return byEmail;
-            }
-
-            throw new ArgumentException("Vui lòng chọn khách hàng có sẵn hoặc nhập email/số điện thoại để tìm kiếm.");
+            return CustomerLookupHelper.ResolveForStaff(
+                allCustomers, request.CustomerId, request.CustomerPhone, request.CustomerEmail);
         }
 
         /// <summary>
