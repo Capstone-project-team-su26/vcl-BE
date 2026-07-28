@@ -76,6 +76,12 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/orders/consignments/{orderId}` | Authenticated | Xem chi tiết một yêu cầu ký gửi |
 | `PUT` | `/api/orders/consignments/{orderId}/cancel` | Authenticated | Customer hủy yêu cầu ký gửi |
 | `POST` | `/api/staff/consignments` | Sales | Sales tạo yêu cầu ký gửi thay cho Customer |
+| `POST` | `/api/staff/purchase-requests` | Sales | Sales tạo yêu cầu mua hộ thay cho Customer |
+| `GET` | `/api/delivery-addresses` | Customer | Lấy sổ địa chỉ nhận hàng của khách đang đăng nhập |
+| `POST` | `/api/delivery-addresses` | Customer | Thêm địa chỉ nhận hàng mới |
+| `PUT` | `/api/delivery-addresses/{id}` | Customer | Cập nhật một địa chỉ nhận hàng |
+| `DELETE` | `/api/delivery-addresses/{id}` | Customer | Xóa một địa chỉ nhận hàng |
+| `GET` | `/api/customers/{customerId}/delivery-addresses` | Staff | Nhân viên xem sổ địa chỉ của một khách hàng |
 | `GET` | `/api/restricted-items` | Authenticated | Xem danh sách mặt hàng cấm/hạn chế |
 | `GET` | `/api/restricted-items/{id}` | Authenticated | Lấy chi tiết mặt hàng cấm/hạn chế |
 | `POST` | `/api/restricted-items` | Admin | Thêm mặt hàng cấm/hạn chế mới |
@@ -1406,6 +1412,10 @@ Authorization: Bearer {salesToken}
   "receiverPhone": "0987654321",
   "receiverAddress": "123 Nguyen Trai, Q5, HCMC",
   "pricingRuleIds": ["bf39c7ce-9fd7-4142-a260-016c27fd489f"],
+  "requiresInspection": true,
+  "requiresPacking": false,
+  "requiresWoodenCrate": true,
+  "requiresInsurance": false,
   "note": "Khách ký gửi tại quầy",
   "items": [
     {
@@ -1417,7 +1427,7 @@ Authorization: Bearer {salesToken}
       "height": 20,
       "length": 10,
       "declaredValue": 1000000,
-      "referenceUrl": "http://taobao.com/item/123",
+      "referenceUrls": ["http://taobao.com/item/123"],
       "domesticTrackingCode": "SF123456789"
     }
   ]
@@ -1433,9 +1443,17 @@ Authorization: Bearer {salesToken}
 | `shippingOption` | Bắt buộc. | Phương thức vận chuyển (khớp với ServicePricing, ví dụ: `Air - Express`, `Sea - Consolidation`) |
 | `items` | Bắt buộc. Tối thiểu 1 phần tử. | Danh sách hàng hóa ký gửi |
 | `pricingRuleIds` | Không bắt buộc. | Danh sách ID quy tắc giá / dịch vụ phụ chung cho đơn hàng (ví dụ: kiểm hàng, đóng gỗ...) |
+| `requiresInspection` | Không bắt buộc, mặc định `false`. | Khách yêu cầu kiểm hàng — BE tự map sang `PricingRule` loại `INSPECTION` |
+| `requiresPacking` | Không bắt buộc, mặc định `false`. | Khách yêu cầu đóng gói lại (rule `PACKING`) |
+| `requiresWoodenCrate` | Không bắt buộc, mặc định `false`. | Khách yêu cầu đóng thùng gỗ (rule `WOODEN_BOX`) |
+| `requiresInsurance` | Không bắt buộc, mặc định `false`. | Khách đăng ký bảo hiểm (rule `INSURANCE`) |
 | `items[].productName` | Bắt buộc. | Tên mặt hàng ký gửi |
 | `items[].productType` | Bắt buộc. | Loại mặt hàng (ví dụ: `Quần áo`, `Điện tử`) |
 | `items[].quantity` | Bắt buộc. Phải > 0. | Số lượng mặt hàng |
+
+> **Chọn dịch vụ phụ bằng cách nào?** FE gửi `pricingRuleIds` (ID cụ thể) hoặc 4 cờ boolean, hoặc cả hai —
+> BE hợp nhất lại và loại trùng. Cờ boolean tiện khi màn hình chỉ có checkbox; `pricingRuleIds` chính xác hơn
+> khi cần chọn đúng một cấu hình cụ thể. Endpoint khách tự tạo (`POST /api/orders/consignments`) nhận cùng bộ field này.
 
 ### 19.1 Response thành công
 
@@ -1913,7 +1931,8 @@ export interface ConsignmentItemRequest {
   height?: number;
   length?: number;
   declaredValue?: number;
-  referenceUrl?: string;
+  /** Danh sách URL ảnh (upload qua POST /api/uploads/images). BE gộp lại khi lưu và tách ra khi trả về. */
+  referenceUrls?: string[];
   domesticTrackingCode?: string;
   packageConfigurationId?: string;
 }
@@ -1928,6 +1947,11 @@ export interface CreateConsignmentByStaffRequest {
   receiverPhone?: string;
   receiverAddress?: string;
   pricingRuleIds?: string[];
+  /** Cờ dịch vụ phụ — dùng thay cho pricingRuleIds, BE tự map sang PricingRule đang active. */
+  requiresInspection?: boolean;
+  requiresPacking?: boolean;
+  requiresWoodenCrate?: boolean;
+  requiresInsurance?: boolean;
   note?: string;
   items: ConsignmentItemRequest[];
 }
@@ -3471,22 +3495,24 @@ Content-Type: application/json
 
 {
   "route": "TQ-VN",
+  "shippingOption": "Standard",
   "receiverName": "Nguyễn Văn A",
   "receiverPhone": "0901234567",
   "receiverAddress": "123 Lê Lợi, Q1, TP.HCM",
-  "requiresInspection": true,
-  "requiresQuantityCheck": true,
+  "requiresPacking": true,
+  "requiresWoodenCrate": false,
+  "requiresInsurance": false,
   "generalNote": "Mua giúp mình đợt sale, ưu tiên shop uy tín",
   "items": [
     {
       "productLink": "https://item.taobao.com/item.htm?id=123456",
       "sourceWebsite": "Taobao",
-      "productType": "Electronics",
+      "productType": "Quần áo",
       "productName": "Áo khoác nam",
       "quantity": 2,
       "attributes": "Size L, màu đen",
       "note": "Chọn loại vải dày",
-      "imageUrl": "https://res.cloudinary.com/.../ref.jpg"
+      "imageUrls": ["https://res.cloudinary.com/.../ref.jpg"]
     }
   ]
 }
@@ -3496,22 +3522,27 @@ Content-Type: application/json
 
 | Trường | Bắt buộc | Mô tả |
 |---|---|---|
-| `route` | Không | Tuyến hàng (dropdown `/api/orders/consignments/routes`) |
+| `route` | **Có** | Tuyến hàng (dropdown `/api/orders/consignments/routes`) |
+| `shippingOption` | **Có** | Phương án vận chuyển (dropdown `/api/orders/consignments/shipping-options?route=...`) |
 | `receiverName` | Không | Tên người nhận |
 | `receiverPhone` | Không | SĐT người nhận |
 | `receiverAddress` | Không | Địa chỉ nhận hàng |
-| `requiresInspection` | Không | Yêu cầu kiểm tra hàng (mặc định `false`) |
-| `requiresQuantityCheck` | Không | Yêu cầu kiểm tra số lượng (mặc định `false`) |
+| `pricingRuleIds` | Không | ID cấu hình phụ phí khách chọn — hợp nhất với 3 cờ boolean bên dưới |
+| `requiresPacking` | Không | Yêu cầu đóng gói lại (mặc định `false`) |
+| `requiresWoodenCrate` | Không | Yêu cầu đóng thùng gỗ (mặc định `false`) |
+| `requiresInsurance` | Không | Đăng ký bảo hiểm (mặc định `false`) |
 | `generalNote` | Không | Ghi chú mua hộ chung cho cả yêu cầu |
 | `items` | **Có** | Danh sách sản phẩm, tối thiểu 1 phần tử |
 | `items[].productLink` | **Có** | Link sản phẩm cần mua |
 | `items[].sourceWebsite` | Không | Website/sàn nguồn (Taobao, 1688, Tmall...) |
-| `items[].productType` | Không | Loại hàng (dropdown `/api/product-types`) |
+| `items[].productType` | **Có** | Loại hàng (dropdown `/api/product-types`) |
 | `items[].productName` | Không | Tên sản phẩm (nếu có) |
 | `items[].quantity` | **Có** | Số lượng, phải `>= 1` |
 | `items[].attributes` | Không | Thuộc tính như size, màu, mẫu mã |
 | `items[].note` | Không | Ghi chú riêng cho từng sản phẩm |
-| `items[].imageUrl` | Không | Hình ảnh tham khảo |
+| `items[].imageUrls` | Không | Danh sách URL ảnh tham khảo (upload qua `POST /api/uploads/images`) |
+
+> Mua hộ **không có** dịch vụ kiểm hàng — cờ `requiresInspection` chỉ tồn tại ở luồng ký gửi.
 
 **Response thành công (201 Created):**
 
@@ -3569,23 +3600,34 @@ Content-Type: application/json
 interface CreatePurchaseRequestItemDto {
   productLink: string;
   sourceWebsite?: string | null;
-  productType?: string | null;
+  productType: string;
   productName?: string | null;
   quantity: number;
   attributes?: string | null;
   note?: string | null;
-  imageUrl?: string | null;
+  imageUrls?: string[];
 }
 
 interface CreatePurchaseRequestDto {
-  route?: string | null;
+  route: string;
+  shippingOption: string;
   receiverName?: string | null;
   receiverPhone?: string | null;
   receiverAddress?: string | null;
-  requiresInspection: boolean;
-  requiresQuantityCheck: boolean;
+  /** ID cấu hình phụ phí khách chọn — hợp nhất với 3 cờ boolean bên dưới, dùng cách nào cũng được. */
+  pricingRuleIds?: string[];
+  requiresPacking?: boolean;
+  requiresWoodenCrate?: boolean;
+  requiresInsurance?: boolean;
   generalNote?: string | null;
   items: CreatePurchaseRequestItemDto[];
+}
+
+/** POST /api/staff/purchase-requests — Sales tạo hộ khách (xem mục 29.5). */
+interface CreatePurchaseRequestByStaffDto extends CreatePurchaseRequestDto {
+  customerId?: string;
+  customerPhone?: string;
+  customerEmail?: string;
 }
 
 interface PurchaseRequestItemResponseDto {
@@ -4000,6 +4042,73 @@ interface PurchaseQuotationResponseDto {
   additionalFees: PurchaseQuotationAdditionalFeeResponseDto[];
 }
 ```
+
+---
+
+### 29.5. Sales tạo yêu cầu mua hộ thay cho khách hàng
+
+Đối xứng với `POST /api/staff/consignments` bên ký gửi — dùng khi khách đặt mua hộ qua điện thoại, chat hoặc tại quầy.
+
+```http
+POST /api/staff/purchase-requests
+Authorization: Bearer {salesToken}
+Content-Type: application/json
+```
+
+Body **giống hệt** `POST /api/purchase-requests` mà khách tự dùng, chỉ thêm phần chỉ định khách hàng:
+
+```json
+{
+  "customerEmail": "customer@example.com",
+  "route": "CN-VN",
+  "shippingOption": "Standard",
+  "receiverName": "Nguyễn Văn A",
+  "receiverPhone": "0901234567",
+  "receiverAddress": "123 Lê Lợi, Q1, TP.HCM",
+  "items": [
+    {
+      "productLink": "https://item.taobao.com/item.htm?id=123456",
+      "sourceWebsite": "Taobao",
+      "productType": "Phụ kiện",
+      "productName": "Tai nghe bluetooth",
+      "quantity": 1
+    }
+  ]
+}
+```
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `customerId` | Chọn 1 trong 3 | ID khách hàng có sẵn trong hệ thống |
+| `customerPhone` | Chọn 1 trong 3 | SĐT khách hàng để tra cứu |
+| `customerEmail` | Chọn 1 trong 3 | Email khách hàng để tra cứu |
+
+Thứ tự ưu tiên tra cứu: `customerId` → `customerPhone` → `customerEmail`. Giống hệt endpoint ký gửi thay khách.
+
+**Hành vi cần lưu ý:**
+
+- Chỉ role `Sale` gọi được. Các role khác (kể cả `Admin`, `WarehouseStaff`) nhận `403`.
+- Yêu cầu tạo ra **thuộc về khách hàng** được chỉ định: `customerId` và `userId` trong response là của khách, không phải của Sales. Khách nhìn thấy yêu cầu này trong danh sách của mình.
+- Trạng thái ban đầu là `PENDING_REVIEW` — **giống hệt khi khách tự tạo**, không tự động duyệt.
+- Bảng `PURCHASE_REQUESTS` chưa có cột lưu người tạo hộ, nên BE đánh dấu bằng chuỗi `"Đơn do nhân viên lên hộ khách"` nối vào cuối `generalNote`.
+- Endpoint khách tự tạo (`POST /api/purchase-requests`) **không thay đổi**.
+
+**Response `201 Created`:** cùng cấu trúc với endpoint khách tự tạo, chỉ khác `message`:
+
+```json
+{
+  "message": "Tạo yêu cầu mua hộ thay khách hàng thành công.",
+  "data": { "purchaseRequestId": "...", "purchaseCode": "PUR-...", "status": "PENDING_REVIEW" }
+}
+```
+
+**Response lỗi:**
+
+| Mã | Trường hợp |
+|---|---|
+| `400` | Không truyền `customerId`/`customerPhone`/`customerEmail`, hoặc dữ liệu sản phẩm không hợp lệ |
+| `403` | Token không phải role `Sale` |
+| `404` | Không tìm thấy khách hàng theo thông tin tra cứu |
 
 ---
 
@@ -5186,6 +5295,107 @@ interface WarehouseLayoutStatusDto {
   parcelIds: string[] | null;
   inventoryIds: string[] | null;
 }
+```
+
+---
+
+## 39. Sổ địa chỉ nhận hàng (Delivery Address)
+
+Danh bạ địa chỉ nhận hàng của khách, dùng để chọn nhanh khi lên đơn thay vì gõ tay mỗi lần.
+Địa chỉ dùng cho một đơn cụ thể được lưu thẳng trên đơn đó (`receiverName` / `receiverPhone` / `receiverAddress`),
+**độc lập** với sổ địa chỉ này — sửa sổ địa chỉ không làm thay đổi các đơn đã tạo.
+
+### 39.1. Khách quản lý sổ địa chỉ của mình
+
+Bốn endpoint dưới đây chỉ dành cho role `Customer`; dữ liệu luôn được giới hạn theo tài khoản đang đăng nhập.
+Role khác gọi vào sẽ nhận `403`.
+
+```http
+GET    /api/delivery-addresses          # Lấy sổ địa chỉ của khách đang đăng nhập
+POST   /api/delivery-addresses          # Thêm địa chỉ mới
+PUT    /api/delivery-addresses/{id}     # Cập nhật một địa chỉ
+DELETE /api/delivery-addresses/{id}     # Xóa một địa chỉ
+Authorization: Bearer {customerToken}
+```
+
+Body của `POST` và `PUT` chỉ có duy nhất một trường:
+
+```json
+{ "address": "123 Lê Lợi, Phường Bến Nghé, Quận 1, TP.HCM" }
+```
+
+> Bảng DB vẫn còn cột `receiver_name` / `receiver_phone` / `is_default` nhưng API **không nhận** các trường này nữa
+> (theo thống nhất với FE) — BE ghi chuỗi rỗng vào đó.
+
+`GET` trả về mảng, sắp xếp mới nhất trước:
+
+```json
+[
+  {
+    "id": "2fbd271f-f08e-443f-8c75-1b802927450e",
+    "customerId": "9e0ca019-231a-4c3f-9da1-c2faf3039d8b",
+    "address": "123 Lê Lợi, Q1, TP.HCM",
+    "createdAt": "2026-07-08T12:53:00.256Z"
+  }
+]
+```
+
+`PUT` / `DELETE` trả `404` nếu địa chỉ không tồn tại **hoặc không thuộc về khách đang đăng nhập**.
+
+### 39.2. Nhân viên xem sổ địa chỉ của một khách hàng
+
+Dùng khi cần lấy địa chỉ giao cho đơn vị vận chuyển thứ 3 (GHN/GHTK...), hoặc để Sales chọn địa chỉ khi lên đơn hộ khách.
+
+```http
+GET /api/customers/{customerId}/delivery-addresses
+Authorization: Bearer {staffToken}
+```
+
+| | |
+|---|---|
+| **Role được phép** | `Admin`, `Sale`, `WarehouseStaff`, `OperationsManager` |
+| **`customerId` lấy ở đâu** | Field `customerId` trong response tạo ký gửi / mua hộ, hoặc trong chi tiết đơn |
+
+Khác với mục 39.1, endpoint này bọc kết quả trong `message` + `data`:
+
+```json
+{
+  "message": "Lấy sổ địa chỉ của khách hàng thành công.",
+  "data": [
+    {
+      "id": "2fbd271f-f08e-443f-8c75-1b802927450e",
+      "customerId": "9e0ca019-231a-4c3f-9da1-c2faf3039d8b",
+      "address": "123 Lê Lợi, Q1, TP.HCM",
+      "createdAt": "2026-07-08T12:53:00.256Z"
+    }
+  ]
+}
+```
+
+| Mã | Trường hợp |
+|---|---|
+| `401` | Thiếu token |
+| `403` | Token là `Customer`, hoặc role nhân viên nằm ngoài danh sách trên |
+| `404` | Không tìm thấy khách hàng theo `customerId` |
+
+Nhân viên **chỉ đọc được**, không thêm/sửa/xóa sổ địa chỉ của khách.
+
+```typescript
+export interface DeliveryAddressResponse {
+  id: string;
+  customerId: string;
+  address: string;
+  createdAt: string;
+}
+
+export interface CreateDeliveryAddressRequest {
+  address: string;
+}
+
+export type UpdateDeliveryAddressRequest = CreateDeliveryAddressRequest;
+
+// GET /api/delivery-addresses          -> DeliveryAddressResponse[]
+// GET /api/customers/{id}/delivery-addresses -> { message: string; data: DeliveryAddressResponse[] }
 ```
 
 ---
