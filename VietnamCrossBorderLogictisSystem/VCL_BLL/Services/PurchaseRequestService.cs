@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
@@ -47,6 +48,40 @@ namespace VCL_BLL.Services
                 throw new UnauthorizedAccessException("Không tìm thấy thông tin khách hàng tương ứng với tài khoản.");
             }
 
+            return await CreateForCustomerAsync(customer, request, createdByStaff: false);
+        }
+
+        /// <summary>
+        /// Sale tạo yêu cầu mua hộ thay cho khách hàng (đối xứng với luồng ký gửi
+        /// POST /api/staff/consignments). Đơn tạo ra thuộc về khách được chỉ định và
+        /// đi theo đúng trạng thái ban đầu như khi khách tự tạo.
+        /// </summary>
+        public async Task<PurchaseRequestResponseDto> CreatePurchaseRequestByStaffAsync(
+            Guid staffUserId, CreatePurchaseRequestByStaffDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Yêu cầu mua hộ không được để trống.");
+
+            var customer = await ResolveCustomerForStaffAsync(request);
+            return await CreateForCustomerAsync(customer, request, createdByStaff: true);
+        }
+
+        /// <summary>
+        /// Tìm khách hàng mà Sale tạo đơn hộ: theo ID được chọn, hoặc tra theo số điện thoại/email.
+        /// </summary>
+        private async Task<Customer> ResolveCustomerForStaffAsync(CreatePurchaseRequestByStaffDto request)
+        {
+            var allCustomers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+            return CustomerLookupHelper.ResolveForStaff(
+                allCustomers, request.CustomerId, request.CustomerPhone, request.CustomerEmail);
+        }
+
+        /// <summary>
+        /// Phần lõi dùng chung cho cả 2 luồng tạo yêu cầu mua hộ (khách tự tạo và Sale tạo hộ).
+        /// </summary>
+        private async Task<PurchaseRequestResponseDto> CreateForCustomerAsync(
+            Customer customer, CreatePurchaseRequestDto request, bool createdByStaff)
+        {
             // 3. Validate danh sách sản phẩm
             if (request.Items == null || request.Items.Count == 0)
             {
@@ -83,7 +118,8 @@ namespace VCL_BLL.Services
             var purchaseRequest = new PurchaseRequest
             {
                 Id = Guid.NewGuid(),
-                UserId = userId,
+                // Đơn luôn thuộc về tài khoản của khách, kể cả khi Sale là người lên đơn hộ.
+                UserId = customer.UserId,
                 CustomerId = customer.Id,
                 PurchaseCode = purchaseCode,
                 Route = route,
@@ -94,7 +130,11 @@ namespace VCL_BLL.Services
                 RequiresPacking = request.RequiresPacking,
                 RequiresWoodenCrate = request.RequiresWoodenCrate,
                 RequiresInsurance = request.RequiresInsurance,
-                GeneralNote = BuildGeneralNote(request),
+                // Chưa có cột CreatedById trên PURCHASE_REQUESTS nên đánh dấu vào ghi chú
+                // để biết đơn do nhân viên lên hộ.
+                GeneralNote = createdByStaff
+                    ? AppendStaffMark(BuildGeneralNote(request))
+                    : BuildGeneralNote(request),
                 Status = "PENDING_REVIEW",
                 CreatedAt = DateTime.UtcNow
             };
@@ -376,6 +416,11 @@ namespace VCL_BLL.Services
 
             return noteParts.Any() ? string.Join(". ", noteParts) : null;
         }
+
+        private const string StaffCreatedMark = "Đơn do nhân viên lên hộ khách";
+
+        private static string AppendStaffMark(string? note) =>
+            string.IsNullOrWhiteSpace(note) ? StaffCreatedMark : $"{note}. {StaffCreatedMark}";
 
         /// <summary>Sinh mã yêu cầu mua hộ không trùng với mã đã có.</summary>
         private async Task<string> GenerateUniquePurchaseCodeAsync()

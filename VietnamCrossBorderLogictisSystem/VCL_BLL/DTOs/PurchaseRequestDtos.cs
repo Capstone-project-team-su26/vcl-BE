@@ -93,6 +93,22 @@ namespace VCL_BLL.DTOs
         public List<string> ImageUrls { get; set; } = new();
     }
 
+    /// <summary>
+    /// Sale tạo yêu cầu mua hộ thay cho khách hàng. Giữ nguyên toàn bộ trường của
+    /// <see cref="CreatePurchaseRequestDto"/>, chỉ thêm phần chỉ định khách hàng.
+    /// </summary>
+    public class CreatePurchaseRequestByStaffDto : CreatePurchaseRequestDto
+    {
+        /// <summary>ID khách hàng (nếu chọn từ danh sách có sẵn).</summary>
+        public Guid? CustomerId { get; set; }
+
+        /// <summary>Số điện thoại khách hàng (để tìm kiếm khách hàng).</summary>
+        public string? CustomerPhone { get; set; }
+
+        /// <summary>Email khách hàng (để tìm kiếm khách hàng).</summary>
+        public string? CustomerEmail { get; set; }
+    }
+
     public class PurchaseRequestResponseDto
     {
         public Guid PurchaseRequestId { get; set; }
