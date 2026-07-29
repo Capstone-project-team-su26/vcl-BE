@@ -39,20 +39,16 @@ jobs:
 
             cd /root/back-end/vcl-be-deploy
 
-            # Ensure git refspec fetches all remote branches (fixes single-branch clone issue)
+            # Force fetch all remote branches directly into refs/remotes/origin/*
             git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
-            git fetch --all
+            git fetch origin "+refs/heads/*:refs/remotes/origin/*" --prune
 
             # Clean local uncommitted changes on VPS server to prevent pull conflicts
             git reset --hard HEAD
             git clean -fd
 
-            if git show-ref --verify --quiet "refs/heads/$DEPLOY_BRANCH"; then
-              git checkout "$DEPLOY_BRANCH"
-            else
-              git checkout -b "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
-            fi
-
+            # Force checkout/create branch directly from origin tracking branch
+            git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
             git reset --hard "origin/$DEPLOY_BRANCH"
 
             cd VietnamCrossBorderLogictisSystem
