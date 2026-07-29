@@ -147,17 +147,28 @@ namespace VCL_BLL.Services
                 CreatedAt = user.CreatedAt
             };
 
-            if (string.Equals(user.UserType, "Customer", StringComparison.OrdinalIgnoreCase))
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customers = await customerRepo.GetAllAsync();
+            var customer = customers.FirstOrDefault(c => c.UserId == user.Id);
+            if (customer != null)
             {
-                var customerRepo = _unitOfWork.Repository<Customer>();
-                var customers = await customerRepo.GetAllAsync();
-                var customer = customers.FirstOrDefault(c => c.UserId == user.Id);
-                if (customer != null)
+                response.CustomerCode = customer.CustomerCode;
+                response.CustomerType = customer.CustomerType;
+                response.Country = customer.Country;
+                response.Address = customer.Address;
+
+                if (string.IsNullOrWhiteSpace(response.Address))
                 {
-                    response.CustomerCode = customer.CustomerCode;
-                    response.CustomerType = customer.CustomerType;
-                    response.Country = customer.Country;
-                    response.Address = customer.Address;
+                    var deliveryAddresses = await _unitOfWork.Repository<DeliveryAddress>().GetAllAsync();
+                    var addr = deliveryAddresses
+                        .Where(a => a.CustomerId == customer.Id)
+                        .OrderByDescending(a => a.IsDefault)
+                        .ThenByDescending(a => a.CreatedAt)
+                        .FirstOrDefault();
+                    if (addr != null)
+                    {
+                        response.Address = addr.Address;
+                    }
                 }
             }
 
@@ -172,19 +183,16 @@ namespace VCL_BLL.Services
             user.Phone = request.Phone;
             _unitOfWork.Repository<User>().Update(user);
 
-            if (string.Equals(user.UserType, "Customer", StringComparison.OrdinalIgnoreCase))
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var customers = await customerRepo.GetAllAsync();
+            var customer = customers.FirstOrDefault(c => c.UserId == user.Id);
+            if (customer != null)
             {
-                var customerRepo = _unitOfWork.Repository<Customer>();
-                var customers = await customerRepo.GetAllAsync();
-                var customer = customers.FirstOrDefault(c => c.UserId == user.Id);
-                if (customer != null)
-                {
-                    customer.FullName = request.FullName;
-                    customer.Phone = request.Phone;
-                    customer.Country = request.Country;
-                    customer.Address = request.Address;
-                    customerRepo.Update(customer);
-                }
+                customer.FullName = request.FullName;
+                customer.Phone = request.Phone;
+                if (!string.IsNullOrWhiteSpace(request.Country)) customer.Country = request.Country;
+                if (!string.IsNullOrWhiteSpace(request.Address)) customer.Address = request.Address;
+                customerRepo.Update(customer);
             }
 
             await _unitOfWork.SaveChangesAsync();
