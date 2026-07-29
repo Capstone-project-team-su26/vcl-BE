@@ -30,7 +30,7 @@ namespace VCL_API.Controllers
 
         /// <summary>Lấy sổ địa chỉ nhận hàng của khách đang đăng nhập.</summary>
         [HttpGet]
-        [Authorize(Roles = "Customer")]
+        [Authorize(Roles = "Customer,Admin,Sale,WarehouseStaff,OperationsManager,Delivery,customer,sale,admin,staff")]
         public async Task<IActionResult> GetMyAddresses()
         {
             if (!TryGetUserId(out var userId))

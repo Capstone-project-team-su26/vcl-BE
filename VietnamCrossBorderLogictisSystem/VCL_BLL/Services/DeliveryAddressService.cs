@@ -21,7 +21,13 @@ namespace VCL_BLL.Services
 
         public async Task<IEnumerable<DeliveryAddressResponse>> GetMyAddressesAsync(Guid userId)
         {
-            var customer = await GetCustomerOrThrowAsync(userId);
+            var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+            var customer = customers.FirstOrDefault(c => c.UserId == userId);
+            if (customer == null)
+            {
+                return Enumerable.Empty<DeliveryAddressResponse>();
+            }
+
             var all = await _unitOfWork.Repository<DeliveryAddress>().GetAllAsync();
             return all
                 .Where(a => a.CustomerId == customer.Id)
