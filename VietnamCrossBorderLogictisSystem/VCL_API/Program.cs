@@ -18,22 +18,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
-        if (allowedOrigins != null && allowedOrigins.Length > 0 && !allowedOrigins.Contains("*"))
-        {
-            var cleanedOrigins = allowedOrigins.Select(o => o.TrimEnd('/')).ToArray();
-            policy.WithOrigins(cleanedOrigins)
-                  .AllowAnyHeader()
-                  .AllowAnyMethod()
-                  .AllowCredentials();
-        }
-        else
-        {
-            policy.SetIsOriginAllowed(origin => true)
-                  .AllowAnyHeader()
-                  .AllowAnyMethod()
-                  .AllowCredentials();
-        }
+        policy.SetIsOriginAllowed(origin => true)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 
