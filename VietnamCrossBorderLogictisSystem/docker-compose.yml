@@ -18,7 +18,7 @@ services:
 
       ConnectionStrings__DefaultConnection: "Server=72.61.114.184,14333;Database=AppDb;User Id=sa;Password=RcYw6#thU3j=RLTi93bW;TrustServerCertificate=True;Encrypt=True;"
 
-      JWT__SecretKey: "VCL@SuperSecretKey_2026_DoNotShare_xK9#mP2$nQ7"
+      JWT__SecretKey: "AED+rrS0VsY0p3SeFdZfzdi60IS/3QJEHGMWr+udAw8="
       JWT__ValidIssuer: "vcl-system"
       JWT__ValidAudience: "vcl-clients"
       JWT__TokenValidityInMinutes: "240"
