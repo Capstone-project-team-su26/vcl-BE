@@ -326,6 +326,7 @@ namespace VCL_BLL.Services
                     PaymentConfirmedAt = paymentConfirmed,
                     QuotationCreatedAt = latestQuotation?.CreatedAt,
                     StatusUpdatedAt = paymentConfirmed ?? latestQuotation?.CreatedAt ?? o.CreatedAt,
+                    WarehouseId = latestQuotation?.WarehouseId,
                     PricingRuleIds = pricingRuleIds,
                     ItemNames = allItems
                         .Where(i => i.OrderId == o.Id && !string.IsNullOrWhiteSpace(i.ProductName))
