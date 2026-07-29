@@ -41,6 +41,10 @@ jobs:
 
             git fetch origin "$DEPLOY_BRANCH"
 
+            # Clean local uncommitted changes on VPS server to prevent pull conflicts
+            git reset --hard HEAD
+            git clean -fd
+
             if git show-ref \
               --verify \
               --quiet \
@@ -53,7 +57,7 @@ jobs:
                 "origin/$DEPLOY_BRANCH"
             fi
 
-            git pull --ff-only origin "$DEPLOY_BRANCH"
+            git reset --hard "origin/$DEPLOY_BRANCH"
 
             cd VietnamCrossBorderLogictisSystem
 
