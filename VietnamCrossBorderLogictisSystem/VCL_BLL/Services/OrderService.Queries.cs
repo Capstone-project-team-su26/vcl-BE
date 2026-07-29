@@ -153,6 +153,17 @@ namespace VCL_BLL.Services
                 };
             }
 
+            var allInvoices = await _unitOfWork.Repository<Invoice>().GetAllAsync();
+            var allPayments = await _unitOfWork.Repository<Payment>().GetAllAsync();
+            var orderQuotationIds = allQuotations.Where(q => q.OrderId == orderId).Select(q => q.Id).ToHashSet();
+            var orderInvoiceIds = allInvoices.Where(i => i.QuotationId.HasValue && orderQuotationIds.Contains(i.QuotationId.Value)).Select(i => i.Id).ToHashSet();
+            var paidPayment = allPayments
+                .Where(p => p.InvoiceId.HasValue && orderInvoiceIds.Contains(p.InvoiceId.Value) && (string.Equals(p.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase) || string.Equals(p.PaymentStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(p => p.PaidAt ?? p.CreatedAt)
+                .FirstOrDefault();
+
+            var paymentConfirmedAt = order.PaymentConfirmedAt ?? paidPayment?.PaidAt ?? paidPayment?.CreatedAt;
+
             return new ConsignmentDetailResponse
             {
                 OrderId = order.Id,
@@ -169,8 +180,8 @@ namespace VCL_BLL.Services
                 ReceiverAddress = order.ReceiverAddress,
                 RequiresInspection = order.RequiresInspection,
                 CreatedAt = order.CreatedAt,
-                PaymentConfirmedAt = order.PaymentConfirmedAt,
-                StatusUpdatedAt = order.PaymentConfirmedAt ?? latestQuotation?.CreatedAt ?? order.CreatedAt,
+                PaymentConfirmedAt = paymentConfirmedAt,
+                StatusUpdatedAt = paymentConfirmedAt ?? latestQuotation?.CreatedAt ?? order.CreatedAt,
                 PricingRuleIds = pricingRuleIds,
                 Customer = new ConsignmentCustomerInfo
                 {
@@ -248,6 +259,29 @@ namespace VCL_BLL.Services
             var allRules = await _unitOfWork.Repository<PricingRule>().GetAllAsync();
             var ruleMap = allRules.ToDictionary(r => r.Id, r => r);
 
+            var allInvoices = await _unitOfWork.Repository<Invoice>().GetAllAsync();
+            var allPayments = await _unitOfWork.Repository<Payment>().GetAllAsync();
+
+            var invoiceQuotationMap = allInvoices
+                .Where(i => i.QuotationId.HasValue)
+                .ToDictionary(i => i.Id, i => i.QuotationId!.Value);
+
+            var quotationOrderMap = allQuotations
+                .ToDictionary(q => q.Id, q => q.OrderId);
+
+            var paidPaymentsByOrder = allPayments
+                .Where(p => p.InvoiceId.HasValue
+                            && invoiceQuotationMap.ContainsKey(p.InvoiceId.Value)
+                            && (string.Equals(p.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase) || string.Equals(p.PaymentStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase)))
+                .Select(p => {
+                    var qId = invoiceQuotationMap[p.InvoiceId!.Value];
+                    var oId = quotationOrderMap.TryGetValue(qId, out var id) ? id : (Guid?)null;
+                    return new { OrderId = oId, PaidTime = p.PaidAt ?? p.CreatedAt };
+                })
+                .Where(p => p.OrderId.HasValue)
+                .GroupBy(p => p.OrderId!.Value)
+                .ToDictionary(g => g.Key, g => g.Max(p => p.PaidTime));
+
             // Map to DTO
             var resultItems = paginatedOrders.Select(o => 
             {
@@ -271,6 +305,9 @@ namespace VCL_BLL.Services
                         .ToList();
                 }
 
+                var paidTime = paidPaymentsByOrder.TryGetValue(o.Id, out var pt) ? pt : (DateTime?)null;
+                var paymentConfirmed = o.PaymentConfirmedAt ?? paidTime;
+
                 return new ConsignmentResponseDto
                 {
                     OrderId = o.Id,
@@ -286,9 +323,9 @@ namespace VCL_BLL.Services
                     ReceiverAddress = o.ReceiverAddress,
                     RequiresInspection = o.RequiresInspection,
                     CreatedAt = o.CreatedAt,
-                    PaymentConfirmedAt = o.PaymentConfirmedAt,
+                    PaymentConfirmedAt = paymentConfirmed,
                     QuotationCreatedAt = latestQuotation?.CreatedAt,
-                    StatusUpdatedAt = o.PaymentConfirmedAt ?? latestQuotation?.CreatedAt ?? o.CreatedAt,
+                    StatusUpdatedAt = paymentConfirmed ?? latestQuotation?.CreatedAt ?? o.CreatedAt,
                     PricingRuleIds = pricingRuleIds,
                     ItemNames = allItems
                         .Where(i => i.OrderId == o.Id && !string.IsNullOrWhiteSpace(i.ProductName))

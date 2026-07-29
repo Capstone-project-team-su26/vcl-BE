@@ -770,6 +770,7 @@ namespace VCL_BLL.Services
                         {
                             // Cọc trả xong -> cho phép vận chuyển; đợt cuối trả xong -> hoàn tất
                             var installment = payment.InstallmentType?.Trim().ToUpperInvariant();
+                            order.PaymentConfirmedAt = payment.PaidAt ?? DateTime.UtcNow;
                             if (installment == "DEPOSIT")
                             {
                                 order.Status = "DEPOSIT_PAID";
