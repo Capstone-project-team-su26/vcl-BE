@@ -169,6 +169,8 @@ namespace VCL_BLL.Services
                 ReceiverAddress = order.ReceiverAddress,
                 RequiresInspection = order.RequiresInspection,
                 CreatedAt = order.CreatedAt,
+                PaymentConfirmedAt = order.PaymentConfirmedAt,
+                StatusUpdatedAt = order.PaymentConfirmedAt ?? latestQuotation?.CreatedAt ?? order.CreatedAt,
                 PricingRuleIds = pricingRuleIds,
                 Customer = new ConsignmentCustomerInfo
                 {
@@ -284,6 +286,9 @@ namespace VCL_BLL.Services
                     ReceiverAddress = o.ReceiverAddress,
                     RequiresInspection = o.RequiresInspection,
                     CreatedAt = o.CreatedAt,
+                    PaymentConfirmedAt = o.PaymentConfirmedAt,
+                    QuotationCreatedAt = latestQuotation?.CreatedAt,
+                    StatusUpdatedAt = o.PaymentConfirmedAt ?? latestQuotation?.CreatedAt ?? o.CreatedAt,
                     PricingRuleIds = pricingRuleIds,
                     ItemNames = allItems
                         .Where(i => i.OrderId == o.Id && !string.IsNullOrWhiteSpace(i.ProductName))

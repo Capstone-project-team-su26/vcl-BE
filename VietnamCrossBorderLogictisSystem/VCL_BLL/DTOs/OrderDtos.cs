@@ -31,6 +31,11 @@ namespace VCL_BLL.DTOs
         public string? ReceiverAddress { get; set; }
         public bool RequiresInspection { get; set; }
         public DateTime? CreatedAt { get; set; }
+        public DateTime? PaymentConfirmedAt { get; set; }
+        public DateTime? QuotationCreatedAt { get; set; }
+
+        /// <summary>Mốc thời gian tương ứng với trạng thái hiện tại của đơn (dùng cho FE hiển thị real-time theo status).</summary>
+        public DateTime? StatusUpdatedAt { get; set; }
         public Guid? WarehouseId { get; set; }
 
         /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
