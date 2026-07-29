@@ -1,0 +1,83 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROJECT_DIR: VietnamCrossBorderLogictisSystem
+  API_PROJECT: VietnamCrossBorderLogictisSystem/VCL_API/VCL_API.csproj
+
+jobs:
+  deploy:
+    name: Deploy production
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    concurrency:
+      group: vcl-backend-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Deploy API
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER_NAME }}
+          password: ${{ secrets.PASS_WORD }}
+          port: 22
+          command_timeout: 20m
+          script: |
+            set -eu
+
+            cd /root/back-end/vcl-be-deploy
+
+            if [ "$(git branch --show-current)" != "main" ]; then
+              echo "Deployment aborted: repository is not on branch main." >&2
+              exit 1
+            fi
+
+            git pull --ff-only origin main
+
+            cd VietnamCrossBorderLogictisSystem
+            docker compose config --quiet
+            docker compose up --detach --build --remove-orphans
+
+            health_url="http://127.0.0.1:8085/swagger/v1/swagger.json"
+            api_ready=false
+            attempt=1
+
+            while [ "$attempt" -le 12 ]; do
+              if curl \
+                --fail \
+                --silent \
+                --show-error \
+                --max-time 10 \
+                "$health_url" > /dev/null; then
+                api_ready=true
+                break
+              fi
+
+              echo "Waiting for API readiness ($attempt/12)..."
+              sleep 5
+              attempt=$((attempt + 1))
+            done
+
+            if [ "$api_ready" != "true" ]; then
+              echo "Deployment failed its health check." >&2
+              docker compose ps
+              docker compose logs --tail=100 vcl-api
+              exit 1
+            fi
+
+            docker compose ps
+            echo "Deployment completed successfully."

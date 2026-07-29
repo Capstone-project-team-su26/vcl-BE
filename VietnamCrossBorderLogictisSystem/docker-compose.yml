@@ -1,0 +1,56 @@
+services:
+  vcl-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vcl-api:latest
+    container_name: vcl-api
+    restart: unless-stopped
+    stop_grace_period: 30s
+    labels:
+      com.vcl.upstream.repository: "Capstone-project-team-su26/vcl-BE"
+      com.vcl.upstream.revision: "47adffe"
+    ports:
+      - "8085:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+
+      ConnectionStrings__DefaultConnection: "Server=72.61.114.184,14333;Database=AppDb;User Id=sa;Password=RcYw6#thU3j=RLTi93bW;TrustServerCertificate=True;Encrypt=True;"
+
+      JWT__SecretKey: "VCL@SuperSecretKey_2026_DoNotShare_xK9#mP2$nQ7"
+      JWT__ValidIssuer: "vcl-system"
+      JWT__ValidAudience: "vcl-clients"
+      JWT__TokenValidityInMinutes: "240"
+
+      MailSettings__Host: "smtp.gmail.com"
+      MailSettings__Port: "587"
+      MailSettings__SenderEmail: "vietnamcrossborderlogictis@gmail.com"
+      MailSettings__SenderName: "VCL System"
+      MailSettings__Username: "vietnamcrossborderlogictis@gmail.com"
+      MailSettings__Password: "xqvf bcbs hfym ziwj"
+      MailSettings__UseSsl: "false"
+
+      SmtpSettings__Host: "smtp.gmail.com"
+      SmtpSettings__Port: "587"
+      SmtpSettings__EnableSsl: "true"
+      SmtpSettings__Username: "vietnamcrossborderlogictis@gmail.com"
+      SmtpSettings__Password: "xqvf bcbs hfym ziwj"
+
+      Cloudinary__CloudName: "penyhvpn"
+      Cloudinary__ApiKey: "922916138354471"
+      Cloudinary__ApiSecret: "ESz2h8SPZGQ8eaO-W23FvYOUct0"
+
+      PayOS__ClientId: ""
+      PayOS__ApiKey: ""
+      PayOS__ChecksumKey: ""
+      PayOS__ReturnUrl: "https://logictic.site/payment/success"
+      PayOS__CancelUrl: "https://logictic.site/payment/cancel"
+
+      SePay__AccountNumber: "0937250343"
+      SePay__BankName: "mbbank"
+      SePay__AccountName: "Thái Công Đạt"
+      SePay__BaseUrl: "https://vcl.henrytech.cloud"
+      SePay__WebhookSecret: ""
+      SePay__ReturnUrl: "https://logictic.site/payment/success"
+      SePay__CancelUrl: "https://logictic.site/payment/cancel"
