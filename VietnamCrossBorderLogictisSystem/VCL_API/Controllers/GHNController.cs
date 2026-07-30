@@ -74,6 +74,31 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Tra cứu thông tin & trạng thái trực tiếp đơn hàng GHN (Tracking Order API).
+        /// </summary>
+        [HttpGet("orders/{orderCode}")]
+        [Authorize]
+        public async Task<IActionResult> GetOrderDetail(string orderCode, [FromQuery] string? token = null)
+        {
+            try
+            {
+                var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GHNSettings:Token"];
+
+                if (string.IsNullOrEmpty(effectiveToken))
+                {
+                    return BadRequest(new { message = "Chưa cấu hình GHN API Token trong hệ thống." });
+                }
+
+                var result = await _ghnService.GetOrderDetailAsync(orderCode, effectiveToken);
+                return Ok(new { message = "Lấy chi tiết vận đơn GHN thành công.", data = result });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Webhook tiếp nhận tự động cập nhật trạng thái đơn từ Giao Hàng Nhanh (GHN Callback).
         /// </summary>
         [HttpPost("webhook")]

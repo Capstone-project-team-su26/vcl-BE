@@ -186,4 +186,49 @@ namespace VCL_BLL.DTOs
         [JsonPropertyName("Time")]
         public DateTime Time { get; set; }
     }
+
+    public class GHNOrderDetailResponse
+    {
+        [JsonPropertyName("code")]
+        public int Code { get; set; }
+
+        [JsonPropertyName("message")]
+        public string Message { get; set; } = string.Empty;
+
+        [JsonPropertyName("data")]
+        public GHNOrderDetailData? Data { get; set; }
+    }
+
+    public class GHNOrderDetailData
+    {
+        [JsonPropertyName("order_code")]
+        public string OrderCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = string.Empty;
+
+        [JsonPropertyName("to_name")]
+        public string ToName { get; set; } = string.Empty;
+
+        [JsonPropertyName("to_phone")]
+        public string ToPhone { get; set; } = string.Empty;
+
+        [JsonPropertyName("to_address")]
+        public string ToAddress { get; set; } = string.Empty;
+
+        [JsonPropertyName("weight")]
+        public int Weight { get; set; }
+
+        [JsonPropertyName("converted_weight")]
+        public int ConvertedWeight { get; set; }
+
+        [JsonPropertyName("cod_amount")]
+        public int CodAmount { get; set; }
+
+        [JsonPropertyName("leadtime")]
+        public DateTime? LeadTime { get; set; }
+
+        [JsonPropertyName("created_date")]
+        public string CreatedDate { get; set; } = string.Empty;
+    }
 }
