@@ -169,10 +169,30 @@ namespace VCL_BLL.Services
                     var parcel = await parcelRepo.GetByIdAsync(waybill.ParcelId.Value);
                     if (parcel != null)
                     {
-                        parcel.PackageStatus = payload.Status.ToUpper();
+                        var isDelivered = payload.Status.Equals("delivered", StringComparison.OrdinalIgnoreCase);
+                        parcel.PackageStatus = isDelivered ? "DELIVERED" : payload.Status.ToUpper();
                         parcelRepo.Update(parcel);
+
+                        // If parcel has parent Order (ConsignmentId), update Order Status to COMPLETED if all parcels are delivered
+                        if (parcel.ConsignmentId.HasValue)
+                        {
+                            var orderRepo = _unitOfWork.Repository<Order>();
+                            var order = await orderRepo.GetByIdAsync(parcel.ConsignmentId.Value);
+                            if (order != null)
+                            {
+                                var allParcels = await parcelRepo.GetAllAsync();
+                                var orderParcels = allParcels.Where(p => p.ConsignmentId == order.Id);
+                                if (orderParcels.Any() && orderParcels.All(p => p.PackageStatus == "DELIVERED"))
+                                {
+                                    order.Status = "COMPLETED";
+                                    orderRepo.Update(order);
+                                    _logger.LogInformation("All parcels delivered. Updated Order {OrderId} status to COMPLETED.", order.Id);
+                                }
+                            }
+                        }
+
                         await _unitOfWork.SaveChangesAsync();
-                        _logger.LogInformation("Updated Parcel status to {Status} via GHN Webhook for TrackingCode: {OrderCode}", payload.Status, payload.OrderCode);
+                        _logger.LogInformation("Updated Parcel status to {Status} via GHN Webhook for TrackingCode: {OrderCode}", parcel.PackageStatus, payload.OrderCode);
                         return true;
                     }
                 }
