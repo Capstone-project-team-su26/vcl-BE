@@ -59,6 +59,7 @@ namespace VCL_API.Injection
             services.AddScoped<IWarehouseLocationLayoutService, WarehouseLocationLayoutService>();
             services.AddScoped<IAiService, AiService>();
             services.AddHttpClient<IGHNService, GHNService>();
+            services.AddHttpClient<IGoshipService, GoshipService>();
 
             services.AddSignalR();
 
