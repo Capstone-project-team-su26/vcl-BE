@@ -99,6 +99,32 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Gửi yêu cầu đăng ký/cập nhật Webhook URL sang GHN API.
+        /// </summary>
+        [HttpPost("register-webhook")]
+        [Authorize(Roles = "Admin,OperationsManager")]
+        public async Task<IActionResult> RegisterWebhook([FromQuery] string? webhookUrl = null, [FromQuery] string? token = null)
+        {
+            try
+            {
+                var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GHNSettings:Token"];
+                var targetWebhookUrl = !string.IsNullOrEmpty(webhookUrl) ? webhookUrl : "https://api-vcl.zushin.io.vn/api/ghn/webhook";
+
+                if (string.IsNullOrEmpty(effectiveToken))
+                {
+                    return BadRequest(new { message = "Chưa cấu hình GHN API Token trong hệ thống." });
+                }
+
+                var success = await _ghnService.RegisterWebhookUrlAsync(targetWebhookUrl, effectiveToken);
+                return Ok(new { message = "Yêu cầu đăng ký Webhook URL tới GHN đã được gửi thành công.", webhookUrl = targetWebhookUrl, success });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Webhook tiếp nhận tự động cập nhật trạng thái đơn từ Giao Hàng Nhanh (GHN Callback).
         /// </summary>
         [HttpPost("webhook")]
