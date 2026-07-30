@@ -107,16 +107,13 @@ namespace VCL_API.Controllers
         {
             try
             {
-                var success = await _ghnService.ProcessWebhookAsync(payload);
-                if (success)
-                {
-                    return Ok(new { message = "Đã xử lý webhook đồng bộ trạng thái GHN thành công." });
-                }
-                return Ok(new { message = "Đã nhận webhook GHN (Không có vận đơn tương ứng cần cập nhật)." });
+                await _ghnService.ProcessWebhookAsync(payload);
+                return Ok(new { code = 200, message = "Success" });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                // Always return HTTP 200 OK so GHN won't retry 10 times unnecessarily
+                return Ok(new { code = 200, message = "Success", warning = ex.Message });
             }
         }
     }
