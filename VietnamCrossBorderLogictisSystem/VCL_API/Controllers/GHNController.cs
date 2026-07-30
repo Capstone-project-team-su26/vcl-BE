@@ -142,5 +142,23 @@ namespace VCL_API.Controllers
                 return Ok(new { code = 200, message = "Success", warning = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Webhook tiếp nhận cập nhật yêu cầu/khiếu nại Ticket từ Giao Hàng Nhanh (GHN Ticket Callback).
+        /// </summary>
+        [HttpPost("ticket-webhook")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ProcessTicketWebhook([FromBody] GHNTicketWebhookPayload payload)
+        {
+            try
+            {
+                await _ghnService.ProcessTicketWebhookAsync(payload);
+                return Ok(new { code = 200, message = "Success" });
+            }
+            catch (Exception ex)
+            {
+                return Ok(new { code = 200, message = "Success", warning = ex.Message });
+            }
+        }
     }
 }

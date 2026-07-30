@@ -324,4 +324,70 @@ namespace VCL_BLL.DTOs
         [JsonPropertyName("created_date")]
         public string CreatedDate { get; set; } = string.Empty;
     }
+
+    public class GHNTicketWebhookPayload
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("order_code")]
+        public string OrderCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("client_id")]
+        public string ClientId { get; set; } = string.Empty;
+
+        [JsonPropertyName("c_name")]
+        public string CName { get; set; } = string.Empty;
+
+        [JsonPropertyName("c_email")]
+        public string CEmail { get; set; } = string.Empty;
+
+        [JsonPropertyName("c_phone")]
+        public object? CPhone { get; set; }
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = string.Empty;
+
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = string.Empty;
+
+        [JsonPropertyName("status_id")]
+        public int StatusId { get; set; }
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+
+        [JsonPropertyName("created_by")]
+        public long CreatedBy { get; set; }
+
+        [JsonPropertyName("created_at")]
+        public string CreatedAt { get; set; } = string.Empty;
+
+        [JsonPropertyName("updated_at")]
+        public string UpdatedAt { get; set; } = string.Empty;
+
+        [JsonPropertyName("attachments")]
+        public List<string>? Attachments { get; set; }
+
+        [JsonPropertyName("conversations")]
+        public List<GHNTicketConversation>? Conversations { get; set; }
+    }
+
+    public class GHNTicketConversation
+    {
+        [JsonPropertyName("body")]
+        public string Body { get; set; } = string.Empty;
+
+        [JsonPropertyName("from_email")]
+        public string FromEmail { get; set; } = string.Empty;
+
+        [JsonPropertyName("user_id")]
+        public long UserId { get; set; }
+
+        [JsonPropertyName("created_at")]
+        public string CreatedAt { get; set; } = string.Empty;
+
+        [JsonPropertyName("updated_at")]
+        public string UpdatedAt { get; set; } = string.Empty;
+    }
 }

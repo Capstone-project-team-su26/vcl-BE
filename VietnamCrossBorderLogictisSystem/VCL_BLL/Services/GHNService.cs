@@ -181,5 +181,15 @@ namespace VCL_BLL.Services
 
             return false;
         }
+
+        public async Task<bool> ProcessTicketWebhookAsync(GHNTicketWebhookPayload payload)
+        {
+            _logger.LogInformation("Received GHN Ticket Webhook update - Ticket ID: {Id}, OrderCode: {OrderCode}, Status: {Status}, Type: {Type}",
+                payload.Id, payload.OrderCode, payload.Status, payload.Type);
+
+            // Log details and return true so GHN gets 200 OK
+            await Task.CompletedTask;
+            return true;
+        }
     }
 }
