@@ -10,5 +10,6 @@ namespace VCL_BLL.Interface
         Task<GHNOrderDetailData> GetOrderDetailAsync(string orderCode, string token);
         Task<bool> RegisterWebhookUrlAsync(string webhookUrl, string token);
         Task<bool> ProcessWebhookAsync(GHNWebhookPayload payload);
+        Task<bool> ProcessTicketWebhookAsync(GHNTicketWebhookPayload payload);
     }
 }
