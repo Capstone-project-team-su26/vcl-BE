@@ -171,19 +171,157 @@ namespace VCL_BLL.DTOs
         [JsonPropertyName("OrderCode")]
         public string OrderCode { get; set; } = string.Empty;
 
+        [JsonPropertyName("ClientOrderCode")]
+        public string ClientOrderCode { get; set; } = string.Empty;
+
         [JsonPropertyName("Status")]
         public string Status { get; set; } = string.Empty;
 
-        [JsonPropertyName("Weight")]
-        public int Weight { get; set; }
+        [JsonPropertyName("Type")]
+        public string Type { get; set; } = string.Empty;
 
-        [JsonPropertyName("Fee")]
-        public int Fee { get; set; }
+        [JsonPropertyName("Description")]
+        public string Description { get; set; } = string.Empty;
+
+        [JsonPropertyName("Reason")]
+        public string Reason { get; set; } = string.Empty;
+
+        [JsonPropertyName("ReasonCode")]
+        public string ReasonCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("ShopID")]
+        public int ShopID { get; set; }
 
         [JsonPropertyName("CODAmount")]
-        public int CODAmount { get; set; }
+        public decimal CODAmount { get; set; }
+
+        [JsonPropertyName("CODTransferDate")]
+        public string? CODTransferDate { get; set; }
+
+        [JsonPropertyName("ConvertedWeight")]
+        public decimal ConvertedWeight { get; set; }
+
+        [JsonPropertyName("Weight")]
+        public decimal Weight { get; set; }
+
+        [JsonPropertyName("Length")]
+        public decimal Length { get; set; }
+
+        [JsonPropertyName("Width")]
+        public decimal Width { get; set; }
+
+        [JsonPropertyName("Height")]
+        public decimal Height { get; set; }
+
+        [JsonPropertyName("TotalFee")]
+        public decimal TotalFee { get; set; }
+
+        [JsonPropertyName("PaymentType")]
+        public int PaymentType { get; set; }
+
+        [JsonPropertyName("IsPartialReturn")]
+        public bool IsPartialReturn { get; set; }
+
+        [JsonPropertyName("PartialReturnCode")]
+        public string PartialReturnCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("Warehouse")]
+        public string Warehouse { get; set; } = string.Empty;
 
         [JsonPropertyName("Time")]
-        public DateTime Time { get; set; }
+        public string Time { get; set; } = string.Empty;
+
+        [JsonPropertyName("Fee")]
+        public GHNWebhookFeeDetail? Fee { get; set; }
+    }
+
+    public class GHNWebhookFeeDetail
+    {
+        [JsonPropertyName("CODFailedFee")]
+        public decimal CODFailedFee { get; set; }
+
+        [JsonPropertyName("CODFee")]
+        public decimal CODFee { get; set; }
+
+        [JsonPropertyName("Coupon")]
+        public decimal Coupon { get; set; }
+
+        [JsonPropertyName("DeliverRemoteAreasFee")]
+        public decimal DeliverRemoteAreasFee { get; set; }
+
+        [JsonPropertyName("DocumentReturn")]
+        public decimal DocumentReturn { get; set; }
+
+        [JsonPropertyName("DoubleCheck")]
+        public decimal DoubleCheck { get; set; }
+
+        [JsonPropertyName("Insurance")]
+        public decimal Insurance { get; set; }
+
+        [JsonPropertyName("MainService")]
+        public decimal MainService { get; set; }
+
+        [JsonPropertyName("PickRemoteAreasFee")]
+        public decimal PickRemoteAreasFee { get; set; }
+
+        [JsonPropertyName("R2S")]
+        public decimal R2S { get; set; }
+
+        [JsonPropertyName("Return")]
+        public decimal Return { get; set; }
+
+        [JsonPropertyName("StationDO")]
+        public decimal StationDO { get; set; }
+
+        [JsonPropertyName("StationPU")]
+        public decimal StationPU { get; set; }
+
+        [JsonPropertyName("Total")]
+        public decimal Total { get; set; }
+    }
+
+    public class GHNOrderDetailResponse
+    {
+        [JsonPropertyName("code")]
+        public int Code { get; set; }
+
+        [JsonPropertyName("message")]
+        public string Message { get; set; } = string.Empty;
+
+        [JsonPropertyName("data")]
+        public GHNOrderDetailData? Data { get; set; }
+    }
+
+    public class GHNOrderDetailData
+    {
+        [JsonPropertyName("order_code")]
+        public string OrderCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = string.Empty;
+
+        [JsonPropertyName("to_name")]
+        public string ToName { get; set; } = string.Empty;
+
+        [JsonPropertyName("to_phone")]
+        public string ToPhone { get; set; } = string.Empty;
+
+        [JsonPropertyName("to_address")]
+        public string ToAddress { get; set; } = string.Empty;
+
+        [JsonPropertyName("weight")]
+        public int Weight { get; set; }
+
+        [JsonPropertyName("converted_weight")]
+        public int ConvertedWeight { get; set; }
+
+        [JsonPropertyName("cod_amount")]
+        public int CodAmount { get; set; }
+
+        [JsonPropertyName("leadtime")]
+        public DateTime? LeadTime { get; set; }
+
+        [JsonPropertyName("created_date")]
+        public string CreatedDate { get; set; } = string.Empty;
     }
 }

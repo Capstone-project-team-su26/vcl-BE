@@ -103,6 +103,52 @@ namespace VCL_BLL.Services
             return result.Data;
         }
 
+        public async Task<GHNOrderDetailData> GetOrderDetailAsync(string orderCode, string token)
+        {
+            var baseUrl = _configuration["GHNSettings:ApiUrl"] ?? "https://online-gateway.ghn.vn/shiip/public-api/v2/";
+            var endpoint = $"{baseUrl.TrimEnd('/')}/shipping-order/detail";
+
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            httpRequest.Headers.Add("Token", token);
+            httpRequest.Content = JsonContent.Create(new { order_code = orderCode });
+
+            var response = await _httpClient.SendAsync(httpRequest);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("GHN Get Order Detail API returned error {StatusCode}: {Content}", response.StatusCode, responseContent);
+                throw new InvalidOperationException($"GHN Get Order Detail Error: {responseContent}");
+            }
+
+            var result = JsonSerializer.Deserialize<GHNOrderDetailResponse>(responseContent);
+            if (result == null || result.Code != 200 || result.Data == null)
+            {
+                throw new InvalidOperationException($"GHN Get Order Detail Failed: {result?.Message}");
+            }
+
+            return result.Data;
+        }
+
+        public async Task<bool> RegisterWebhookUrlAsync(string webhookUrl, string token)
+        {
+            var baseUrl = _configuration["GHNSettings:ApiUrl"] ?? "https://online-gateway.ghn.vn/shiip/public-api/v2/";
+            var endpoint = $"{baseUrl.TrimEnd('/')}/customer/update-webhook";
+
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            httpRequest.Headers.Add("Token", token);
+            httpRequest.Content = JsonContent.Create(new { webhook_url = webhookUrl });
+
+            _logger.LogInformation("Sending Register Webhook URL request to GHN API: {WebhookUrl}", webhookUrl);
+
+            var response = await _httpClient.SendAsync(httpRequest);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            _logger.LogInformation("GHN Register Webhook API Response: {StatusCode} - {Content}", response.StatusCode, responseContent);
+
+            return response.IsSuccessStatusCode;
+        }
+
         public async Task<bool> ProcessWebhookAsync(GHNWebhookPayload payload)
         {
             _logger.LogInformation("Received GHN Webhook update for OrderCode: {OrderCode}, Status: {Status}", payload.OrderCode, payload.Status);

@@ -74,6 +74,57 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Tra cứu thông tin & trạng thái trực tiếp đơn hàng GHN (Tracking Order API).
+        /// </summary>
+        [HttpGet("orders/{orderCode}")]
+        [Authorize]
+        public async Task<IActionResult> GetOrderDetail(string orderCode, [FromQuery] string? token = null)
+        {
+            try
+            {
+                var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GHNSettings:Token"];
+
+                if (string.IsNullOrEmpty(effectiveToken))
+                {
+                    return BadRequest(new { message = "Chưa cấu hình GHN API Token trong hệ thống." });
+                }
+
+                var result = await _ghnService.GetOrderDetailAsync(orderCode, effectiveToken);
+                return Ok(new { message = "Lấy chi tiết vận đơn GHN thành công.", data = result });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Gửi yêu cầu đăng ký/cập nhật Webhook URL sang GHN API.
+        /// </summary>
+        [HttpPost("register-webhook")]
+        [Authorize(Roles = "Admin,OperationsManager")]
+        public async Task<IActionResult> RegisterWebhook([FromQuery] string? webhookUrl = null, [FromQuery] string? token = null)
+        {
+            try
+            {
+                var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GHNSettings:Token"];
+                var targetWebhookUrl = !string.IsNullOrEmpty(webhookUrl) ? webhookUrl : "https://api-vcl.zushin.io.vn/api/ghn/webhook";
+
+                if (string.IsNullOrEmpty(effectiveToken))
+                {
+                    return BadRequest(new { message = "Chưa cấu hình GHN API Token trong hệ thống." });
+                }
+
+                var success = await _ghnService.RegisterWebhookUrlAsync(targetWebhookUrl, effectiveToken);
+                return Ok(new { message = "Yêu cầu đăng ký Webhook URL tới GHN đã được gửi thành công.", webhookUrl = targetWebhookUrl, success });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Webhook tiếp nhận tự động cập nhật trạng thái đơn từ Giao Hàng Nhanh (GHN Callback).
         /// </summary>
         [HttpPost("webhook")]
@@ -82,16 +133,13 @@ namespace VCL_API.Controllers
         {
             try
             {
-                var success = await _ghnService.ProcessWebhookAsync(payload);
-                if (success)
-                {
-                    return Ok(new { message = "Đã xử lý webhook đồng bộ trạng thái GHN thành công." });
-                }
-                return Ok(new { message = "Đã nhận webhook GHN (Không có vận đơn tương ứng cần cập nhật)." });
+                await _ghnService.ProcessWebhookAsync(payload);
+                return Ok(new { code = 200, message = "Success" });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                // Always return HTTP 200 OK so GHN won't retry 10 times unnecessarily
+                return Ok(new { code = 200, message = "Success", warning = ex.Message });
             }
         }
     }
