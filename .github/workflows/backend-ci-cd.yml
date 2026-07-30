@@ -37,19 +37,23 @@ jobs:
           script: |
             set -eu
 
-            cd /root/back-end/vcl-be-deploy
+            cd /root/back-end/vcl-BE
 
-            # Force fetch all remote branches directly into refs/remotes/origin/*
-            git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
-            git fetch origin "+refs/heads/*:refs/remotes/origin/*" --prune
+            git fetch origin "$DEPLOY_BRANCH"
 
-            # Clean local uncommitted changes on VPS server to prevent pull conflicts
-            git reset --hard HEAD
-            git clean -fd
+            if git show-ref \
+              --verify \
+              --quiet \
+              "refs/heads/$DEPLOY_BRANCH"; then
+              git checkout "$DEPLOY_BRANCH"
+            else
+              git checkout \
+                --track \
+                -b "$DEPLOY_BRANCH" \
+                "origin/$DEPLOY_BRANCH"
+            fi
 
-            # Force checkout/create branch directly from origin tracking branch
-            git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
-            git reset --hard "origin/$DEPLOY_BRANCH"
+            git pull --ff-only origin "$DEPLOY_BRANCH"
 
             cd VietnamCrossBorderLogictisSystem
 
