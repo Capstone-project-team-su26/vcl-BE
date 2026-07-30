@@ -59,3 +59,7 @@ services:
       GHNSettings__Token: "18ac6518-8bdb-11f1-8729-f28e499edaeb"
       GHNSettings__ShopId: "6575712"
       GHNSettings__MaxInsuranceValue: "5000000"
+
+      GoshipSettings__ApiUrl: "https://api.goship.io/api/v2/"
+      GoshipSettings__ClientId: "421"
+      GoshipSettings__ClientSecret: "cVGcGR3ZlkqP9qaO3w9FtA2KxJw4rGOXK8JqOcBi"
