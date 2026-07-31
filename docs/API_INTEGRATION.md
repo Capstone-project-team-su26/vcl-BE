@@ -106,6 +106,28 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
 | `POST` | `/api/inventories/from-parcel/{parcelId}` | Staff/WarehouseStaff | Ghi nhận tồn kho khả dụng sau khi put-away |
+| `POST` | `/api/inventories/{inventoryId}/relocate` | Admin/WarehouseStaff | Điều chuyển kiện hàng sang ô kệ khác trong cùng kho |
+| `GET` | `/api/inventories/movements` | Đã đăng nhập | Nhật ký di chuyển kiện hàng trong kho |
+| `POST` | `/api/inventories/cycle-counts` | Admin/WarehouseStaff | Ghi nhận kiểm kê định kỳ tại ô kệ |
+| `GET` | `/api/inventories/cycle-counts` | Đã đăng nhập | Lịch sử kiểm kê định kỳ |
+| `PUT` | `/api/inventories/cycle-counts/{id}/resolve` | Admin/WarehouseStaff/OperationsManager | Ghi nhận xử lý chênh lệch tồn kho |
+| `GET` | `/api/inventories/long-stay-alerts` | Đã đăng nhập | Cảnh báo kiện hàng tồn kho lâu ngày |
+| `GET` | `/api/inventories/storage-report` | Đã đăng nhập | Báo cáo tồn kho tổng hợp theo khách hàng |
+| `GET` | `/api/product-types/all` | Admin | Toàn bộ loại hàng, gồm cả loại đã ngừng sử dụng |
+| `GET` | `/api/product-types/{id}` | Admin | Chi tiết loại hàng |
+| `POST` | `/api/product-types` | Admin | Thêm loại hàng |
+| `PUT` | `/api/product-types/{id}` | Admin | Cập nhật loại hàng |
+| `DELETE` | `/api/product-types/{id}` | Admin | Xóa loại hàng |
+| `GET` | `/api/suppliers` | Đã đăng nhập | Danh sách nhà cung cấp dịch vụ |
+| `GET` | `/api/suppliers/{id}` | Đã đăng nhập | Chi tiết nhà cung cấp |
+| `POST` | `/api/suppliers` | Admin | Thêm nhà cung cấp |
+| `PUT` | `/api/suppliers/{id}` | Admin | Cập nhật nhà cung cấp |
+| `DELETE` | `/api/suppliers/{id}` | Admin | Xóa nhà cung cấp |
+| `GET` | `/api/shipping-routes` | Đã đăng nhập | Danh sách tuyến vận chuyển quốc tế |
+| `GET` | `/api/shipping-routes/{id}` | Đã đăng nhập | Chi tiết tuyến vận chuyển |
+| `POST` | `/api/shipping-routes` | Admin | Thêm tuyến vận chuyển |
+| `PUT` | `/api/shipping-routes/{id}` | Admin | Cập nhật tuyến vận chuyển |
+| `DELETE` | `/api/shipping-routes/{id}` | Admin | Xóa tuyến vận chuyển |
 | `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
 | `GET` | `/api/warehouse-release-requests` | Authenticated | Lấy danh sách yêu cầu xuất kho (phân trang & bộ lọc) |
 | `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
@@ -5543,13 +5565,14 @@ Hệ thống quản lý tồn kho chặt chẽ, loại bỏ hoàn toàn các dò
 ### 42.1. Lấy danh sách hàng tồn kho
 
 ```http
-GET /api/inventories?status=AVAILABLE&customerId={customerId}
+GET /api/inventories?status=AVAILABLE&customerId={customerId}&warehouseId={warehouseId}
 Authorization: Bearer {token}
 ```
 
 **Query Parameters:**
 - `status` (tùy chọn): Filter theo trạng thái (`AVAILABLE`, `RESERVED`, `PICKED`, `RELEASED`). Mặc định tự động loại bỏ các bản ghi `AVAILABLE` có `quantity <= 0`.
 - `customerId` (tùy chọn): Filter theo ID khách hàng sở hữu.
+- `warehouseId` (tùy chọn): Filter theo kho đang lưu hàng, xác định qua ô kệ của bản ghi tồn kho.
 
 **Response (200 OK):**
 ```json
@@ -5565,13 +5588,252 @@ Authorization: Bearer {token}
       "binId": "ffe85f64-...",
       "quantity": 5,
       "status": "AVAILABLE",
-      "createdAt": "2026-07-21T16:00:00Z"
+      "createdAt": "2026-07-21T16:00:00Z",
+
+      "customerCode": "KH000123",
+      "customerName": "Nguyễn Văn A",
+      "customerPhone": "0901234567",
+      "consignmentCode": "CN20260731001",
+      "packageCode": "PKG20260731001",
+      "binCode": "A-01-03",
+      "warehouseId": "7de85f64-...",
+      "warehouseName": "Kho Quảng Châu",
+      "storedAt": "2026-07-21T16:00:00Z",
+      "actualWeight": 12.5,
+      "actualVolume": 48000
     }
   ]
 }
 ```
 
-### 42.2. Quy tắc xuất kho (WRO & Picking List)
+**Các trường bổ sung (VCL-M06/M07):**
+
+| Trường | Nguồn dữ liệu | Ghi chú |
+|---|---|---|
+| `customerCode`, `customerName`, `customerPhone` | `Customer` | Dùng cho báo cáo tồn kho theo khách hàng |
+| `consignmentCode` | `Order.ConsignmentCode` | Mã yêu cầu ký gửi liên kết |
+| `packageCode` | `Parcel.PackageCode` | Mã kiện hàng đang lưu |
+| `binCode` | `Bin.BinCode` | Mã ô kệ đang chứa kiện |
+| `warehouseId`, `warehouseName` | `Bin.WarehouseId` → `Warehouse` | Kho đang lưu kiện |
+| `storedAt` | `Parcel.PutAwayTime`, fallback `Inventory.CreatedAt` | **Mốc tính số ngày lưu kho và phí lưu kho** |
+| `actualWeight` | `Parcel.ActualWeight` | Đơn vị kg, mặc định `0` nếu chưa cân |
+| `actualVolume` | `Parcel.Length × Width × Height` | Cùng đơn vị với `Bin.MaxVolume`, mặc định `0` |
+
+> Các trường trên cũng được trả về trong response của `POST /api/inventories/from-parcel/{parcelId}`.
+>
+> Khi kiện hàng chưa được put-away hoặc chưa cân đo, các trường tương ứng trả về chuỗi rỗng hoặc `0` thay vì `null`, để FE không phải kiểm tra null trên từng trường.
+
+### 42.2. Điều chuyển vị trí nội bộ (M06)
+
+Chuyển một kiện hàng đang lưu kho sang ô kệ khác **trong cùng một kho**.
+
+```http
+POST /api/inventories/{inventoryId}/relocate
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "toBinId": "ffe85f64-5717-4562-b3fc-2c963f66afb9",
+  "reason": "Dồn kiện cùng khách về một khu để chuẩn bị xuất kho"
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+**Ràng buộc nghiệp vụ:**
+- `toBinId` và `reason` bắt buộc; ô kệ đích phải khác ô kệ hiện tại.
+- Không điều chuyển hàng tồn ở trạng thái `PICKED` hoặc `RELEASED` (hàng đã rời vị trí cũ).
+- Ô kệ đích phải đang hoạt động và **thuộc cùng kho** với ô kệ nguồn (BR-56).
+- Kiểm tra sức chứa thể tích và tải trọng của ô kệ đích trước khi gán (BR-53), dùng cùng công thức với luồng put-away.
+- Cập nhật `Parcel.BinId`, `Inventory.BinId` và thể tích hiện tại của **cả hai** ô kệ trong cùng một transaction (BR-57).
+
+**Response (200 OK):** trả về bản ghi tồn kho sau khi điều chuyển, cùng cấu trúc với mục 42.1 (đã có `binCode`, `warehouseName` mới).
+
+**Lỗi thường gặp:**
+
+| HTTP | Trường hợp |
+|---|---|
+| `400` | Thiếu `toBinId`/`reason`, ô kệ đích trùng ô hiện tại, khác kho, ô kệ ngừng sử dụng, không đủ sức chứa, hoặc tồn kho đang `PICKED`/`RELEASED` |
+| `404` | Không tìm thấy bản ghi tồn kho, kiện hàng hoặc ô kệ đích |
+
+### 42.3. Nhật ký di chuyển kiện hàng (M06)
+
+```http
+GET /api/inventories/movements?warehouseId={warehouseId}&parcelId={parcelId}&limit=50
+Authorization: Bearer {token}
+```
+
+**Query Parameters:** tất cả đều tùy chọn.
+- `warehouseId`: lọc theo kho diễn ra thao tác, xác định theo ô kệ đích.
+- `parcelId`: lọc theo một kiện hàng cụ thể.
+- `limit`: số dòng tối đa, mặc định `50`.
+
+**Response (200 OK):** sắp xếp mới nhất trước.
+```json
+{
+  "message": "Lấy nhật ký di chuyển kiện hàng thành công.",
+  "items": [
+    {
+      "id": "9ae85f64-...",
+      "inventoryId": "3fa85f64-...",
+      "parcelId": "bfe85f64-...",
+      "packageCode": "PKG20260731001",
+      "fromBinId": "ffe85f64-...",
+      "fromBinCode": "A-01-03",
+      "toBinId": "aae85f64-...",
+      "toBinCode": "B-02-01",
+      "type": "RELOCATION",
+      "reason": "Dồn kiện cùng khách về một khu để chuẩn bị xuất kho",
+      "quantity": 5,
+      "warehouseId": "7de85f64-...",
+      "staffName": "Nguyễn Văn B",
+      "movedAt": "2026-08-01T09:12:00Z"
+    }
+  ]
+}
+```
+
+`type` nhận giá trị `RELOCATION` (điều chuyển nội bộ) hoặc `PUTAWAY` (cất kiện lần đầu). Khi `type` là `PUTAWAY` thì `fromBinId` là `null` và `fromBinCode` là chuỗi rỗng.
+
+> **Migration:** bảng `INVENTORY_MOVEMENTS` được tạo bởi migration `AddInventoryMovementTable`. Chạy `dotnet ef database update --project VCL_DLL --startup-project VCL_API` trước khi gọi hai endpoint trên.
+
+### 42.4. Kiểm kê định kỳ & xử lý chênh lệch (M06)
+
+**Ghi nhận một lần kiểm kê:**
+
+```http
+POST /api/inventories/cycle-counts
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "binId": "ffe85f64-5717-4562-b3fc-2c963f66afb9",
+  "actualCount": 7,
+  "note": "Kiểm kê cuối ca chiều"
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+> **Quan trọng:** `expectedCount` **do server tự đếm** (số kiện có `PackageStatus = STORED` tại ô kệ), không lấy theo số client gửi lên. FE không cần và không nên gửi `expectedCount`.
+
+`difference = actualCount - expectedCount`. `status` tự động là `MATCHED` khi `difference = 0`, ngược lại là `DISCREPANCY`.
+
+**Response (201 Created):**
+```json
+{
+  "message": "Ghi nhận kiểm kê thành công.",
+  "data": {
+    "id": "c1e85f64-...",
+    "warehouseId": "7de85f64-...",
+    "warehouseName": "Kho Quảng Châu",
+    "binId": "ffe85f64-...",
+    "binCode": "A-01-03",
+    "expectedCount": 5,
+    "actualCount": 7,
+    "difference": 2,
+    "status": "DISCREPANCY",
+    "note": "Kiểm kê cuối ca chiều",
+    "staffName": "Nguyễn Văn B",
+    "countedAt": "2026-08-01T10:30:00Z",
+    "resolvedByName": "",
+    "resolvedAt": null,
+    "resolutionNote": ""
+  }
+}
+```
+
+**Lấy lịch sử kiểm kê:**
+
+```http
+GET /api/inventories/cycle-counts?warehouseId={warehouseId}&binId={binId}&status=DISCREPANCY&limit=50
+Authorization: Bearer {token}
+```
+
+Tất cả query param đều tùy chọn. `status` nhận `MATCHED`, `DISCREPANCY` hoặc `RESOLVED`. Kết quả sắp xếp mới nhất trước.
+
+**Xử lý chênh lệch:**
+
+```http
+PUT /api/inventories/cycle-counts/{cycleCountId}/resolve
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "resolutionNote": "Đã tìm thấy 2 kiện xếp nhầm sang ô B-02-01, đã điều chuyển về đúng vị trí"
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`, `OperationsManager`.
+
+Chỉ áp dụng cho phiếu đang ở trạng thái `DISCREPANCY`; phiếu `MATCHED` hoặc đã `RESOLVED` sẽ trả `400`. Sau khi xử lý, phiếu chuyển sang `RESOLVED` và lưu lại người xử lý cùng thời điểm.
+
+> **Migration:** bảng `CYCLE_COUNTS` được tạo bởi migration `AddCycleCountTable`.
+
+### 42.5. Theo dõi thời gian lưu kho & cảnh báo tồn lâu ngày (M07)
+
+Mỗi dòng tồn kho trả về từ mục 42.1 đã kèm sẵn hai trường thời gian lưu kho:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `storageDays` | Số ngày đã lưu kho, tính từ `storedAt` tới thời điểm gọi API |
+| `storageHours` | Tổng số giờ đã lưu kho, dùng khi cần độ chính xác dưới một ngày |
+
+> Chỉ các bản ghi ở trạng thái `AVAILABLE` hoặc `RESERVED` mới được coi là **đang nằm trong kho**. `PICKED` và `RELEASED` đã rời vị trí lưu nên bị loại khỏi hai API bên dưới.
+
+**Cảnh báo tồn kho lâu ngày:**
+
+```http
+GET /api/inventories/long-stay-alerts?warehouseId={warehouseId}&minDays=7&criticalDays=30&limit=100
+Authorization: Bearer {token}
+```
+
+**Query Parameters:** tất cả tùy chọn.
+- `warehouseId`, `customerId`: giới hạn phạm vi cảnh báo.
+- `minDays`: ngưỡng cảnh báo, **mặc định 7**.
+- `criticalDays`: ngưỡng nghiêm trọng, **mặc định 30**.
+- `limit`: số dòng tối đa, mặc định `100`.
+
+Kết quả sắp xếp lâu nhất trước, mỗi dòng có đầy đủ các trường của mục 42.1 cộng thêm:
+
+| Trường | Giá trị |
+|---|---|
+| `severity` | `CRITICAL` khi `storageDays >= criticalDays`, ngược lại `WARNING` |
+
+Hai ngưỡng mặc định trùng với ngưỡng đang hard-code trong màn hình kho của mobile (`age.days >= 7` cho cảnh báo, `>= 30` cho nghiêm trọng). Nếu nghiệp vụ đổi ngưỡng thì chỉ cần truyền query param, không phải sửa app.
+
+**Báo cáo tồn kho theo khách hàng:**
+
+```http
+GET /api/inventories/storage-report?warehouseId={warehouseId}&customerId={customerId}
+Authorization: Bearer {token}
+```
+
+**Response (200 OK):** sắp xếp theo số kiện giảm dần.
+```json
+{
+  "message": "Lấy báo cáo tồn kho theo khách hàng thành công.",
+  "items": [
+    {
+      "customerId": "1b53ba9c-...",
+      "customerCode": "KH000123",
+      "customerName": "Nguyễn Văn A",
+      "customerPhone": "0901234567",
+      "parcelCount": 12,
+      "totalQuantity": 48,
+      "totalWeight": 156.5,
+      "totalVolume": 720000,
+      "averageAgeDays": 9.4,
+      "oldestAgeDays": 34.2,
+      "binCodes": ["A-01-03", "A-01-04", "B-02-01"]
+    }
+  ]
+}
+```
+
+Cấu trúc này khớp với kết quả của `buildCustomerReports` phía mobile, nên FE có thể dùng thẳng thay cho việc tự gom nhóm từ danh sách tồn kho.
+
+### 42.6. Quy tắc xuất kho (WRO & Picking List)
 
 1. **Khởi tạo WRO (`POST /api/warehouse-release-requests`)**:
    - Chỉ cho phép xuất từ tồn kho `AVAILABLE` có `quantity > 0`.
@@ -5853,3 +6115,103 @@ export interface ScanPickingItemRequestDto {
 
 
 
+
+---
+
+## 46. Phân hệ M03: Danh mục hệ thống bổ sung (Loại hàng, Nhà cung cấp, Tuyến vận chuyển)
+
+Ba nhóm danh mục dưới đây phục vụ màn quản trị Master Data. Các danh mục còn lại của M03 đã có sẵn: kho và sơ đồ Zone–Rack–Bin (mục `/api/warehouses`), quy cách đóng gói (`/api/package-configurations`), đơn vị vận chuyển (`/api/carriers`).
+
+### 46.1. Loại hàng (Product Type)
+
+`GET /api/product-types` giữ nguyên hành vi cũ: **không cần đăng nhập**, chỉ trả loại hàng đang hoạt động, dùng để đổ dropdown khi khách tạo yêu cầu ký gửi.
+
+Bổ sung cho màn quản trị (đều yêu cầu vai trò `Admin`):
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/api/product-types/all` | Toàn bộ loại hàng, gồm cả loại đã ngừng sử dụng |
+| `GET` | `/api/product-types/{id}` | Chi tiết một loại hàng |
+| `POST` | `/api/product-types` | Thêm loại hàng |
+| `PUT` | `/api/product-types/{id}` | Cập nhật loại hàng |
+| `DELETE` | `/api/product-types/{id}` | Xóa loại hàng |
+
+**Body tạo/cập nhật:**
+```json
+{
+  "name": "Hàng điện tử",
+  "importTaxRate": 10,
+  "isActive": true
+}
+```
+
+- `name` bắt buộc, tối đa 255 ký tự và **không được trùng** với loại hàng khác.
+- `importTaxRate` là phần trăm, nằm trong khoảng 0 đến 100, có thể để trống.
+
+> **Lưu ý quan trọng:** `ORDER_ITEMS.product_type` và `PURCHASE_REQUEST_ITEMS.product_type` đang lưu **tên loại hàng dưới dạng chuỗi**, không phải khóa ngoại. Vì vậy:
+> - `DELETE` một loại hàng **đã phát sinh trong đơn** sẽ chuyển nó sang `isActive = false` thay vì xóa vật lý, để dữ liệu lịch sử không bị hỏng. Loại hàng chưa dùng ở đâu mới bị xóa hẳn.
+> - Đổi tên một loại hàng **không** cập nhật lại các đơn cũ. Cân nhắc kỹ trước khi đổi tên loại hàng đã sử dụng.
+
+### 46.2. Nhà cung cấp dịch vụ (Supplier)
+
+Danh mục nhà cung cấp phục vụ luồng xuất kho và mua hộ tại nước ngoài, ví dụ đơn vị trung chuyển và đơn vị lấy hàng.
+
+```http
+GET /api/suppliers?supplierType=TRANSIT&isActive=true
+Authorization: Bearer {token}
+```
+
+`supplierType` nhận: `TRANSIT` (trung chuyển), `PICKUP` (lấy hàng), `GOODS` (cung cấp hàng hoá), `SERVICE` (dịch vụ khác).
+
+**Body tạo/cập nhật:**
+```json
+{
+  "supplierCode": "NCC-GZ-01",
+  "supplierName": "Guangzhou Transit Co., Ltd",
+  "supplierType": "TRANSIT",
+  "country": "China",
+  "contactPerson": "Li Wei",
+  "phone": "+8613800138000",
+  "email": "contact@gztransit.cn",
+  "address": "Baiyun District, Guangzhou",
+  "note": "Đơn vị trung chuyển tuyến Quảng Châu - Hà Nội",
+  "isActive": true
+}
+```
+
+- `supplierCode` bắt buộc và **duy nhất**.
+- `DELETE` nhà cung cấp **đang được gán cho tuyến vận chuyển** sẽ chuyển sang `isActive = false` thay vì xóa vật lý.
+
+### 46.3. Tuyến vận chuyển quốc tế (Shipping Route)
+
+```http
+GET /api/shipping-routes?transportMode=AIR&isActive=true
+Authorization: Bearer {token}
+```
+
+`transportMode` nhận: `AIR`, `SEA`, `ROAD`, `RAIL`.
+
+**Body tạo/cập nhật:**
+```json
+{
+  "routeCode": "CN-VN-AIR-01",
+  "routeName": "Quảng Châu - Hà Nội (đường không)",
+  "originCountry": "China",
+  "originWarehouseId": "7de85f64-...",
+  "destinationCountry": "Vietnam",
+  "destinationWarehouseId": "8af85f64-...",
+  "transportMode": "AIR",
+  "carrierId": "9bc85f64-...",
+  "supplierId": "acd85f64-...",
+  "estimatedTransitDays": 5,
+  "note": "Tuyến ưu tiên cho hàng gấp",
+  "isActive": true
+}
+```
+
+- `routeCode` bắt buộc và **duy nhất**.
+- `originWarehouseId`, `destinationWarehouseId`, `carrierId`, `supplierId` đều **tùy chọn**; nếu có thì phải trỏ tới bản ghi tồn tại, ngược lại trả `400`.
+- Kho đi và kho đến phải khác nhau.
+- Response trả kèm `originWarehouseName`, `destinationWarehouseName`, `carrierName`, `supplierName` để FE không phải gọi thêm API.
+
+> **Migration:** hai bảng `SUPPLIERS` và `SHIPPING_ROUTES` được tạo bởi migration `AddSupplierAndShippingRouteTables`.

@@ -85,6 +85,14 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<Inventory> Inventories { get; set; }
 
+    public virtual DbSet<InventoryMovement> InventoryMovements { get; set; }
+
+    public virtual DbSet<CycleCount> CycleCounts { get; set; }
+
+    public virtual DbSet<Supplier> Suppliers { get; set; }
+
+    public virtual DbSet<ShippingRoute> ShippingRoutes { get; set; }
+
     public virtual DbSet<Invoice> Invoices { get; set; }
 
     public virtual DbSet<InvoiceItem> InvoiceItems { get; set; }
@@ -626,6 +634,150 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.BinId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_INVENTORY_BIN");
+        });
+
+        modelBuilder.Entity<InventoryMovement>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_INVENTORY_MOVEMENTS");
+            entity.ToTable("INVENTORY_MOVEMENTS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.InventoryId).HasColumnName("inventory_id");
+            entity.Property(e => e.ParcelId).HasColumnName("parcel_id");
+            entity.Property(e => e.FromBinId).HasColumnName("from_bin_id");
+            entity.Property(e => e.ToBinId).HasColumnName("to_bin_id");
+            entity.Property(e => e.MovementType).HasMaxLength(30).HasColumnName("movement_type");
+            entity.Property(e => e.Reason).HasMaxLength(500).HasColumnName("reason");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.MovedById).HasColumnName("moved_by_id");
+            entity.Property(e => e.MovedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("moved_at");
+
+            entity.HasOne(d => d.Inventory).WithMany()
+                .HasForeignKey(d => d.InventoryId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_INVENTORY");
+
+            entity.HasOne(d => d.Parcel).WithMany()
+                .HasForeignKey(d => d.ParcelId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_PARCEL");
+
+            entity.HasOne(d => d.FromBin).WithMany()
+                .HasForeignKey(d => d.FromBinId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_FROM_BIN");
+
+            entity.HasOne(d => d.ToBin).WithMany()
+                .HasForeignKey(d => d.ToBinId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_TO_BIN");
+
+            entity.HasOne(d => d.MovedBy).WithMany()
+                .HasForeignKey(d => d.MovedById)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_USER");
+        });
+
+        modelBuilder.Entity<Supplier>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_SUPPLIERS");
+            entity.ToTable("SUPPLIERS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.SupplierCode).HasMaxLength(50).HasColumnName("supplier_code");
+            entity.Property(e => e.SupplierName).HasMaxLength(255).HasColumnName("supplier_name");
+            entity.Property(e => e.SupplierType).HasMaxLength(30).HasColumnName("supplier_type");
+            entity.Property(e => e.Country).HasMaxLength(100).HasColumnName("country");
+            entity.Property(e => e.ContactPerson).HasMaxLength(255).HasColumnName("contact_person");
+            entity.Property(e => e.Phone).HasMaxLength(30).HasColumnName("phone");
+            entity.Property(e => e.Email).HasMaxLength(255).HasColumnName("email");
+            entity.Property(e => e.Address).HasMaxLength(500).HasColumnName("address");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<ShippingRoute>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_SHIPPING_ROUTES");
+            entity.ToTable("SHIPPING_ROUTES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.RouteCode).HasMaxLength(50).HasColumnName("route_code");
+            entity.Property(e => e.RouteName).HasMaxLength(255).HasColumnName("route_name");
+            entity.Property(e => e.OriginCountry).HasMaxLength(100).HasColumnName("origin_country");
+            entity.Property(e => e.OriginWarehouseId).HasColumnName("origin_warehouse_id");
+            entity.Property(e => e.DestinationCountry).HasMaxLength(100).HasColumnName("destination_country");
+            entity.Property(e => e.DestinationWarehouseId).HasColumnName("destination_warehouse_id");
+            entity.Property(e => e.TransportMode).HasMaxLength(20).HasColumnName("transport_mode");
+            entity.Property(e => e.CarrierId).HasColumnName("carrier_id");
+            entity.Property(e => e.SupplierId).HasColumnName("supplier_id");
+            entity.Property(e => e.EstimatedTransitDays).HasColumnName("estimated_transit_days");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(d => d.OriginWarehouse).WithMany()
+                .HasForeignKey(d => d.OriginWarehouseId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPPING_ROUTE_ORIGIN_WAREHOUSE");
+
+            entity.HasOne(d => d.DestinationWarehouse).WithMany()
+                .HasForeignKey(d => d.DestinationWarehouseId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPPING_ROUTE_DESTINATION_WAREHOUSE");
+
+            entity.HasOne(d => d.Carrier).WithMany()
+                .HasForeignKey(d => d.CarrierId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPPING_ROUTE_CARRIER");
+
+            entity.HasOne(d => d.Supplier).WithMany()
+                .HasForeignKey(d => d.SupplierId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPPING_ROUTE_SUPPLIER");
+        });
+
+        modelBuilder.Entity<CycleCount>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_CYCLE_COUNTS");
+            entity.ToTable("CYCLE_COUNTS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.BinId).HasColumnName("bin_id");
+            entity.Property(e => e.ExpectedCount).HasColumnName("expected_count");
+            entity.Property(e => e.ActualCount).HasColumnName("actual_count");
+            entity.Property(e => e.Difference).HasColumnName("difference");
+            entity.Property(e => e.Status).HasMaxLength(30).HasColumnName("status");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+            entity.Property(e => e.CountedById).HasColumnName("counted_by_id");
+            entity.Property(e => e.CountedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("counted_at");
+            entity.Property(e => e.ResolvedById).HasColumnName("resolved_by_id");
+            entity.Property(e => e.ResolvedAt).HasColumnName("resolved_at");
+            entity.Property(e => e.ResolutionNote).HasMaxLength(500).HasColumnName("resolution_note");
+
+            entity.HasOne(d => d.Warehouse).WithMany()
+                .HasForeignKey(d => d.WarehouseId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CYCLE_COUNT_WAREHOUSE");
+
+            entity.HasOne(d => d.Bin).WithMany()
+                .HasForeignKey(d => d.BinId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CYCLE_COUNT_BIN");
+
+            entity.HasOne(d => d.CountedBy).WithMany()
+                .HasForeignKey(d => d.CountedById)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CYCLE_COUNT_COUNTED_BY");
+
+            entity.HasOne(d => d.ResolvedBy).WithMany()
+                .HasForeignKey(d => d.ResolvedById)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CYCLE_COUNT_RESOLVED_BY");
         });
 
         modelBuilder.Entity<Order>(entity =>
