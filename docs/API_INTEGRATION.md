@@ -111,6 +111,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/inventories/cycle-counts` | Admin/WarehouseStaff | Ghi nhận kiểm kê định kỳ tại ô kệ |
 | `GET` | `/api/inventories/cycle-counts` | Đã đăng nhập | Lịch sử kiểm kê định kỳ |
 | `PUT` | `/api/inventories/cycle-counts/{id}/resolve` | Admin/WarehouseStaff/OperationsManager | Ghi nhận xử lý chênh lệch tồn kho |
+| `GET` | `/api/inventories/long-stay-alerts` | Đã đăng nhập | Cảnh báo kiện hàng tồn kho lâu ngày |
+| `GET` | `/api/inventories/storage-report` | Đã đăng nhập | Báo cáo tồn kho tổng hợp theo khách hàng |
 | `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
 | `GET` | `/api/warehouse-release-requests` | Authenticated | Lấy danh sách yêu cầu xuất kho (phân trang & bộ lọc) |
 | `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
@@ -5753,7 +5755,70 @@ Chỉ áp dụng cho phiếu đang ở trạng thái `DISCREPANCY`; phiếu `MAT
 
 > **Migration:** bảng `CYCLE_COUNTS` được tạo bởi migration `AddCycleCountTable`.
 
-### 42.5. Quy tắc xuất kho (WRO & Picking List)
+### 42.5. Theo dõi thời gian lưu kho & cảnh báo tồn lâu ngày (M07)
+
+Mỗi dòng tồn kho trả về từ mục 42.1 đã kèm sẵn hai trường thời gian lưu kho:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `storageDays` | Số ngày đã lưu kho, tính từ `storedAt` tới thời điểm gọi API |
+| `storageHours` | Tổng số giờ đã lưu kho, dùng khi cần độ chính xác dưới một ngày |
+
+> Chỉ các bản ghi ở trạng thái `AVAILABLE` hoặc `RESERVED` mới được coi là **đang nằm trong kho**. `PICKED` và `RELEASED` đã rời vị trí lưu nên bị loại khỏi hai API bên dưới.
+
+**Cảnh báo tồn kho lâu ngày:**
+
+```http
+GET /api/inventories/long-stay-alerts?warehouseId={warehouseId}&minDays=7&criticalDays=30&limit=100
+Authorization: Bearer {token}
+```
+
+**Query Parameters:** tất cả tùy chọn.
+- `warehouseId`, `customerId`: giới hạn phạm vi cảnh báo.
+- `minDays`: ngưỡng cảnh báo, **mặc định 7**.
+- `criticalDays`: ngưỡng nghiêm trọng, **mặc định 30**.
+- `limit`: số dòng tối đa, mặc định `100`.
+
+Kết quả sắp xếp lâu nhất trước, mỗi dòng có đầy đủ các trường của mục 42.1 cộng thêm:
+
+| Trường | Giá trị |
+|---|---|
+| `severity` | `CRITICAL` khi `storageDays >= criticalDays`, ngược lại `WARNING` |
+
+Hai ngưỡng mặc định trùng với ngưỡng đang hard-code trong màn hình kho của mobile (`age.days >= 7` cho cảnh báo, `>= 30` cho nghiêm trọng). Nếu nghiệp vụ đổi ngưỡng thì chỉ cần truyền query param, không phải sửa app.
+
+**Báo cáo tồn kho theo khách hàng:**
+
+```http
+GET /api/inventories/storage-report?warehouseId={warehouseId}&customerId={customerId}
+Authorization: Bearer {token}
+```
+
+**Response (200 OK):** sắp xếp theo số kiện giảm dần.
+```json
+{
+  "message": "Lấy báo cáo tồn kho theo khách hàng thành công.",
+  "items": [
+    {
+      "customerId": "1b53ba9c-...",
+      "customerCode": "KH000123",
+      "customerName": "Nguyễn Văn A",
+      "customerPhone": "0901234567",
+      "parcelCount": 12,
+      "totalQuantity": 48,
+      "totalWeight": 156.5,
+      "totalVolume": 720000,
+      "averageAgeDays": 9.4,
+      "oldestAgeDays": 34.2,
+      "binCodes": ["A-01-03", "A-01-04", "B-02-01"]
+    }
+  ]
+}
+```
+
+Cấu trúc này khớp với kết quả của `buildCustomerReports` phía mobile, nên FE có thể dùng thẳng thay cho việc tự gom nhóm từ danh sách tồn kho.
+
+### 42.6. Quy tắc xuất kho (WRO & Picking List)
 
 1. **Khởi tạo WRO (`POST /api/warehouse-release-requests`)**:
    - Chỉ cho phép xuất từ tồn kho `AVAILABLE` có `quantity > 0`.

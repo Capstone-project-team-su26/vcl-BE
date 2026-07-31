@@ -347,6 +347,104 @@ namespace VCL_BLL.Services
             return result;
         }
 
+        /// <summary>
+        /// Các trạng thái mà hàng vẫn đang nằm vật lý trong kho.
+        /// PICKED và RELEASED đã rời vị trí lưu nên không tính vào thời gian lưu kho.
+        /// </summary>
+        private static readonly string[] InStorageStatuses = { "AVAILABLE", "RESERVED" };
+
+        public async Task<List<LongStayAlertResponseDto>> GetLongStayAlertsAsync(Guid? warehouseId, Guid? customerId, int minDays, int criticalDays, int limit)
+        {
+            if (minDays < 0)
+            {
+                minDays = 0;
+            }
+
+            if (criticalDays < minDays)
+            {
+                criticalDays = minDays;
+            }
+
+            if (limit <= 0)
+            {
+                limit = 100;
+            }
+
+            var inventories = await GetInventoriesAsync(null, customerId, warehouseId);
+
+            return inventories
+                .Where(i => InStorageStatuses.Contains(i.Status, StringComparer.OrdinalIgnoreCase))
+                .Where(i => i.StorageDays >= minDays)
+                .OrderByDescending(i => i.StorageHours)
+                .Take(limit)
+                .Select(i => new LongStayAlertResponseDto
+                {
+                    InventoryId = i.InventoryId,
+                    CustomerId = i.CustomerId,
+                    OrderId = i.OrderId,
+                    OrderItemId = i.OrderItemId,
+                    ParcelId = i.ParcelId,
+                    BinId = i.BinId,
+                    Quantity = i.Quantity,
+                    Status = i.Status,
+                    CreatedAt = i.CreatedAt,
+                    CustomerCode = i.CustomerCode,
+                    CustomerName = i.CustomerName,
+                    CustomerPhone = i.CustomerPhone,
+                    ConsignmentCode = i.ConsignmentCode,
+                    PackageCode = i.PackageCode,
+                    BinCode = i.BinCode,
+                    WarehouseId = i.WarehouseId,
+                    WarehouseName = i.WarehouseName,
+                    StoredAt = i.StoredAt,
+                    ActualWeight = i.ActualWeight,
+                    ActualVolume = i.ActualVolume,
+                    StorageDays = i.StorageDays,
+                    StorageHours = i.StorageHours,
+                    Severity = i.StorageDays >= criticalDays ? "CRITICAL" : "WARNING"
+                })
+                .ToList();
+        }
+
+        public async Task<List<CustomerStorageReportResponseDto>> GetCustomerStorageReportAsync(Guid? warehouseId, Guid? customerId)
+        {
+            var inventories = await GetInventoriesAsync(null, customerId, warehouseId);
+
+            var inStorage = inventories
+                .Where(i => InStorageStatuses.Contains(i.Status, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
+            return inStorage
+                .GroupBy(i => i.CustomerId)
+                .Select(group =>
+                {
+                    var first = group.First();
+                    var parcelCount = group.Count();
+
+                    return new CustomerStorageReportResponseDto
+                    {
+                        CustomerId = group.Key,
+                        CustomerCode = first.CustomerCode,
+                        CustomerName = first.CustomerName,
+                        CustomerPhone = first.CustomerPhone,
+                        ParcelCount = parcelCount,
+                        TotalQuantity = group.Sum(i => i.Quantity),
+                        TotalWeight = group.Sum(i => i.ActualWeight),
+                        TotalVolume = group.Sum(i => i.ActualVolume),
+                        AverageAgeDays = parcelCount == 0 ? 0 : group.Sum(i => (double)i.StorageHours) / parcelCount / 24,
+                        OldestAgeDays = group.Max(i => i.StorageHours) / 24.0,
+                        BinCodes = group
+                            .Select(i => i.BinCode)
+                            .Where(code => !string.IsNullOrWhiteSpace(code))
+                            .Distinct()
+                            .OrderBy(code => code)
+                            .ToList()
+                    };
+                })
+                .OrderByDescending(r => r.ParcelCount)
+                .ToList();
+        }
+
         public async Task<CycleCountResponseDto> CreateCycleCountAsync(CreateCycleCountRequestDto request, Guid? userId)
         {
             if (request == null || request.BinId == Guid.Empty)
@@ -607,6 +705,9 @@ namespace VCL_BLL.Services
                 // Thể tích thực tế tính theo cùng công thức với kiểm tra sức chứa ô kệ
                 var actualVolume = (parcel?.Length ?? 0) * (parcel?.Width ?? 0) * (parcel?.Height ?? 0);
 
+                // Thời gian đã lưu kho tính tới hiện tại (M07)
+                var storageHours = (int)Math.Max(0, Math.Floor((DateTime.UtcNow - storedAt).TotalHours));
+
                 result.Add(new InventoryResponseDto
                 {
                     InventoryId = inventory.Id,
@@ -629,7 +730,9 @@ namespace VCL_BLL.Services
                     WarehouseName = warehouse?.WarehouseName ?? string.Empty,
                     StoredAt = storedAt,
                     ActualWeight = parcel?.ActualWeight ?? 0,
-                    ActualVolume = actualVolume
+                    ActualVolume = actualVolume,
+                    StorageDays = storageHours / 24,
+                    StorageHours = storageHours
                 });
             }
 

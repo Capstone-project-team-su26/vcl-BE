@@ -50,6 +50,47 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Thể tích thực tế của kiện hàng = Length × Width × Height</summary>
         public decimal ActualVolume { get; set; }
+
+        /// <summary>Số ngày đã lưu kho tính từ StoredAt tới hiện tại</summary>
+        public int StorageDays { get; set; }
+
+        /// <summary>Tổng số giờ đã lưu kho, dùng khi cần độ chính xác dưới một ngày</summary>
+        public int StorageHours { get; set; }
+    }
+
+    /// <summary>Một kiện hàng tồn kho vượt ngưỡng cảnh báo thời gian lưu</summary>
+    public class LongStayAlertResponseDto : InventoryResponseDto
+    {
+        /// <summary>WARNING khi vượt ngưỡng cảnh báo, CRITICAL khi vượt ngưỡng nghiêm trọng</summary>
+        public string Severity { get; set; } = string.Empty;
+    }
+
+    /// <summary>Báo cáo tồn kho tổng hợp theo từng khách hàng</summary>
+    public class CustomerStorageReportResponseDto
+    {
+        public Guid CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public string CustomerPhone { get; set; } = string.Empty;
+
+        /// <summary>Số kiện đang lưu kho của khách hàng</summary>
+        public int ParcelCount { get; set; }
+
+        /// <summary>Tổng số lượng hàng đang lưu kho</summary>
+        public int TotalQuantity { get; set; }
+
+        public decimal TotalWeight { get; set; }
+
+        public decimal TotalVolume { get; set; }
+
+        /// <summary>Số ngày lưu kho trung bình của các kiện</summary>
+        public double AverageAgeDays { get; set; }
+
+        /// <summary>Số ngày lưu kho của kiện lâu nhất</summary>
+        public double OldestAgeDays { get; set; }
+
+        /// <summary>Danh sách ô kệ đang chứa hàng của khách hàng</summary>
+        public List<string> BinCodes { get; set; } = new List<string>();
     }
 
     /// <summary>Yêu cầu điều chuyển kiện hàng sang ô kệ khác trong cùng kho</summary>

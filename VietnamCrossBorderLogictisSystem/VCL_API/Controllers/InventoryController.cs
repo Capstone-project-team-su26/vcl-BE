@@ -108,6 +108,38 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Danh sách kiện hàng tồn kho vượt ngưỡng cảnh báo thời gian lưu, sắp xếp lâu nhất trước.
+        /// </summary>
+        /// <param name="warehouseId">Lọc theo kho</param>
+        /// <param name="customerId">Lọc theo khách hàng</param>
+        /// <param name="minDays">Ngưỡng cảnh báo, mặc định 7 ngày</param>
+        /// <param name="criticalDays">Ngưỡng nghiêm trọng, mặc định 30 ngày</param>
+        /// <param name="limit">Số dòng tối đa, mặc định 100</param>
+        [HttpGet("long-stay-alerts")]
+        public async Task<IActionResult> GetLongStayAlerts(
+            [FromQuery] Guid? warehouseId,
+            [FromQuery] Guid? customerId,
+            [FromQuery] int minDays = 7,
+            [FromQuery] int criticalDays = 30,
+            [FromQuery] int limit = 100)
+        {
+            var result = await _inventoryService.GetLongStayAlertsAsync(warehouseId, customerId, minDays, criticalDays, limit);
+            return Ok(new { message = "Lấy danh sách cảnh báo tồn kho lâu ngày thành công.", items = result });
+        }
+
+        /// <summary>
+        /// Báo cáo tồn kho tổng hợp theo từng khách hàng, sắp xếp theo số kiện giảm dần.
+        /// </summary>
+        /// <param name="warehouseId">Lọc theo kho</param>
+        /// <param name="customerId">Lọc theo một khách hàng cụ thể</param>
+        [HttpGet("storage-report")]
+        public async Task<IActionResult> GetCustomerStorageReport([FromQuery] Guid? warehouseId, [FromQuery] Guid? customerId)
+        {
+            var result = await _inventoryService.GetCustomerStorageReportAsync(warehouseId, customerId);
+            return Ok(new { message = "Lấy báo cáo tồn kho theo khách hàng thành công.", items = result });
+        }
+
+        /// <summary>
         /// Ghi nhận một lần kiểm kê định kỳ tại ô kệ.
         /// Số kiện hệ thống ghi nhận do server tự đếm, không lấy theo số client gửi lên.
         /// </summary>

@@ -23,5 +23,11 @@ namespace VCL_BLL.Interface
 
         /// <summary>Ghi nhận cách xử lý chênh lệch của một phiếu kiểm kê</summary>
         Task<CycleCountResponseDto> ResolveCycleCountAsync(Guid cycleCountId, ResolveCycleCountRequestDto request, Guid? userId);
+
+        /// <summary>Danh sách kiện hàng tồn kho vượt ngưỡng cảnh báo thời gian lưu</summary>
+        Task<List<LongStayAlertResponseDto>> GetLongStayAlertsAsync(Guid? warehouseId, Guid? customerId, int minDays, int criticalDays, int limit);
+
+        /// <summary>Báo cáo tồn kho tổng hợp theo từng khách hàng</summary>
+        Task<List<CustomerStorageReportResponseDto>> GetCustomerStorageReportAsync(Guid? warehouseId, Guid? customerId);
     }
 }
