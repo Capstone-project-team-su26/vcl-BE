@@ -113,6 +113,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/inventories/cycle-counts/{id}/resolve` | Admin/WarehouseStaff/OperationsManager | Ghi nhận xử lý chênh lệch tồn kho |
 | `GET` | `/api/inventories/long-stay-alerts` | Đã đăng nhập | Cảnh báo kiện hàng tồn kho lâu ngày |
 | `GET` | `/api/inventories/storage-report` | Đã đăng nhập | Báo cáo tồn kho tổng hợp theo khách hàng |
+| `GET` | `/api/units-of-measure` | Không cần đăng nhập | Danh sách đơn vị tính đang hoạt động |
+| `POST` | `/api/units-of-measure` | Admin | Thêm đơn vị tính |
 | `GET` | `/api/product-types/all` | Admin | Toàn bộ loại hàng, gồm cả loại đã ngừng sử dụng |
 | `GET` | `/api/product-types/{id}` | Admin | Chi tiết loại hàng |
 | `POST` | `/api/product-types` | Admin | Thêm loại hàng |
@@ -6155,6 +6157,41 @@ Bổ sung cho màn quản trị (đều yêu cầu vai trò `Admin`):
 > **Lưu ý quan trọng:** `ORDER_ITEMS.product_type` và `PURCHASE_REQUEST_ITEMS.product_type` đang lưu **tên loại hàng dưới dạng chuỗi**, không phải khóa ngoại. Vì vậy:
 > - `DELETE` một loại hàng **đã phát sinh trong đơn** sẽ chuyển nó sang `isActive = false` thay vì xóa vật lý, để dữ liệu lịch sử không bị hỏng. Loại hàng chưa dùng ở đâu mới bị xóa hẳn.
 > - Đổi tên một loại hàng **không** cập nhật lại các đơn cũ. Cân nhắc kỹ trước khi đổi tên loại hàng đã sử dụng.
+
+### 46.1b. Đơn vị tính (Unit of Measure)
+
+Danh mục đơn vị tính dùng khi khách hàng khai báo hàng hoá trong yêu cầu ký gửi và yêu cầu mua hộ.
+
+`GET /api/units-of-measure` **không cần đăng nhập**, trả các đơn vị đang hoạt động và sắp xếp theo `displayOrder` — dùng để đổ dropdown. Cùng kiểu với `/api/product-types`.
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/units-of-measure` | Không cần đăng nhập | Đơn vị tính đang hoạt động |
+| `GET` | `/api/units-of-measure/all` | Admin | Toàn bộ, gồm cả loại đã ngừng sử dụng |
+| `GET` | `/api/units-of-measure/{id}` | Admin | Chi tiết một đơn vị tính |
+| `POST` | `/api/units-of-measure` | Admin | Thêm đơn vị tính |
+| `PUT` | `/api/units-of-measure/{id}` | Admin | Cập nhật đơn vị tính |
+| `DELETE` | `/api/units-of-measure/{id}` | Admin | Xóa đơn vị tính |
+
+**Body tạo/cập nhật:**
+```json
+{
+  "unitCode": "CTN",
+  "unitName": "Thùng",
+  "description": "Hàng đóng theo thùng carton",
+  "displayOrder": 6,
+  "isActive": true
+}
+```
+
+- `unitCode` bắt buộc, **duy nhất**, tự động chuyển thành chữ hoa.
+- `displayOrder` quyết định thứ tự trong dropdown, số nhỏ hiện trước.
+
+**Dữ liệu seed sẵn:** `PCS` (Cái), `SET` (Bộ), `PAIR` (Đôi), `BOX` (Hộp), `PKG` (Gói), `CTN` (Thùng), `ROLL` (Cuộn), `KG` (Kilôgam), `M` (Mét).
+
+> **Lưu ý giống mục 46.1:** `ORDER_ITEMS.unit` đang lưu **chuỗi**, không phải khóa ngoại. Xóa một đơn vị đã phát sinh trong đơn sẽ chuyển sang `isActive = false` thay vì xóa vật lý. Dữ liệu cũ trong DB đang có 2 giá trị tự do là `pack` và `pcs` trên 6 dòng — nên chuẩn hoá dần về mã trong danh mục.
+>
+> **Migration:** bảng `UNIT_OF_MEASURES` được tạo bởi `AddUnitOfMeasureTable`, kèm seed 9 đơn vị thông dụng. Phần seed chỉ chèn khi bảng còn rỗng nên chạy lại nhiều lần vẫn an toàn.
 
 ### 46.2. Nhà cung cấp dịch vụ (Supplier)
 

@@ -91,6 +91,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<Supplier> Suppliers { get; set; }
 
+    public virtual DbSet<UnitOfMeasure> UnitOfMeasures { get; set; }
+
     public virtual DbSet<ShippingRoute> ShippingRoutes { get; set; }
 
     public virtual DbSet<Invoice> Invoices { get; set; }
@@ -678,6 +680,23 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.MovedById)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_INVENTORY_MOVEMENT_USER");
+        });
+
+        modelBuilder.Entity<UnitOfMeasure>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_UNIT_OF_MEASURES");
+            entity.ToTable("UNIT_OF_MEASURES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.UnitCode).HasMaxLength(30).HasColumnName("unit_code");
+            entity.Property(e => e.UnitName).HasMaxLength(100).HasColumnName("unit_name");
+            entity.Property(e => e.Description).HasMaxLength(255).HasColumnName("description");
+            entity.Property(e => e.DisplayOrder).HasColumnName("display_order");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.UnitCode).IsUnique().HasDatabaseName("UQ_UNIT_OF_MEASURES_UNIT_CODE");
         });
 
         modelBuilder.Entity<Supplier>(entity =>
