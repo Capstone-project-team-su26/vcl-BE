@@ -49,11 +49,16 @@ namespace VCL_API.Controllers
 
         /// <summary>
         /// Lấy danh sách hàng tồn kho (loại bỏ các dòng zombie AVAILABLE có số lượng 0).
+        /// Mỗi dòng kèm thông tin khách hàng, mã ký gửi, mã kiện, ô kệ, kho,
+        /// thời điểm bắt đầu lưu kho, cân nặng và thể tích thực tế.
         /// </summary>
+        /// <param name="status">Lọc theo trạng thái tồn kho, ví dụ AVAILABLE</param>
+        /// <param name="customerId">Lọc theo khách hàng sở hữu hàng tồn</param>
+        /// <param name="warehouseId">Lọc theo kho đang lưu hàng</param>
         [HttpGet]
-        public async Task<IActionResult> GetInventories([FromQuery] string? status, [FromQuery] Guid? customerId)
+        public async Task<IActionResult> GetInventories([FromQuery] string? status, [FromQuery] Guid? customerId, [FromQuery] Guid? warehouseId)
         {
-            var result = await _inventoryService.GetInventoriesAsync(status, customerId);
+            var result = await _inventoryService.GetInventoriesAsync(status, customerId, warehouseId);
             return Ok(new { message = "Lấy danh sách tồn kho thành công.", items = result });
         }
     }

@@ -5543,13 +5543,14 @@ Hệ thống quản lý tồn kho chặt chẽ, loại bỏ hoàn toàn các dò
 ### 42.1. Lấy danh sách hàng tồn kho
 
 ```http
-GET /api/inventories?status=AVAILABLE&customerId={customerId}
+GET /api/inventories?status=AVAILABLE&customerId={customerId}&warehouseId={warehouseId}
 Authorization: Bearer {token}
 ```
 
 **Query Parameters:**
 - `status` (tùy chọn): Filter theo trạng thái (`AVAILABLE`, `RESERVED`, `PICKED`, `RELEASED`). Mặc định tự động loại bỏ các bản ghi `AVAILABLE` có `quantity <= 0`.
 - `customerId` (tùy chọn): Filter theo ID khách hàng sở hữu.
+- `warehouseId` (tùy chọn): Filter theo kho đang lưu hàng, xác định qua ô kệ của bản ghi tồn kho.
 
 **Response (200 OK):**
 ```json
@@ -5565,11 +5566,40 @@ Authorization: Bearer {token}
       "binId": "ffe85f64-...",
       "quantity": 5,
       "status": "AVAILABLE",
-      "createdAt": "2026-07-21T16:00:00Z"
+      "createdAt": "2026-07-21T16:00:00Z",
+
+      "customerCode": "KH000123",
+      "customerName": "Nguyễn Văn A",
+      "customerPhone": "0901234567",
+      "consignmentCode": "CN20260731001",
+      "packageCode": "PKG20260731001",
+      "binCode": "A-01-03",
+      "warehouseId": "7de85f64-...",
+      "warehouseName": "Kho Quảng Châu",
+      "storedAt": "2026-07-21T16:00:00Z",
+      "actualWeight": 12.5,
+      "actualVolume": 48000
     }
   ]
 }
 ```
+
+**Các trường bổ sung (VCL-M06/M07):**
+
+| Trường | Nguồn dữ liệu | Ghi chú |
+|---|---|---|
+| `customerCode`, `customerName`, `customerPhone` | `Customer` | Dùng cho báo cáo tồn kho theo khách hàng |
+| `consignmentCode` | `Order.ConsignmentCode` | Mã yêu cầu ký gửi liên kết |
+| `packageCode` | `Parcel.PackageCode` | Mã kiện hàng đang lưu |
+| `binCode` | `Bin.BinCode` | Mã ô kệ đang chứa kiện |
+| `warehouseId`, `warehouseName` | `Bin.WarehouseId` → `Warehouse` | Kho đang lưu kiện |
+| `storedAt` | `Parcel.PutAwayTime`, fallback `Inventory.CreatedAt` | **Mốc tính số ngày lưu kho và phí lưu kho** |
+| `actualWeight` | `Parcel.ActualWeight` | Đơn vị kg, mặc định `0` nếu chưa cân |
+| `actualVolume` | `Parcel.Length × Width × Height` | Cùng đơn vị với `Bin.MaxVolume`, mặc định `0` |
+
+> Các trường trên cũng được trả về trong response của `POST /api/inventories/from-parcel/{parcelId}`.
+>
+> Khi kiện hàng chưa được put-away hoặc chưa cân đo, các trường tương ứng trả về chuỗi rỗng hoặc `0` thay vì `null`, để FE không phải kiểm tra null trên từng trường.
 
 ### 42.2. Quy tắc xuất kho (WRO & Picking List)
 
