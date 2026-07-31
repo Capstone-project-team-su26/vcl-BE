@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
@@ -9,6 +10,7 @@ using VCL_BLL.Interface;
 
 namespace VCL_API.Controllers
 {
+    [EnableCors("AllowAll")]
     [Route("api/warehouse-release-requests")]
     [ApiController]
     [Authorize]
@@ -249,7 +251,7 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Gán phương án, tuyến vận chuyển quốc tế & đơn vị vận chuyển (Operations Manager / Operations / Admin)
+        /// Gán phương án, tuyến vận chuyển quốc tế &amp; đơn vị vận chuyển (Operations Manager / Operations / Admin)
         /// </summary>
         [HttpPut("{requestId}/shipping-route")]
         [Authorize(Roles = "OperationsManager,Operations,Admin")]

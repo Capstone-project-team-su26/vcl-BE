@@ -98,12 +98,22 @@ namespace VCL_BLL.Services
             }
 
             // 3. Khởi tạo WRO Request
+            Guid? targetCustomerId = customer?.Id;
+            if (!targetCustomerId.HasValue && request.Items.Any())
+            {
+                var firstInv = await inventoryRepo.GetByIdAsync(request.Items.First().InventoryId);
+                if (firstInv != null)
+                {
+                    targetCustomerId = firstInv.CustomerId;
+                }
+            }
+
             var wroCode = $"WRO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
             var wroRequest = new WroRequest
             {
                 Id = Guid.NewGuid(),
                 UserId = userId,
-                CustomerId = customer?.Id,
+                CustomerId = targetCustomerId,
                 WroCode = wroCode,
                 ReceiverName = request.ReceiverName,
                 ReceiverPhone = request.ReceiverPhone,
@@ -212,7 +222,8 @@ namespace VCL_BLL.Services
                 var customerRepo = _unitOfWork.Repository<Customer>();
                 var allCustomers = await customerRepo.GetAllAsync();
                 var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
-                if (customer == null || wroRequest.CustomerId != customer.Id)
+                bool isOwner = (customer != null && wroRequest.CustomerId == customer.Id) || (wroRequest.UserId == userId);
+                if (!isOwner)
                 {
                     throw new UnauthorizedAccessException("Bạn không có quyền xem yêu cầu xuất kho này.");
                 }
@@ -824,7 +835,7 @@ namespace VCL_BLL.Services
                 var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
                 if (customer != null)
                 {
-                    query = query.Where(w => w.CustomerId == customer.Id);
+                    query = query.Where(w => w.CustomerId == customer.Id || w.UserId == userId);
                 }
                 else
                 {
@@ -857,8 +868,15 @@ namespace VCL_BLL.Services
             var itemsDto = new List<WroDetailResponseDto>();
             foreach (var item in pagedItems)
             {
-                var detail = await GetWroRequestDetailAsync(item.Id, userId, role);
-                itemsDto.Add(detail);
+                try
+                {
+                    var detail = await GetWroRequestDetailAsync(item.Id, userId, role);
+                    itemsDto.Add(detail);
+                }
+                catch
+                {
+                    // Nếu gặp lỗi khi lấy chi tiết của 1 phần tử lẻ, bỏ qua phần tử đó để không làm hỏng cả danh sách
+                }
             }
 
             return new PagedWroListResponseDto

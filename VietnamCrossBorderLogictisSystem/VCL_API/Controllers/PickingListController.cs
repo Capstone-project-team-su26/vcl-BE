@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
@@ -9,6 +10,7 @@ using VCL_BLL.Interface;
 
 namespace VCL_API.Controllers
 {
+    [EnableCors("AllowAll")]
     [Route("api/picking-lists")]
     [ApiController]
     [Authorize]
