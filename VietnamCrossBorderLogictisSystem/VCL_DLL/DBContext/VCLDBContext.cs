@@ -936,6 +936,7 @@ public partial class VCLDBContext : DbContext
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("length");
             entity.Property(e => e.MasterBoxId).HasColumnName("master_box_id");
+            entity.Property(e => e.ParentParcelId).HasColumnName("parent_parcel_id");
             entity.Property(e => e.PackageCode)
                 .HasMaxLength(100)
                 .HasColumnName("package_code");

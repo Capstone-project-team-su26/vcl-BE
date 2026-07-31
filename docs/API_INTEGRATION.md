@@ -127,6 +127,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/shipping-routes/{id}` | Đã đăng nhập | Chi tiết tuyến vận chuyển |
 | `GET` | `/api/warehouse-receiving-notes/{id}` | Admin/Sale/WarehouseStaff/OpsManager | Biên bản nhập kho kèm dòng đối chiếu |
 | `POST` | `/api/warehouse-receiving-notes/{id}/confirm-receipt` | Admin/WarehouseStaff | Xác nhận nhập kho với số liệu thực tế |
+| `POST` | `/api/parcels/{id}/split` | Admin/WarehouseStaff | Tách kiện hàng thành nhiều kiện con |
+| `POST` | `/api/parcels/merge` | Admin/WarehouseStaff | Gộp nhiều kiện hàng thành một kiện |
 | `POST` | `/api/shipping-routes` | Admin | Thêm tuyến vận chuyển |
 | `PUT` | `/api/shipping-routes/{id}` | Admin | Cập nhật tuyến vận chuyển |
 | `DELETE` | `/api/shipping-routes/{id}` | Admin | Xóa tuyến vận chuyển |
@@ -6321,3 +6323,113 @@ Authorization: Bearer {token}
 - Đây cũng là nguồn dữ liệu cho phiếu PDF bên web Sale.
 
 > **Migration:** bảng `WAREHOUSE_RECEIVING_NOTE_ITEMS` được tạo bởi migration `AddWarehouseReceivingNoteItems`.
+
+---
+
+## 48. Phân hệ M06: Gộp & Tách kiện hàng (Cấu trúc kiện cha – con)
+
+Bảng `PARCELS` được bổ sung cột `parent_parcel_id` để lưu quan hệ cha – con:
+
+- **Tách kiện:** các kiện con trỏ `parentParcelId` về kiện gốc; kiện gốc chuyển sang trạng thái `SPLIT`.
+- **Gộp kiện:** các kiện gốc trỏ `parentParcelId` về kiện mới; các kiện gốc chuyển sang trạng thái `MERGED`.
+
+Kiện ở trạng thái `SPLIT` hoặc `MERGED` không còn là kiện vật lý đang tồn tại, nên tự động biến mất khỏi các danh sách lọc theo `RECEIVED` / `STORED`.
+
+### 48.1. Tách kiện
+
+```http
+POST /api/parcels/{parcelId}/split
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "note": "Tách để xếp vừa hai ô kệ",
+  "children": [
+    { "quantity": 6, "actualWeight": 7.5, "length": 30, "width": 20, "height": 15 },
+    { "quantity": 4, "actualWeight": 5.0, "length": 25, "width": 20, "height": 15, "binId": "ffe85f64-..." }
+  ]
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+**Ràng buộc:**
+- Tối thiểu **2 kiện con**; mỗi kiện con phải có `actualWeight > 0` và `quantity >= 0`.
+- Kiện gốc phải ở trạng thái `RECEIVED`, `RECEIVED_AT_DESTINATION` hoặc `STORED`.
+- Hàng tồn của kiện gốc phải đang `AVAILABLE` — không tách kiện đã được giữ cho phiếu xuất kho (BR-91).
+- **Tổng cân nặng kiện con không được vượt cân nặng kiện gốc.**
+- **Tổng số lượng kiện con phải bằng đúng số lượng hàng tồn của kiện gốc** — tránh thất thoát khi tách.
+- `binId` của kiện con nếu khác kiện gốc thì phải là ô kệ đang hoạt động và **cùng kho** (BR-56).
+- `packageCode` để trống thì hệ thống tự sinh theo dạng `PCL-{yyyyMMddHHmmss}-{random}`.
+
+Hệ thống tự tính lại `volumetricWeight` và `chargeableWeight` cho từng kiện con theo hệ số quy đổi đang cấu hình, đồng thời trừ thể tích kiện gốc và cộng thể tích kiện con vào ô kệ tương ứng.
+
+### 48.2. Gộp kiện
+
+```http
+POST /api/parcels/merge
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "sourceParcelIds": ["bfe85f64-...", "cae85f64-..."],
+  "packageCode": "",
+  "actualWeight": 12.5,
+  "length": 45,
+  "width": 35,
+  "height": 30,
+  "binId": "ffe85f64-...",
+  "note": "Gộp hai kiện nhỏ cùng đơn để tiết kiệm cước"
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+**Ràng buộc:**
+- Tối thiểu **2 kiện khác nhau**.
+- **Tất cả kiện phải thuộc cùng một yêu cầu ký gửi** — gộp chéo đơn sẽ làm lẫn quyền sở hữu hàng tồn.
+- **Tất cả kiện phải đang nằm trong cùng một kho.**
+- Trạng thái kiện và hàng tồn phải hợp lệ, giống điều kiện của tách kiện.
+- `binId` để trống thì dùng ô kệ của kiện gốc đầu tiên; nếu truyền thì phải cùng kho.
+
+Hàng tồn của các kiện gốc được dồn thành **một dòng duy nhất** cho kiện mới với tổng số lượng, các dòng cũ bị xoá.
+
+### 48.3. Response chung
+
+```json
+{
+  "message": "Tách kiện hàng thành công.",
+  "data": {
+    "operation": "SPLIT",
+    "parent": {
+      "parcelId": "bfe85f64-...",
+      "packageCode": "PCL-20260801100000-123456",
+      "parentParcelId": null,
+      "actualWeight": 12.5,
+      "chargeableWeight": 12.5,
+      "packageStatus": "SPLIT",
+      "binId": "ffe85f64-...",
+      "binCode": "A-01-03",
+      "quantity": 0
+    },
+    "children": [
+      {
+        "parcelId": "dde85f64-...",
+        "packageCode": "PCL-20260801100001-654321",
+        "parentParcelId": "bfe85f64-...",
+        "actualWeight": 7.5,
+        "volumetricWeight": 1.8,
+        "chargeableWeight": 7.5,
+        "packageStatus": "STORED",
+        "binId": "ffe85f64-...",
+        "binCode": "A-01-03",
+        "quantity": 6
+      }
+    ]
+  }
+}
+```
+
+`operation` nhận `SPLIT` hoặc `MERGE`. Với `MERGE`, `parent` là kiện mới sau khi gộp còn `children` là các kiện gốc đã bị gộp.
+
+> **Migration:** cột `parent_parcel_id` được thêm bởi migration `AddParentParcelId`.

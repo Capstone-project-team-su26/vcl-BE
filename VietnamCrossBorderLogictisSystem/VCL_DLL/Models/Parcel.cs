@@ -13,6 +13,12 @@ public partial class Parcel
 
     public Guid? MasterBoxId { get; set; }
 
+    /// <summary>
+    /// Kiện cha trong cấu trúc gộp / tách kiện.
+    /// Khi tách: các kiện con trỏ về kiện gốc. Khi gộp: các kiện gốc trỏ về kiện mới.
+    /// </summary>
+    public Guid? ParentParcelId { get; set; }
+
     public string PackageCode { get; set; }
 
     public decimal? ActualWeight { get; set; }

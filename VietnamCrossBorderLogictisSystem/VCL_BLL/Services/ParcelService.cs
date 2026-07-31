@@ -642,5 +642,428 @@ namespace VCL_BLL.Services
 
             return result;
         }
+
+        /// <summary>Trạng thái kiện hàng còn được phép gộp hoặc tách</summary>
+        private static readonly string[] StructurableStatuses =
+        {
+            "RECEIVED", "RECEIVED_AT_DESTINATION", "STORED"
+        };
+
+        public async Task<ParcelStructureResponseDto> SplitParcelAsync(Guid parcelId, SplitParcelRequestDto request, Guid? userId)
+        {
+            if (request?.Children == null || request.Children.Count < 2)
+            {
+                throw new ArgumentException("Cần ít nhất 2 kiện con để tách kiện.");
+            }
+
+            if (request.Children.Any(c => c.ActualWeight <= 0))
+            {
+                throw new ArgumentException("Cân nặng thực tế của mỗi kiện con phải lớn hơn 0.");
+            }
+
+            if (request.Children.Any(c => c.Quantity < 0))
+            {
+                throw new ArgumentException("Số lượng hàng trong kiện con không được nhỏ hơn 0.");
+            }
+
+            // 1. Kiện gốc phải tồn tại và đang ở trạng thái cho phép tách
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var source = await parcelRepo.GetByIdAsync(parcelId);
+            if (source == null)
+            {
+                throw new NotFoundException($"Không tìm thấy kiện hàng với ID: {parcelId}");
+            }
+
+            if (!StructurableStatuses.Contains(source.PackageStatus, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"Không thể tách kiện đang ở trạng thái {source.PackageStatus}.");
+            }
+
+            // 2. Không tách kiện đang được giữ cho phiếu xuất kho (BR-91)
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+            var sourceInventory = allInventories.FirstOrDefault(i => i.ParcelId == source.Id);
+
+            if (sourceInventory != null
+                && !string.Equals(sourceInventory.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"Không thể tách kiện vì hàng tồn đang ở trạng thái {sourceInventory.Status}.");
+            }
+
+            // 3. Tổng cân nặng các kiện con không được vượt cân nặng kiện gốc
+            var totalChildWeight = request.Children.Sum(c => c.ActualWeight);
+            if (source.ActualWeight.HasValue && totalChildWeight > source.ActualWeight.Value)
+            {
+                throw new ArgumentException($"Tổng cân nặng kiện con ({totalChildWeight}) vượt quá cân nặng kiện gốc ({source.ActualWeight.Value}).");
+            }
+
+            // 4. Tổng số lượng các kiện con phải khớp số lượng hàng tồn của kiện gốc
+            if (sourceInventory != null)
+            {
+                var totalChildQuantity = request.Children.Sum(c => c.Quantity);
+                if (totalChildQuantity != sourceInventory.Quantity)
+                {
+                    throw new ArgumentException($"Tổng số lượng kiện con ({totalChildQuantity}) phải bằng số lượng hàng tồn của kiện gốc ({sourceInventory.Quantity}).");
+                }
+            }
+
+            var binRepo = _unitOfWork.Repository<Bin>();
+            Bin? sourceBin = null;
+            if (source.BinId is Guid sourceBinId)
+            {
+                sourceBin = await binRepo.GetByIdAsync(sourceBinId);
+            }
+
+            var divisor = await GetVolumetricDivisorAsync();
+            var allParcels = (await parcelRepo.GetAllAsync()).ToList();
+            var usedCodes = allParcels.Select(p => p.PackageCode ?? string.Empty).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var createdChildren = new List<Parcel>();
+
+            foreach (var child in request.Children)
+            {
+                // Ô kệ của kiện con phải cùng kho với kiện gốc (BR-56)
+                Bin? childBin = sourceBin;
+                if (child.BinId is Guid childBinId && childBinId != source.BinId)
+                {
+                    childBin = await binRepo.GetByIdAsync(childBinId);
+                    if (childBin == null)
+                    {
+                        throw new NotFoundException("Không tìm thấy ô kệ được chọn cho kiện con.");
+                    }
+
+                    if (!childBin.IsActive)
+                    {
+                        throw new ArgumentException($"Ô kệ {childBin.BinCode} đang ngừng sử dụng.");
+                    }
+
+                    if (sourceBin?.WarehouseId != null && childBin.WarehouseId != sourceBin.WarehouseId)
+                    {
+                        throw new ArgumentException("Kiện con phải được xếp trong cùng kho với kiện gốc.");
+                    }
+                }
+
+                var newParcel = new Parcel
+                {
+                    Id = Guid.NewGuid(),
+                    ConsignmentId = source.ConsignmentId,
+                    ParentParcelId = source.Id,
+                    PackageCode = ResolvePackageCode(child.PackageCode, usedCodes),
+                    ActualWeight = child.ActualWeight,
+                    Length = child.Length,
+                    Width = child.Width,
+                    Height = child.Height,
+                    PackageStatus = source.PackageStatus,
+                    CheckInTime = source.CheckInTime,
+                    PutAwayTime = source.PutAwayTime,
+                    BinId = childBin?.Id ?? source.BinId,
+                    PackageConfigurationId = source.PackageConfigurationId
+                };
+
+                ApplyWeights(newParcel, divisor);
+
+                await parcelRepo.AddAsync(newParcel);
+                createdChildren.Add(newParcel);
+
+                // Cộng thể tích kiện con vào ô kệ chứa nó
+                if (childBin != null)
+                {
+                    childBin.CurrentVolume = (childBin.CurrentVolume ?? 0) + GetVolume(newParcel);
+                    binRepo.Update(childBin);
+                }
+
+                // Tách hàng tồn theo số lượng của từng kiện con
+                if (sourceInventory != null)
+                {
+                    await inventoryRepo.AddAsync(new Inventory
+                    {
+                        Id = Guid.NewGuid(),
+                        CustomerId = sourceInventory.CustomerId,
+                        OrderId = sourceInventory.OrderId,
+                        OrderItemId = sourceInventory.OrderItemId,
+                        ParcelId = newParcel.Id,
+                        BinId = newParcel.BinId ?? sourceInventory.BinId,
+                        Quantity = child.Quantity,
+                        Status = "AVAILABLE",
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            // 5. Kiện gốc chuyển sang SPLIT và trả lại thể tích cho ô kệ
+            if (sourceBin != null)
+            {
+                var remaining = (sourceBin.CurrentVolume ?? 0) - GetVolume(source);
+                sourceBin.CurrentVolume = remaining < 0 ? 0 : remaining;
+                binRepo.Update(sourceBin);
+            }
+
+            source.PackageStatus = "SPLIT";
+            parcelRepo.Update(source);
+
+            if (sourceInventory != null)
+            {
+                inventoryRepo.Delete(sourceInventory);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return await BuildStructureResponseAsync("SPLIT", source, createdChildren);
+        }
+
+        public async Task<ParcelStructureResponseDto> MergeParcelsAsync(MergeParcelsRequestDto request, Guid? userId)
+        {
+            if (request?.SourceParcelIds == null || request.SourceParcelIds.Distinct().Count() < 2)
+            {
+                throw new ArgumentException("Cần ít nhất 2 kiện hàng khác nhau để gộp kiện.");
+            }
+
+            if (request.ActualWeight <= 0)
+            {
+                throw new ArgumentException("Cân nặng thực tế của kiện sau khi gộp phải lớn hơn 0.");
+            }
+
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var allParcels = (await parcelRepo.GetAllAsync()).ToList();
+
+            var sourceIds = request.SourceParcelIds.Distinct().ToList();
+            var sources = allParcels.Where(p => sourceIds.Contains(p.Id)).ToList();
+
+            if (sources.Count != sourceIds.Count)
+            {
+                throw new NotFoundException("Không tìm thấy một hoặc nhiều kiện hàng cần gộp.");
+            }
+
+            // 1. Chỉ gộp các kiện thuộc cùng một yêu cầu ký gửi để không lẫn quyền sở hữu hàng tồn
+            var consignmentIds = sources.Select(p => p.ConsignmentId).Distinct().ToList();
+            if (consignmentIds.Count > 1)
+            {
+                throw new ArgumentException("Chỉ được gộp các kiện hàng thuộc cùng một yêu cầu ký gửi.");
+            }
+
+            var invalidStatus = sources.FirstOrDefault(p => !StructurableStatuses.Contains(p.PackageStatus, StringComparer.OrdinalIgnoreCase));
+            if (invalidStatus != null)
+            {
+                throw new ArgumentException($"Không thể gộp kiện {invalidStatus.PackageCode} đang ở trạng thái {invalidStatus.PackageStatus}.");
+            }
+
+            // 2. Hàng tồn của các kiện phải đang khả dụng (BR-91)
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+            var sourceInventories = allInventories.Where(i => sourceIds.Contains(i.ParcelId)).ToList();
+
+            var lockedInventory = sourceInventories.FirstOrDefault(i => !string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase));
+            if (lockedInventory != null)
+            {
+                throw new ArgumentException($"Không thể gộp kiện vì có hàng tồn đang ở trạng thái {lockedInventory.Status}.");
+            }
+
+            // 3. Các kiện phải nằm trong cùng một kho
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var sourceBinIds = sources.Select(p => p.BinId).OfType<Guid>().Distinct().ToList();
+            var sourceBins = (await binRepo.GetAllAsync()).Where(b => sourceBinIds.Contains(b.Id)).ToDictionary(b => b.Id);
+
+            var warehouseIds = sourceBins.Values.Select(b => b.WarehouseId).OfType<Guid>().Distinct().ToList();
+            if (warehouseIds.Count > 1)
+            {
+                throw new ArgumentException("Chỉ được gộp các kiện hàng đang nằm trong cùng một kho.");
+            }
+
+            // 4. Xác định ô kệ chứa kiện sau khi gộp
+            Bin? targetBin = null;
+            if (request.BinId is Guid requestedBinId)
+            {
+                targetBin = await binRepo.GetByIdAsync(requestedBinId);
+                if (targetBin == null)
+                {
+                    throw new NotFoundException("Không tìm thấy ô kệ đích cho kiện sau khi gộp.");
+                }
+
+                if (!targetBin.IsActive)
+                {
+                    throw new ArgumentException("Ô kệ đích đang ngừng sử dụng.");
+                }
+
+                if (warehouseIds.Count == 1 && targetBin.WarehouseId != warehouseIds[0])
+                {
+                    throw new ArgumentException("Ô kệ đích phải thuộc cùng kho với các kiện được gộp.");
+                }
+            }
+            else
+            {
+                var firstBinId = sources.Select(p => p.BinId).OfType<Guid>().FirstOrDefault();
+                if (firstBinId != Guid.Empty)
+                {
+                    sourceBins.TryGetValue(firstBinId, out targetBin);
+                }
+            }
+
+            var divisor = await GetVolumetricDivisorAsync();
+            var usedCodes = allParcels.Select(p => p.PackageCode ?? string.Empty).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var mergedParcel = new Parcel
+            {
+                Id = Guid.NewGuid(),
+                ConsignmentId = consignmentIds.FirstOrDefault(),
+                ParentParcelId = null,
+                PackageCode = ResolvePackageCode(request.PackageCode, usedCodes),
+                ActualWeight = request.ActualWeight,
+                Length = request.Length,
+                Width = request.Width,
+                Height = request.Height,
+                PackageStatus = targetBin != null ? "STORED" : sources.First().PackageStatus,
+                CheckInTime = sources.Min(p => p.CheckInTime),
+                PutAwayTime = sources.Max(p => p.PutAwayTime),
+                BinId = targetBin?.Id,
+                PackageConfigurationId = sources.First().PackageConfigurationId
+            };
+
+            ApplyWeights(mergedParcel, divisor);
+            await parcelRepo.AddAsync(mergedParcel);
+
+            // 5. Trả thể tích của từng kiện gốc về ô kệ cũ và đánh dấu đã gộp
+            foreach (var source in sources)
+            {
+                if (source.BinId is Guid binId && sourceBins.TryGetValue(binId, out var bin))
+                {
+                    var remaining = (bin.CurrentVolume ?? 0) - GetVolume(source);
+                    bin.CurrentVolume = remaining < 0 ? 0 : remaining;
+                    binRepo.Update(bin);
+                }
+
+                source.PackageStatus = "MERGED";
+                source.ParentParcelId = mergedParcel.Id;
+                parcelRepo.Update(source);
+            }
+
+            if (targetBin != null)
+            {
+                targetBin.CurrentVolume = (targetBin.CurrentVolume ?? 0) + GetVolume(mergedParcel);
+                binRepo.Update(targetBin);
+            }
+
+            // 6. Dồn hàng tồn của các kiện gốc về kiện sau khi gộp
+            if (sourceInventories.Count > 0)
+            {
+                var reference = sourceInventories.First();
+                await inventoryRepo.AddAsync(new Inventory
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerId = reference.CustomerId,
+                    OrderId = reference.OrderId,
+                    OrderItemId = reference.OrderItemId,
+                    ParcelId = mergedParcel.Id,
+                    BinId = mergedParcel.BinId ?? reference.BinId,
+                    Quantity = sourceInventories.Sum(i => i.Quantity),
+                    Status = "AVAILABLE",
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                foreach (var inventory in sourceInventories)
+                {
+                    inventoryRepo.Delete(inventory);
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return await BuildStructureResponseAsync("MERGE", mergedParcel, sources);
+        }
+
+        /// <summary>Thể tích của kiện hàng, cùng công thức với kiểm tra sức chứa ô kệ</summary>
+        private static decimal GetVolume(Parcel parcel)
+            => (parcel.Length ?? 0) * (parcel.Width ?? 0) * (parcel.Height ?? 0);
+
+        /// <summary>Tính cân quy đổi thể tích và cân tính phí cho kiện hàng</summary>
+        private static void ApplyWeights(Parcel parcel, decimal divisor)
+        {
+            if (parcel.Length.HasValue && parcel.Width.HasValue && parcel.Height.HasValue
+                && parcel.Length.Value > 0 && parcel.Width.Value > 0 && parcel.Height.Value > 0
+                && divisor > 0)
+            {
+                parcel.VolumetricWeight = Math.Round(GetVolume(parcel) / divisor, 4);
+            }
+
+            var actualWeight = parcel.ActualWeight ?? 0;
+            var chargeable = parcel.VolumetricWeight.HasValue
+                ? Math.Max(actualWeight, parcel.VolumetricWeight.Value)
+                : actualWeight;
+
+            parcel.ChargeableWeight = Math.Round(chargeable, 4);
+        }
+
+        /// <summary>Dùng mã kiện do người dùng nhập, hoặc sinh mã mới không trùng</summary>
+        private static string ResolvePackageCode(string requestedCode, HashSet<string> usedCodes)
+        {
+            if (!string.IsNullOrWhiteSpace(requestedCode))
+            {
+                var trimmed = requestedCode.Trim().ToUpperInvariant();
+                if (usedCodes.Contains(trimmed))
+                {
+                    throw new ArgumentException($"Mã kiện \"{trimmed}\" đã tồn tại.");
+                }
+
+                usedCodes.Add(trimmed);
+                return trimmed;
+            }
+
+            var random = new Random();
+            string code;
+            do
+            {
+                code = $"PCL-{DateTime.UtcNow:yyyyMMddHHmmss}-{random.Next(100000, 999999)}";
+            } while (usedCodes.Contains(code));
+
+            usedCodes.Add(code);
+            return code;
+        }
+
+        private async Task<ParcelStructureResponseDto> BuildStructureResponseAsync(string operation, Parcel parent, List<Parcel> children)
+        {
+            var binIds = children.Select(p => p.BinId).Append(parent.BinId).OfType<Guid>().ToHashSet();
+            var bins = binIds.Count == 0
+                ? new Dictionary<Guid, Bin>()
+                : (await _unitOfWork.Repository<Bin>().GetAllAsync())
+                    .Where(b => binIds.Contains(b.Id))
+                    .ToDictionary(b => b.Id);
+
+            var parcelIds = children.Select(p => p.Id).Append(parent.Id).ToHashSet();
+            var inventories = (await _unitOfWork.Repository<Inventory>().GetAllAsync())
+                .Where(i => parcelIds.Contains(i.ParcelId))
+                .ToList();
+
+            ParcelSummaryDto ToSummary(Parcel parcel)
+            {
+                Bin? bin = null;
+                if (parcel.BinId is Guid binId)
+                {
+                    bins.TryGetValue(binId, out bin);
+                }
+
+                return new ParcelSummaryDto
+                {
+                    ParcelId = parcel.Id,
+                    PackageCode = parcel.PackageCode ?? string.Empty,
+                    ParentParcelId = parcel.ParentParcelId,
+                    ActualWeight = parcel.ActualWeight,
+                    Length = parcel.Length,
+                    Width = parcel.Width,
+                    Height = parcel.Height,
+                    VolumetricWeight = parcel.VolumetricWeight,
+                    ChargeableWeight = parcel.ChargeableWeight,
+                    PackageStatus = parcel.PackageStatus ?? string.Empty,
+                    BinId = parcel.BinId,
+                    BinCode = bin?.BinCode ?? string.Empty,
+                    Quantity = inventories.Where(i => i.ParcelId == parcel.Id).Sum(i => i.Quantity)
+                };
+            }
+
+            return new ParcelStructureResponseDto
+            {
+                Operation = operation,
+                Parent = ToSummary(parent),
+                Children = children.Select(ToSummary).ToList()
+            };
+        }
     }
 }

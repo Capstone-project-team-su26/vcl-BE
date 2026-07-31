@@ -1318,6 +1318,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("package_status");
 
+                    b.Property<Guid?>("ParentParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_parcel_id");
+
                     b.Property<DateTime?>("PutAwayTime")
                         .HasColumnType("datetime2")
                         .HasColumnName("put_away_time");

@@ -31,6 +31,81 @@ namespace VCL_BLL.DTOs
         public string PackageStatus { get; set; } = string.Empty;
     }
 
+    /// <summary>Một kiện con khi tách kiện</summary>
+    public class SplitParcelChildDto
+    {
+        /// <summary>Mã kiện con, để trống thì hệ thống tự sinh</summary>
+        public string PackageCode { get; set; } = string.Empty;
+
+        /// <summary>Số lượng hàng chuyển sang kiện con này</summary>
+        public int Quantity { get; set; }
+
+        public decimal ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+
+        /// <summary>Ô kệ chứa kiện con, để trống thì dùng ô kệ của kiện gốc</summary>
+        public Guid? BinId { get; set; }
+    }
+
+    public class SplitParcelRequestDto
+    {
+        public List<SplitParcelChildDto> Children { get; set; } = new List<SplitParcelChildDto>();
+
+        public string Note { get; set; } = string.Empty;
+    }
+
+    public class MergeParcelsRequestDto
+    {
+        /// <summary>Các kiện gốc cần gộp, tối thiểu 2 kiện</summary>
+        public List<Guid> SourceParcelIds { get; set; } = new List<Guid>();
+
+        /// <summary>Mã kiện sau khi gộp, để trống thì hệ thống tự sinh</summary>
+        public string PackageCode { get; set; } = string.Empty;
+
+        public decimal ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+
+        /// <summary>Ô kệ chứa kiện sau khi gộp, để trống thì dùng ô kệ của kiện gốc đầu tiên</summary>
+        public Guid? BinId { get; set; }
+
+        public string Note { get; set; } = string.Empty;
+    }
+
+    /// <summary>Thông tin rút gọn của một kiện trong kết quả gộp / tách</summary>
+    public class ParcelSummaryDto
+    {
+        public Guid ParcelId { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public Guid? ParentParcelId { get; set; }
+        public decimal? ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+        public decimal? VolumetricWeight { get; set; }
+        public decimal? ChargeableWeight { get; set; }
+        public string PackageStatus { get; set; } = string.Empty;
+        public Guid? BinId { get; set; }
+        public string BinCode { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+    }
+
+    /// <summary>Kết quả của thao tác gộp hoặc tách kiện</summary>
+    public class ParcelStructureResponseDto
+    {
+        /// <summary>SPLIT hoặc MERGE</summary>
+        public string Operation { get; set; } = string.Empty;
+
+        /// <summary>Kiện gốc khi tách, hoặc kiện mới sau khi gộp</summary>
+        public ParcelSummaryDto Parent { get; set; } = new ParcelSummaryDto();
+
+        /// <summary>Kiện con khi tách, hoặc các kiện đã bị gộp</summary>
+        public List<ParcelSummaryDto> Children { get; set; } = new List<ParcelSummaryDto>();
+    }
+
     public class DeclaredItemDto
     {
         public string ProductName { get; set; } = string.Empty;
