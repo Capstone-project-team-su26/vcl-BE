@@ -2678,7 +2678,7 @@ Content-Type: application/json
 
 | Field | Ràng buộc | Mô tả |
 |---|---|---|
-| `status` | Bắt buộc. Phải là `RELEASE_APPROVED` hoặc `RELEASE_REJECTED`. | Trạng thái mới của yêu cầu xuất kho |
+| `status` | Bắt buộc. Phải là một trong: `RELEASE_APPROVED`, `RELEASE_REJECTED`, `IN_TRANSIT`, `ARRIVED_IN_VN`, `COMPLETED`. | Trạng thái mới của yêu cầu xuất kho |
 | `rejectionReason` | Bắt buộc nếu trạng thái là `RELEASE_REJECTED`. | Lý do từ chối yêu cầu |
 
 **Response thành công (200 OK):**
@@ -2689,7 +2689,7 @@ Content-Type: application/json
   "data": {
     "wroId": "e14b21a7-...",
     "wroCode": "WRO-20260629-8439",
-    "status": "RELEASE_REJECTED"
+    "status": "IN_TRANSIT"
   }
 }
 ```
@@ -2698,8 +2698,8 @@ Content-Type: application/json
 
 | Status | Trường hợp | Message |
 |---|---|---|
-| `400` | Trạng thái mới không hợp lệ hoặc thiếu lý do từ chối | `"Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: RELEASE_APPROVED, RELEASE_REJECTED."` hoặc `"Vui lòng cung cấp lý do từ chối (RejectionReason)."` |
-| `400` | Yêu cầu đã duyệt/từ chối trước đó (không ở trạng thái RELEASE_PENDING) | `"Không thể cập nhật trạng thái yêu cầu xuất kho do yêu cầu đã ở trạng thái {status}"` |
+| `400` | Trạng thái mới không hợp lệ hoặc thiếu lý do từ chối | `"Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: RELEASE_APPROVED, RELEASE_REJECTED, IN_TRANSIT, ARRIVED_IN_VN, COMPLETED, DELIVERED."` hoặc `"Vui lòng cung cấp lý do từ chối (RejectionReason)."` |
+| `400` | Chuyển trạng thái không đúng thứ tự quy trình xuất kho | `"Không thể chuyển sang {status} do yêu cầu xuất kho đang ở trạng thái {currentStatus}"` |
 | `401` | Chưa đăng nhập hoặc token không hợp lệ | Tự động bởi middleware JWT |
 | `403` | Khách hàng thực hiện thao tác (chỉ Staff/Ops được thao tác) | `"Bạn không có quyền cập nhật trạng thái yêu cầu xuất kho."` |
 | `404` | Không tìm thấy yêu cầu xuất kho | `"Không tìm thấy yêu cầu xuất kho với ID {requestId}"` |

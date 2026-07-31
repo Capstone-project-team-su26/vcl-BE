@@ -358,16 +358,48 @@ namespace VCL_BLL.Services
 
             // 2. Validate trạng thái mới
             var targetStatus = request.Status.Trim().ToUpperInvariant();
-            var validStatuses = new[] { "RELEASE_APPROVED", "RELEASE_REJECTED" };
+            var validStatuses = new[] { "RELEASE_APPROVED", "RELEASE_REJECTED", "IN_TRANSIT", "ARRIVED_IN_VN", "ARRIVED_VN", "COMPLETED", "DELIVERED" };
             if (!validStatuses.Contains(targetStatus))
             {
-                throw new ArgumentException("Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: RELEASE_APPROVED, RELEASE_REJECTED.");
+                throw new ArgumentException("Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: RELEASE_APPROVED, RELEASE_REJECTED, IN_TRANSIT, ARRIVED_IN_VN, COMPLETED, DELIVERED.");
             }
 
-            // 3. Kiểm tra trạng thái hiện tại (Không cho cập nhật nếu không ở trạng thái RELEASE_PENDING)
-            if (!string.Equals(wroRequest.Status, "RELEASE_PENDING", StringComparison.OrdinalIgnoreCase))
+            if (targetStatus == "ARRIVED_VN") targetStatus = "ARRIVED_IN_VN";
+            if (targetStatus == "DELIVERED") targetStatus = "COMPLETED";
+
+            // 3. Kiểm tra hợp lệ quy trình trạng thái
+            var currentStatus = wroRequest.Status?.Trim().ToUpperInvariant() ?? "";
+
+            if (targetStatus == "RELEASE_APPROVED" || targetStatus == "RELEASE_REJECTED")
             {
-                throw new ArgumentException($"Không thể cập nhật trạng thái yêu cầu xuất kho do yêu cầu đã ở trạng thái {wroRequest.Status}");
+                if (currentStatus != "RELEASE_PENDING")
+                {
+                    throw new ArgumentException($"Không thể chuyển sang {targetStatus} do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
+                }
+            }
+            else if (targetStatus == "IN_TRANSIT")
+            {
+                var allowedPrev = new[] { "HANDED_OVER", "RELEASED", "PACKED" };
+                if (!allowedPrev.Contains(currentStatus))
+                {
+                    throw new ArgumentException($"Không thể chuyển sang IN_TRANSIT do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
+                }
+            }
+            else if (targetStatus == "ARRIVED_IN_VN")
+            {
+                var allowedPrev = new[] { "IN_TRANSIT", "HANDED_OVER", "RELEASED" };
+                if (!allowedPrev.Contains(currentStatus))
+                {
+                    throw new ArgumentException($"Không thể chuyển sang ARRIVED_IN_VN do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status} (phải ở trạng thái IN_TRANSIT hoặc HANDED_OVER).");
+                }
+            }
+            else if (targetStatus == "COMPLETED")
+            {
+                var allowedPrev = new[] { "ARRIVED_IN_VN", "IN_TRANSIT", "HANDED_OVER", "RELEASED" };
+                if (!allowedPrev.Contains(currentStatus))
+                {
+                    throw new ArgumentException($"Không thể chuyển sang COMPLETED do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
+                }
             }
 
             // 4. Xử lý lưu lý do từ chối nếu RELEASE_REJECTED
@@ -890,10 +922,10 @@ namespace VCL_BLL.Services
 
         public async Task<AssignShippingRouteResponseDto> AssignShippingRouteAsync(Guid requestId, Guid userId, string role, AssignShippingRouteRequestDto request)
         {
-            var allowedRoles = new[] { "OperationsManager", "Operations", "Admin" };
+            var allowedRoles = new[] { "OperationsManager", "Operations", "Admin", "Staff", "WarehouseStaff" };
             if (!allowedRoles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new UnauthorizedAccessException("Chỉ Operations Manager hoặc Admin mới có quyền gán tuyến vận chuyển cho WRO.");
+                throw new UnauthorizedAccessException("Bạn không có quyền gán tuyến vận chuyển cho yêu cầu xuất kho.");
             }
 
             var wroRepo = _unitOfWork.Repository<WroRequest>();
@@ -912,6 +944,14 @@ namespace VCL_BLL.Services
                 {
                     carrierName = carrier.CarrierName ?? string.Empty;
                 }
+            }
+
+            // Tự động chuyển trạng thái sang IN_TRANSIT nếu WRO đang ở các bước bàn giao / hoàn tất đóng gói
+            var currentStatus = wroRequest.Status?.Trim().ToUpperInvariant() ?? "";
+            var allowedStatusesForInTransit = new[] { "HANDED_OVER", "RELEASED", "PACKED", "IN_TRANSIT" };
+            if (allowedStatusesForInTransit.Contains(currentStatus))
+            {
+                wroRequest.Status = "IN_TRANSIT";
             }
 
             wroRepo.Update(wroRequest);

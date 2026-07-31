@@ -254,7 +254,7 @@ namespace VCL_API.Controllers
         /// Gán phương án, tuyến vận chuyển quốc tế &amp; đơn vị vận chuyển (Operations Manager / Operations / Admin)
         /// </summary>
         [HttpPut("{requestId}/shipping-route")]
-        [Authorize(Roles = "OperationsManager,Operations,Admin")]
+        [Authorize(Roles = "OperationsManager,Operations,Admin,Staff,WarehouseStaff")]
         public async Task<IActionResult> AssignShippingRoute(Guid requestId, [FromBody] AssignShippingRouteRequestDto request)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
