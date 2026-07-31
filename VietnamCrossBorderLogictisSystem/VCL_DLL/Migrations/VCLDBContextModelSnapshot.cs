@@ -500,6 +500,84 @@ namespace VCL_DLL.Migrations
                     b.ToTable("CUSTOMS_TAXES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.CycleCount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<int>("ActualCount")
+                        .HasColumnType("int")
+                        .HasColumnName("actual_count");
+
+                    b.Property<Guid>("BinId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("bin_id");
+
+                    b.Property<DateTime>("CountedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("counted_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<Guid?>("CountedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("counted_by_id");
+
+                    b.Property<int>("Difference")
+                        .HasColumnType("int")
+                        .HasColumnName("difference");
+
+                    b.Property<int>("ExpectedCount")
+                        .HasColumnType("int")
+                        .HasColumnName("expected_count");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("ResolutionNote")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("resolution_note");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("resolved_by_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("WarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_CYCLE_COUNTS");
+
+                    b.HasIndex("BinId");
+
+                    b.HasIndex("CountedById");
+
+                    b.HasIndex("ResolvedById");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("CYCLE_COUNTS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.DeliveryAddress", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3372,6 +3450,38 @@ namespace VCL_DLL.Migrations
                         .HasConstraintName("FK_TAX_CUST");
 
                     b.Navigation("CustomsDeclaration");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.CycleCount", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Bin", "Bin")
+                        .WithMany()
+                        .HasForeignKey("BinId")
+                        .IsRequired()
+                        .HasConstraintName("FK_CYCLE_COUNT_BIN");
+
+                    b.HasOne("VCL_DLL.Models.User", "CountedBy")
+                        .WithMany()
+                        .HasForeignKey("CountedById")
+                        .HasConstraintName("FK_CYCLE_COUNT_COUNTED_BY");
+
+                    b.HasOne("VCL_DLL.Models.User", "ResolvedBy")
+                        .WithMany()
+                        .HasForeignKey("ResolvedById")
+                        .HasConstraintName("FK_CYCLE_COUNT_RESOLVED_BY");
+
+                    b.HasOne("VCL_DLL.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .HasConstraintName("FK_CYCLE_COUNT_WAREHOUSE");
+
+                    b.Navigation("Bin");
+
+                    b.Navigation("CountedBy");
+
+                    b.Navigation("ResolvedBy");
+
+                    b.Navigation("Warehouse");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.DeliveryAddress", b =>

@@ -108,6 +108,9 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/inventories/from-parcel/{parcelId}` | Staff/WarehouseStaff | Ghi nhận tồn kho khả dụng sau khi put-away |
 | `POST` | `/api/inventories/{inventoryId}/relocate` | Admin/WarehouseStaff | Điều chuyển kiện hàng sang ô kệ khác trong cùng kho |
 | `GET` | `/api/inventories/movements` | Đã đăng nhập | Nhật ký di chuyển kiện hàng trong kho |
+| `POST` | `/api/inventories/cycle-counts` | Admin/WarehouseStaff | Ghi nhận kiểm kê định kỳ tại ô kệ |
+| `GET` | `/api/inventories/cycle-counts` | Đã đăng nhập | Lịch sử kiểm kê định kỳ |
+| `PUT` | `/api/inventories/cycle-counts/{id}/resolve` | Admin/WarehouseStaff/OperationsManager | Ghi nhận xử lý chênh lệch tồn kho |
 | `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
 | `GET` | `/api/warehouse-release-requests` | Authenticated | Lấy danh sách yêu cầu xuất kho (phân trang & bộ lọc) |
 | `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
@@ -5677,7 +5680,80 @@ Authorization: Bearer {token}
 
 > **Migration:** bảng `INVENTORY_MOVEMENTS` được tạo bởi migration `AddInventoryMovementTable`. Chạy `dotnet ef database update --project VCL_DLL --startup-project VCL_API` trước khi gọi hai endpoint trên.
 
-### 42.4. Quy tắc xuất kho (WRO & Picking List)
+### 42.4. Kiểm kê định kỳ & xử lý chênh lệch (M06)
+
+**Ghi nhận một lần kiểm kê:**
+
+```http
+POST /api/inventories/cycle-counts
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "binId": "ffe85f64-5717-4562-b3fc-2c963f66afb9",
+  "actualCount": 7,
+  "note": "Kiểm kê cuối ca chiều"
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+> **Quan trọng:** `expectedCount` **do server tự đếm** (số kiện có `PackageStatus = STORED` tại ô kệ), không lấy theo số client gửi lên. FE không cần và không nên gửi `expectedCount`.
+
+`difference = actualCount - expectedCount`. `status` tự động là `MATCHED` khi `difference = 0`, ngược lại là `DISCREPANCY`.
+
+**Response (201 Created):**
+```json
+{
+  "message": "Ghi nhận kiểm kê thành công.",
+  "data": {
+    "id": "c1e85f64-...",
+    "warehouseId": "7de85f64-...",
+    "warehouseName": "Kho Quảng Châu",
+    "binId": "ffe85f64-...",
+    "binCode": "A-01-03",
+    "expectedCount": 5,
+    "actualCount": 7,
+    "difference": 2,
+    "status": "DISCREPANCY",
+    "note": "Kiểm kê cuối ca chiều",
+    "staffName": "Nguyễn Văn B",
+    "countedAt": "2026-08-01T10:30:00Z",
+    "resolvedByName": "",
+    "resolvedAt": null,
+    "resolutionNote": ""
+  }
+}
+```
+
+**Lấy lịch sử kiểm kê:**
+
+```http
+GET /api/inventories/cycle-counts?warehouseId={warehouseId}&binId={binId}&status=DISCREPANCY&limit=50
+Authorization: Bearer {token}
+```
+
+Tất cả query param đều tùy chọn. `status` nhận `MATCHED`, `DISCREPANCY` hoặc `RESOLVED`. Kết quả sắp xếp mới nhất trước.
+
+**Xử lý chênh lệch:**
+
+```http
+PUT /api/inventories/cycle-counts/{cycleCountId}/resolve
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "resolutionNote": "Đã tìm thấy 2 kiện xếp nhầm sang ô B-02-01, đã điều chuyển về đúng vị trí"
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`, `OperationsManager`.
+
+Chỉ áp dụng cho phiếu đang ở trạng thái `DISCREPANCY`; phiếu `MATCHED` hoặc đã `RESOLVED` sẽ trả `400`. Sau khi xử lý, phiếu chuyển sang `RESOLVED` và lưu lại người xử lý cùng thời điểm.
+
+> **Migration:** bảng `CYCLE_COUNTS` được tạo bởi migration `AddCycleCountTable`.
+
+### 42.5. Quy tắc xuất kho (WRO & Picking List)
 
 1. **Khởi tạo WRO (`POST /api/warehouse-release-requests`)**:
    - Chỉ cho phép xuất từ tồn kho `AVAILABLE` có `quantity > 0`.

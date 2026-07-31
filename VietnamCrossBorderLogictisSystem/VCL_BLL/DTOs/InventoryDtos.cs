@@ -11,7 +11,7 @@ namespace VCL_BLL.DTOs
         public Guid ParcelId { get; set; }
         public Guid BinId { get; set; }
         public int Quantity { get; set; }
-        public string Status { get; set; }
+        public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
 
         /// <summary>Mã khách hàng sở hữu hàng tồn</summary>
@@ -97,5 +97,62 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Thời điểm thực hiện (UTC)</summary>
         public DateTime MovedAt { get; set; }
+    }
+
+    /// <summary>Yêu cầu ghi nhận kiểm kê định kỳ tại một ô kệ</summary>
+    public class CreateCycleCountRequestDto
+    {
+        /// <summary>Ô kệ được kiểm kê</summary>
+        public Guid BinId { get; set; }
+
+        /// <summary>Số kiện đếm được thực tế</summary>
+        public int ActualCount { get; set; }
+
+        /// <summary>Ghi chú của nhân viên kiểm kê</summary>
+        public string Note { get; set; } = string.Empty;
+    }
+
+    /// <summary>Yêu cầu xử lý chênh lệch của một phiếu kiểm kê</summary>
+    public class ResolveCycleCountRequestDto
+    {
+        /// <summary>Cách xử lý chênh lệch tồn kho</summary>
+        public string ResolutionNote { get; set; } = string.Empty;
+    }
+
+    /// <summary>Kết quả một lần kiểm kê định kỳ</summary>
+    public class CycleCountResponseDto
+    {
+        public Guid Id { get; set; }
+        public Guid? WarehouseId { get; set; }
+        public string WarehouseName { get; set; } = string.Empty;
+        public Guid BinId { get; set; }
+        public string BinCode { get; set; } = string.Empty;
+
+        /// <summary>Số kiện hệ thống ghi nhận tại thời điểm kiểm kê</summary>
+        public int ExpectedCount { get; set; }
+
+        /// <summary>Số kiện đếm được thực tế</summary>
+        public int ActualCount { get; set; }
+
+        /// <summary>ActualCount - ExpectedCount</summary>
+        public int Difference { get; set; }
+
+        /// <summary>MATCHED, DISCREPANCY hoặc RESOLVED</summary>
+        public string Status { get; set; } = string.Empty;
+
+        public string Note { get; set; } = string.Empty;
+
+        /// <summary>Tên nhân viên thực hiện kiểm kê</summary>
+        public string StaffName { get; set; } = string.Empty;
+
+        /// <summary>Thời điểm kiểm kê (UTC)</summary>
+        public DateTime CountedAt { get; set; }
+
+        /// <summary>Tên người xử lý chênh lệch</summary>
+        public string ResolvedByName { get; set; } = string.Empty;
+
+        public DateTime? ResolvedAt { get; set; }
+
+        public string ResolutionNote { get; set; } = string.Empty;
     }
 }

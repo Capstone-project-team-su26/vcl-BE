@@ -106,5 +106,78 @@ namespace VCL_API.Controllers
             var result = await _inventoryService.GetMovementsAsync(warehouseId, parcelId, limit);
             return Ok(new { message = "Lấy nhật ký di chuyển kiện hàng thành công.", items = result });
         }
+
+        /// <summary>
+        /// Ghi nhận một lần kiểm kê định kỳ tại ô kệ.
+        /// Số kiện hệ thống ghi nhận do server tự đếm, không lấy theo số client gửi lên.
+        /// </summary>
+        [HttpPost("cycle-counts")]
+        [Authorize(Roles = "Admin,WarehouseStaff")]
+        public async Task<IActionResult> CreateCycleCount([FromBody] CreateCycleCountRequestDto request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            try
+            {
+                var result = await _inventoryService.CreateCycleCountAsync(request, userId);
+                return Created(string.Empty, new { message = "Ghi nhận kiểm kê thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Lấy lịch sử kiểm kê định kỳ, sắp xếp mới nhất trước.
+        /// </summary>
+        /// <param name="warehouseId">Lọc theo kho</param>
+        /// <param name="binId">Lọc theo ô kệ</param>
+        /// <param name="status">Lọc theo trạng thái: MATCHED, DISCREPANCY, RESOLVED</param>
+        /// <param name="limit">Số dòng tối đa, mặc định 50</param>
+        [HttpGet("cycle-counts")]
+        public async Task<IActionResult> GetCycleCounts([FromQuery] Guid? warehouseId, [FromQuery] Guid? binId, [FromQuery] string? status, [FromQuery] int limit = 50)
+        {
+            var result = await _inventoryService.GetCycleCountsAsync(warehouseId, binId, status, limit);
+            return Ok(new { message = "Lấy lịch sử kiểm kê thành công.", items = result });
+        }
+
+        /// <summary>
+        /// Ghi nhận cách xử lý chênh lệch của một phiếu kiểm kê.
+        /// </summary>
+        [HttpPut("cycle-counts/{cycleCountId}/resolve")]
+        [Authorize(Roles = "Admin,WarehouseStaff,OperationsManager")]
+        public async Task<IActionResult> ResolveCycleCount(Guid cycleCountId, [FromBody] ResolveCycleCountRequestDto request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            try
+            {
+                var result = await _inventoryService.ResolveCycleCountAsync(cycleCountId, request, userId);
+                return Ok(new { message = "Ghi nhận xử lý chênh lệch thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
     }
 }

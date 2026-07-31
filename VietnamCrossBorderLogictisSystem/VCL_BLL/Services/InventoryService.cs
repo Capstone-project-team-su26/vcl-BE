@@ -347,6 +347,202 @@ namespace VCL_BLL.Services
             return result;
         }
 
+        public async Task<CycleCountResponseDto> CreateCycleCountAsync(CreateCycleCountRequestDto request, Guid? userId)
+        {
+            if (request == null || request.BinId == Guid.Empty)
+            {
+                throw new ArgumentException("Vui lòng chọn ô kệ cần kiểm kê.");
+            }
+
+            if (request.ActualCount < 0)
+            {
+                throw new ArgumentException("Số kiện thực tế không được nhỏ hơn 0.");
+            }
+
+            // 1. Ô kệ phải tồn tại và đang hoạt động
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var bin = await binRepo.GetByIdAsync(request.BinId);
+            if (bin == null)
+            {
+                throw new NotFoundException("Không tìm thấy ô kệ cần kiểm kê.");
+            }
+
+            if (!bin.IsActive)
+            {
+                throw new ArgumentException("Ô kệ đang ngừng sử dụng, không thể kiểm kê.");
+            }
+
+            // 2. Số kiện hệ thống ghi nhận do server tự đếm, không lấy theo số client gửi lên
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var allParcels = await parcelRepo.GetAllAsync();
+            var expectedCount = allParcels.Count(p => p.BinId == bin.Id
+                && string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase));
+
+            var difference = request.ActualCount - expectedCount;
+
+            var cycleCount = new CycleCount
+            {
+                Id = Guid.NewGuid(),
+                WarehouseId = bin.WarehouseId,
+                BinId = bin.Id,
+                ExpectedCount = expectedCount,
+                ActualCount = request.ActualCount,
+                Difference = difference,
+                Status = difference == 0 ? "MATCHED" : "DISCREPANCY",
+                Note = request.Note?.Trim() ?? string.Empty,
+                CountedById = userId,
+                CountedAt = DateTime.UtcNow,
+                ResolutionNote = string.Empty
+            };
+
+            await _unitOfWork.Repository<CycleCount>().AddAsync(cycleCount);
+            await _unitOfWork.SaveChangesAsync();
+
+            var dtos = await BuildCycleCountDtosAsync(new List<CycleCount> { cycleCount });
+            return dtos.First();
+        }
+
+        public async Task<List<CycleCountResponseDto>> GetCycleCountsAsync(Guid? warehouseId, Guid? binId, string? status, int limit)
+        {
+            if (limit <= 0)
+            {
+                limit = 50;
+            }
+
+            var allCounts = await _unitOfWork.Repository<CycleCount>().GetAllAsync();
+            var query = allCounts.AsQueryable();
+
+            if (warehouseId.HasValue)
+            {
+                query = query.Where(c => c.WarehouseId == warehouseId.Value);
+            }
+
+            if (binId.HasValue)
+            {
+                query = query.Where(c => c.BinId == binId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(c => string.Equals(c.Status, status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var ordered = query.OrderByDescending(c => c.CountedAt).Take(limit).ToList();
+            return await BuildCycleCountDtosAsync(ordered);
+        }
+
+        public async Task<CycleCountResponseDto> ResolveCycleCountAsync(Guid cycleCountId, ResolveCycleCountRequestDto request, Guid? userId)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ResolutionNote))
+            {
+                throw new ArgumentException("Vui lòng nhập cách xử lý chênh lệch.");
+            }
+
+            var cycleCountRepo = _unitOfWork.Repository<CycleCount>();
+            var cycleCount = await cycleCountRepo.GetByIdAsync(cycleCountId);
+            if (cycleCount == null)
+            {
+                throw new NotFoundException($"Không tìm thấy phiếu kiểm kê với ID: {cycleCountId}");
+            }
+
+            // Chỉ phiếu có chênh lệch mới cần xử lý
+            if (!string.Equals(cycleCount.Status, "DISCREPANCY", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"Chỉ xử lý được phiếu kiểm kê có chênh lệch. Trạng thái hiện tại: {cycleCount.Status}.");
+            }
+
+            cycleCount.Status = "RESOLVED";
+            cycleCount.ResolutionNote = request.ResolutionNote.Trim();
+            cycleCount.ResolvedById = userId;
+            cycleCount.ResolvedAt = DateTime.UtcNow;
+
+            cycleCountRepo.Update(cycleCount);
+            await _unitOfWork.SaveChangesAsync();
+
+            var dtos = await BuildCycleCountDtosAsync(new List<CycleCount> { cycleCount });
+            return dtos.First();
+        }
+
+        /// <summary>
+        /// Bổ sung mã ô kệ, tên kho và tên nhân viên cho danh sách phiếu kiểm kê.
+        /// </summary>
+        private async Task<List<CycleCountResponseDto>> BuildCycleCountDtosAsync(List<CycleCount> cycleCounts)
+        {
+            if (cycleCounts == null || cycleCounts.Count == 0)
+            {
+                return new List<CycleCountResponseDto>();
+            }
+
+            var binIds = cycleCounts.Select(c => c.BinId).ToHashSet();
+            var bins = (await _unitOfWork.Repository<Bin>().GetAllAsync())
+                .Where(b => binIds.Contains(b.Id))
+                .ToDictionary(b => b.Id);
+
+            var warehouseIds = cycleCounts.Select(c => c.WarehouseId).OfType<Guid>().ToHashSet();
+            var warehouses = warehouseIds.Count == 0
+                ? new Dictionary<Guid, Warehouse>()
+                : (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                    .Where(w => warehouseIds.Contains(w.Id))
+                    .ToDictionary(w => w.Id);
+
+            var userIds = cycleCounts.Select(c => c.CountedById)
+                .Concat(cycleCounts.Select(c => c.ResolvedById))
+                .OfType<Guid>()
+                .ToHashSet();
+
+            var users = userIds.Count == 0
+                ? new Dictionary<Guid, User>()
+                : (await _unitOfWork.Repository<User>().GetAllAsync())
+                    .Where(u => userIds.Contains(u.Id))
+                    .ToDictionary(u => u.Id);
+
+            var result = new List<CycleCountResponseDto>();
+
+            foreach (var cycleCount in cycleCounts)
+            {
+                bins.TryGetValue(cycleCount.BinId, out var bin);
+
+                Warehouse? warehouse = null;
+                if (cycleCount.WarehouseId is Guid cycleWarehouseId)
+                {
+                    warehouses.TryGetValue(cycleWarehouseId, out warehouse);
+                }
+
+                User? countedBy = null;
+                if (cycleCount.CountedById is Guid countedById)
+                {
+                    users.TryGetValue(countedById, out countedBy);
+                }
+
+                User? resolvedBy = null;
+                if (cycleCount.ResolvedById is Guid resolvedById)
+                {
+                    users.TryGetValue(resolvedById, out resolvedBy);
+                }
+
+                result.Add(new CycleCountResponseDto
+                {
+                    Id = cycleCount.Id,
+                    WarehouseId = cycleCount.WarehouseId,
+                    WarehouseName = warehouse?.WarehouseName ?? string.Empty,
+                    BinId = cycleCount.BinId,
+                    BinCode = bin?.BinCode ?? string.Empty,
+                    ExpectedCount = cycleCount.ExpectedCount,
+                    ActualCount = cycleCount.ActualCount,
+                    Difference = cycleCount.Difference,
+                    Status = cycleCount.Status ?? string.Empty,
+                    Note = cycleCount.Note ?? string.Empty,
+                    StaffName = countedBy?.FullName ?? string.Empty,
+                    CountedAt = cycleCount.CountedAt,
+                    ResolvedByName = resolvedBy?.FullName ?? string.Empty,
+                    ResolvedAt = cycleCount.ResolvedAt,
+                    ResolutionNote = cycleCount.ResolutionNote ?? string.Empty
+                });
+            }
+
+            return result;
+        }
+
         /// <summary>
         /// Bổ sung thông tin khách hàng, yêu cầu ký gửi, kiện hàng và vị trí lưu kho cho danh sách tồn kho.
         /// Các bảng liên quan được nạp một lần rồi tra cứu theo Id để tránh truy vấn lặp trên từng dòng.

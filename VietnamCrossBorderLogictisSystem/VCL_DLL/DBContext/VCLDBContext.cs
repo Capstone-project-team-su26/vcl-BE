@@ -87,6 +87,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<InventoryMovement> InventoryMovements { get; set; }
 
+    public virtual DbSet<CycleCount> CycleCounts { get; set; }
+
     public virtual DbSet<Invoice> Invoices { get; set; }
 
     public virtual DbSet<InvoiceItem> InvoiceItems { get; set; }
@@ -670,6 +672,46 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.MovedById)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_INVENTORY_MOVEMENT_USER");
+        });
+
+        modelBuilder.Entity<CycleCount>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_CYCLE_COUNTS");
+            entity.ToTable("CYCLE_COUNTS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.BinId).HasColumnName("bin_id");
+            entity.Property(e => e.ExpectedCount).HasColumnName("expected_count");
+            entity.Property(e => e.ActualCount).HasColumnName("actual_count");
+            entity.Property(e => e.Difference).HasColumnName("difference");
+            entity.Property(e => e.Status).HasMaxLength(30).HasColumnName("status");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+            entity.Property(e => e.CountedById).HasColumnName("counted_by_id");
+            entity.Property(e => e.CountedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("counted_at");
+            entity.Property(e => e.ResolvedById).HasColumnName("resolved_by_id");
+            entity.Property(e => e.ResolvedAt).HasColumnName("resolved_at");
+            entity.Property(e => e.ResolutionNote).HasMaxLength(500).HasColumnName("resolution_note");
+
+            entity.HasOne(d => d.Warehouse).WithMany()
+                .HasForeignKey(d => d.WarehouseId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CYCLE_COUNT_WAREHOUSE");
+
+            entity.HasOne(d => d.Bin).WithMany()
+                .HasForeignKey(d => d.BinId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CYCLE_COUNT_BIN");
+
+            entity.HasOne(d => d.CountedBy).WithMany()
+                .HasForeignKey(d => d.CountedById)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CYCLE_COUNT_COUNTED_BY");
+
+            entity.HasOne(d => d.ResolvedBy).WithMany()
+                .HasForeignKey(d => d.ResolvedById)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CYCLE_COUNT_RESOLVED_BY");
         });
 
         modelBuilder.Entity<Order>(entity =>
