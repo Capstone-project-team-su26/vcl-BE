@@ -993,6 +993,9 @@ namespace VCL_BLL.Services
                 WroCode = wroRequest.WroCode,
                 Status = wroRequest.Status,
                 CarrierName = carrierName,
+                DriverName = request.DriverName,
+                DriverPhone = request.DriverPhone,
+                VehicleNumber = request.VehicleNumber,
                 TrackingNumber = request.TrackingNumber,
                 HandoverAt = DateTime.UtcNow
             };

@@ -56,4 +56,14 @@ namespace VCL_BLL.DTOs
         /// <summary>ACTIVE | INACTIVE. Bỏ trống = ACTIVE.</summary>
         public string? Status { get; set; }
     }
+
+    /// <summary>Tùy chọn loại kiện đóng gói trả về cho Mobile UI render động.</summary>
+    public class PackagingOptionDto
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty; // PACKAGE_CONFIG | PRICING_RULE | SYSTEM
+        public decimal? Fee { get; set; }
+        public string? Description { get; set; }
+    }
 }

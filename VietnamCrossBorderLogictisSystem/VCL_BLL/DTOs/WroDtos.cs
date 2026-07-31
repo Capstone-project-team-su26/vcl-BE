@@ -47,6 +47,12 @@ namespace VCL_BLL.DTOs
     {
         public Guid WroId { get; set; }
         public string WroCode { get; set; } = string.Empty;
+
+        /// <summary>Mã vạch xuất kho quét khi bàn giao (VD: EXP-20260731-9348).</summary>
+        public string ExportBarcode => !string.IsNullOrWhiteSpace(WroCode)
+            ? WroCode.Replace("WRO-", "EXP-", StringComparison.OrdinalIgnoreCase)
+            : string.Empty;
+
         public Guid? CustomerId { get; set; }
         public string ReceiverName { get; set; } = string.Empty;
         public string ReceiverPhone { get; set; } = string.Empty;
@@ -78,6 +84,12 @@ namespace VCL_BLL.DTOs
     {
         public Guid WroId { get; set; }
         public string WroCode { get; set; } = string.Empty;
+
+        /// <summary>Mã vạch xuất kho quét khi bàn giao (VD: EXP-20260731-9348).</summary>
+        public string ExportBarcode => !string.IsNullOrWhiteSpace(WroCode)
+            ? WroCode.Replace("WRO-", "EXP-", StringComparison.OrdinalIgnoreCase)
+            : string.Empty;
+
         public string CreatedByName { get; set; } = string.Empty;
         public string CreatedByUserRole { get; set; } = string.Empty;
         public string WarehouseName { get; set; } = string.Empty;
@@ -213,6 +225,12 @@ namespace VCL_BLL.DTOs
     {
         public Guid WroId { get; set; }
         public string WroCode { get; set; } = string.Empty;
+
+        /// <summary>Mã vạch xuất kho quét khi bàn giao (VD: EXP-20260731-9348).</summary>
+        public string ExportBarcode => !string.IsNullOrWhiteSpace(WroCode)
+            ? WroCode.Replace("WRO-", "EXP-", StringComparison.OrdinalIgnoreCase)
+            : string.Empty;
+
         public string Status { get; set; } = string.Empty;
         public string? PackageType { get; set; }
         public int PackageCount { get; set; }
@@ -229,6 +247,10 @@ namespace VCL_BLL.DTOs
 
         public string? DriverName { get; set; }
         public string? DriverPhone { get; set; }
+
+        /// <summary>Biển số xe hoặc mã chuyến bay vận chuyển (VD: 51C-123.45 hoặc VN781).</summary>
+        public string? VehicleNumber { get; set; }
+
         public string? TrackingNumber { get; set; }
         public string? HandoverNotes { get; set; }
     }
@@ -239,6 +261,9 @@ namespace VCL_BLL.DTOs
         public string WroCode { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public string CarrierName { get; set; } = string.Empty;
+        public string? DriverName { get; set; }
+        public string? DriverPhone { get; set; }
+        public string? VehicleNumber { get; set; }
         public string? TrackingNumber { get; set; }
         public DateTime HandoverAt { get; set; }
     }

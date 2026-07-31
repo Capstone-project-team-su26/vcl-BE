@@ -5718,6 +5718,7 @@ export interface CreateWroRequestDto {
 export interface WroDetailResponseDto {
   wroId: string;
   wroCode: string;
+  exportBarcode: string; // Mã vạch xuất kho quét khi bàn giao (VD: "EXP-20260731-9348")
   createdByName: string;
   createdByUserRole: string;
   warehouseName: string;
@@ -5757,6 +5758,8 @@ export interface AssignShippingRouteRequestDto {
 }
 
 export interface UpdatePackingDetailsRequestDto {
+  packageType?: string; // Loại kiện xuất (VD: "Thùng carton", "Kiện gỗ", "Pallet", "Túi chống sốc")
+  packageCount?: number; // Số lượng kiện đóng gói (mặc định 1)
   weight: number;
   length: number;
   width: number;
@@ -5765,12 +5768,47 @@ export interface UpdatePackingDetailsRequestDto {
   packingNotes?: string;
 }
 
+export interface UpdatePackingDetailsResponseDto {
+  wroId: string;
+  wroCode: string;
+  exportBarcode: string;
+  status: string;
+  packageType?: string;
+  packageCount: number;
+  weight: number;
+  volumeWeight: number;
+  photosCount: number;
+  packedAt: string;
+}
+
 export interface ReleaseHandoverRequestDto {
   carrierId: string;
   driverName?: string;
   driverPhone?: string;
+  vehicleNumber?: string; // Biển số xe hoặc mã chuyến bay (VD: "51C-123.45" hoặc "VN781")
   trackingNumber?: string;
   handoverNotes?: string;
+}
+
+export interface ReleaseHandoverResponseDto {
+  wroId: string;
+  wroCode: string;
+  exportBarcode: string;
+  status: string;
+  carrierName: string;
+  driverName?: string;
+  driverPhone?: string;
+  vehicleNumber?: string;
+  trackingNumber?: string;
+  handoverAt: string;
+}
+
+export interface PackagingOptionDto {
+  code: string;
+  name: string;
+  category: 'PACKAGE_CONFIG' | 'PRICING_RULE' | 'SYSTEM';
+  fee?: number;
+  description?: string;
 }
 
 export interface ScanPickingItemRequestDto {
@@ -5785,24 +5823,31 @@ export interface ScanPickingItemRequestDto {
 - **Query Params:** `?status=PENDING&searchTerm=WRO123&pageIndex=1&pageSize=10`
 
 ### 45.2. Operations Manager Gán Tuyến & Đơn vị Vận chuyển
+- **HTTP Method:** `GET`
+- **Endpoint:** `/api/package-configurations/options`
+- **Mô tả:** Lấy danh sách tất cả tùy chọn loại kiện đóng gói (kết hợp PackageConfiguration & PricingRule) để Mobile UI render danh sách nút chọn loại kiện xuất kho động.
+
+### 45.3. Operations Manager Gán Tuyến & Đơn vị Vận chuyển
 - **HTTP Method:** `PUT`
 - **Endpoint:** `/api/warehouse-release-requests/{requestId}/shipping-route`
 
-### 45.3. Xem chi tiết Phiếu Picking & Vị trí Lưu kho
+### 45.4. Xem chi tiết Phiếu Picking & Vị trí Lưu kho
 - **HTTP Method:** `GET`
 - **Endpoint:** `/api/picking-lists/{pickingListId}`
 
-### 45.4. Quét Mã Vạch Kiểm Đếm trên App Mobile
+### 45.5. Quét Mã Vạch Kiểm Đếm trên App Mobile
 - **HTTP Method:** `POST`
 - **Endpoint:** `/api/picking-lists/{pickingListId}/scan-item`
 
-### 45.5. Cập nhật Đóng Gói (Cân Đo & Upload Ảnh Chứng Từ)
+### 45.6. Cập nhật Đóng Gói (Cân Đo & Upload Ảnh Chứng Từ)
 - **HTTP Method:** `PUT`
 - **Endpoint:** `/api/warehouse-release-requests/{requestId}/packing`
+- **Body Request:** Gửi `packageType` ("Thùng carton", "Kiện gỗ"...), `packageCount`, `weight`, `length`, `width`, `height`, `packagingPhotos`, `packingNotes`.
 
-### 45.6. Bàn Giao Kiện Hàng cho Đơn Vị Vận Chuyển
+### 45.7. Bàn Giao Kiện Hàng cho Đơn Vị Vận Chuyển
 - **HTTP Method:** `POST`
 - **Endpoint:** `/api/warehouse-release-requests/{requestId}/handover`
+- **Body Request:** Gửi `carrierId`, `driverName`, `driverPhone`, `vehicleNumber` (Biển số xe/chuyến bay), `trackingNumber`, `handoverNotes`.
 
 
 

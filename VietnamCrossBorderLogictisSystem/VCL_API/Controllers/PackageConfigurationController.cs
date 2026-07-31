@@ -30,6 +30,18 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Lấy danh sách tất cả tùy chọn loại kiện đóng gói (kết hợp PackageConfiguration &amp; PricingRule)
+        /// phục vụ Mobile UI render danh sách loại kiện xuất kho động thay vì nhập tay.
+        /// </summary>
+        [HttpGet("options")]
+        [Authorize]
+        public async Task<IActionResult> GetPackagingOptions()
+        {
+            var options = await _packageConfigService.GetPackagingOptionsAsync();
+            return Ok(options);
+        }
+
+        /// <summary>
         /// Gợi ý loại thùng phù hợp nhất dựa trên kích thước thực tế của kiện hàng.
         /// </summary>
         [HttpPost("suggest")]

@@ -29,6 +29,76 @@ namespace VCL_BLL.Services
                 .Select(MapToDto);
         }
 
+        public async Task<IEnumerable<PackagingOptionDto>> GetPackagingOptionsAsync()
+        {
+            var options = new List<PackagingOptionDto>();
+
+            // 1. Lấy từ PackageConfiguration (Thùng carton tiêu chuẩn)
+            var configRepo = _unitOfWork.Repository<PackageConfiguration>();
+            var configs = (await configRepo.GetAllAsync())
+                .Where(c => string.Equals(c.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var c in configs)
+            {
+                options.Add(new PackagingOptionDto
+                {
+                    Code = c.ConfigCode,
+                    Name = c.ConfigName,
+                    Category = "PACKAGE_CONFIG",
+                    Fee = c.PackageFee,
+                    Description = $"Kích thước {c.Length}x{c.Width}x{c.Height} cm, Tối đa {c.MaxWeight} kg"
+                });
+            }
+
+            // 2. Lấy từ PricingRule (Kiện gỗ, Đóng gói carton, v.v.)
+            var pricingRepo = _unitOfWork.Repository<PricingRule>();
+            var pricingRules = (await pricingRepo.GetAllAsync())
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var rule in pricingRules)
+            {
+                var ruleType = rule.RuleType?.ToUpperInvariant() ?? string.Empty;
+                var condType = rule.ConditionType?.ToUpperInvariant() ?? string.Empty;
+                var code = rule.RuleCode?.ToUpperInvariant() ?? string.Empty;
+
+                if (ruleType.Contains("PACKING") || ruleType.Contains("WOODEN") ||
+                    condType.Contains("PACKING") || condType.Contains("WOODEN") ||
+                    code.Contains("CARTON") || code.Contains("WOOD"))
+                {
+                    if (!options.Any(o => string.Equals(o.Code, rule.RuleCode, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        options.Add(new PackagingOptionDto
+                        {
+                            Code = rule.RuleCode,
+                            Name = rule.RuleName,
+                            Category = "PRICING_RULE",
+                            Fee = rule.Value,
+                            Description = rule.Description
+                        });
+                    }
+                }
+            }
+
+            // 3. Mẫu bổ sung mặc định cho Mobile UI (Pallet, Túi chống sốc...)
+            var defaultTypes = new[]
+            {
+                new PackagingOptionDto { Code = "CARTON", Name = "Thùng carton", Category = "SYSTEM", Description = "Đóng thùng carton tiêu chuẩn" },
+                new PackagingOptionDto { Code = "WOODEN_BOX", Name = "Kiện gỗ", Category = "SYSTEM", Description = "Đóng thùng/kiện gỗ bảo vệ" },
+                new PackagingOptionDto { Code = "PALLET", Name = "Pallet", Category = "SYSTEM", Description = "Đóng pallet gỗ/nhựa" },
+                new PackagingOptionDto { Code = "BUBBLE_BAG", Name = "Túi chống sốc", Category = "SYSTEM", Description = "Bọc màng bóng khí chống sốc" }
+            };
+
+            foreach (var def in defaultTypes)
+            {
+                if (!options.Any(o => string.Equals(o.Name, def.Name, StringComparison.OrdinalIgnoreCase) || string.Equals(o.Code, def.Code, StringComparison.OrdinalIgnoreCase)))
+                {
+                    options.Add(def);
+                }
+            }
+
+            return options;
+        }
+
         public async Task<PackageConfigurationResponseDto?> SuggestConfigurationAsync(decimal length, decimal width, decimal height, decimal weight)
         {
             var configRepo = _unitOfWork.Repository<PackageConfiguration>();
