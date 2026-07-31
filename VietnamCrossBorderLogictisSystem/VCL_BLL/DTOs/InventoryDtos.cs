@@ -51,4 +51,51 @@ namespace VCL_BLL.DTOs
         /// <summary>Thể tích thực tế của kiện hàng = Length × Width × Height</summary>
         public decimal ActualVolume { get; set; }
     }
+
+    /// <summary>Yêu cầu điều chuyển kiện hàng sang ô kệ khác trong cùng kho</summary>
+    public class RelocateInventoryRequestDto
+    {
+        /// <summary>Ô kệ đích</summary>
+        public Guid ToBinId { get; set; }
+
+        /// <summary>Lý do điều chuyển</summary>
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    /// <summary>Một dòng nhật ký di chuyển kiện hàng trong kho</summary>
+    public class InventoryMovementResponseDto
+    {
+        public Guid Id { get; set; }
+        public Guid InventoryId { get; set; }
+        public Guid ParcelId { get; set; }
+
+        /// <summary>Mã kiện hàng</summary>
+        public string PackageCode { get; set; } = string.Empty;
+
+        public Guid? FromBinId { get; set; }
+
+        /// <summary>Mã ô kệ trước khi di chuyển, rỗng nếu là lần cất kiện đầu tiên</summary>
+        public string FromBinCode { get; set; } = string.Empty;
+
+        public Guid ToBinId { get; set; }
+
+        /// <summary>Mã ô kệ sau khi di chuyển</summary>
+        public string ToBinCode { get; set; } = string.Empty;
+
+        /// <summary>PUTAWAY hoặc RELOCATION</summary>
+        public string Type { get; set; } = string.Empty;
+
+        public string Reason { get; set; } = string.Empty;
+
+        public int Quantity { get; set; }
+
+        /// <summary>Kho nơi diễn ra thao tác</summary>
+        public Guid? WarehouseId { get; set; }
+
+        /// <summary>Tên nhân viên thực hiện</summary>
+        public string StaffName { get; set; } = string.Empty;
+
+        /// <summary>Thời điểm thực hiện (UTC)</summary>
+        public DateTime MovedAt { get; set; }
+    }
 }

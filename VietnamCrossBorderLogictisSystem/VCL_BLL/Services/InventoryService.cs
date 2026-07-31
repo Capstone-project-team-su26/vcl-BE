@@ -128,6 +128,225 @@ namespace VCL_BLL.Services
             return dtos;
         }
 
+        public async Task<InventoryResponseDto> RelocateInventoryAsync(Guid inventoryId, RelocateInventoryRequestDto request, Guid? userId)
+        {
+            if (request == null || request.ToBinId == Guid.Empty)
+            {
+                throw new ArgumentException("Vui lòng chọn ô kệ đích để điều chuyển.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Reason))
+            {
+                throw new ArgumentException("Vui lòng nhập lý do điều chuyển.");
+            }
+
+            // 1. Tìm bản ghi tồn kho
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var inventory = await inventoryRepo.GetByIdAsync(inventoryId);
+            if (inventory == null)
+            {
+                throw new NotFoundException($"Không tìm thấy bản ghi tồn kho với ID: {inventoryId}");
+            }
+
+            // 2. Hàng đã lấy hoặc đã xuất kho thì không còn nằm ở vị trí cũ để điều chuyển
+            var blockedStatuses = new[] { "PICKED", "RELEASED" };
+            if (blockedStatuses.Any(s => string.Equals(s, inventory.Status, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ArgumentException($"Không thể điều chuyển hàng tồn ở trạng thái {inventory.Status}.");
+            }
+
+            if (inventory.BinId == request.ToBinId)
+            {
+                throw new ArgumentException("Ô kệ đích trùng với ô kệ hiện tại của kiện hàng.");
+            }
+
+            // 3. Tìm kiện hàng và ô kệ nguồn / đích
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var parcel = await parcelRepo.GetByIdAsync(inventory.ParcelId);
+            if (parcel == null)
+            {
+                throw new NotFoundException("Không tìm thấy kiện hàng liên kết với bản ghi tồn kho.");
+            }
+
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var fromBin = await binRepo.GetByIdAsync(inventory.BinId);
+            var toBin = await binRepo.GetByIdAsync(request.ToBinId);
+            if (toBin == null)
+            {
+                throw new NotFoundException("Không tìm thấy ô kệ đích.");
+            }
+
+            // 4. Ô kệ đích phải đang hoạt động và thuộc đúng kho đang lưu kiện hàng (BR-56)
+            if (!toBin.IsActive)
+            {
+                throw new ArgumentException("Ô kệ đích đang ngừng sử dụng.");
+            }
+
+            if (fromBin?.WarehouseId != null && toBin.WarehouseId != fromBin.WarehouseId)
+            {
+                throw new ArgumentException("Chỉ được điều chuyển trong phạm vi cùng một kho.");
+            }
+
+            // 5. Kiểm tra sức chứa của ô kệ đích trước khi gán (BR-53)
+            decimal parcelVolume = (parcel.Length ?? 0) * (parcel.Width ?? 0) * (parcel.Height ?? 0);
+            if (toBin.MaxVolume.HasValue)
+            {
+                decimal availableVolume = toBin.MaxVolume.Value - (toBin.CurrentVolume ?? 0);
+                if (parcelVolume > availableVolume)
+                {
+                    throw new ArgumentException($"Ô kệ đích không đủ sức chứa thể tích. Thể tích kiện hàng: {parcelVolume}, thể tích khả dụng: {availableVolume}.");
+                }
+            }
+
+            if (toBin.MaxWeight.HasValue)
+            {
+                var allParcels = await parcelRepo.GetAllAsync();
+                var currentWeightInBin = allParcels
+                    .Where(p => p.BinId == toBin.Id && string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
+                    .Sum(p => p.ActualWeight ?? 0);
+
+                decimal availableWeight = toBin.MaxWeight.Value - currentWeightInBin;
+                decimal parcelWeight = parcel.ActualWeight ?? 0;
+                if (parcelWeight > availableWeight)
+                {
+                    throw new ArgumentException($"Ô kệ đích không đủ sức chứa tải trọng. Khối lượng kiện hàng: {parcelWeight}, tải trọng khả dụng: {availableWeight}.");
+                }
+            }
+
+            // 6. Cập nhật vị trí của kiện hàng, bản ghi tồn kho và thể tích hai ô kệ trong cùng transaction (BR-57)
+            var movedAt = DateTime.UtcNow;
+            var fromBinId = inventory.BinId;
+
+            parcel.BinId = toBin.Id;
+            inventory.BinId = toBin.Id;
+
+            if (fromBin != null)
+            {
+                var remainingVolume = (fromBin.CurrentVolume ?? 0) - parcelVolume;
+                fromBin.CurrentVolume = remainingVolume < 0 ? 0 : remainingVolume;
+                binRepo.Update(fromBin);
+            }
+
+            toBin.CurrentVolume = (toBin.CurrentVolume ?? 0) + parcelVolume;
+
+            parcelRepo.Update(parcel);
+            inventoryRepo.Update(inventory);
+            binRepo.Update(toBin);
+
+            // 7. Ghi nhật ký điều chuyển (BR-47)
+            var movementRepo = _unitOfWork.Repository<InventoryMovement>();
+            await movementRepo.AddAsync(new InventoryMovement
+            {
+                Id = Guid.NewGuid(),
+                InventoryId = inventory.Id,
+                ParcelId = parcel.Id,
+                FromBinId = fromBinId,
+                ToBinId = toBin.Id,
+                MovementType = "RELOCATION",
+                Reason = request.Reason.Trim(),
+                Quantity = inventory.Quantity,
+                MovedById = userId,
+                MovedAt = movedAt
+            });
+
+            await _unitOfWork.SaveChangesAsync();
+
+            var dtos = await BuildInventoryDtosAsync(new List<Inventory> { inventory });
+            return dtos.First();
+        }
+
+        public async Task<List<InventoryMovementResponseDto>> GetMovementsAsync(Guid? warehouseId, Guid? parcelId, int limit)
+        {
+            if (limit <= 0)
+            {
+                limit = 50;
+            }
+
+            var movementRepo = _unitOfWork.Repository<InventoryMovement>();
+            var allMovements = await movementRepo.GetAllAsync();
+
+            var movements = allMovements.AsQueryable();
+
+            if (parcelId.HasValue)
+            {
+                movements = movements.Where(m => m.ParcelId == parcelId.Value);
+            }
+
+            var ordered = movements.OrderByDescending(m => m.MovedAt).ToList();
+
+            // Nạp các bảng tra cứu một lần
+            var binIds = ordered.Select(m => m.ToBinId)
+                .Concat(ordered.Select(m => m.FromBinId).OfType<Guid>())
+                .ToHashSet();
+
+            var bins = (await _unitOfWork.Repository<Bin>().GetAllAsync())
+                .Where(b => binIds.Contains(b.Id))
+                .ToDictionary(b => b.Id);
+
+            var parcelIds = ordered.Select(m => m.ParcelId).ToHashSet();
+            var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => parcelIds.Contains(p.Id))
+                .ToDictionary(p => p.Id);
+
+            var userIds = ordered.Select(m => m.MovedById).OfType<Guid>().ToHashSet();
+            var users = userIds.Count == 0
+                ? new Dictionary<Guid, User>()
+                : (await _unitOfWork.Repository<User>().GetAllAsync())
+                    .Where(u => userIds.Contains(u.Id))
+                    .ToDictionary(u => u.Id);
+
+            var result = new List<InventoryMovementResponseDto>();
+
+            foreach (var movement in ordered)
+            {
+                bins.TryGetValue(movement.ToBinId, out var toBin);
+                Bin? fromBin = null;
+                if (movement.FromBinId is Guid fromBinId)
+                {
+                    bins.TryGetValue(fromBinId, out fromBin);
+                }
+
+                // Kho được xác định theo ô kệ đích của thao tác
+                var movementWarehouseId = toBin?.WarehouseId;
+                if (warehouseId.HasValue && movementWarehouseId != warehouseId.Value)
+                {
+                    continue;
+                }
+
+                parcels.TryGetValue(movement.ParcelId, out var parcel);
+                User? movedBy = null;
+                if (movement.MovedById is Guid movedById)
+                {
+                    users.TryGetValue(movedById, out movedBy);
+                }
+
+                result.Add(new InventoryMovementResponseDto
+                {
+                    Id = movement.Id,
+                    InventoryId = movement.InventoryId,
+                    ParcelId = movement.ParcelId,
+                    PackageCode = parcel?.PackageCode ?? string.Empty,
+                    FromBinId = movement.FromBinId,
+                    FromBinCode = fromBin?.BinCode ?? string.Empty,
+                    ToBinId = movement.ToBinId,
+                    ToBinCode = toBin?.BinCode ?? string.Empty,
+                    Type = movement.MovementType ?? string.Empty,
+                    Reason = movement.Reason ?? string.Empty,
+                    Quantity = movement.Quantity,
+                    WarehouseId = movementWarehouseId,
+                    StaffName = movedBy?.FullName ?? string.Empty,
+                    MovedAt = movement.MovedAt
+                });
+
+                if (result.Count >= limit)
+                {
+                    break;
+                }
+            }
+
+            return result;
+        }
+
         /// <summary>
         /// Bổ sung thông tin khách hàng, yêu cầu ký gửi, kiện hàng và vị trí lưu kho cho danh sách tồn kho.
         /// Các bảng liên quan được nạp một lần rồi tra cứu theo Id để tránh truy vấn lặp trên từng dòng.
@@ -161,8 +380,8 @@ namespace VCL_BLL.Services
                 .ToDictionary(b => b.Id);
 
             var warehouseIds = bins.Values
-                .Where(b => b.WarehouseId.HasValue)
-                .Select(b => b.WarehouseId.Value)
+                .Select(b => b.WarehouseId)
+                .OfType<Guid>()
                 .ToHashSet();
 
             var warehouses = warehouseIds.Count == 0
@@ -180,10 +399,10 @@ namespace VCL_BLL.Services
                 parcels.TryGetValue(inventory.ParcelId, out var parcel);
                 bins.TryGetValue(inventory.BinId, out var bin);
 
-                Warehouse warehouse = null;
-                if (bin?.WarehouseId != null)
+                Warehouse? warehouse = null;
+                if (bin?.WarehouseId is Guid binWarehouseId)
                 {
-                    warehouses.TryGetValue(bin.WarehouseId.Value, out warehouse);
+                    warehouses.TryGetValue(binWarehouseId, out warehouse);
                 }
 
                 // Mốc bắt đầu lưu kho ưu tiên thời điểm put-away của kiện hàng

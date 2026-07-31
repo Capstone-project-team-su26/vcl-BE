@@ -106,6 +106,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/parcels/pending-putaway` | Staff/WarehouseStaff | Lấy danh sách kiện chờ nhập vị trí kho |
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
 | `POST` | `/api/inventories/from-parcel/{parcelId}` | Staff/WarehouseStaff | Ghi nhận tồn kho khả dụng sau khi put-away |
+| `POST` | `/api/inventories/{inventoryId}/relocate` | Admin/WarehouseStaff | Điều chuyển kiện hàng sang ô kệ khác trong cùng kho |
+| `GET` | `/api/inventories/movements` | Đã đăng nhập | Nhật ký di chuyển kiện hàng trong kho |
 | `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
 | `GET` | `/api/warehouse-release-requests` | Authenticated | Lấy danh sách yêu cầu xuất kho (phân trang & bộ lọc) |
 | `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
@@ -5601,7 +5603,81 @@ Authorization: Bearer {token}
 >
 > Khi kiện hàng chưa được put-away hoặc chưa cân đo, các trường tương ứng trả về chuỗi rỗng hoặc `0` thay vì `null`, để FE không phải kiểm tra null trên từng trường.
 
-### 42.2. Quy tắc xuất kho (WRO & Picking List)
+### 42.2. Điều chuyển vị trí nội bộ (M06)
+
+Chuyển một kiện hàng đang lưu kho sang ô kệ khác **trong cùng một kho**.
+
+```http
+POST /api/inventories/{inventoryId}/relocate
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "toBinId": "ffe85f64-5717-4562-b3fc-2c963f66afb9",
+  "reason": "Dồn kiện cùng khách về một khu để chuẩn bị xuất kho"
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+**Ràng buộc nghiệp vụ:**
+- `toBinId` và `reason` bắt buộc; ô kệ đích phải khác ô kệ hiện tại.
+- Không điều chuyển hàng tồn ở trạng thái `PICKED` hoặc `RELEASED` (hàng đã rời vị trí cũ).
+- Ô kệ đích phải đang hoạt động và **thuộc cùng kho** với ô kệ nguồn (BR-56).
+- Kiểm tra sức chứa thể tích và tải trọng của ô kệ đích trước khi gán (BR-53), dùng cùng công thức với luồng put-away.
+- Cập nhật `Parcel.BinId`, `Inventory.BinId` và thể tích hiện tại của **cả hai** ô kệ trong cùng một transaction (BR-57).
+
+**Response (200 OK):** trả về bản ghi tồn kho sau khi điều chuyển, cùng cấu trúc với mục 42.1 (đã có `binCode`, `warehouseName` mới).
+
+**Lỗi thường gặp:**
+
+| HTTP | Trường hợp |
+|---|---|
+| `400` | Thiếu `toBinId`/`reason`, ô kệ đích trùng ô hiện tại, khác kho, ô kệ ngừng sử dụng, không đủ sức chứa, hoặc tồn kho đang `PICKED`/`RELEASED` |
+| `404` | Không tìm thấy bản ghi tồn kho, kiện hàng hoặc ô kệ đích |
+
+### 42.3. Nhật ký di chuyển kiện hàng (M06)
+
+```http
+GET /api/inventories/movements?warehouseId={warehouseId}&parcelId={parcelId}&limit=50
+Authorization: Bearer {token}
+```
+
+**Query Parameters:** tất cả đều tùy chọn.
+- `warehouseId`: lọc theo kho diễn ra thao tác, xác định theo ô kệ đích.
+- `parcelId`: lọc theo một kiện hàng cụ thể.
+- `limit`: số dòng tối đa, mặc định `50`.
+
+**Response (200 OK):** sắp xếp mới nhất trước.
+```json
+{
+  "message": "Lấy nhật ký di chuyển kiện hàng thành công.",
+  "items": [
+    {
+      "id": "9ae85f64-...",
+      "inventoryId": "3fa85f64-...",
+      "parcelId": "bfe85f64-...",
+      "packageCode": "PKG20260731001",
+      "fromBinId": "ffe85f64-...",
+      "fromBinCode": "A-01-03",
+      "toBinId": "aae85f64-...",
+      "toBinCode": "B-02-01",
+      "type": "RELOCATION",
+      "reason": "Dồn kiện cùng khách về một khu để chuẩn bị xuất kho",
+      "quantity": 5,
+      "warehouseId": "7de85f64-...",
+      "staffName": "Nguyễn Văn B",
+      "movedAt": "2026-08-01T09:12:00Z"
+    }
+  ]
+}
+```
+
+`type` nhận giá trị `RELOCATION` (điều chuyển nội bộ) hoặc `PUTAWAY` (cất kiện lần đầu). Khi `type` là `PUTAWAY` thì `fromBinId` là `null` và `fromBinCode` là chuỗi rỗng.
+
+> **Migration:** bảng `INVENTORY_MOVEMENTS` được tạo bởi migration `AddInventoryMovementTable`. Chạy `dotnet ef database update --project VCL_DLL --startup-project VCL_API` trước khi gọi hai endpoint trên.
+
+### 42.4. Quy tắc xuất kho (WRO & Picking List)
 
 1. **Khởi tạo WRO (`POST /api/warehouse-release-requests`)**:
    - Chỉ cho phép xuất từ tồn kho `AVAILABLE` có `quantity > 0`.

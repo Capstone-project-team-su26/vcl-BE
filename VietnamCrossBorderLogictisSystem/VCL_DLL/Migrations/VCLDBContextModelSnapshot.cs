@@ -648,6 +648,72 @@ namespace VCL_DLL.Migrations
                     b.ToTable("INVENTORIES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.InventoryMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid?>("FromBinId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("from_bin_id");
+
+                    b.Property<Guid>("InventoryId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("inventory_id");
+
+                    b.Property<DateTime>("MovedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("moved_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<Guid?>("MovedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("moved_by_id");
+
+                    b.Property<string>("MovementType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("movement_type");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("ToBinId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("to_bin_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_INVENTORY_MOVEMENTS");
+
+                    b.HasIndex("FromBinId");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("MovedById");
+
+                    b.HasIndex("ParcelId");
+
+                    b.HasIndex("ToBinId");
+
+                    b.ToTable("INVENTORY_MOVEMENTS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Invoice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3370,6 +3436,47 @@ namespace VCL_DLL.Migrations
                     b.Navigation("OrderItem");
 
                     b.Navigation("Parcel");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.InventoryMovement", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Bin", "FromBin")
+                        .WithMany()
+                        .HasForeignKey("FromBinId")
+                        .HasConstraintName("FK_INVENTORY_MOVEMENT_FROM_BIN");
+
+                    b.HasOne("VCL_DLL.Models.Inventory", "Inventory")
+                        .WithMany()
+                        .HasForeignKey("InventoryId")
+                        .IsRequired()
+                        .HasConstraintName("FK_INVENTORY_MOVEMENT_INVENTORY");
+
+                    b.HasOne("VCL_DLL.Models.User", "MovedBy")
+                        .WithMany()
+                        .HasForeignKey("MovedById")
+                        .HasConstraintName("FK_INVENTORY_MOVEMENT_USER");
+
+                    b.HasOne("VCL_DLL.Models.Parcel", "Parcel")
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .IsRequired()
+                        .HasConstraintName("FK_INVENTORY_MOVEMENT_PARCEL");
+
+                    b.HasOne("VCL_DLL.Models.Bin", "ToBin")
+                        .WithMany()
+                        .HasForeignKey("ToBinId")
+                        .IsRequired()
+                        .HasConstraintName("FK_INVENTORY_MOVEMENT_TO_BIN");
+
+                    b.Navigation("FromBin");
+
+                    b.Navigation("Inventory");
+
+                    b.Navigation("MovedBy");
+
+                    b.Navigation("Parcel");
+
+                    b.Navigation("ToBin");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Invoice", b =>

@@ -85,6 +85,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<Inventory> Inventories { get; set; }
 
+    public virtual DbSet<InventoryMovement> InventoryMovements { get; set; }
+
     public virtual DbSet<Invoice> Invoices { get; set; }
 
     public virtual DbSet<InvoiceItem> InvoiceItems { get; set; }
@@ -626,6 +628,48 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.BinId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_INVENTORY_BIN");
+        });
+
+        modelBuilder.Entity<InventoryMovement>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_INVENTORY_MOVEMENTS");
+            entity.ToTable("INVENTORY_MOVEMENTS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.InventoryId).HasColumnName("inventory_id");
+            entity.Property(e => e.ParcelId).HasColumnName("parcel_id");
+            entity.Property(e => e.FromBinId).HasColumnName("from_bin_id");
+            entity.Property(e => e.ToBinId).HasColumnName("to_bin_id");
+            entity.Property(e => e.MovementType).HasMaxLength(30).HasColumnName("movement_type");
+            entity.Property(e => e.Reason).HasMaxLength(500).HasColumnName("reason");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+            entity.Property(e => e.MovedById).HasColumnName("moved_by_id");
+            entity.Property(e => e.MovedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("moved_at");
+
+            entity.HasOne(d => d.Inventory).WithMany()
+                .HasForeignKey(d => d.InventoryId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_INVENTORY");
+
+            entity.HasOne(d => d.Parcel).WithMany()
+                .HasForeignKey(d => d.ParcelId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_PARCEL");
+
+            entity.HasOne(d => d.FromBin).WithMany()
+                .HasForeignKey(d => d.FromBinId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_FROM_BIN");
+
+            entity.HasOne(d => d.ToBin).WithMany()
+                .HasForeignKey(d => d.ToBinId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_TO_BIN");
+
+            entity.HasOne(d => d.MovedBy).WithMany()
+                .HasForeignKey(d => d.MovedById)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_INVENTORY_MOVEMENT_USER");
         });
 
         modelBuilder.Entity<Order>(entity =>

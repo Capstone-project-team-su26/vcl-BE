@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
@@ -60,6 +61,50 @@ namespace VCL_API.Controllers
         {
             var result = await _inventoryService.GetInventoriesAsync(status, customerId, warehouseId);
             return Ok(new { message = "Lấy danh sách tồn kho thành công.", items = result });
+        }
+
+        /// <summary>
+        /// Điều chuyển kiện hàng của một bản ghi tồn kho sang ô kệ khác trong cùng kho.
+        /// </summary>
+        /// <param name="inventoryId">ID bản ghi tồn kho cần điều chuyển</param>
+        /// <param name="request">Ô kệ đích và lý do điều chuyển</param>
+        [HttpPost("{inventoryId}/relocate")]
+        [Authorize(Roles = "Admin,WarehouseStaff")]
+        public async Task<IActionResult> RelocateInventory(Guid inventoryId, [FromBody] RelocateInventoryRequestDto request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            try
+            {
+                var result = await _inventoryService.RelocateInventoryAsync(inventoryId, request, userId);
+                return Ok(new { message = "Điều chuyển vị trí kiện hàng thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Lấy nhật ký di chuyển kiện hàng trong kho, sắp xếp mới nhất trước.
+        /// </summary>
+        /// <param name="warehouseId">Lọc theo kho diễn ra thao tác</param>
+        /// <param name="parcelId">Lọc theo kiện hàng</param>
+        /// <param name="limit">Số dòng tối đa, mặc định 50</param>
+        [HttpGet("movements")]
+        public async Task<IActionResult> GetMovements([FromQuery] Guid? warehouseId, [FromQuery] Guid? parcelId, [FromQuery] int limit = 50)
+        {
+            var result = await _inventoryService.GetMovementsAsync(warehouseId, parcelId, limit);
+            return Ok(new { message = "Lấy nhật ký di chuyển kiện hàng thành công.", items = result });
         }
     }
 }
