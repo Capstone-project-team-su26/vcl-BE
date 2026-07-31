@@ -810,6 +810,174 @@ namespace VCL_BLL.Services
             };
         }
 
+        public async Task<PagedWroListResponseDto> GetWroRequestsAsync(Guid userId, string role, GetWroListRequestDto request)
+        {
+            var wroRepo = _unitOfWork.Repository<WroRequest>();
+            var allWros = await wroRepo.GetAllAsync();
+            var query = allWros.AsQueryable();
+
+            bool isCustomer = string.Equals(role, "Customer", StringComparison.OrdinalIgnoreCase);
+            if (isCustomer)
+            {
+                var customerRepo = _unitOfWork.Repository<Customer>();
+                var allCustomers = await customerRepo.GetAllAsync();
+                var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
+                if (customer != null)
+                {
+                    query = query.Where(w => w.CustomerId == customer.Id);
+                }
+                else
+                {
+                    query = query.Where(w => w.UserId == userId);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Status))
+            {
+                query = query.Where(w => string.Equals(w.Status, request.Status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+            {
+                var term = request.SearchTerm.Trim();
+                query = query.Where(w => (w.WroCode != null && w.WroCode.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                                         (w.ReceiverName != null && w.ReceiverName.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                                         (w.ReceiverPhone != null && w.ReceiverPhone.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            int totalCount = query.Count();
+            int pageIndex = request.PageIndex < 1 ? 1 : request.PageIndex;
+            int pageSize = request.PageSize < 1 ? 10 : request.PageSize;
+
+            var pagedItems = query.OrderByDescending(w => w.CreatedAt)
+                                  .Skip((pageIndex - 1) * pageSize)
+                                  .Take(pageSize)
+                                  .ToList();
+
+            var itemsDto = new List<WroDetailResponseDto>();
+            foreach (var item in pagedItems)
+            {
+                var detail = await GetWroRequestDetailAsync(item.Id, userId, role);
+                itemsDto.Add(detail);
+            }
+
+            return new PagedWroListResponseDto
+            {
+                TotalCount = totalCount,
+                PageIndex = pageIndex,
+                PageSize = pageSize,
+                Items = itemsDto
+            };
+        }
+
+        public async Task<AssignShippingRouteResponseDto> AssignShippingRouteAsync(Guid requestId, Guid userId, string role, AssignShippingRouteRequestDto request)
+        {
+            var allowedRoles = new[] { "OperationsManager", "Operations", "Admin" };
+            if (!allowedRoles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new UnauthorizedAccessException("Chỉ Operations Manager hoặc Admin mới có quyền gán tuyến vận chuyển cho WRO.");
+            }
+
+            var wroRepo = _unitOfWork.Repository<WroRequest>();
+            var wroRequest = await wroRepo.GetByIdAsync(requestId);
+            if (wroRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
+            }
+
+            string carrierName = string.Empty;
+            if (request.CarrierId.HasValue && request.CarrierId.Value != Guid.Empty)
+            {
+                var carrierRepo = _unitOfWork.Repository<Carrier>();
+                var carrier = await carrierRepo.GetByIdAsync(request.CarrierId.Value);
+                if (carrier != null)
+                {
+                    carrierName = carrier.CarrierName ?? string.Empty;
+                }
+            }
+
+            wroRepo.Update(wroRequest);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new AssignShippingRouteResponseDto
+            {
+                WroId = wroRequest.Id,
+                WroCode = wroRequest.WroCode,
+                Status = wroRequest.Status,
+                CarrierId = request.CarrierId,
+                CarrierName = carrierName,
+                ShippingRoute = request.ShippingRoute ?? string.Empty,
+                Note = request.Note ?? string.Empty
+            };
+        }
+
+        public async Task<UpdatePackingDetailsResponseDto> UpdatePackingDetailsAsync(Guid requestId, Guid userId, string role, UpdatePackingDetailsRequestDto request)
+        {
+            var allowedRoles = new[] { "WarehouseStaff", "Staff", "OperationsManager", "Operations", "Admin" };
+            if (!allowedRoles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền cập nhật đóng gói kiện xuất kho.");
+            }
+
+            var wroRepo = _unitOfWork.Repository<WroRequest>();
+            var wroRequest = await wroRepo.GetByIdAsync(requestId);
+            if (wroRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
+            }
+
+            wroRequest.Status = "PACKED";
+            wroRepo.Update(wroRequest);
+            await _unitOfWork.SaveChangesAsync();
+
+            decimal volumeWeight = (request.Length * request.Width * request.Height) / 5000m;
+
+            return new UpdatePackingDetailsResponseDto
+            {
+                WroId = wroRequest.Id,
+                WroCode = wroRequest.WroCode,
+                Status = wroRequest.Status,
+                Weight = request.Weight,
+                VolumeWeight = volumeWeight,
+                PhotosCount = request.PackagingPhotos?.Count ?? 0,
+                PackedAt = DateTime.UtcNow
+            };
+        }
+
+        public async Task<ReleaseHandoverResponseDto> HandoverToCarrierAsync(Guid requestId, Guid userId, string role, ReleaseHandoverRequestDto request)
+        {
+            var allowedRoles = new[] { "WarehouseStaff", "Staff", "OperationsManager", "Operations", "Admin" };
+            if (!allowedRoles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền thực hiện bàn giao kiện hàng cho đơn vị vận chuyển.");
+            }
+
+            var wroRepo = _unitOfWork.Repository<WroRequest>();
+            var wroRequest = await wroRepo.GetByIdAsync(requestId);
+            if (wroRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
+            }
+
+            var carrierRepo = _unitOfWork.Repository<Carrier>();
+            var carrier = await carrierRepo.GetByIdAsync(request.CarrierId);
+            string carrierName = carrier?.CarrierName ?? "Đơn vị vận chuyển";
+
+            wroRequest.Status = "HANDED_OVER";
+            wroRepo.Update(wroRequest);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new ReleaseHandoverResponseDto
+            {
+                WroId = wroRequest.Id,
+                WroCode = wroRequest.WroCode,
+                Status = wroRequest.Status,
+                CarrierName = carrierName,
+                TrackingNumber = request.TrackingNumber,
+                HandoverAt = DateTime.UtcNow
+            };
+        }
+
         private async Task ReleaseInventoryToAvailableAsync(
             Inventory? reservedInventory,
             int quantityToRelease,
@@ -851,3 +1019,4 @@ namespace VCL_BLL.Services
         }
     }
 }
+

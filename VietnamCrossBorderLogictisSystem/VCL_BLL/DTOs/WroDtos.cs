@@ -25,6 +25,10 @@ namespace VCL_BLL.DTOs
         public string DeliveryAddress { get; set; } = string.Empty;
 
         public string? ShelfCode { get; set; }
+        public string? ExportReason { get; set; }
+        public Guid? CarrierId { get; set; }
+        public decimal? ShippingFee { get; set; }
+        public List<string>? CustomsDocumentUrls { get; set; }
 
         [Required]
         [MinLength(1, ErrorMessage = "Danh sách xuất kho phải có ít nhất một mặt hàng.")]
@@ -49,6 +53,11 @@ namespace VCL_BLL.DTOs
         public string DeliveryAddress { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public string? ShelfCode { get; set; }
+        public string? ExportReason { get; set; }
+        public Guid? CarrierId { get; set; }
+        public string CarrierName { get; set; } = string.Empty;
+        public decimal? ShippingFee { get; set; }
+        public List<string> CustomsDocumentUrls { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public List<WroItemResponseDto> Items { get; set; } = new();
     }
@@ -60,7 +69,9 @@ namespace VCL_BLL.DTOs
         public int Quantity { get; set; }
         public string PackageCode { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
+        public string ZoneName { get; set; } = string.Empty;
         public string BinCode { get; set; } = string.Empty;
+        public string ShelfCode { get; set; } = string.Empty;
     }
 
     public class WroDetailResponseDto
@@ -77,11 +88,17 @@ namespace VCL_BLL.DTOs
         public string DeliveryAddress { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public string? ShelfCode { get; set; }
+        public string? ExportReason { get; set; }
+        public Guid? CarrierId { get; set; }
+        public string CarrierName { get; set; } = string.Empty;
+        public decimal? ShippingFee { get; set; }
+        public List<string> CustomsDocumentUrls { get; set; } = new();
         public string? Note { get; set; }
         public DateTime CreatedAt { get; set; }
         public int TotalQuantity { get; set; }
         public List<WroDetailItemDto> Items { get; set; } = new();
     }
+
 
     public class UpdateWroStatusRequestDto
     {
@@ -153,4 +170,85 @@ namespace VCL_BLL.DTOs
         public string WarehouseName { get; set; } = string.Empty;
         public List<CompleteWroItemResponseDto> Items { get; set; } = new();
     }
+
+    public class AssignShippingRouteRequestDto
+    {
+        public Guid? CarrierId { get; set; }
+        public Guid? ShippingMethodId { get; set; }
+        public string ShippingRoute { get; set; } = string.Empty;
+        public int? EstimatedDeliveryDays { get; set; }
+        public string? Note { get; set; }
+    }
+
+    public class AssignShippingRouteResponseDto
+    {
+        public Guid WroId { get; set; }
+        public string WroCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public Guid? CarrierId { get; set; }
+        public string CarrierName { get; set; } = string.Empty;
+        public string ShippingRoute { get; set; } = string.Empty;
+        public string Note { get; set; } = string.Empty;
+    }
+
+    public class UpdatePackingDetailsRequestDto
+    {
+        [Range(0.01, 10000, ErrorMessage = "Trọng lượng phải lớn hơn 0.")]
+        public decimal Weight { get; set; }
+
+        public decimal Length { get; set; }
+        public decimal Width { get; set; }
+        public decimal Height { get; set; }
+        public List<string> PackagingPhotos { get; set; } = new();
+        public string? PackingNotes { get; set; }
+    }
+
+    public class UpdatePackingDetailsResponseDto
+    {
+        public Guid WroId { get; set; }
+        public string WroCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public decimal Weight { get; set; }
+        public decimal VolumeWeight { get; set; }
+        public int PhotosCount { get; set; }
+        public DateTime PackedAt { get; set; }
+    }
+
+    public class ReleaseHandoverRequestDto
+    {
+        [Required(ErrorMessage = "Vui lòng chọn đơn vị vận chuyển.")]
+        public Guid CarrierId { get; set; }
+
+        public string? DriverName { get; set; }
+        public string? DriverPhone { get; set; }
+        public string? TrackingNumber { get; set; }
+        public string? HandoverNotes { get; set; }
+    }
+
+    public class ReleaseHandoverResponseDto
+    {
+        public Guid WroId { get; set; }
+        public string WroCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string CarrierName { get; set; } = string.Empty;
+        public string? TrackingNumber { get; set; }
+        public DateTime HandoverAt { get; set; }
+    }
+
+    public class GetWroListRequestDto
+    {
+        public string? Status { get; set; }
+        public string? SearchTerm { get; set; }
+        public int PageIndex { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+    }
+
+    public class PagedWroListResponseDto
+    {
+        public int TotalCount { get; set; }
+        public int PageIndex { get; set; }
+        public int PageSize { get; set; }
+        public List<WroDetailResponseDto> Items { get; set; } = new();
+    }
 }
+

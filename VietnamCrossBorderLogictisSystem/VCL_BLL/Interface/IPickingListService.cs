@@ -6,6 +6,9 @@ namespace VCL_BLL.Interface
 {
     public interface IPickingListService
     {
+        Task<PickingListResponseDto> GetPickingListByIdAsync(Guid pickingListId, Guid userId, string role);
+        Task<ScanPickingItemResponseDto> ScanPickingItemAsync(Guid pickingListId, Guid userId, string role, ScanPickingItemRequestDto request);
         Task<ConfirmPickingResponseDto> ConfirmPickingListAsync(Guid pickingListId, Guid userId, string role, ConfirmPickingRequestDto request);
     }
 }
+

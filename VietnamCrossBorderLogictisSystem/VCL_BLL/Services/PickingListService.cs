@@ -293,5 +293,93 @@ namespace VCL_BLL.Services
 
             return (binCode, shelfCode);
         }
+
+        public async Task<PickingListResponseDto> GetPickingListByIdAsync(Guid pickingListId, Guid userId, string role)
+        {
+            var pickingListRepo = _unitOfWork.Repository<PickingList>();
+            var pickingList = await pickingListRepo.GetByIdAsync(pickingListId);
+            if (pickingList == null)
+            {
+                throw new NotFoundException($"Không tìm thấy phiếu picking với ID {pickingListId}");
+            }
+
+            var pickingItemRepo = _unitOfWork.Repository<PickingItem>();
+            var allPickingItems = await pickingItemRepo.GetAllAsync();
+            var relatedPickingItems = allPickingItems.Where(pi => pi.PickingListId == pickingListId).ToList();
+
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var shelfRepo = _unitOfWork.Repository<Shelf>();
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allBins = await binRepo.GetAllAsync();
+            var allShelves = await shelfRepo.GetAllAsync();
+
+            var itemsResponse = new List<PickingItemResponseDto>();
+            foreach (var item in relatedPickingItems)
+            {
+                var inv = await inventoryRepo.GetByIdAsync(item.InventoryId);
+                var binDetails = inv != null ? GetBinAndShelfDetails(inv.BinId, allBins, allShelves) : (BinCode: string.Empty, ShelfCode: string.Empty);
+
+                itemsResponse.Add(new PickingItemResponseDto
+                {
+                    ItemId = item.Id,
+                    InventoryId = item.InventoryId,
+                    Quantity = item.Quantity,
+                    BinCode = binDetails.BinCode,
+                    ShelfCode = binDetails.ShelfCode,
+                    ProductName = "Sản phẩm xuất kho"
+                });
+            }
+
+            var userRepo = _unitOfWork.Repository<User>();
+            var createdUser = await userRepo.GetByIdAsync(pickingList.CreatedBy);
+
+            return new PickingListResponseDto
+            {
+                PickingListId = pickingList.Id,
+                WroRequestId = pickingList.WroRequestId,
+                Status = pickingList.Status,
+                CreatedBy = pickingList.CreatedBy,
+                CreatedByName = createdUser?.FullName ?? string.Empty,
+                CreatedAt = pickingList.CreatedAt,
+                Items = itemsResponse
+            };
+        }
+
+        public async Task<ScanPickingItemResponseDto> ScanPickingItemAsync(Guid pickingListId, Guid userId, string role, ScanPickingItemRequestDto request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Barcode))
+            {
+                throw new ArgumentException("Mã vạch quét không được để trống.");
+            }
+
+            var pickingListRepo = _unitOfWork.Repository<PickingList>();
+            var pickingList = await pickingListRepo.GetByIdAsync(pickingListId);
+            if (pickingList == null)
+            {
+                throw new NotFoundException($"Không tìm thấy phiếu picking với ID {pickingListId}");
+            }
+
+            var pickingItemRepo = _unitOfWork.Repository<PickingItem>();
+            var allPickingItems = await pickingItemRepo.GetAllAsync();
+            var relatedItems = allPickingItems.Where(pi => pi.PickingListId == pickingListId).ToList();
+
+            var itemToScan = relatedItems.FirstOrDefault();
+            if (itemToScan == null)
+            {
+                throw new NotFoundException("Không tìm thấy mặt hàng phù hợp trong phiếu picking.");
+            }
+
+            return new ScanPickingItemResponseDto
+            {
+                PickingListId = pickingListId,
+                InventoryId = itemToScan.InventoryId,
+                PackageCode = request.Barcode,
+                ScannedQuantity = request.ScannedQuantity,
+                RequiredQuantity = itemToScan.Quantity,
+                IsItemCompleted = request.ScannedQuantity >= itemToScan.Quantity,
+                IsPickingListCompleted = false
+            };
+        }
     }
 }
+

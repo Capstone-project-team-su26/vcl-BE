@@ -22,9 +22,73 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Lấy chi tiết phiếu picking theo ID
+        /// </summary>
+        [HttpGet("{pickingListId}")]
+        public async Task<IActionResult> GetPickingListById(Guid pickingListId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _pickingListService.GetPickingListByIdAsync(pickingListId, userId, userRole);
+                return Ok(new { message = "Lấy chi tiết phiếu picking thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Quét mã vạch kiểm đếm mặt hàng khi lấy hàng khỏi vị trí (Warehouse Staff / Staff)
+        /// </summary>
+        [HttpPost("{pickingListId}/scan-item")]
+        [Authorize(Roles = "WarehouseStaff,Staff,OperationsManager,Operations,Admin")]
+        public async Task<IActionResult> ScanPickingItem(Guid pickingListId, [FromBody] ScanPickingItemRequestDto request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _pickingListService.ScanPickingItemAsync(pickingListId, userId, userRole, request);
+                return Ok(new { message = "Quét mã xác nhận mặt hàng thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Xác nhận đã lấy hàng khỏi vị trí kho theo phiếu picking (Warehouse Staff, Staff hoặc Operations)
         /// </summary>
         [HttpPut("{pickingListId}/confirm")]
+
         [Authorize(Roles = "WarehouseStaff,Staff,OperationsManager,Operations,Admin")]
         public async Task<IActionResult> ConfirmPicking(Guid pickingListId, [FromBody] ConfirmPickingRequestDto request)
         {

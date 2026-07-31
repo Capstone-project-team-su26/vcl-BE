@@ -33,4 +33,22 @@ namespace VCL_BLL.DTOs
         public DateTime? ConfirmedAt { get; set; }
         public List<ConfirmPickingItemResponseDto> Items { get; set; } = new();
     }
+
+    public class ScanPickingItemRequestDto
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public int ScannedQuantity { get; set; } = 1;
+    }
+
+    public class ScanPickingItemResponseDto
+    {
+        public Guid PickingListId { get; set; }
+        public Guid InventoryId { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+        public int ScannedQuantity { get; set; }
+        public int RequiredQuantity { get; set; }
+        public bool IsItemCompleted { get; set; }
+        public bool IsPickingListCompleted { get; set; }
+    }
 }
+
