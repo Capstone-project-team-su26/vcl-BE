@@ -107,11 +107,18 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/parcels/{parcelId}/put-away` | Staff/WarehouseStaff | Nhập kiện vào vị trí kho (Put-Away) |
 | `POST` | `/api/inventories/from-parcel/{parcelId}` | Staff/WarehouseStaff | Ghi nhận tồn kho khả dụng sau khi put-away |
 | `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
+| `GET` | `/api/warehouse-release-requests` | Authenticated | Lấy danh sách yêu cầu xuất kho (phân trang & bộ lọc) |
 | `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
-| `PUT` | `/api/warehouse-release-requests/{requestId}/status` | Staff | Staff cập nhật trạng thái yêu cầu xuất kho (duyệt/từ chối) |
+| `PUT` | `/api/warehouse-release-requests/{requestId}/status` | Staff/Ops | Staff / Operations Manager cập nhật trạng thái WRO (duyệt/từ chối) |
+| `PUT` | `/api/warehouse-release-requests/{requestId}/shipping-route` | OperationsManager | Gán phương án, tuyến vận chuyển & đơn vị vận chuyển (Carrier) |
 | `POST` | `/api/warehouse-release-requests/{requestId}/picking-list` | Staff | Tạo phiếu picking cho yêu cầu xuất kho |
+| `GET` | `/api/picking-lists/{pickingListId}` | Staff/WarehouseStaff | Xem chi tiết phiếu picking & vị trí lưu kho |
+| `POST` | `/api/picking-lists/{pickingListId}/scan-item` | WarehouseStaff | Quét mã vạch barcode kiểm đếm mặt hàng |
 | `PUT` | `/api/picking-lists/{pickingListId}/confirm` | WarehouseStaff | Xác nhận picking hàng khỏi vị trí kho |
-| `PUT` | `/api/warehouse-release-requests/{requestId}/complete` | WarehouseStaff | Xác nhận đóng gói và hoàn tất xuất kho |
+| `PUT` | `/api/warehouse-release-requests/{requestId}/packing` | WarehouseStaff | Cập nhật đóng gói, cân đo kích thước & ảnh chụp chứng từ |
+| `PUT` | `/api/warehouse-release-requests/{requestId}/complete` | WarehouseStaff | Xác nhận hoàn tất xuất kho & tự động trừ tồn kho |
+| `POST` | `/api/warehouse-release-requests/{requestId}/handover` | WarehouseStaff | Bàn giao kiện hàng xuất kho cho đơn vị vận chuyển |
+
 | `POST` | `/api/consolidation` | Staff/WarehouseStaff/Admin/OperationsManager | Tạo mới một lô gom hàng (Consolidation) từ danh sách Order IDs |
 | `GET` | `/api/consolidation` | Staff/WarehouseStaff/Admin/OperationsManager | Lấy danh sách các lô gom hàng (MasterBox) |
 | `GET` | `/api/consolidation/{id}` | Staff/WarehouseStaff/Admin/OperationsManager | Lấy chi tiết thông tin lô gom hàng theo ID |
@@ -5685,6 +5692,118 @@ interface SePayWebhookDto {
 ### 44.4. Trang Checkout SePay tự động
 
 Đường dẫn checkout trả về khi chọn `paymentMethod: "SEPAY"` sẽ có dạng `/api/payments/sepay/checkout/{orderCode}` (được định tuyến thông qua máy chủ Backend). Trang này hiển thị mã VietQR đẹp mắt, hỗ trợ copy nhanh số tài khoản/số tiền/nội dung chuyển khoản và tự động redirect về `returnUrl` ngay sau khi thanh toán thành công.
+
+---
+
+## 45. Phân hệ M08 & M09: Quản lý Xuất Kho (WRO), Picking, Packing & Bàn Giao Vận Chuyển
+
+### TypeScript Declarations:
+
+```typescript
+export interface CreateWroRequestDto {
+  receiverName: string;
+  receiverPhone: string;
+  deliveryAddress: string;
+  shelfCode?: string;
+  exportReason?: string;
+  carrierId?: string;
+  shippingFee?: number;
+  customsDocumentUrls?: string[];
+  items: {
+    inventoryId: string;
+    quantity: number;
+  }[];
+}
+
+export interface WroDetailResponseDto {
+  wroId: string;
+  wroCode: string;
+  createdByName: string;
+  createdByUserRole: string;
+  warehouseName: string;
+  customerId?: string;
+  customerName: string;
+  receiverName: string;
+  receiverPhone: string;
+  deliveryAddress: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PACKING' | 'PACKED' | 'RELEASED' | 'HANDED_OVER';
+  shelfCode?: string;
+  exportReason?: string;
+  carrierId?: string;
+  carrierName: string;
+  shippingFee?: number;
+  customsDocumentUrls: string[];
+  note?: string;
+  createdAt: string;
+  totalQuantity: number;
+  items: {
+    itemId: string;
+    inventoryId: string;
+    quantity: number;
+    packageCode: string;
+    productName: string;
+    zoneName: string;
+    binCode: string;
+    shelfCode: string;
+  }[];
+}
+
+export interface AssignShippingRouteRequestDto {
+  carrierId?: string;
+  shippingMethodId?: string;
+  shippingRoute: string;
+  estimatedDeliveryDays?: number;
+  note?: string;
+}
+
+export interface UpdatePackingDetailsRequestDto {
+  weight: number;
+  length: number;
+  width: number;
+  height: number;
+  packagingPhotos: string[];
+  packingNotes?: string;
+}
+
+export interface ReleaseHandoverRequestDto {
+  carrierId: string;
+  driverName?: string;
+  driverPhone?: string;
+  trackingNumber?: string;
+  handoverNotes?: string;
+}
+
+export interface ScanPickingItemRequestDto {
+  barcode: string;
+  scannedQuantity: number;
+}
+```
+
+### 45.1. Lấy danh sách WRO Requests
+- **HTTP Method:** `GET`
+- **Endpoint:** `/api/warehouse-release-requests`
+- **Query Params:** `?status=PENDING&searchTerm=WRO123&pageIndex=1&pageSize=10`
+
+### 45.2. Operations Manager Gán Tuyến & Đơn vị Vận chuyển
+- **HTTP Method:** `PUT`
+- **Endpoint:** `/api/warehouse-release-requests/{requestId}/shipping-route`
+
+### 45.3. Xem chi tiết Phiếu Picking & Vị trí Lưu kho
+- **HTTP Method:** `GET`
+- **Endpoint:** `/api/picking-lists/{pickingListId}`
+
+### 45.4. Quét Mã Vạch Kiểm Đếm trên App Mobile
+- **HTTP Method:** `POST`
+- **Endpoint:** `/api/picking-lists/{pickingListId}/scan-item`
+
+### 45.5. Cập nhật Đóng Gói (Cân Đo & Upload Ảnh Chứng Từ)
+- **HTTP Method:** `PUT`
+- **Endpoint:** `/api/warehouse-release-requests/{requestId}/packing`
+
+### 45.6. Bàn Giao Kiện Hàng cho Đơn Vị Vận Chuyển
+- **HTTP Method:** `POST`
+- **Endpoint:** `/api/warehouse-release-requests/{requestId}/handover`
+
 
 
 
