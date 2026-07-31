@@ -193,6 +193,12 @@ namespace VCL_BLL.DTOs
 
     public class UpdatePackingDetailsRequestDto
     {
+        /// <summary>Loại kiện xuất (VD: CARTON / WOODEN / PALLET / BUBBLE_BAG hoặc "Thùng carton", "Kiện gỗ", "Pallet", "Túi chống sốc").</summary>
+        public string? PackageType { get; set; }
+
+        /// <summary>Số lượng kiện cần đóng gói (mặc định là 1).</summary>
+        public int PackageCount { get; set; } = 1;
+
         [Range(0.01, 10000, ErrorMessage = "Trọng lượng phải lớn hơn 0.")]
         public decimal Weight { get; set; }
 
@@ -208,6 +214,8 @@ namespace VCL_BLL.DTOs
         public Guid WroId { get; set; }
         public string WroCode { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public string? PackageType { get; set; }
+        public int PackageCount { get; set; }
         public decimal Weight { get; set; }
         public decimal VolumeWeight { get; set; }
         public int PhotosCount { get; set; }

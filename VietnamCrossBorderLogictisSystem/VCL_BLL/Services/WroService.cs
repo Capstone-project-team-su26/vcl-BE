@@ -955,6 +955,8 @@ namespace VCL_BLL.Services
                 WroId = wroRequest.Id,
                 WroCode = wroRequest.WroCode,
                 Status = wroRequest.Status,
+                PackageType = request.PackageType,
+                PackageCount = request.PackageCount > 0 ? request.PackageCount : 1,
                 Weight = request.Weight,
                 VolumeWeight = volumeWeight,
                 PhotosCount = request.PackagingPhotos?.Count ?? 0,
