@@ -89,6 +89,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<CycleCount> CycleCounts { get; set; }
 
+    public virtual DbSet<Supplier> Suppliers { get; set; }
+
+    public virtual DbSet<ShippingRoute> ShippingRoutes { get; set; }
+
     public virtual DbSet<Invoice> Invoices { get; set; }
 
     public virtual DbSet<InvoiceItem> InvoiceItems { get; set; }
@@ -672,6 +676,68 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.MovedById)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_INVENTORY_MOVEMENT_USER");
+        });
+
+        modelBuilder.Entity<Supplier>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_SUPPLIERS");
+            entity.ToTable("SUPPLIERS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.SupplierCode).HasMaxLength(50).HasColumnName("supplier_code");
+            entity.Property(e => e.SupplierName).HasMaxLength(255).HasColumnName("supplier_name");
+            entity.Property(e => e.SupplierType).HasMaxLength(30).HasColumnName("supplier_type");
+            entity.Property(e => e.Country).HasMaxLength(100).HasColumnName("country");
+            entity.Property(e => e.ContactPerson).HasMaxLength(255).HasColumnName("contact_person");
+            entity.Property(e => e.Phone).HasMaxLength(30).HasColumnName("phone");
+            entity.Property(e => e.Email).HasMaxLength(255).HasColumnName("email");
+            entity.Property(e => e.Address).HasMaxLength(500).HasColumnName("address");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<ShippingRoute>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_SHIPPING_ROUTES");
+            entity.ToTable("SHIPPING_ROUTES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.RouteCode).HasMaxLength(50).HasColumnName("route_code");
+            entity.Property(e => e.RouteName).HasMaxLength(255).HasColumnName("route_name");
+            entity.Property(e => e.OriginCountry).HasMaxLength(100).HasColumnName("origin_country");
+            entity.Property(e => e.OriginWarehouseId).HasColumnName("origin_warehouse_id");
+            entity.Property(e => e.DestinationCountry).HasMaxLength(100).HasColumnName("destination_country");
+            entity.Property(e => e.DestinationWarehouseId).HasColumnName("destination_warehouse_id");
+            entity.Property(e => e.TransportMode).HasMaxLength(20).HasColumnName("transport_mode");
+            entity.Property(e => e.CarrierId).HasColumnName("carrier_id");
+            entity.Property(e => e.SupplierId).HasColumnName("supplier_id");
+            entity.Property(e => e.EstimatedTransitDays).HasColumnName("estimated_transit_days");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(d => d.OriginWarehouse).WithMany()
+                .HasForeignKey(d => d.OriginWarehouseId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPPING_ROUTE_ORIGIN_WAREHOUSE");
+
+            entity.HasOne(d => d.DestinationWarehouse).WithMany()
+                .HasForeignKey(d => d.DestinationWarehouseId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPPING_ROUTE_DESTINATION_WAREHOUSE");
+
+            entity.HasOne(d => d.Carrier).WithMany()
+                .HasForeignKey(d => d.CarrierId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPPING_ROUTE_CARRIER");
+
+            entity.HasOne(d => d.Supplier).WithMany()
+                .HasForeignKey(d => d.SupplierId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_SHIPPING_ROUTE_SUPPLIER");
         });
 
         modelBuilder.Entity<CycleCount>(entity =>

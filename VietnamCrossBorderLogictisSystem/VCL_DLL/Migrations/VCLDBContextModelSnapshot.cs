@@ -2819,6 +2819,184 @@ namespace VCL_DLL.Migrations
                     b.ToTable("SHIPPING_METHODS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.ShippingRoute", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid?>("CarrierId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("carrier_id");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("DestinationCountry")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("destination_country");
+
+                    b.Property<Guid?>("DestinationWarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("destination_warehouse_id");
+
+                    b.Property<int?>("EstimatedTransitDays")
+                        .HasColumnType("int")
+                        .HasColumnName("estimated_transit_days");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("OriginCountry")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("origin_country");
+
+                    b.Property<Guid?>("OriginWarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("origin_warehouse_id");
+
+                    b.Property<string>("RouteCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("route_code");
+
+                    b.Property<string>("RouteName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("route_name");
+
+                    b.Property<Guid?>("SupplierId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("supplier_id");
+
+                    b.Property<string>("TransportMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("transport_mode");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("PK_SHIPPING_ROUTES");
+
+                    b.HasIndex("CarrierId");
+
+                    b.HasIndex("DestinationWarehouseId");
+
+                    b.HasIndex("OriginWarehouseId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("SHIPPING_ROUTES", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.Supplier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("address");
+
+                    b.Property<string>("ContactPerson")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("contact_person");
+
+                    b.Property<string>("Country")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("country");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("email");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("phone");
+
+                    b.Property<string>("SupplierCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("supplier_code");
+
+                    b.Property<string>("SupplierName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("supplier_name");
+
+                    b.Property<string>("SupplierType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("supplier_type");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("PK_SUPPLIERS");
+
+                    b.ToTable("SUPPLIERS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.SupportTicket", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4056,6 +4234,37 @@ namespace VCL_DLL.Migrations
                     b.Navigation("Shipment");
 
                     b.Navigation("WroRequest");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.ShippingRoute", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Carrier", "Carrier")
+                        .WithMany()
+                        .HasForeignKey("CarrierId")
+                        .HasConstraintName("FK_SHIPPING_ROUTE_CARRIER");
+
+                    b.HasOne("VCL_DLL.Models.Warehouse", "DestinationWarehouse")
+                        .WithMany()
+                        .HasForeignKey("DestinationWarehouseId")
+                        .HasConstraintName("FK_SHIPPING_ROUTE_DESTINATION_WAREHOUSE");
+
+                    b.HasOne("VCL_DLL.Models.Warehouse", "OriginWarehouse")
+                        .WithMany()
+                        .HasForeignKey("OriginWarehouseId")
+                        .HasConstraintName("FK_SHIPPING_ROUTE_ORIGIN_WAREHOUSE");
+
+                    b.HasOne("VCL_DLL.Models.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .HasConstraintName("FK_SHIPPING_ROUTE_SUPPLIER");
+
+                    b.Navigation("Carrier");
+
+                    b.Navigation("DestinationWarehouse");
+
+                    b.Navigation("OriginWarehouse");
+
+                    b.Navigation("Supplier");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.SupportTicket", b =>

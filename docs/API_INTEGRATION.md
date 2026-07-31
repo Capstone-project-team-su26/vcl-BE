@@ -113,6 +113,21 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/inventories/cycle-counts/{id}/resolve` | Admin/WarehouseStaff/OperationsManager | Ghi nhận xử lý chênh lệch tồn kho |
 | `GET` | `/api/inventories/long-stay-alerts` | Đã đăng nhập | Cảnh báo kiện hàng tồn kho lâu ngày |
 | `GET` | `/api/inventories/storage-report` | Đã đăng nhập | Báo cáo tồn kho tổng hợp theo khách hàng |
+| `GET` | `/api/product-types/all` | Admin | Toàn bộ loại hàng, gồm cả loại đã ngừng sử dụng |
+| `GET` | `/api/product-types/{id}` | Admin | Chi tiết loại hàng |
+| `POST` | `/api/product-types` | Admin | Thêm loại hàng |
+| `PUT` | `/api/product-types/{id}` | Admin | Cập nhật loại hàng |
+| `DELETE` | `/api/product-types/{id}` | Admin | Xóa loại hàng |
+| `GET` | `/api/suppliers` | Đã đăng nhập | Danh sách nhà cung cấp dịch vụ |
+| `GET` | `/api/suppliers/{id}` | Đã đăng nhập | Chi tiết nhà cung cấp |
+| `POST` | `/api/suppliers` | Admin | Thêm nhà cung cấp |
+| `PUT` | `/api/suppliers/{id}` | Admin | Cập nhật nhà cung cấp |
+| `DELETE` | `/api/suppliers/{id}` | Admin | Xóa nhà cung cấp |
+| `GET` | `/api/shipping-routes` | Đã đăng nhập | Danh sách tuyến vận chuyển quốc tế |
+| `GET` | `/api/shipping-routes/{id}` | Đã đăng nhập | Chi tiết tuyến vận chuyển |
+| `POST` | `/api/shipping-routes` | Admin | Thêm tuyến vận chuyển |
+| `PUT` | `/api/shipping-routes/{id}` | Admin | Cập nhật tuyến vận chuyển |
+| `DELETE` | `/api/shipping-routes/{id}` | Admin | Xóa tuyến vận chuyển |
 | `POST` | `/api/warehouse-release-requests` | Authenticated | Tạo yêu cầu xuất kho từ tồn kho |
 | `GET` | `/api/warehouse-release-requests` | Authenticated | Lấy danh sách yêu cầu xuất kho (phân trang & bộ lọc) |
 | `GET` | `/api/warehouse-release-requests/{requestId}` | Authenticated | Xem chi tiết một yêu cầu xuất kho |
@@ -6100,3 +6115,103 @@ export interface ScanPickingItemRequestDto {
 
 
 
+
+---
+
+## 46. Phân hệ M03: Danh mục hệ thống bổ sung (Loại hàng, Nhà cung cấp, Tuyến vận chuyển)
+
+Ba nhóm danh mục dưới đây phục vụ màn quản trị Master Data. Các danh mục còn lại của M03 đã có sẵn: kho và sơ đồ Zone–Rack–Bin (mục `/api/warehouses`), quy cách đóng gói (`/api/package-configurations`), đơn vị vận chuyển (`/api/carriers`).
+
+### 46.1. Loại hàng (Product Type)
+
+`GET /api/product-types` giữ nguyên hành vi cũ: **không cần đăng nhập**, chỉ trả loại hàng đang hoạt động, dùng để đổ dropdown khi khách tạo yêu cầu ký gửi.
+
+Bổ sung cho màn quản trị (đều yêu cầu vai trò `Admin`):
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/api/product-types/all` | Toàn bộ loại hàng, gồm cả loại đã ngừng sử dụng |
+| `GET` | `/api/product-types/{id}` | Chi tiết một loại hàng |
+| `POST` | `/api/product-types` | Thêm loại hàng |
+| `PUT` | `/api/product-types/{id}` | Cập nhật loại hàng |
+| `DELETE` | `/api/product-types/{id}` | Xóa loại hàng |
+
+**Body tạo/cập nhật:**
+```json
+{
+  "name": "Hàng điện tử",
+  "importTaxRate": 10,
+  "isActive": true
+}
+```
+
+- `name` bắt buộc, tối đa 255 ký tự và **không được trùng** với loại hàng khác.
+- `importTaxRate` là phần trăm, nằm trong khoảng 0 đến 100, có thể để trống.
+
+> **Lưu ý quan trọng:** `ORDER_ITEMS.product_type` và `PURCHASE_REQUEST_ITEMS.product_type` đang lưu **tên loại hàng dưới dạng chuỗi**, không phải khóa ngoại. Vì vậy:
+> - `DELETE` một loại hàng **đã phát sinh trong đơn** sẽ chuyển nó sang `isActive = false` thay vì xóa vật lý, để dữ liệu lịch sử không bị hỏng. Loại hàng chưa dùng ở đâu mới bị xóa hẳn.
+> - Đổi tên một loại hàng **không** cập nhật lại các đơn cũ. Cân nhắc kỹ trước khi đổi tên loại hàng đã sử dụng.
+
+### 46.2. Nhà cung cấp dịch vụ (Supplier)
+
+Danh mục nhà cung cấp phục vụ luồng xuất kho và mua hộ tại nước ngoài, ví dụ đơn vị trung chuyển và đơn vị lấy hàng.
+
+```http
+GET /api/suppliers?supplierType=TRANSIT&isActive=true
+Authorization: Bearer {token}
+```
+
+`supplierType` nhận: `TRANSIT` (trung chuyển), `PICKUP` (lấy hàng), `GOODS` (cung cấp hàng hoá), `SERVICE` (dịch vụ khác).
+
+**Body tạo/cập nhật:**
+```json
+{
+  "supplierCode": "NCC-GZ-01",
+  "supplierName": "Guangzhou Transit Co., Ltd",
+  "supplierType": "TRANSIT",
+  "country": "China",
+  "contactPerson": "Li Wei",
+  "phone": "+8613800138000",
+  "email": "contact@gztransit.cn",
+  "address": "Baiyun District, Guangzhou",
+  "note": "Đơn vị trung chuyển tuyến Quảng Châu - Hà Nội",
+  "isActive": true
+}
+```
+
+- `supplierCode` bắt buộc và **duy nhất**.
+- `DELETE` nhà cung cấp **đang được gán cho tuyến vận chuyển** sẽ chuyển sang `isActive = false` thay vì xóa vật lý.
+
+### 46.3. Tuyến vận chuyển quốc tế (Shipping Route)
+
+```http
+GET /api/shipping-routes?transportMode=AIR&isActive=true
+Authorization: Bearer {token}
+```
+
+`transportMode` nhận: `AIR`, `SEA`, `ROAD`, `RAIL`.
+
+**Body tạo/cập nhật:**
+```json
+{
+  "routeCode": "CN-VN-AIR-01",
+  "routeName": "Quảng Châu - Hà Nội (đường không)",
+  "originCountry": "China",
+  "originWarehouseId": "7de85f64-...",
+  "destinationCountry": "Vietnam",
+  "destinationWarehouseId": "8af85f64-...",
+  "transportMode": "AIR",
+  "carrierId": "9bc85f64-...",
+  "supplierId": "acd85f64-...",
+  "estimatedTransitDays": 5,
+  "note": "Tuyến ưu tiên cho hàng gấp",
+  "isActive": true
+}
+```
+
+- `routeCode` bắt buộc và **duy nhất**.
+- `originWarehouseId`, `destinationWarehouseId`, `carrierId`, `supplierId` đều **tùy chọn**; nếu có thì phải trỏ tới bản ghi tồn tại, ngược lại trả `400`.
+- Kho đi và kho đến phải khác nhau.
+- Response trả kèm `originWarehouseName`, `destinationWarehouseName`, `carrierName`, `supplierName` để FE không phải gọi thêm API.
+
+> **Migration:** hai bảng `SUPPLIERS` và `SHIPPING_ROUTES` được tạo bởi migration `AddSupplierAndShippingRouteTables`.
