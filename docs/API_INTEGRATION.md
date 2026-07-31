@@ -125,6 +125,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `DELETE` | `/api/suppliers/{id}` | Admin | Xóa nhà cung cấp |
 | `GET` | `/api/shipping-routes` | Đã đăng nhập | Danh sách tuyến vận chuyển quốc tế |
 | `GET` | `/api/shipping-routes/{id}` | Đã đăng nhập | Chi tiết tuyến vận chuyển |
+| `GET` | `/api/warehouse-receiving-notes/{id}` | Admin/Sale/WarehouseStaff/OpsManager | Biên bản nhập kho kèm dòng đối chiếu |
+| `POST` | `/api/warehouse-receiving-notes/{id}/confirm-receipt` | Admin/WarehouseStaff | Xác nhận nhập kho với số liệu thực tế |
 | `POST` | `/api/shipping-routes` | Admin | Thêm tuyến vận chuyển |
 | `PUT` | `/api/shipping-routes/{id}` | Admin | Cập nhật tuyến vận chuyển |
 | `DELETE` | `/api/shipping-routes/{id}` | Admin | Xóa tuyến vận chuyển |
@@ -6215,3 +6217,107 @@ Authorization: Bearer {token}
 - Response trả kèm `originWarehouseName`, `destinationWarehouseName`, `carrierName`, `supplierName` để FE không phải gọi thêm API.
 
 > **Migration:** hai bảng `SUPPLIERS` và `SHIPPING_ROUTES` được tạo bởi migration `AddSupplierAndShippingRouteTables`.
+
+---
+
+## 47. Phân hệ M05: Xác nhận nhập kho & Biên bản nhập kho có đối chiếu thực tế
+
+### 47.1. Thay đổi quy tắc: phiếu tiếp nhận áp dụng cho cả kho gốc
+
+Trước đây `POST /api/warehouse-receiving-notes` **chỉ cho phép kho `DESTINATION`**, nên 3 kho `ORIGIN` (kho quốc tế) không tạo được phiếu tiếp nhận — luồng nhập kho quốc tế của M05 bị chặn hoàn toàn.
+
+Nay quy tắc mở cho **cả `ORIGIN` và `DESTINATION`**:
+- `ORIGIN`: nhập kho quốc tế (M05)
+- `DESTINATION`: nhận lô hàng về kho Việt Nam (M11)
+
+Kho thuộc loại khác vẫn bị từ chối. Các điều kiện còn lại giữ nguyên: kho phải đang hoạt động, yêu cầu ký gửi phải ở trạng thái `APPROVED`, và mỗi yêu cầu ký gửi chỉ có một phiếu đang hoạt động.
+
+### 47.2. Xác nhận nhập kho (Warehouse Staff)
+
+Nhân viên kho quét mã phiếu bằng `GET /api/warehouse-receiving-notes/scan?code=...` để lấy **danh sách hàng khách khai báo** (`expectedItems`), nhập số lượng và trọng lượng đếm được thực tế, rồi gọi:
+
+```http
+POST /api/warehouse-receiving-notes/{receivingNoteId}/confirm-receipt
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "warehouseNote": "Thùng số 3 móp góc, đã chụp ảnh",
+  "items": [
+    {
+      "orderItemId": "5c94b9d5-...",
+      "actualQuantity": 9,
+      "actualWeight": 12.4,
+      "note": "Thiếu 1 cái so với khai báo"
+    },
+    {
+      "orderItemId": null,
+      "productName": "Sạc dự phòng",
+      "productType": "Hàng điện tử",
+      "actualQuantity": 2,
+      "actualWeight": 0.8,
+      "note": "Hàng phát sinh ngoài khai báo"
+    }
+  ]
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+**Quy tắc:**
+- Phải có ít nhất một dòng hàng; `actualQuantity` không được âm.
+- `orderItemId` nếu có thì phải thuộc đúng yêu cầu ký gửi của phiếu — chống nhập nhầm sang đơn khác.
+- `orderItemId = null` dùng cho **hàng phát sinh ngoài khai báo**; khi đó `productName` bắt buộc và `declaredQuantity` được tính bằng 0.
+- Server **tự tính** `quantityDifference` và `weightDifference`, không lấy theo số client gửi lên.
+- Phiếu chuyển sang trạng thái `RECEIVED`. Gọi lại lần hai trả `409`.
+
+### 47.3. Lấy biên bản nhập kho đầy đủ
+
+```http
+GET /api/warehouse-receiving-notes/{receivingNoteId}
+Authorization: Bearer {token}
+```
+
+**Phân quyền:** `Admin`, `Sale`, `WarehouseStaff`, `OperationsManager`.
+
+**Response (200 OK):**
+```json
+{
+  "message": "Lấy biên bản nhập kho thành công.",
+  "data": {
+    "id": "1ae85f64-...",
+    "receivingNoteCode": "WRN-20260801-001",
+    "consignmentOrderId": "5c94b9d5-...",
+    "consignmentCode": "CN20260731001",
+    "customerName": "Nguyễn Văn A",
+    "customerCode": "KH000123",
+    "warehouseId": "7de85f64-...",
+    "warehouseName": "Kho Quảng Châu",
+    "warehouseNote": "Thùng số 3 móp góc, đã chụp ảnh",
+    "status": "RECEIVED",
+    "createdAt": "2026-08-01T09:00:00Z",
+    "hasDiscrepancy": true,
+    "items": [
+      {
+        "id": "2be85f64-...",
+        "orderItemId": "5c94b9d5-...",
+        "productName": "Tai nghe Bluetooth",
+        "productType": "Hàng điện tử",
+        "declaredQuantity": 10,
+        "actualQuantity": 9,
+        "quantityDifference": -1,
+        "declaredWeight": 13.0,
+        "actualWeight": 12.4,
+        "weightDifference": -0.6,
+        "note": "Thiếu 1 cái so với khai báo"
+      }
+    ]
+  }
+}
+```
+
+- `quantityDifference` và `weightDifference`: **âm là thiếu** so với khai báo, **dương là thừa**.
+- `hasDiscrepancy` bằng `true` khi có bất kỳ dòng nào lệch số lượng hoặc trọng lượng — dùng để tô cảnh báo trên giao diện.
+- Đây cũng là nguồn dữ liệu cho phiếu PDF bên web Sale.
+
+> **Migration:** bảng `WAREHOUSE_RECEIVING_NOTE_ITEMS` được tạo bởi migration `AddWarehouseReceivingNoteItems`.

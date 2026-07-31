@@ -3383,6 +3383,74 @@ namespace VCL_DLL.Migrations
                     b.ToTable("WAREHOUSE_RECEIVING_NOTES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseReceivingNoteItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<int>("ActualQuantity")
+                        .HasColumnType("int")
+                        .HasColumnName("actual_quantity");
+
+                    b.Property<decimal?>("ActualWeight")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("actual_weight");
+
+                    b.Property<int>("DeclaredQuantity")
+                        .HasColumnType("int")
+                        .HasColumnName("declared_quantity");
+
+                    b.Property<decimal?>("DeclaredWeight")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("declared_weight");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("OrderItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_item_id");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("product_name");
+
+                    b.Property<string>("ProductType")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("product_type");
+
+                    b.Property<int>("QuantityDifference")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity_difference");
+
+                    b.Property<Guid>("ReceivingNoteId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("receiving_note_id");
+
+                    b.Property<decimal?>("WeightDifference")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("weight_difference");
+
+                    b.HasKey("Id")
+                        .HasName("PK_WAREHOUSE_RECEIVING_NOTE_ITEMS");
+
+                    b.HasIndex("OrderItemId");
+
+                    b.HasIndex("ReceivingNoteId");
+
+                    b.ToTable("WAREHOUSE_RECEIVING_NOTE_ITEMS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.WarehouseZone", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4349,6 +4417,25 @@ namespace VCL_DLL.Migrations
                     b.Navigation("ConsignmentOrder");
 
                     b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseReceivingNoteItem", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.OrderItem", "OrderItem")
+                        .WithMany()
+                        .HasForeignKey("OrderItemId")
+                        .HasConstraintName("FK_WRN_ITEM_ORDER_ITEM");
+
+                    b.HasOne("VCL_DLL.Models.WarehouseReceivingNote", "ReceivingNote")
+                        .WithMany()
+                        .HasForeignKey("ReceivingNoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_WRN_ITEM_RECEIVING_NOTE");
+
+                    b.Navigation("OrderItem");
+
+                    b.Navigation("ReceivingNote");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.WarehouseZone", b =>

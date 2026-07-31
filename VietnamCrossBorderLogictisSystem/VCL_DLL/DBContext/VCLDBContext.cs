@@ -151,6 +151,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<WarehouseReceivingNote> WarehouseReceivingNotes { get; set; }
 
+    public virtual DbSet<WarehouseReceivingNoteItem> WarehouseReceivingNoteItems { get; set; }
+
     public virtual DbSet<PurchaseRequest> PurchaseRequests { get; set; }
 
     public virtual DbSet<PurchaseRequestItem> PurchaseRequestItems { get; set; }
@@ -1761,6 +1763,35 @@ public partial class VCLDBContext : DbContext
                     ChosenAt = new DateTime(2026, 6, 20, 10, 10, 0, DateTimeKind.Utc)
                 }
             );
+        });
+
+        modelBuilder.Entity<WarehouseReceivingNoteItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_WAREHOUSE_RECEIVING_NOTE_ITEMS");
+            entity.ToTable("WAREHOUSE_RECEIVING_NOTE_ITEMS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.ReceivingNoteId).HasColumnName("receiving_note_id");
+            entity.Property(e => e.OrderItemId).HasColumnName("order_item_id");
+            entity.Property(e => e.ProductName).HasMaxLength(255).HasColumnName("product_name");
+            entity.Property(e => e.ProductType).HasMaxLength(255).HasColumnName("product_type");
+            entity.Property(e => e.DeclaredQuantity).HasColumnName("declared_quantity");
+            entity.Property(e => e.ActualQuantity).HasColumnName("actual_quantity");
+            entity.Property(e => e.QuantityDifference).HasColumnName("quantity_difference");
+            entity.Property(e => e.DeclaredWeight).HasColumnType("decimal(18, 2)").HasColumnName("declared_weight");
+            entity.Property(e => e.ActualWeight).HasColumnType("decimal(18, 2)").HasColumnName("actual_weight");
+            entity.Property(e => e.WeightDifference).HasColumnType("decimal(18, 2)").HasColumnName("weight_difference");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+
+            entity.HasOne(d => d.ReceivingNote).WithMany()
+                .HasForeignKey(d => d.ReceivingNoteId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_WRN_ITEM_RECEIVING_NOTE");
+
+            entity.HasOne(d => d.OrderItem).WithMany()
+                .HasForeignKey(d => d.OrderItemId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WRN_ITEM_ORDER_ITEM");
         });
 
         modelBuilder.Entity<WarehouseReceivingNote>(entity =>

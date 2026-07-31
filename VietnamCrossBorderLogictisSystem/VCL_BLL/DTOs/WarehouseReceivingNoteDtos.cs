@@ -52,4 +52,64 @@ namespace VCL_BLL.DTOs
         public Guid WarehouseId { get; set; }
         public string WarehouseNote { get; set; } = string.Empty;
     }
+
+    /// <summary>Số liệu thực tế nhân viên kho ghi nhận cho một dòng hàng</summary>
+    public class ConfirmReceiptItemDto
+    {
+        /// <summary>Dòng hàng khai báo tương ứng, để trống nếu là hàng phát sinh ngoài khai báo</summary>
+        public Guid? OrderItemId { get; set; }
+
+        /// <summary>Bắt buộc khi không có OrderItemId</summary>
+        public string ProductName { get; set; } = string.Empty;
+
+        public string ProductType { get; set; } = string.Empty;
+
+        /// <summary>Số lượng đếm thực tế tại kho</summary>
+        public int ActualQuantity { get; set; }
+
+        /// <summary>Trọng lượng cân thực tế tại kho, đơn vị kg</summary>
+        public decimal? ActualWeight { get; set; }
+
+        public string Note { get; set; } = string.Empty;
+    }
+
+    /// <summary>Yêu cầu xác nhận nhập kho kèm số liệu thực tế từng dòng hàng</summary>
+    public class ConfirmReceiptRequestDto
+    {
+        public string WarehouseNote { get; set; } = string.Empty;
+
+        public List<ConfirmReceiptItemDto> Items { get; set; } = new List<ConfirmReceiptItemDto>();
+    }
+
+    /// <summary>Dòng chi tiết biên bản nhập kho, đối chiếu khai báo với thực tế</summary>
+    public class WarehouseReceivingNoteItemDto
+    {
+        public Guid Id { get; set; }
+        public Guid? OrderItemId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string ProductType { get; set; } = string.Empty;
+        public int DeclaredQuantity { get; set; }
+        public int ActualQuantity { get; set; }
+
+        /// <summary>Âm là thiếu so với khai báo, dương là thừa</summary>
+        public int QuantityDifference { get; set; }
+
+        public decimal? DeclaredWeight { get; set; }
+        public decimal? ActualWeight { get; set; }
+        public decimal? WeightDifference { get; set; }
+        public string Note { get; set; } = string.Empty;
+    }
+
+    /// <summary>Biên bản nhập kho đầy đủ, gồm phần đầu phiếu và các dòng đối chiếu</summary>
+    public class WarehouseReceivingNoteDetailDto : WarehouseReceivingNoteResponseDto
+    {
+        public string ConsignmentCode { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public string CustomerCode { get; set; } = string.Empty;
+
+        /// <summary>True khi có bất kỳ dòng nào lệch số lượng hoặc trọng lượng</summary>
+        public bool HasDiscrepancy { get; set; }
+
+        public List<WarehouseReceivingNoteItemDto> Items { get; set; } = new List<WarehouseReceivingNoteItemDto>();
+    }
 }

@@ -87,5 +87,51 @@ namespace VCL_API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Lấy biên bản nhập kho đầy đủ, gồm các dòng đối chiếu số lượng và trọng lượng
+        /// khách hàng khai báo với số liệu thực tế tại kho.
+        /// </summary>
+        [HttpGet("api/warehouse-receiving-notes/{receivingNoteId}")]
+        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager")]
+        public async Task<IActionResult> GetReceivingNoteDetail(Guid receivingNoteId)
+        {
+            try
+            {
+                var result = await _wrnService.GetReceivingNoteDetailAsync(receivingNoteId);
+                return Ok(new { message = "Lấy biên bản nhập kho thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Nhân viên kho xác nhận nhập kho: nhập số lượng và trọng lượng thực tế của từng dòng hàng.
+        /// Hệ thống tự tính chênh lệch so với khai báo và chuyển phiếu sang trạng thái RECEIVED.
+        /// </summary>
+        [HttpPost("api/warehouse-receiving-notes/{receivingNoteId}/confirm-receipt")]
+        [Authorize(Roles = "Admin,WarehouseStaff")]
+        public async Task<IActionResult> ConfirmReceipt(Guid receivingNoteId, [FromBody] ConfirmReceiptRequestDto request)
+        {
+            try
+            {
+                var result = await _wrnService.ConfirmReceiptAsync(receivingNoteId, request);
+                return Ok(new { message = "Xác nhận nhập kho thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ConflictException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }
