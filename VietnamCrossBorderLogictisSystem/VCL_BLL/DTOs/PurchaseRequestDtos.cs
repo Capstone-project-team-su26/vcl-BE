@@ -463,4 +463,28 @@ namespace VCL_BLL.DTOs
         public string CheckoutUrl { get; set; } = string.Empty;
         public string? PaymentLinkId { get; set; }
     }
+
+    public class CalculatePurchaseItemFeeItemDto
+    {
+        public Guid PurchaseRequestItemId { get; set; }
+        public decimal UnitPrice { get; set; }
+        public int Quantity { get; set; }
+    }
+
+    public class CalculatePurchaseQuotationFeesRequestDto
+    {
+        public List<CalculatePurchaseItemFeeItemDto> Items { get; set; } = new();
+    }
+
+    public class CalculatePurchaseQuotationFeesResponseDto
+    {
+        public Guid PurchaseRequestId { get; set; }
+        public decimal ProductsSubtotal { get; set; }
+        public decimal CalculatedPurchaseFee { get; set; }
+        public decimal AppliedPurchaseFeePercent { get; set; }
+        public decimal EstimatedShippingFee { get; set; }
+        public decimal TotalEstimatedCost { get; set; }
+        public string? Note { get; set; }
+    }
 }
+
