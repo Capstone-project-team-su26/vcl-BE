@@ -284,5 +284,36 @@ namespace VCL_API.Controllers
                 return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Tính toán chi phí báo giá mua hộ tự động (Phí mua hộ % + Phí ship ước tính) trước khi tạo báo giá chính thức
+        /// </summary>
+        [HttpPost("{requestId}/calculate-fees")]
+        public async Task<IActionResult> CalculatePurchaseQuotationFees(Guid requestId, [FromBody] CalculatePurchaseQuotationFeesRequestDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var result = await _purchaseRequestService.CalculatePurchaseQuotationFeesAsync(requestId, dto);
+                return Ok(new { message = "Tính toán chi phí dự kiến thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
     }
 }
+

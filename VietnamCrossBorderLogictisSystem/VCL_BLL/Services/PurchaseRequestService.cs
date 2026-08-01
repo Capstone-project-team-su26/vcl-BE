@@ -1176,5 +1176,92 @@ namespace VCL_BLL.Services
                 AdditionalFees = feeDtos.Where(f => f.PricingRuleId.HasValue || (f.FeeType != "SERVICE_FEE" && f.FeeType != "MAIN_SERVICE")).ToList()
             };
         }
+
+        public async Task<CalculatePurchaseQuotationFeesResponseDto> CalculatePurchaseQuotationFeesAsync(
+            Guid requestId, CalculatePurchaseQuotationFeesRequestDto request)
+        {
+            if (request == null || request.Items == null || !request.Items.Any())
+            {
+                throw new ArgumentException("Danh sách sản phẩm không được để trống.");
+            }
+
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId);
+            if (purchaseRequest == null)
+            {
+                throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+            }
+
+            // 1. Tính tổng tiền hàng
+            decimal productsSubtotal = request.Items.Sum(i => (i.UnitPrice < 0 ? 0 : i.UnitPrice) * (i.Quantity < 0 ? 0 : i.Quantity));
+
+            // 2. Tra cứu quy tắc Phí Mua Hộ từ PricingRule
+            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
+            var activeRules = (await pricingRuleRepo.GetAllAsync())
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var purchaseFeeRule = activeRules.FirstOrDefault(r =>
+                string.Equals(r.RuleType, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.RuleCode, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase) ||
+                r.RuleName.Contains("mua hộ", StringComparison.OrdinalIgnoreCase) ||
+                r.RuleName.Contains("mua hang", StringComparison.OrdinalIgnoreCase));
+
+            decimal feePercent = purchaseFeeRule != null && purchaseFeeRule.Value > 0 ? purchaseFeeRule.Value : 5.0m;
+            decimal calculatedPurchaseFee = productsSubtotal * (feePercent / 100m);
+
+            if (purchaseFeeRule?.MinAmount.HasValue == true && calculatedPurchaseFee < purchaseFeeRule.MinAmount.Value)
+            {
+                calculatedPurchaseFee = purchaseFeeRule.MinAmount.Value;
+            }
+
+            calculatedPurchaseFee = Math.Round(calculatedPurchaseFee, 0);
+
+            // 3. Tra cứu Bảng giá Vận chuyển (ServicePricing) để ước tính Phí Vận Chuyển
+            int totalQuantity = request.Items.Sum(i => i.Quantity < 0 ? 0 : i.Quantity);
+            decimal estimatedWeightKg = Math.Max(1.0m, totalQuantity * 0.2m); // Ước tính 0.2kg / món
+
+            var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
+            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
+
+            var shippingOption = purchaseRequest.ShippingOption ?? "Standard";
+            var routeStr = purchaseRequest.Route ?? string.Empty;
+
+            var matchedPricing = allPricings
+                .Where(p => string.Equals(p.ServiceType, shippingOption, StringComparison.OrdinalIgnoreCase))
+                .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                .OrderByDescending(p => p.EffectiveDate)
+                .FirstOrDefault(p =>
+                    string.IsNullOrWhiteSpace(routeStr) ||
+                    string.Equals(OrderService.NormalizeRoute($"{p.OriginCountry}-{p.DestinationCountry}"), OrderService.NormalizeRoute(routeStr), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(OrderService.NormalizeRoute(p.OriginCountry), OrderService.NormalizeRoute(routeStr), StringComparison.OrdinalIgnoreCase)
+                ) ?? allPricings.FirstOrDefault(p => string.Equals(p.ServiceType, shippingOption, StringComparison.OrdinalIgnoreCase));
+
+            decimal freightUnitPrice = matchedPricing?.Price ?? 200000m; // Default 200k/kg nếu ko có cước
+            decimal estimatedShippingFee = Math.Round(estimatedWeightKg * freightUnitPrice, 0);
+
+            // 4. Tra cứu Phí Vận Chuyển Nội Địa (DOMESTIC_FEE - Mặc định 5,000đ)
+            var domesticFeeRule = activeRules.FirstOrDefault(r =>
+                string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase));
+
+            decimal domesticFee = domesticFeeRule != null && domesticFeeRule.Value > 0 ? domesticFeeRule.Value : 5000m;
+
+            decimal totalEstimatedCost = productsSubtotal + calculatedPurchaseFee + estimatedShippingFee + domesticFee;
+
+            return new CalculatePurchaseQuotationFeesResponseDto
+            {
+                PurchaseRequestId = requestId,
+                ProductsSubtotal = Math.Round(productsSubtotal, 0),
+                CalculatedPurchaseFee = calculatedPurchaseFee,
+                AppliedPurchaseFeePercent = feePercent,
+                EstimatedShippingFee = estimatedShippingFee,
+                DomesticShippingFee = domesticFee,
+                TotalEstimatedCost = Math.Round(totalEstimatedCost, 0),
+                Note = $"Phí mua hộ: {feePercent}%. Ship quốc tế ước tính: {estimatedShippingFee:N0}đ ({estimatedWeightKg}kg). Ship nội địa: {domesticFee:N0}đ."
+            };
+        }
     }
 }
+
+
