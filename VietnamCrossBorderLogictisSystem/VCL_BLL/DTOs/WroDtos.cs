@@ -15,14 +15,11 @@ namespace VCL_BLL.DTOs
 
     public class CreateWroRequestDto
     {
-        [Required(ErrorMessage = "Tên người nhận không được để trống.")]
-        public string ReceiverName { get; set; } = string.Empty;
+        public string? ReceiverName { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Số điện thoại người nhận không được để trống.")]
-        public string ReceiverPhone { get; set; } = string.Empty;
+        public string? ReceiverPhone { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Địa chỉ giao hàng không được để trống.")]
-        public string DeliveryAddress { get; set; } = string.Empty;
+        public string? DeliveryAddress { get; set; } = string.Empty;
 
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
