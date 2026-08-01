@@ -1240,7 +1240,14 @@ namespace VCL_BLL.Services
             decimal freightUnitPrice = matchedPricing?.Price ?? 200000m; // Default 200k/kg nếu ko có cước
             decimal estimatedShippingFee = Math.Round(estimatedWeightKg * freightUnitPrice, 0);
 
-            decimal totalEstimatedCost = productsSubtotal + calculatedPurchaseFee + estimatedShippingFee;
+            // 4. Tra cứu Phí Vận Chuyển Nội Địa (DOMESTIC_FEE - Mặc định 5,000đ)
+            var domesticFeeRule = activeRules.FirstOrDefault(r =>
+                string.Equals(r.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase));
+
+            decimal domesticFee = domesticFeeRule != null && domesticFeeRule.Value > 0 ? domesticFeeRule.Value : 5000m;
+
+            decimal totalEstimatedCost = productsSubtotal + calculatedPurchaseFee + estimatedShippingFee + domesticFee;
 
             return new CalculatePurchaseQuotationFeesResponseDto
             {
@@ -1249,10 +1256,12 @@ namespace VCL_BLL.Services
                 CalculatedPurchaseFee = calculatedPurchaseFee,
                 AppliedPurchaseFeePercent = feePercent,
                 EstimatedShippingFee = estimatedShippingFee,
+                DomesticShippingFee = domesticFee,
                 TotalEstimatedCost = Math.Round(totalEstimatedCost, 0),
-                Note = $"Phí mua hộ tính theo mức {feePercent}%. Phí vận chuyển ước tính trên {estimatedWeightKg}kg ({totalQuantity} món)."
+                Note = $"Phí mua hộ: {feePercent}%. Ship quốc tế ước tính: {estimatedShippingFee:N0}đ ({estimatedWeightKg}kg). Ship nội địa: {domesticFee:N0}đ."
             };
         }
     }
 }
+
 

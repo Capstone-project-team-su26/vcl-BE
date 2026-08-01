@@ -483,8 +483,10 @@ namespace VCL_BLL.DTOs
         public decimal CalculatedPurchaseFee { get; set; }
         public decimal AppliedPurchaseFeePercent { get; set; }
         public decimal EstimatedShippingFee { get; set; }
+        public decimal DomesticShippingFee { get; set; }
         public decimal TotalEstimatedCost { get; set; }
         public string? Note { get; set; }
     }
+
 }
 
