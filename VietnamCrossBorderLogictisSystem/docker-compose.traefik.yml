@@ -1,0 +1,22 @@
+# Override chỉ dùng cho server nào đặt Traefik trước API (hiện tại: zushin).
+# Server không có Traefik thì bỏ file này ra, phần còn lại giống hệt nhau.
+services:
+  vcl-api:
+    networks:
+      - default
+      - apps_network
+      - traefik
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.vcl-api.rule: "${TRAEFIK_ROUTER_RULE}"
+      traefik.http.routers.vcl-api.entrypoints: "web,websecure"
+      traefik.http.routers.vcl-api.tls: "true"
+      traefik.http.routers.vcl-api.tls.certresolver: "myresolver"
+      traefik.http.services.vcl-api.loadbalancer.server.port: "8080"
+      traefik.docker.network: "traefik"
+
+networks:
+  apps_network:
+    external: true
+  traefik:
+    external: true
