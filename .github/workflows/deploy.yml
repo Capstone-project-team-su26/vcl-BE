@@ -264,13 +264,19 @@ jobs:
 
             # So sanh bang image digest nen khong can luu dau moc phien ban tren server.
             want=$(docker image inspect --format '{{.Id}}' "$IMAGE")
-            cid=$(compose ps --quiet vcl-api 2>/dev/null || true)
+
+            # -a de tinh ca container da dung: `ps -q` chi liet ke container dang chay,
+            # container exited se bi bo sot va `compose up` sau do dung ten -> loi Conflict.
+            cid=$(compose ps -aq vcl-api 2>/dev/null || true)
             running=none
+            container_state=none
             if [ -n "$cid" ]; then
               running=$(docker inspect --format '{{.Image}}' "$cid")
+              container_state=$(docker inspect --format '{{.State.Status}}' "$cid")
             fi
 
-            if [ "$want" = "$running" ] && [ "$env_changed" = no ]; then
+            # Chi bo qua khi container that su dang chay dung image va cau hinh khong doi.
+            if [ "$want" = "$running" ] && [ "$container_state" = running ] && [ "$env_changed" = no ]; then
               echo "Da dong bo voi $IMAGE va cau hinh khong doi, bo qua."
               exit 0
             fi
@@ -278,6 +284,19 @@ jobs:
             rollback_tag="vcl-api:previous-$PROJECT"
             if [ "$running" != none ]; then
               docker tag "$running" "$rollback_tag"
+            fi
+
+            # Container mo coi (network bi xoa, project doi thu muc...) khong con thuoc compose project
+            # nhung van giu ten -> phai don truoc, neu khong `compose up` se bao Conflict.
+            # --no-trunc de ID day du, khop duoc voi ID compose tra ve o tren.
+            stale=$(docker ps -aq --no-trunc --filter "name=^/${PROJECT}-vcl-api-" || true)
+            if [ -n "$stale" ]; then
+              for c in $stale; do
+                if [ "$c" != "$cid" ]; then
+                  echo "Xoa container mo coi $(docker inspect --format '{{.Name}}' "$c")."
+                  docker rm -f "$c" > /dev/null
+                fi
+              done
             fi
 
             compose up -d --remove-orphans
