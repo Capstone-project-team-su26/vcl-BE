@@ -59,6 +59,12 @@ public partial class Order
     /// <summary>Người bấm xác nhận yêu cầu, dùng cho tên file phiếu và ô chữ ký người lập.</summary>
     public Guid? ReceiptGeneratedById { get; set; }
 
+    /// <summary>
+    /// Khoá công khai để mở phiếu PDF không cần đăng nhập. Kho mở link trên điện thoại,
+    /// trình duyệt không gửi được token nên phiếu phải truy cập bằng khoá khó đoán này.
+    /// </summary>
+    public Guid? ReceiptPublicKey { get; set; }
+
     public virtual Company Company { get; set; }
 
     public virtual Customer Customer { get; set; }

@@ -855,6 +855,8 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("receipt_generated_at");
             entity.Property(e => e.ReceiptGeneratedById)
                 .HasColumnName("receipt_generated_by_id");
+            entity.Property(e => e.ReceiptPublicKey)
+                .HasColumnName("receipt_public_key");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");

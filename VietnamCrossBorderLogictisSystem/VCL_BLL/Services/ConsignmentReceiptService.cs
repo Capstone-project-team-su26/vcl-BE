@@ -124,30 +124,45 @@ namespace VCL_BLL.Services
             QuestPDF.Settings.License = LicenseType.Community;
         }
 
+        /// <summary>
+        /// Phiếu được phục vụ từ chính API này thay vì lưu ở dịch vụ ngoài: link luôn khớp
+        /// dữ liệu mới nhất, không phụ thuộc quota hay chính sách chặn file của bên thứ ba,
+        /// và không đổi URL mỗi lần sinh lại.
+        /// </summary>
         public async Task<string?> GenerateAndStoreReceiptAsync(Guid orderId, Guid? generatedByUserId)
         {
-            var (content, fileName) = await BuildReceiptPdfAsync(orderId, generatedByUserId);
-
-            using var stream = new MemoryStream(content);
-            var url = await _fileUploadService.UploadDocumentAsync(stream, fileName);
-
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                return null;
-            }
-
             var orderRepo = _unitOfWork.Repository<Order>();
-            var order = await orderRepo.GetByIdAsync(orderId);
-            if (order != null)
-            {
-                order.ReceiptPdfUrl = url;
-                order.ReceiptGeneratedAt = DateTime.UtcNow;
-                order.ReceiptGeneratedById = generatedByUserId;
-                orderRepo.Update(order);
-                await _unitOfWork.SaveChangesAsync();
-            }
+            var order = await orderRepo.GetByIdAsync(orderId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
 
-            return url;
+            // Sinh thử để lỗi dữ liệu lộ ra ngay lúc này, thay vì lúc kho bấm mở link.
+            await BuildReceiptPdfAsync(orderId, generatedByUserId);
+
+            order.ReceiptPublicKey ??= Guid.NewGuid();
+            order.ReceiptPdfUrl = BuildPublicReceiptUrl(order.ReceiptPublicKey.Value);
+            order.ReceiptGeneratedAt = DateTime.UtcNow;
+            order.ReceiptGeneratedById = generatedByUserId;
+
+            orderRepo.Update(order);
+            await _unitOfWork.SaveChangesAsync();
+
+            return order.ReceiptPdfUrl;
+        }
+
+        public async Task<(byte[] Content, string FileName)> GetReceiptByPublicKeyAsync(Guid publicKey)
+        {
+            var order = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                .FirstOrDefault(o => o.ReceiptPublicKey == publicKey)
+                ?? throw new NotFoundException("Không tìm thấy phiếu xác nhận ký gửi.");
+
+            return await BuildReceiptPdfAsync(order.Id, order.ReceiptGeneratedById);
+        }
+
+        private string BuildPublicReceiptUrl(Guid publicKey)
+        {
+            var baseUrl = (_configuration["App:PublicBaseUrl"] ?? string.Empty).TrimEnd('/');
+
+            return $"{baseUrl}/api/public/receipts/{publicKey}";
         }
 
         public async Task<(byte[] Content, string FileName)> BuildReceiptPdfAsync(Guid orderId, Guid? generatedByUserId)

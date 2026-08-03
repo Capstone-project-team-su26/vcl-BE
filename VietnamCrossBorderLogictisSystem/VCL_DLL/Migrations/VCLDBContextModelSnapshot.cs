@@ -1082,6 +1082,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("receipt_pdf_url");
 
+                    b.Property<Guid?>("ReceiptPublicKey")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("receipt_public_key");
+
                     b.Property<string>("ReceiverAddress")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("receiver_address");
