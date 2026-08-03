@@ -12,7 +12,7 @@ namespace VCL_BLL.Interface
         Task<CancelConsignmentResponse> CancelConsignmentAsync(Guid orderId, Guid userId, CancelConsignmentRequest request);
         Task<ConsignmentDetailResponse> GetConsignmentDetailAsync(Guid orderId, Guid? userId, string role);
         Task<ValidateItemsResponse> ValidateConsignmentItemsAsync(ValidateItemsRequest request);
-        Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request);
+        Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request, Guid? actorUserId = null);
         Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode);
         Task<List<string>> GetConsignmentRoutesAsync();
         Task<List<string>> GetShippingOptionsAsync(string? route);

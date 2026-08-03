@@ -46,7 +46,10 @@ namespace VCL_API.Controllers
 
             try
             {
-                var result = await _parcelService.CheckInParcelAsync(request);
+                var actorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                Guid? actorUserId = Guid.TryParse(actorIdClaim, out var parsedActorId) ? parsedActorId : null;
+
+                var result = await _parcelService.CheckInParcelAsync(request, actorUserId);
                 return Ok(new { message = "Check-in kiện hàng thành công.", data = result });
             }
             catch (ArgumentException ex)

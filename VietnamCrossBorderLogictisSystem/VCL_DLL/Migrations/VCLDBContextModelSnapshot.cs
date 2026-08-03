@@ -1069,6 +1069,19 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("payment_confirmed_by_id");
 
+                    b.Property<DateTime?>("ReceiptGeneratedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("receipt_generated_at");
+
+                    b.Property<Guid?>("ReceiptGeneratedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("receipt_generated_by_id");
+
+                    b.Property<string>("ReceiptPdfUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("receipt_pdf_url");
+
                     b.Property<string>("ReceiverAddress")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("receiver_address");
@@ -1288,6 +1301,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("check_in_time");
 
+                    b.Property<Guid?>("CheckedInById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("checked_in_by_id");
+
                     b.Property<Guid?>("ConsignmentId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("consignment_id");
@@ -1303,6 +1320,10 @@ namespace VCL_DLL.Migrations
                     b.Property<Guid?>("MasterBoxId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("master_box_id");
+
+                    b.Property<Guid?>("OrderItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_item_id");
 
                     b.Property<string>("PackageCode")
                         .HasMaxLength(100)

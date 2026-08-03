@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -15,11 +15,31 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
+        private readonly IConsignmentReceiptService _consignmentReceiptService;
 
-        public ParcelService(IUnitOfWork unitOfWork, IConfiguration configuration)
+        // Khách khai số theo ước lượng nên lệch là bình thường; chỉ cảnh báo khi chênh đủ lớn
+        // để đáng đi hỏi lại, tránh báo động giả làm kho bỏ qua mọi cảnh báo.
+        private const decimal WeightDeviationWarningThreshold = 0.5m;
+        private const decimal VolumeDeviationWarningThreshold = 0.8m;
+
+        // Kiện nhỏ thì chênh vài trăm gram hoặc vài cm đã vọt phần trăm, nên bỏ qua
+        // khi bản thân mức chênh tuyệt đối còn nhỏ.
+        private const decimal MinWeightDifferenceForWarningKg = 2m;
+        private const decimal MinVolumeDifferenceForWarningCm3 = 20000m;
+
+        /// <summary>Ngưỡng vật lý để chặn số nhập sai rõ ràng.</summary>
+        private const decimal MaxParcelWeightKg = 1000m;
+        private const decimal MaxParcelDimensionCm = 500m;
+
+
+        public ParcelService(
+            IUnitOfWork unitOfWork,
+            IConfiguration configuration,
+            IConsignmentReceiptService consignmentReceiptService)
         {
             _unitOfWork = unitOfWork;
             _configuration = configuration;
+            _consignmentReceiptService = consignmentReceiptService;
         }
 
         /// <summary>
@@ -53,13 +73,13 @@ namespace VCL_BLL.Services
             return 5000m;
         }
 
-        public async Task<ParcelCheckInResponse> CheckInParcelAsync(ParcelCheckInRequest request)
+        public async Task<ParcelCheckInResponse> CheckInParcelAsync(ParcelCheckInRequest request, Guid? actorUserId = null)
         {
             if (request == null)
                 throw new ArgumentException("Yêu cầu check-in không được để trống.");
 
             // 1. Kiểm tra mã gửi hàng hợp lệ (bắt đầu bằng VCL-)
-            if (string.IsNullOrWhiteSpace(request.ShippingCode) || 
+            if (string.IsNullOrWhiteSpace(request.ShippingCode) ||
                 !request.ShippingCode.StartsWith("VCL-", StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException("Mã gửi hàng không hợp lệ.");
@@ -68,7 +88,7 @@ namespace VCL_BLL.Services
             // 2. Tìm yêu cầu ký gửi
             var orderRepo = _unitOfWork.Repository<Order>();
             var allOrders = await orderRepo.GetAllAsync();
-            var order = allOrders.FirstOrDefault(o => 
+            var order = allOrders.FirstOrDefault(o =>
                 string.Equals(o.ConsignmentCode, request.ShippingCode, StringComparison.OrdinalIgnoreCase));
 
             if (order == null)
@@ -83,67 +103,119 @@ namespace VCL_BLL.Services
                 throw new ArgumentException($"Yêu cầu ký gửi không ở trạng thái cho phép check-in (Hiện tại: {order.Status}).");
             }
 
-            if (request.ActualWeight <= 0)
+            // 4. Chuẩn hoá về danh sách kiện cần nhận. Request cũ (không có Packages) coi như nhận một kiện.
+            var incomingPackages = request.Packages is { Count: > 0 }
+                ? request.Packages
+                : new List<ParcelCheckInPackage>
+                {
+                    new()
+                    {
+                        OrderItemId = request.OrderItemId,
+                        ActualWeight = request.ActualWeight,
+                        Length = request.Length,
+                        Width = request.Width,
+                        Height = request.Height
+                    }
+                };
+
+            foreach (var package in incomingPackages)
             {
-                throw new ArgumentException("Cân nặng thực tế phải lớn hơn 0.");
+                ValidateMeasurements(package);
             }
 
-            // 4. Phát sinh mã kiện hàng không trùng
+            // 5. Mỗi dòng OrderItem là một kiện hàng riêng của đơn.
+            var orderItems = (await _unitOfWork.Repository<OrderItem>().GetAllAsync())
+                .Where(i => i.OrderId == order.Id)
+                .OrderBy(i => i.Id)
+                .ToList();
+
+            if (orderItems.Count == 0)
+            {
+                throw new ArgumentException("Đơn ký gửi không có kiện hàng nào để nhận.");
+            }
+
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var allParcels = await parcelRepo.GetAllAsync();
-            var random = new Random();
-            string packageCode;
-            do
-            {
-                var now = DateTime.UtcNow;
-                var randomSuffix = random.Next(100000, 999999).ToString();
-                packageCode = $"PCL-{now:yyyyMMddHHmmss}-{randomSuffix}";
-            } while (allParcels.Any(p => string.Equals(p.PackageCode, packageCode, StringComparison.OrdinalIgnoreCase)));
 
-            // 5. Tính toán volumetric weight nếu đủ 3 kích thước
-            decimal? volumetricWeight = null;
-            if (request.Length.HasValue && request.Width.HasValue && request.Height.HasValue &&
-                request.Length.Value > 0 && request.Width.Value > 0 && request.Height.Value > 0)
+            // Kiện đã nhận trước đó của đơn. Kiện gốc đã tách (SPLIT) không tính vì kiện con đã thay thế.
+            var existingParcels = allParcels
+                .Where(p => p.ConsignmentId == order.Id
+                            && !string.Equals(p.PackageStatus, "SPLIT", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var receivedItemIds = existingParcels
+                .Where(p => p.OrderItemId.HasValue)
+                .Select(p => p.OrderItemId!.Value)
+                .ToHashSet();
+
+            var divisor = await GetVolumetricDivisorAsync();
+            var usedPackageCodes = allParcels
+                .Select(p => p.PackageCode)
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var createdParcels = new List<(Parcel Parcel, OrderItem? Item, List<string> Warnings, decimal? WeightDifference)>();
+
+            foreach (var package in incomingPackages)
             {
-                var divisor = await GetVolumetricDivisorAsync();
-                volumetricWeight = Math.Round((request.Length.Value * request.Width.Value * request.Height.Value) / divisor, 4);
+                var matchedItem = ResolveOrderItem(package.OrderItemId, orderItems, receivedItemIds, order.ConsignmentCode);
+
+                if (matchedItem != null)
+                {
+                    receivedItemIds.Add(matchedItem.Id);
+                }
+
+                var packageCode = GeneratePackageCode(usedPackageCodes);
+
+                decimal? volumetricWeight = null;
+                if (package.Length is > 0 && package.Width is > 0 && package.Height is > 0)
+                {
+                    volumetricWeight = Math.Round(
+                        package.Length.Value * package.Width.Value * package.Height.Value / divisor, 4);
+                }
+
+                var chargeableWeight = Math.Round(
+                    volumetricWeight.HasValue
+                        ? Math.Max(package.ActualWeight, volumetricWeight.Value)
+                        : package.ActualWeight, 4);
+
+                var parcel = new Parcel
+                {
+                    Id = Guid.NewGuid(),
+                    ConsignmentId = order.Id,
+                    OrderItemId = matchedItem?.Id,
+                    PackageCode = packageCode,
+                    ActualWeight = package.ActualWeight,
+                    Length = package.Length,
+                    Width = package.Width,
+                    Height = package.Height,
+                    VolumetricWeight = volumetricWeight,
+                    ChargeableWeight = chargeableWeight,
+                    PackageConfigurationId = matchedItem?.PackageConfigurationId,
+                    PackageStatus = "RECEIVED",
+                    CheckInTime = DateTime.UtcNow,
+                    CheckedInById = actorUserId
+                };
+
+                await parcelRepo.AddAsync(parcel);
+
+                var (warnings, weightDifference) = CompareWithDeclaration(package, matchedItem);
+                createdParcels.Add((parcel, matchedItem, warnings, weightDifference));
             }
 
-            // 6. Tính chargeable weight
-            decimal chargeableWeight = request.ActualWeight;
-            if (volumetricWeight.HasValue)
-            {
-                chargeableWeight = Math.Max(request.ActualWeight, volumetricWeight.Value);
-            }
-            chargeableWeight = Math.Round(chargeableWeight, 4);
+            // 6. Đơn chỉ chuyển CHECKED_IN khi mọi kiện khai báo đều đã được nhận.
+            var declaredPackageCount = orderItems.Count;
+            var receivedPackageCount = existingParcels.Count + createdParcels.Count;
+            var isFullyReceived = receivedItemIds.Count >= declaredPackageCount;
 
-            // 7. Tạo Parcel mới và cập nhật trạng thái Parcel thành RECEIVED
-            var parcel = new Parcel
-            {
-                Id = Guid.NewGuid(),
-                ConsignmentId = order.Id,
-                PackageCode = packageCode,
-                ActualWeight = request.ActualWeight,
-                Length = request.Length,
-                Width = request.Width,
-                Height = request.Height,
-                VolumetricWeight = volumetricWeight,
-                ChargeableWeight = chargeableWeight,
-                PackageStatus = "RECEIVED",
-                CheckInTime = DateTime.UtcNow
-            };
-
-            await parcelRepo.AddAsync(parcel);
-
-            // 8. Cập nhật trạng thái Order thành CHECKED_IN (nếu đang ở các trạng thái trước nhập kho)
             var priorStatuses = new[] { "APPROVED", "DEPOSIT_PAID", "PAYMENT_CONFIRMED", "WAITING_DEPOSIT", "QUOTATION_CONFIRMED" };
-            if (priorStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
+            if (isFullyReceived && priorStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
             {
                 order.Status = "CHECKED_IN";
                 orderRepo.Update(order);
             }
 
-            // 8b. Nếu có phiếu tiếp nhận kho đang hiệu lực (VCL-146) -> cập nhật sang RECEIVED
+            // 6b. Nếu có phiếu tiếp nhận kho đang hiệu lực (VCL-146) -> cập nhật sang RECEIVED
             var wrnRepo = _unitOfWork.Repository<WarehouseReceivingNote>();
             var allNotes = await wrnRepo.GetAllAsync();
             var activeNote = allNotes.FirstOrDefault(n =>
@@ -152,52 +224,244 @@ namespace VCL_BLL.Services
                  string.Equals(n.Status, "PARTIALLY_RECEIVED", StringComparison.OrdinalIgnoreCase)));
             if (activeNote != null)
             {
-                activeNote.Status = "RECEIVED";
+                activeNote.Status = isFullyReceived ? "RECEIVED" : "PARTIALLY_RECEIVED";
                 wrnRepo.Update(activeNote);
             }
 
-            // 9. Lấy thông tin khách hàng và danh sách mặt hàng đã khai báo để trả về
-            var customerRepo = _unitOfWork.Repository<Customer>();
-            var allCustomers = await customerRepo.GetAllAsync();
-            var customer = allCustomers.FirstOrDefault(c => c.Id == order.CustomerId);
-
-            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            var allItems = await orderItemRepo.GetAllAsync();
-            var orderItems = allItems.Where(i => i.OrderId == order.Id).ToList();
+            var customer = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                .FirstOrDefault(c => c.Id == order.CustomerId);
 
             await _unitOfWork.SaveChangesAsync();
 
-            // 10. Trả về thông tin check-in đầy đủ
-            var response = new ParcelCheckInResponse
+            // Nhận đủ kiện thì sinh lại phiếu để có tên nhân viên kho và số thực nhận.
+            // Lỗi sinh phiếu không được làm hỏng việc check-in.
+            if (isFullyReceived)
             {
-                ParcelId = parcel.Id,
-                ShippingCode = request.ShippingCode,
-                ConsignmentId = order.Id,
-                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
-                CustomerName = customer?.FullName ?? string.Empty,
-                CustomerCode = customer?.CustomerCode ?? string.Empty,
-                PackageCode = packageCode,
-                ActualWeight = request.ActualWeight,
-                Length = request.Length,
-                Width = request.Width,
-                Height = request.Height,
-                VolumetricWeight = volumetricWeight.HasValue ? Math.Round(volumetricWeight.Value, 4) : null,
-                ChargeableWeight = Math.Round(chargeableWeight, 4),
-                PackageStatus = parcel.PackageStatus,
-                DeclaredItems = orderItems.Select(item => new DeclaredItemDto
+                try
                 {
+                    await _consignmentReceiptService.GenerateAndStoreReceiptAsync(order.Id, order.ReceiptGeneratedById);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"REGENERATE CONSIGNMENT RECEIPT ERROR ({order.Id}): {ex.Message}");
+                }
+            }
+
+            // 7. Tiến độ từng kiện để app kho biết kiện nào đã nhận, kiện nào còn thiếu.
+            var parcelByItemId = existingParcels
+                .Concat(createdParcels.Select(c => c.Parcel))
+                .Where(p => p.OrderItemId.HasValue)
+                .GroupBy(p => p.OrderItemId!.Value)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var packageProgress = orderItems.Select(item =>
+            {
+                parcelByItemId.TryGetValue(item.Id, out var matchedParcel);
+
+                return new ConsignmentPackageProgress
+                {
+                    OrderItemId = item.Id,
                     ProductName = item.ProductName ?? string.Empty,
-                    ProductType = item.ProductType ?? string.Empty,
                     Quantity = item.Quantity ?? 0,
-                    Weight = item.Weight,
-                    Length = item.Length,
-                    Width = item.Width,
-                    Height = item.Height,
-                    DeclaredValue = item.DeclaredValue
-                }).ToList()
-            };
+                    DeclaredWeight = item.Weight,
+                    IsReceived = matchedParcel != null,
+                    PackageCode = matchedParcel?.PackageCode,
+                    ActualWeight = matchedParcel?.ActualWeight
+                };
+            }).ToList();
+
+            var declaredItems = orderItems.Select(item => new DeclaredItemDto
+            {
+                ProductName = item.ProductName ?? string.Empty,
+                ProductType = item.ProductType ?? string.Empty,
+                Quantity = item.Quantity ?? 0,
+                Weight = item.Weight,
+                Length = item.Length,
+                Width = item.Width,
+                Height = item.Height,
+                DeclaredValue = item.DeclaredValue
+            }).ToList();
+
+            ParcelCheckInResponse BuildResponse((Parcel Parcel, OrderItem? Item, List<string> Warnings, decimal? WeightDifference) created) =>
+                new()
+                {
+                    ParcelId = created.Parcel.Id,
+                    ShippingCode = request.ShippingCode,
+                    ConsignmentId = order.Id,
+                    ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                    CustomerName = customer?.FullName ?? string.Empty,
+                    CustomerCode = customer?.CustomerCode ?? string.Empty,
+                    ReceiverName = order.ReceiverName,
+                    ReceiverPhone = order.ReceiverPhone,
+                    ReceiverAddress = order.ReceiverAddress,
+                    PackageCode = created.Parcel.PackageCode ?? string.Empty,
+                    OrderItemId = created.Item?.Id,
+                    ProductName = created.Item?.ProductName ?? string.Empty,
+                    DeclaredWeight = created.Item?.Weight,
+                    ActualWeight = created.Parcel.ActualWeight ?? 0m,
+                    Length = created.Parcel.Length,
+                    Width = created.Parcel.Width,
+                    Height = created.Parcel.Height,
+                    VolumetricWeight = created.Parcel.VolumetricWeight,
+                    ChargeableWeight = created.Parcel.ChargeableWeight,
+                    PackageStatus = created.Parcel.PackageStatus ?? string.Empty,
+                    WeightDifference = created.WeightDifference,
+                    Warnings = created.Warnings,
+                    DeclaredPackageCount = declaredPackageCount,
+                    ReceivedPackageCount = receivedPackageCount,
+                    RemainingPackageCount = Math.Max(0, declaredPackageCount - receivedItemIds.Count),
+                    IsFullyReceived = isFullyReceived,
+                    OrderStatus = order.Status ?? string.Empty,
+                    DeclaredItems = declaredItems,
+                    PackageProgress = packageProgress
+                };
+
+            var response = BuildResponse(createdParcels[0]);
+
+            if (createdParcels.Count > 1)
+            {
+                response.Parcels = createdParcels.Select(BuildResponse).ToList();
+                response.Warnings = createdParcels.SelectMany(c => c.Warnings).ToList();
+            }
 
             return response;
+        }
+
+        /// <summary>
+        /// Xác định kiện khai báo ứng với lần nhận này. Có OrderItemId thì dùng đúng kiện đó,
+        /// không có thì lấy kiện chưa nhận đầu tiên để giữ tương thích với client cũ.
+        /// </summary>
+        private static OrderItem? ResolveOrderItem(
+            Guid? orderItemId,
+            List<OrderItem> orderItems,
+            HashSet<Guid> receivedItemIds,
+            string? consignmentCode)
+        {
+            if (orderItemId.HasValue)
+            {
+                var item = orderItems.FirstOrDefault(i => i.Id == orderItemId.Value)
+                    ?? throw new ArgumentException($"Kiện hàng không thuộc đơn ký gửi {consignmentCode}.");
+
+                if (receivedItemIds.Contains(item.Id))
+                {
+                    throw new ArgumentException($"Kiện \"{item.ProductName}\" đã được check-in trước đó.");
+                }
+
+                return item;
+            }
+
+            return orderItems.FirstOrDefault(i => !receivedItemIds.Contains(i.Id));
+        }
+
+        /// <summary>Chặn số đo phi lý trước khi ghi nhận, tránh sai số nhân lên khi tính cước.</summary>
+        private static void ValidateMeasurements(ParcelCheckInPackage package)
+        {
+            if (package.ActualWeight <= 0)
+            {
+                throw new ArgumentException("Cân nặng thực tế phải lớn hơn 0.");
+            }
+
+            if (package.ActualWeight > MaxParcelWeightKg)
+            {
+                throw new ArgumentException($"Cân nặng thực tế {package.ActualWeight} kg vượt ngưỡng cho phép ({MaxParcelWeightKg} kg). Kiểm tra lại số đã nhập.");
+            }
+
+            foreach (var (name, value) in new[]
+                     {
+                         ("Chiều dài", package.Length),
+                         ("Chiều rộng", package.Width),
+                         ("Chiều cao", package.Height)
+                     })
+            {
+                if (value is null)
+                {
+                    continue;
+                }
+
+                if (value <= 0)
+                {
+                    throw new ArgumentException($"{name} phải lớn hơn 0.");
+                }
+
+                if (value > MaxParcelDimensionCm)
+                {
+                    throw new ArgumentException($"{name} {value} cm vượt ngưỡng cho phép ({MaxParcelDimensionCm} cm). Kiểm tra lại số đã nhập.");
+                }
+            }
+        }
+
+        /// <summary>Đối chiếu số thực đo với khai báo của khách. Chỉ cảnh báo, không chặn.</summary>
+        private static (List<string> Warnings, decimal? WeightDifference) CompareWithDeclaration(
+            ParcelCheckInPackage package,
+            OrderItem? matchedItem)
+        {
+            var warnings = new List<string>();
+            decimal? weightDifference = null;
+
+            if (matchedItem == null)
+            {
+                warnings.Add("Kiện này không khớp dòng hàng nào trong đơn, hệ thống không đối chiếu được với khai báo.");
+                return (warnings, null);
+            }
+
+            var productName = matchedItem.ProductName ?? "không tên";
+
+            if (matchedItem.Weight is > 0)
+            {
+                weightDifference = Math.Round(package.ActualWeight - matchedItem.Weight.Value, 4);
+
+                var deviationRatio = Math.Abs(weightDifference.Value) / matchedItem.Weight.Value;
+                if (deviationRatio > WeightDeviationWarningThreshold &&
+                    Math.Abs(weightDifference.Value) >= MinWeightDifferenceForWarningKg)
+                {
+                    warnings.Add($"Kiện \"{productName}\": cân nặng thực {package.ActualWeight} kg lệch {Math.Round(deviationRatio * 100, 1)}% so với khai báo {matchedItem.Weight.Value} kg.");
+                }
+            }
+
+            if (package.Length is > 0 && package.Width is > 0 && package.Height is > 0 &&
+                matchedItem.Length is > 0 && matchedItem.Width is > 0 && matchedItem.Height is > 0)
+            {
+                var actualVolume = package.Length.Value * package.Width.Value * package.Height.Value;
+                var declaredVolume = matchedItem.Length.Value * matchedItem.Width.Value * matchedItem.Height.Value;
+
+                var volumeDifference = Math.Abs(actualVolume - declaredVolume);
+                var volumeRatio = volumeDifference / declaredVolume;
+                if (volumeRatio > VolumeDeviationWarningThreshold &&
+                    volumeDifference >= MinVolumeDifferenceForWarningCm3)
+                {
+                    warnings.Add($"Kiện \"{productName}\": thể tích thực lệch {Math.Round(volumeRatio * 100, 1)}% so với khai báo. Kiểm tra lại số đo hoặc thùng đóng gói.");
+                }
+            }
+
+            return (warnings, weightDifference);
+        }
+
+        /// <summary>Ảnh sản phẩm lưu thành một chuỗi ngăn cách bởi dấu phẩy trong DB.</summary>
+        private static List<string> SplitReferenceUrls(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return new List<string>();
+            }
+
+            return raw
+                .Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(url => url.Trim())
+                .Where(url => url.Length > 0)
+                .ToList();
+        }
+
+        private static string GeneratePackageCode(HashSet<string> usedCodes)
+        {
+            var random = new Random();
+            string packageCode;
+
+            do
+            {
+                packageCode = $"PCL-{DateTime.UtcNow:yyyyMMddHHmmss}-{random.Next(100000, 999999)}";
+            } while (!usedCodes.Add(packageCode));
+
+            return packageCode;
         }
 
         public async Task<ParcelDetailResponse> GetParcelDetailAsync(Guid parcelId)
@@ -216,6 +480,10 @@ namespace VCL_BLL.Services
             Customer? customer = null;
             if (order?.CustomerId != null)
                 customer = await _unitOfWork.Repository<Customer>().GetByIdAsync(order.CustomerId.Value);
+
+            OrderItem? parcelOrderItem = null;
+            if (parcel.OrderItemId.HasValue)
+                parcelOrderItem = await _unitOfWork.Repository<OrderItem>().GetByIdAsync(parcel.OrderItemId.Value);
 
             // 3. Vị trí kho (chỉ khi đã put-away — BinId != null)
             ParcelStorageLocation? location = null;
@@ -253,10 +521,19 @@ namespace VCL_BLL.Services
                 PackageStatus = parcel.PackageStatus ?? string.Empty,
                 ConsignmentId = parcel.ConsignmentId,
                 ConsignmentCode = order?.ConsignmentCode ?? string.Empty,
+                OrderItemId = parcel.OrderItemId,
+                ProductName = parcelOrderItem?.ProductName ?? string.Empty,
+                ProductType = parcelOrderItem?.ProductType ?? string.Empty,
+                Quantity = parcelOrderItem?.Quantity ?? 0,
+                DeclaredWeight = parcelOrderItem?.Weight,
+                ReferenceUrls = SplitReferenceUrls(parcelOrderItem?.ReferenceUrl),
                 CustomerName = customer?.FullName ?? string.Empty,
                 CustomerCode = customer?.CustomerCode ?? string.Empty,
                 CustomerEmail = customer?.Email,
                 CustomerPhone = customer?.Phone,
+                ReceiverName = order?.ReceiverName,
+                ReceiverPhone = order?.ReceiverPhone,
+                ReceiverAddress = order?.ReceiverAddress,
                 ActualWeight = parcel.ActualWeight,
                 Length = parcel.Length,
                 Width = parcel.Width,
@@ -320,14 +597,32 @@ namespace VCL_BLL.Services
                 .Take(pageSize)
                 .ToList();
 
+            // Kèm dòng hàng của kiện để nhân viên xếp kệ phân biệt được các kiện cùng một đơn.
+            var orderItemMap = (await _unitOfWork.Repository<OrderItem>().GetAllAsync())
+                .ToDictionary(i => i.Id, i => i);
+
             // Map to DTO
             var resultItems = paginatedParcels.Select(p =>
             {
                 var order = allOrders.FirstOrDefault(o => o.Id == p.ConsignmentId);
                 var customer = order != null ? allCustomers.FirstOrDefault(c => c.Id == order.CustomerId) : null;
 
+                OrderItem? orderItem = null;
+                if (p.OrderItemId.HasValue)
+                {
+                    orderItemMap.TryGetValue(p.OrderItemId.Value, out orderItem);
+                }
+
                 return new PendingPutawayParcelDto
                 {
+                    ReceiverName = order?.ReceiverName,
+                    ReceiverPhone = order?.ReceiverPhone,
+                    ReceiverAddress = order?.ReceiverAddress,
+                    OrderItemId = p.OrderItemId,
+                    ProductName = orderItem?.ProductName ?? string.Empty,
+                    ProductType = orderItem?.ProductType ?? string.Empty,
+                    Quantity = orderItem?.Quantity ?? 0,
+                    ReferenceUrls = SplitReferenceUrls(orderItem?.ReferenceUrl),
                     Id = p.Id,
                     PackageCode = p.PackageCode ?? string.Empty,
                     ConsignmentCode = order?.ConsignmentCode ?? string.Empty,
@@ -438,7 +733,10 @@ namespace VCL_BLL.Services
                 decimal availableVolume = bin.MaxVolume.Value - (bin.CurrentVolume ?? 0);
                 if (parcelVolume > availableVolume)
                 {
-                    throw new ArgumentException($"Ô kệ không đủ sức chứa thể tích. Thể tích kiện hàng: {parcelVolume}, thể tích khả dụng: {availableVolume}.");
+                    // Nêu rõ đơn vị: ô kệ khai theo lít thay vì cm³ sẽ rơi vào đây dù còn trống.
+                    throw new ArgumentException(
+                        $"Ô kệ {bin.BinCode} không đủ sức chứa. Kiện cần {parcelVolume:N0} cm³, ô kệ còn {availableVolume:N0} cm³ " +
+                        $"(sức chứa khai báo {bin.MaxVolume.Value:N0} cm³). Nếu ô kệ thực tế lớn hơn, kiểm tra lại đơn vị của maxVolume — trường này tính bằng cm³.");
                 }
             }
 
@@ -454,7 +752,9 @@ namespace VCL_BLL.Services
                 decimal parcelWeight = parcel.ActualWeight ?? 0;
                 if (parcelWeight > availableWeight)
                 {
-                    throw new ArgumentException($"Ô kệ không đủ sức chứa tải trọng. Khối lượng kiện hàng: {parcelWeight}, tải trọng khả dụng: {availableWeight}.");
+                    throw new ArgumentException(
+                        $"Ô kệ {bin.BinCode} không đủ tải trọng. Kiện nặng {parcelWeight:N2} kg, ô kệ còn chịu được {availableWeight:N2} kg " +
+                        $"(tải trọng khai báo {bin.MaxWeight!.Value:N2} kg).");
                 }
             }
 

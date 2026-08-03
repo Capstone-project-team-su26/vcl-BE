@@ -19,6 +19,12 @@ public partial class Parcel
     /// </summary>
     public Guid? ParentParcelId { get; set; }
 
+    /// <summary>Dòng hàng khách khai báo ứng với kiện này. Mỗi OrderItem là một kiện.</summary>
+    public Guid? OrderItemId { get; set; }
+
+    /// <summary>Nhân viên kho đã check-in kiện, dùng cho ô xác nhận kho trên phiếu.</summary>
+    public Guid? CheckedInById { get; set; }
+
     public string PackageCode { get; set; }
 
     public decimal? ActualWeight { get; set; }

@@ -7,7 +7,7 @@ namespace VCL_BLL.Interface
 {
     public interface IParcelService
     {
-        Task<ParcelCheckInResponse> CheckInParcelAsync(ParcelCheckInRequest request);
+        Task<ParcelCheckInResponse> CheckInParcelAsync(ParcelCheckInRequest request, Guid? actorUserId = null);
         Task<PaginatedResponse<PendingPutawayParcelDto>> GetPendingPutawayParcelsAsync(int pageNumber, int pageSize, string? search, string? status);
         Task<ParcelPutAwayResponse> PutAwayParcelAsync(Guid parcelId, ParcelPutAwayRequest request);
         Task<ParcelDetailResponse> GetParcelDetailAsync(Guid parcelId);

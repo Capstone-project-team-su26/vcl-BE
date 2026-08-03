@@ -848,6 +848,13 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.PaymentConfirmationNote)
                 .HasMaxLength(1000)
                 .HasColumnName("payment_confirmation_note");
+            entity.Property(e => e.ReceiptPdfUrl)
+                .HasMaxLength(500)
+                .HasColumnName("receipt_pdf_url");
+            entity.Property(e => e.ReceiptGeneratedAt)
+                .HasColumnName("receipt_generated_at");
+            entity.Property(e => e.ReceiptGeneratedById)
+                .HasColumnName("receipt_generated_by_id");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
@@ -956,6 +963,8 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("length");
             entity.Property(e => e.MasterBoxId).HasColumnName("master_box_id");
             entity.Property(e => e.ParentParcelId).HasColumnName("parent_parcel_id");
+            entity.Property(e => e.OrderItemId).HasColumnName("order_item_id");
+            entity.Property(e => e.CheckedInById).HasColumnName("checked_in_by_id");
             entity.Property(e => e.PackageCode)
                 .HasMaxLength(100)
                 .HasColumnName("package_code");
