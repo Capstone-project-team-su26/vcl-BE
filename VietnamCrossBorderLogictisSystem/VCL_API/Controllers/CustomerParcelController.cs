@@ -22,7 +22,7 @@ namespace VCL_API.Controllers
         /// <summary>
         /// Customer tra cứu danh sách kiện hàng thuộc yêu cầu ký gửi của mình (sau khi kho check-in / put-away).
         /// </summary>
-        /// <param name="consignmentCode">Lọc theo mã yêu cầu ký gửi (tùy chọn)</param>
+        /// <param name="consignmentCode">Lọc theo mã yêu cầu ký gửi (tùy chọn).</param>
         /// <param name="searchCode">Tìm theo mã kiện hàng (tùy chọn)</param>
         [HttpGet]
         public async Task<IActionResult> GetMyParcels(
