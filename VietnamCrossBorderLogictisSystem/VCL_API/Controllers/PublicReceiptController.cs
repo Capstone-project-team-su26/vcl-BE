@@ -26,19 +26,28 @@ namespace VCL_API.Controllers
         /// Mở phiếu xác nhận ký gửi nhập kho (PDF) bằng khoá công khai.
         /// </summary>
         /// <param name="publicKey">Khoá lấy từ trường receiptPdfUrl của đơn.</param>
+        /// <param name="download">true để tải file về; mặc định false, mở ngay trong trình duyệt.</param>
         /// <response code="200">Trả về file PDF, hiển thị ngay trên trình duyệt</response>
         /// <response code="404">Khoá không tồn tại hoặc đơn chưa sinh phiếu</response>
         [HttpGet("api/public/receipts/{publicKey:guid}")]
         [ProducesResponseType(typeof(FileResult), 200)]
         [ProducesResponseType(404)]
-        public async Task<IActionResult> GetReceipt(Guid publicKey)
+        public async Task<IActionResult> GetReceipt(Guid publicKey, [FromQuery] bool download = false)
         {
             try
             {
                 var (content, fileName) = await _consignmentReceiptService.GetReceiptByPublicKeyAsync(publicKey);
 
-                // inline để trình duyệt mở trực tiếp thay vì tải về rồi mới xem được.
-                Response.Headers.Append("Content-Disposition", $"inline; filename=\"{fileName}\"");
+                // Gán chứ không Append: Append tạo header thứ hai nếu đã có sẵn,
+                // Safari gặp Content-Disposition trùng thì bỏ qua và tải file về thay vì mở.
+                var disposition = download ? "attachment" : "inline";
+                Response.Headers["Content-Disposition"] = $"{disposition}; filename=\"{fileName}\"";
+
+                // Safari/iOS cần Content-Length để hiển thị PDF ngay trong tab;
+                // thiếu nó trình duyệt hay chuyển sang tải file.
+                Response.Headers["Content-Length"] = content.Length.ToString();
+                Response.Headers["Cache-Control"] = "private, max-age=60";
+                Response.Headers["X-Content-Type-Options"] = "nosniff";
 
                 return File(content, "application/pdf");
             }
