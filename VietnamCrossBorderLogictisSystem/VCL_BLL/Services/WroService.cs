@@ -115,9 +115,9 @@ namespace VCL_BLL.Services
                 UserId = userId,
                 CustomerId = targetCustomerId,
                 WroCode = wroCode,
-                ReceiverName = request.ReceiverName ?? string.Empty,
-                ReceiverPhone = request.ReceiverPhone ?? string.Empty,
-                DeliveryAddress = request.DeliveryAddress ?? string.Empty,
+                ReceiverName = string.Empty,
+                ReceiverPhone = string.Empty,
+                DeliveryAddress = string.Empty,
                 ShelfCode = request.ShelfCode,
                 Status = "RELEASE_PENDING",
                 CreatedAt = DateTime.UtcNow

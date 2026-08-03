@@ -82,15 +82,60 @@ namespace VCL_BLL.Services
                 throw new InvalidOperationException($"GoShip Create Order Error: {responseContent}");
             }
 
-            var result = JsonSerializer.Deserialize<GoshipOrderResponse>(responseContent);
-            if (result == null || result.Data == null)
+            using var doc = JsonDocument.Parse(responseContent);
+            var root = doc.RootElement;
+
+            var orderData = new GoshipOrderResponseData();
+
+            // 1. Try to read from "data" property if it's a JSON Object
+            if (root.TryGetProperty("data", out var dataElem) && dataElem.ValueKind == JsonValueKind.Object)
             {
-                _logger.LogError("GoShip Order Creation failed: {Message}", result?.Message ?? "Unknown Error");
-                throw new InvalidOperationException($"GoShip Create Order Failed: {result?.Message}");
+                if (dataElem.TryGetProperty("id", out var idElem)) orderData.Id = GetJsonStringValue(idElem);
+                if (dataElem.TryGetProperty("code", out var codeElem)) orderData.Code = GetJsonStringValue(codeElem);
+                if (dataElem.TryGetProperty("carrier_name", out var cnElem)) orderData.CarrierName = GetJsonStringValue(cnElem);
+                else if (dataElem.TryGetProperty("carrier", out var cElem)) orderData.CarrierName = GetJsonStringValue(cElem);
+                if (dataElem.TryGetProperty("fee", out var feeElem) && feeElem.ValueKind == JsonValueKind.Number) orderData.Fee = feeElem.GetDecimal();
+            }
+            else
+            {
+                // 2. Fallback to reading directly from root object (Goship v2 shipments response format)
+                if (root.TryGetProperty("id", out var idElem)) orderData.Id = GetJsonStringValue(idElem);
+
+                if (root.TryGetProperty("code", out var codeElem))
+                {
+                    var codeVal = GetJsonStringValue(codeElem);
+                    orderData.Code = (codeVal == "200" || string.IsNullOrEmpty(codeVal)) ? orderData.Id : codeVal;
+                }
+                else
+                {
+                    orderData.Code = orderData.Id;
+                }
+
+                if (root.TryGetProperty("carrier_name", out var cnElem)) orderData.CarrierName = GetJsonStringValue(cnElem);
+                else if (root.TryGetProperty("carrier", out var cElem)) orderData.CarrierName = GetJsonStringValue(cElem);
+
+                if (root.TryGetProperty("fee", out var feeElem) && feeElem.ValueKind == JsonValueKind.Number) orderData.Fee = feeElem.GetDecimal();
             }
 
-            _logger.LogInformation("GoShip Order Created Successfully: {Code}", result.Data.Code);
-            return result.Data;
+            if (string.IsNullOrEmpty(orderData.Id) && string.IsNullOrEmpty(orderData.Code))
+            {
+                var msg = root.TryGetProperty("message", out var mElem) ? GetJsonStringValue(mElem) : "Unknown Error";
+                _logger.LogError("GoShip Order Creation failed: {Message}", msg);
+                throw new InvalidOperationException($"GoShip Create Order Failed: {msg}");
+            }
+
+            _logger.LogInformation("GoShip Order Created Successfully: {Code} (ID: {Id})", orderData.Code, orderData.Id);
+            return orderData;
+        }
+
+        private static string GetJsonStringValue(JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString() ?? string.Empty,
+                JsonValueKind.Number => element.GetRawText(),
+                _ => string.Empty
+            };
         }
 
         public async Task<bool> ProcessWebhookAsync(GoshipWebhookPayload payload)

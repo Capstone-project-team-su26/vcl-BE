@@ -122,6 +122,9 @@ namespace VCL_BLL.DTOs
 
         [JsonPropertyName("district")]
         public string District { get; set; } = string.Empty;
+
+        [JsonPropertyName("ward")]
+        public string Ward { get; set; } = string.Empty;
     }
 
     public class GoshipParcelFull : GoshipParcelBasic
