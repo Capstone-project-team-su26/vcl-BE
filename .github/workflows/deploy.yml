@@ -129,6 +129,11 @@ jobs:
           ASPNETCORE_ENVIRONMENT=Production
           ASPNETCORE_URLS=http://+:8080
 
+          # Domain that server dung de dung link cong khai (phieu ky gui PDF...).
+          # Thieu bien nay thi app roi ve gia tri trong appsettings.json va sinh link
+          # tro sang server khac.
+          App__PublicBaseUrl=$PUBLIC_URL
+
           ConnectionStrings__DefaultConnection=$CONNECTIONSTRING
 
           JWT__SecretKey=$JWT_SECRET_KEY
@@ -308,6 +313,11 @@ jobs:
               if curl --fail --silent --show-error --max-time 10 "$health_url" > /dev/null; then
                 echo "Deploy $IMAGE thanh cong."
                 compose ps
+
+                # Moi commit tao mot image tag rieng; khong don thi o dia day dan
+                # den muc sshd va docker deu khong phuc vu duoc.
+                docker image prune -af --filter "until=72h" > /dev/null 2>&1 || true
+
                 exit 0
               fi
               echo "Cho API san sang ($attempt/12)..."
