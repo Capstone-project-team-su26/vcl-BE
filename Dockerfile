@@ -2,6 +2,13 @@
 
 # This stage is used when running from VS in fast mode (Default for Debug configuration)
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+
+# QuestPDF cần font hệ thống để render phiếu PDF; ảnh aspnet không kèm font nào,
+# thiếu font thì chữ tiếng Việt ra ô vuông.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-liberation fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
 USER app
 WORKDIR /app
 EXPOSE 8080
