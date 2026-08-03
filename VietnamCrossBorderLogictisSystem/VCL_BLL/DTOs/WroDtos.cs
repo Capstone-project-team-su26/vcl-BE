@@ -15,12 +15,6 @@ namespace VCL_BLL.DTOs
 
     public class CreateWroRequestDto
     {
-        public string? ReceiverName { get; set; } = string.Empty;
-
-        public string? ReceiverPhone { get; set; } = string.Empty;
-
-        public string? DeliveryAddress { get; set; } = string.Empty;
-
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
         public Guid? CarrierId { get; set; }
