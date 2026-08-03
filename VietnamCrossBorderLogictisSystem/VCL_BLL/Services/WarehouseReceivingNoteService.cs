@@ -121,8 +121,11 @@ namespace VCL_BLL.Services
             if (warehouse.IsActive == false)
                 throw new ArgumentException("Kho tiếp nhận được chọn đang tạm ngưng hoạt động.");
 
-            if (!string.Equals(warehouse.WarehouseType, "DESTINATION", StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException("Phiếu tiếp nhận kho chỉ được áp dụng cho kho Destination (Kho đích Việt Nam).");
+            // Phiếu tiếp nhận áp dụng cho cả kho gốc (nhập kho quốc tế - M05)
+            // và kho đích Việt Nam (nhận lô hàng về - M11).
+            var receivingWarehouseTypes = new[] { "ORIGIN", "DESTINATION" };
+            if (!receivingWarehouseTypes.Any(t => string.Equals(warehouse.WarehouseType, t, StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("Phiếu tiếp nhận kho chỉ được áp dụng cho kho gốc hoặc kho đích.");
 
             // 2. Rule: Consignment must exist and be APPROVED
             var orderRepo = _unitOfWork.Repository<Order>();
@@ -181,6 +184,160 @@ namespace VCL_BLL.Services
                 WarehouseNote = newNote.WarehouseNote,
                 Status = newNote.Status,
                 CreatedAt = newNote.CreatedAt
+            };
+        }
+
+        public async Task<WarehouseReceivingNoteDetailDto> GetReceivingNoteDetailAsync(Guid receivingNoteId)
+        {
+            var note = await _unitOfWork.Repository<WarehouseReceivingNote>().GetByIdAsync(receivingNoteId);
+            if (note == null)
+            {
+                throw new NotFoundException($"Không tìm thấy phiếu tiếp nhận kho với ID: {receivingNoteId}");
+            }
+
+            return await BuildDetailAsync(note);
+        }
+
+        public async Task<WarehouseReceivingNoteDetailDto> ConfirmReceiptAsync(Guid receivingNoteId, ConfirmReceiptRequestDto request)
+        {
+            if (request == null || request.Items == null || request.Items.Count == 0)
+            {
+                throw new ArgumentException("Vui lòng nhập số liệu thực tế của ít nhất một dòng hàng.");
+            }
+
+            if (request.Items.Any(i => i.ActualQuantity < 0))
+            {
+                throw new ArgumentException("Số lượng thực tế không được nhỏ hơn 0.");
+            }
+
+            // 1. Phiếu tiếp nhận phải tồn tại và chưa được xác nhận trước đó
+            var noteRepo = _unitOfWork.Repository<WarehouseReceivingNote>();
+            var note = await noteRepo.GetByIdAsync(receivingNoteId);
+            if (note == null)
+            {
+                throw new NotFoundException($"Không tìm thấy phiếu tiếp nhận kho với ID: {receivingNoteId}");
+            }
+
+            if (string.Equals(note.Status, "RECEIVED", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ConflictException("Phiếu tiếp nhận kho này đã được xác nhận nhập kho trước đó.");
+            }
+
+            // 2. Lấy các dòng hàng khách hàng khai báo để đối chiếu
+            var orderItems = (await _unitOfWork.Repository<OrderItem>().GetAllAsync())
+                .Where(i => i.OrderId == note.ConsignmentOrderId)
+                .ToList();
+
+            var orderItemById = orderItems.ToDictionary(i => i.Id);
+
+            var itemRepo = _unitOfWork.Repository<WarehouseReceivingNoteItem>();
+
+            foreach (var requestItem in request.Items)
+            {
+                OrderItem? declaredItem = null;
+                if (requestItem.OrderItemId is Guid orderItemId)
+                {
+                    if (!orderItemById.TryGetValue(orderItemId, out declaredItem))
+                    {
+                        throw new ArgumentException("Dòng hàng khai báo được chọn không thuộc yêu cầu ký gửi của phiếu tiếp nhận này.");
+                    }
+                }
+
+                var productName = !string.IsNullOrWhiteSpace(requestItem.ProductName)
+                    ? requestItem.ProductName.Trim()
+                    : declaredItem?.ProductName ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(productName))
+                {
+                    throw new ArgumentException("Dòng hàng phát sinh ngoài khai báo phải có tên hàng.");
+                }
+
+                var declaredQuantity = declaredItem?.Quantity ?? 0;
+                var declaredWeight = declaredItem?.Weight;
+
+                await itemRepo.AddAsync(new WarehouseReceivingNoteItem
+                {
+                    Id = Guid.NewGuid(),
+                    ReceivingNoteId = note.Id,
+                    OrderItemId = requestItem.OrderItemId,
+                    ProductName = productName,
+                    ProductType = !string.IsNullOrWhiteSpace(requestItem.ProductType)
+                        ? requestItem.ProductType.Trim()
+                        : declaredItem?.ProductType ?? string.Empty,
+                    DeclaredQuantity = declaredQuantity,
+                    ActualQuantity = requestItem.ActualQuantity,
+                    QuantityDifference = requestItem.ActualQuantity - declaredQuantity,
+                    DeclaredWeight = declaredWeight,
+                    ActualWeight = requestItem.ActualWeight,
+                    WeightDifference = requestItem.ActualWeight.HasValue && declaredWeight.HasValue
+                        ? requestItem.ActualWeight.Value - declaredWeight.Value
+                        : null,
+                    Note = requestItem.Note?.Trim() ?? string.Empty
+                });
+            }
+
+            // 3. Chuyển phiếu sang trạng thái đã nhập kho
+            note.Status = "RECEIVED";
+            if (!string.IsNullOrWhiteSpace(request.WarehouseNote))
+            {
+                note.WarehouseNote = request.WarehouseNote.Trim();
+            }
+
+            noteRepo.Update(note);
+            await _unitOfWork.SaveChangesAsync();
+
+            return await BuildDetailAsync(note);
+        }
+
+        /// <summary>
+        /// Ghép phần đầu phiếu với các dòng đối chiếu và thông tin khách hàng.
+        /// </summary>
+        private async Task<WarehouseReceivingNoteDetailDto> BuildDetailAsync(WarehouseReceivingNote note)
+        {
+            var warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(note.WarehouseId);
+            var order = await _unitOfWork.Repository<Order>().GetByIdAsync(note.ConsignmentOrderId);
+
+            Customer? customer = null;
+            if (order?.CustomerId is Guid customerId)
+            {
+                customer = await _unitOfWork.Repository<Customer>().GetByIdAsync(customerId);
+            }
+
+            var items = (await _unitOfWork.Repository<WarehouseReceivingNoteItem>().GetAllAsync())
+                .Where(i => i.ReceivingNoteId == note.Id)
+                .Select(i => new WarehouseReceivingNoteItemDto
+                {
+                    Id = i.Id,
+                    OrderItemId = i.OrderItemId,
+                    ProductName = i.ProductName ?? string.Empty,
+                    ProductType = i.ProductType ?? string.Empty,
+                    DeclaredQuantity = i.DeclaredQuantity,
+                    ActualQuantity = i.ActualQuantity,
+                    QuantityDifference = i.QuantityDifference,
+                    DeclaredWeight = i.DeclaredWeight,
+                    ActualWeight = i.ActualWeight,
+                    WeightDifference = i.WeightDifference,
+                    Note = i.Note ?? string.Empty
+                })
+                .OrderBy(i => i.ProductName)
+                .ToList();
+
+            return new WarehouseReceivingNoteDetailDto
+            {
+                Id = note.Id,
+                ReceivingNoteCode = note.ReceivingNoteCode ?? string.Empty,
+                ConsignmentOrderId = note.ConsignmentOrderId,
+                WarehouseId = note.WarehouseId,
+                WarehouseName = warehouse?.WarehouseName ?? string.Empty,
+                WarehouseNote = note.WarehouseNote ?? string.Empty,
+                Status = note.Status ?? string.Empty,
+                CreatedAt = note.CreatedAt,
+                ConsignmentCode = order?.ConsignmentCode ?? string.Empty,
+                CustomerName = customer?.FullName ?? string.Empty,
+                CustomerCode = customer?.CustomerCode ?? string.Empty,
+                HasDiscrepancy = items.Any(i => i.QuantityDifference != 0
+                    || (i.WeightDifference.HasValue && i.WeightDifference.Value != 0)),
+                Items = items
             };
         }
     }

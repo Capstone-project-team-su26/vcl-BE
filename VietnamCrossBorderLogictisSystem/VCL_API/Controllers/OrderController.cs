@@ -15,10 +15,12 @@ namespace VCL_API.Controllers
     public class OrderController : ControllerBase
     {
         private readonly IOrderService _orderService;
+        private readonly IConsignmentReceiptService _consignmentReceiptService;
 
-        public OrderController(IOrderService orderService)
+        public OrderController(IOrderService orderService, IConsignmentReceiptService consignmentReceiptService)
         {
             _orderService = orderService;
+            _consignmentReceiptService = consignmentReceiptService;
         }
 
         /// <summary>
@@ -195,12 +197,16 @@ namespace VCL_API.Controllers
         {
             try
             {
-                var result = await _orderService.UpdateConsignmentStatusAsync(orderId, request);
+                var actorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                Guid? actorUserId = Guid.TryParse(actorIdClaim, out var parsedActorId) ? parsedActorId : null;
+
+                var result = await _orderService.UpdateConsignmentStatusAsync(orderId, request, actorUserId);
                 return Ok(new 
                 { 
                     message = "Cập nhật trạng thái thành công.",
                     status = result.Status,
-                    consignmentCode = result.ConsignmentCode
+                    consignmentCode = result.ConsignmentCode,
+                    receiptPdfUrl = result.ReceiptPdfUrl
                 });
             }
             catch (NotFoundException ex)
@@ -214,6 +220,39 @@ namespace VCL_API.Controllers
             catch (Exception ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Tải phiếu xác nhận ký gửi (PDF) của đơn. Dùng khi cần xem lại hoặc sinh lại phiếu
+        /// mà không phải đổi trạng thái đơn.
+        /// </summary>
+        /// <param name="orderId">ID của yêu cầu ký gửi</param>
+        /// <response code="200">Trả về file PDF</response>
+        /// <response code="401">Chưa đăng nhập</response>
+        /// <response code="404">Không tìm thấy yêu cầu ký gửi</response>
+        [HttpGet("consignments/{orderId}/receipt")]
+        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager")]
+        [ProducesResponseType(typeof(FileResult), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> DownloadConsignmentReceipt(Guid orderId)
+        {
+            try
+            {
+                var actorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                Guid? actorUserId = Guid.TryParse(actorIdClaim, out var parsedActorId) ? parsedActorId : null;
+
+                var (content, fileName) = await _consignmentReceiptService.BuildReceiptPdfAsync(orderId, actorUserId);
+                return File(content, "application/pdf", fileName);
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = "Không thể tạo phiếu xác nhận ký gửi.", error = ex.Message });
             }
         }
 

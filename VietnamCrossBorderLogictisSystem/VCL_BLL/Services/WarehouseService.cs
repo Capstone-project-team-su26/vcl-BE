@@ -334,6 +334,58 @@ namespace VCL_BLL.Services
             return result;
         }
 
+        /// <summary>Sức chứa ô kệ nhỏ nhất chấp nhận được (1 lít). Nhỏ hơn nghĩa là nhập nhầm đơn vị.</summary>
+        private const decimal MinBinVolumeCm3 = 1000m;
+
+        /// <summary>Sức chứa ô kệ lớn nhất chấp nhận được (50 m³).</summary>
+        private const decimal MaxBinVolumeCm3 = 50_000_000m;
+
+        private const decimal MaxBinWeightKg = 5000m;
+
+        /// <summary>
+        /// Chặn nhầm đơn vị khi khai báo ô kệ. Thể tích phải là cm³ để so trực tiếp với
+        /// kích thước kiện hàng (cm); nhập theo lít hoặc m³ sẽ lệch 1000 đến 1 triệu lần
+        /// và khiến put-away báo hết chỗ dù ô kệ còn trống.
+        /// </summary>
+        private static void ValidateBinCapacity(CreateLocationRequestDto request)
+        {
+            if (request.MaxVolume.HasValue)
+            {
+                if (request.MaxVolume.Value <= 0)
+                {
+                    throw new ArgumentException("Sức chứa (maxVolume) phải lớn hơn 0.");
+                }
+
+                if (request.MaxVolume.Value < MinBinVolumeCm3)
+                {
+                    throw new ArgumentException(
+                        $"Sức chứa {request.MaxVolume.Value} cm³ nhỏ hơn 1 lít, nhiều khả năng đang nhập theo lít hoặc m³. " +
+                        $"Trường maxVolume tính bằng cm³: {request.MaxVolume.Value} lít = {request.MaxVolume.Value * 1000} cm³, " +
+                        $"{request.MaxVolume.Value} m³ = {request.MaxVolume.Value * 1_000_000} cm³.");
+                }
+
+                if (request.MaxVolume.Value > MaxBinVolumeCm3)
+                {
+                    throw new ArgumentException(
+                        $"Sức chứa {request.MaxVolume.Value} cm³ vượt 50 m³, kiểm tra lại số đã nhập.");
+                }
+            }
+
+            if (request.MaxWeight.HasValue)
+            {
+                if (request.MaxWeight.Value <= 0)
+                {
+                    throw new ArgumentException("Tải trọng (maxWeight) phải lớn hơn 0.");
+                }
+
+                if (request.MaxWeight.Value > MaxBinWeightKg)
+                {
+                    throw new ArgumentException(
+                        $"Tải trọng {request.MaxWeight.Value} kg vượt ngưỡng {MaxBinWeightKg} kg, kiểm tra lại số đã nhập.");
+                }
+            }
+        }
+
         public async Task<WarehouseLocationResponseDto> CreateWarehouseLocationAsync(Guid warehouseId, CreateLocationRequestDto request)
         {
             if (string.IsNullOrWhiteSpace(request.ZoneName))
@@ -342,6 +394,8 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Mã Shelf là bắt buộc.");
             if (string.IsNullOrWhiteSpace(request.BinCode))
                 throw new ArgumentException("Mã Bin là bắt buộc.");
+
+            ValidateBinCapacity(request);
 
             var warehouseRepo = _unitOfWork.Repository<Warehouse>();
             var warehouse = await warehouseRepo.GetByIdAsync(warehouseId);
@@ -430,6 +484,8 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Mã Shelf là bắt buộc.");
             if (string.IsNullOrWhiteSpace(request.BinCode))
                 throw new ArgumentException("Mã Bin là bắt buộc.");
+
+            ValidateBinCapacity(request);
 
             var binRepo = _unitOfWork.Repository<Bin>();
             var bin = await binRepo.GetByIdAsync(locationId);

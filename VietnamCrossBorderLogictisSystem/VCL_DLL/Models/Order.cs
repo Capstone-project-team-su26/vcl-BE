@@ -50,6 +50,15 @@ public partial class Order
     /// <summary>Ghi chú khi Sale xác nhận thanh toán.</summary>
     public string PaymentConfirmationNote { get; set; }
 
+    /// <summary>Link PDF phiếu xác nhận ký gửi, sinh khi Sale xác nhận yêu cầu và upload lên Cloudinary. Kho mở link này để đối chiếu lúc check-in.</summary>
+    public string ReceiptPdfUrl { get; set; }
+
+    /// <summary>Thời điểm sinh phiếu xác nhận ký gửi.</summary>
+    public DateTime? ReceiptGeneratedAt { get; set; }
+
+    /// <summary>Người bấm xác nhận yêu cầu, dùng cho tên file phiếu và ô chữ ký người lập.</summary>
+    public Guid? ReceiptGeneratedById { get; set; }
+
     public virtual Company Company { get; set; }
 
     public virtual Customer Customer { get; set; }

@@ -91,6 +91,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<Supplier> Suppliers { get; set; }
 
+    public virtual DbSet<UnitOfMeasure> UnitOfMeasures { get; set; }
+
     public virtual DbSet<ShippingRoute> ShippingRoutes { get; set; }
 
     public virtual DbSet<Invoice> Invoices { get; set; }
@@ -150,6 +152,8 @@ public partial class VCLDBContext : DbContext
     public virtual DbSet<PickingItem> PickingItems { get; set; }
 
     public virtual DbSet<WarehouseReceivingNote> WarehouseReceivingNotes { get; set; }
+
+    public virtual DbSet<WarehouseReceivingNoteItem> WarehouseReceivingNoteItems { get; set; }
 
     public virtual DbSet<PurchaseRequest> PurchaseRequests { get; set; }
 
@@ -678,6 +682,23 @@ public partial class VCLDBContext : DbContext
                 .HasConstraintName("FK_INVENTORY_MOVEMENT_USER");
         });
 
+        modelBuilder.Entity<UnitOfMeasure>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_UNIT_OF_MEASURES");
+            entity.ToTable("UNIT_OF_MEASURES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.UnitCode).HasMaxLength(30).HasColumnName("unit_code");
+            entity.Property(e => e.UnitName).HasMaxLength(100).HasColumnName("unit_name");
+            entity.Property(e => e.Description).HasMaxLength(255).HasColumnName("description");
+            entity.Property(e => e.DisplayOrder).HasColumnName("display_order");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasIndex(e => e.UnitCode).IsUnique().HasDatabaseName("UQ_UNIT_OF_MEASURES_UNIT_CODE");
+        });
+
         modelBuilder.Entity<Supplier>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("PK_SUPPLIERS");
@@ -827,6 +848,13 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.PaymentConfirmationNote)
                 .HasMaxLength(1000)
                 .HasColumnName("payment_confirmation_note");
+            entity.Property(e => e.ReceiptPdfUrl)
+                .HasMaxLength(500)
+                .HasColumnName("receipt_pdf_url");
+            entity.Property(e => e.ReceiptGeneratedAt)
+                .HasColumnName("receipt_generated_at");
+            entity.Property(e => e.ReceiptGeneratedById)
+                .HasColumnName("receipt_generated_by_id");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
@@ -934,6 +962,9 @@ public partial class VCLDBContext : DbContext
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("length");
             entity.Property(e => e.MasterBoxId).HasColumnName("master_box_id");
+            entity.Property(e => e.ParentParcelId).HasColumnName("parent_parcel_id");
+            entity.Property(e => e.OrderItemId).HasColumnName("order_item_id");
+            entity.Property(e => e.CheckedInById).HasColumnName("checked_in_by_id");
             entity.Property(e => e.PackageCode)
                 .HasMaxLength(100)
                 .HasColumnName("package_code");
@@ -1761,6 +1792,35 @@ public partial class VCLDBContext : DbContext
                     ChosenAt = new DateTime(2026, 6, 20, 10, 10, 0, DateTimeKind.Utc)
                 }
             );
+        });
+
+        modelBuilder.Entity<WarehouseReceivingNoteItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_WAREHOUSE_RECEIVING_NOTE_ITEMS");
+            entity.ToTable("WAREHOUSE_RECEIVING_NOTE_ITEMS");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.ReceivingNoteId).HasColumnName("receiving_note_id");
+            entity.Property(e => e.OrderItemId).HasColumnName("order_item_id");
+            entity.Property(e => e.ProductName).HasMaxLength(255).HasColumnName("product_name");
+            entity.Property(e => e.ProductType).HasMaxLength(255).HasColumnName("product_type");
+            entity.Property(e => e.DeclaredQuantity).HasColumnName("declared_quantity");
+            entity.Property(e => e.ActualQuantity).HasColumnName("actual_quantity");
+            entity.Property(e => e.QuantityDifference).HasColumnName("quantity_difference");
+            entity.Property(e => e.DeclaredWeight).HasColumnType("decimal(18, 2)").HasColumnName("declared_weight");
+            entity.Property(e => e.ActualWeight).HasColumnType("decimal(18, 2)").HasColumnName("actual_weight");
+            entity.Property(e => e.WeightDifference).HasColumnType("decimal(18, 2)").HasColumnName("weight_difference");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+
+            entity.HasOne(d => d.ReceivingNote).WithMany()
+                .HasForeignKey(d => d.ReceivingNoteId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_WRN_ITEM_RECEIVING_NOTE");
+
+            entity.HasOne(d => d.OrderItem).WithMany()
+                .HasForeignKey(d => d.OrderItemId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WRN_ITEM_ORDER_ITEM");
         });
 
         modelBuilder.Entity<WarehouseReceivingNote>(entity =>

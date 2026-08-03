@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
@@ -45,7 +46,10 @@ namespace VCL_API.Controllers
 
             try
             {
-                var result = await _parcelService.CheckInParcelAsync(request);
+                var actorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                Guid? actorUserId = Guid.TryParse(actorIdClaim, out var parsedActorId) ? parsedActorId : null;
+
+                var result = await _parcelService.CheckInParcelAsync(request, actorUserId);
                 return Ok(new { message = "Check-in kiện hàng thành công.", data = result });
             }
             catch (ArgumentException ex)
@@ -169,6 +173,66 @@ namespace VCL_API.Controllers
             catch (Exception ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Tách một kiện hàng thành nhiều kiện con. Kiện gốc chuyển sang trạng thái SPLIT,
+        /// các kiện con kế thừa yêu cầu ký gửi và trỏ về kiện gốc qua parentParcelId.
+        /// </summary>
+        [HttpPost("{parcelId}/split")]
+        [Authorize(Roles = "Admin,WarehouseStaff")]
+        public async Task<IActionResult> SplitParcel(Guid parcelId, [FromBody] SplitParcelRequestDto request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            try
+            {
+                var result = await _parcelService.SplitParcelAsync(parcelId, request, userId);
+                return Ok(new { message = "Tách kiện hàng thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Gộp nhiều kiện hàng của cùng một yêu cầu ký gửi thành một kiện mới.
+        /// Các kiện gốc chuyển sang trạng thái MERGED và trỏ về kiện mới qua parentParcelId.
+        /// </summary>
+        [HttpPost("merge")]
+        [Authorize(Roles = "Admin,WarehouseStaff")]
+        public async Task<IActionResult> MergeParcels([FromBody] MergeParcelsRequestDto request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            try
+            {
+                var result = await _parcelService.MergeParcelsAsync(request, userId);
+                return Ok(new { message = "Gộp kiện hàng thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
             }
         }
     }

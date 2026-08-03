@@ -84,7 +84,7 @@ namespace VCL_BLL.Services
             };
         }
 
-        public async Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request)
+        public async Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request, Guid? actorUserId = null)
         {
             var validStatuses = new[] { "PENDING_REVIEW", "APPROVED", "REJECTED" };
             if (string.IsNullOrWhiteSpace(request.Status) || !validStatuses.Contains(request.Status.ToUpper()))
@@ -166,10 +166,28 @@ namespace VCL_BLL.Services
             orderRepo.Update(order);
             await _unitOfWork.SaveChangesAsync();
 
+            string? receiptPdfUrl = order.ReceiptPdfUrl;
+
+            // Sale xác nhận yêu cầu là mốc phát hành phiếu cho kho. Lỗi sinh phiếu
+            // không được làm hỏng việc duyệt đơn, nên nuốt lỗi và để Sale sinh lại sau.
+            if (normalizedStatus == "APPROVED" && oldStatus != normalizedStatus)
+            {
+                try
+                {
+                    receiptPdfUrl = await _consignmentReceiptService.GenerateAndStoreReceiptAsync(orderId, actorUserId)
+                                    ?? receiptPdfUrl;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"GENERATE CONSIGNMENT RECEIPT ERROR ({orderId}): {ex.Message}");
+                }
+            }
+
             return new UpdateConsignmentStatusResponse
             {
                 Status = order.Status,
-                ConsignmentCode = order.ConsignmentCode
+                ConsignmentCode = order.ConsignmentCode,
+                ReceiptPdfUrl = receiptPdfUrl
             };
         }
     }

@@ -113,6 +113,8 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `PUT` | `/api/inventories/cycle-counts/{id}/resolve` | Admin/WarehouseStaff/OperationsManager | Ghi nhận xử lý chênh lệch tồn kho |
 | `GET` | `/api/inventories/long-stay-alerts` | Đã đăng nhập | Cảnh báo kiện hàng tồn kho lâu ngày |
 | `GET` | `/api/inventories/storage-report` | Đã đăng nhập | Báo cáo tồn kho tổng hợp theo khách hàng |
+| `GET` | `/api/units-of-measure` | Không cần đăng nhập | Danh sách đơn vị tính đang hoạt động |
+| `POST` | `/api/units-of-measure` | Admin | Thêm đơn vị tính |
 | `GET` | `/api/product-types/all` | Admin | Toàn bộ loại hàng, gồm cả loại đã ngừng sử dụng |
 | `GET` | `/api/product-types/{id}` | Admin | Chi tiết loại hàng |
 | `POST` | `/api/product-types` | Admin | Thêm loại hàng |
@@ -125,6 +127,10 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `DELETE` | `/api/suppliers/{id}` | Admin | Xóa nhà cung cấp |
 | `GET` | `/api/shipping-routes` | Đã đăng nhập | Danh sách tuyến vận chuyển quốc tế |
 | `GET` | `/api/shipping-routes/{id}` | Đã đăng nhập | Chi tiết tuyến vận chuyển |
+| `GET` | `/api/warehouse-receiving-notes/{id}` | Admin/Sale/WarehouseStaff/OpsManager | Biên bản nhập kho kèm dòng đối chiếu |
+| `POST` | `/api/warehouse-receiving-notes/{id}/confirm-receipt` | Admin/WarehouseStaff | Xác nhận nhập kho với số liệu thực tế |
+| `POST` | `/api/parcels/{id}/split` | Admin/WarehouseStaff | Tách kiện hàng thành nhiều kiện con |
+| `POST` | `/api/parcels/merge` | Admin/WarehouseStaff | Gộp nhiều kiện hàng thành một kiện |
 | `POST` | `/api/shipping-routes` | Admin | Thêm tuyến vận chuyển |
 | `PUT` | `/api/shipping-routes/{id}` | Admin | Cập nhật tuyến vận chuyển |
 | `DELETE` | `/api/shipping-routes/{id}` | Admin | Xóa tuyến vận chuyển |
@@ -6152,6 +6158,41 @@ Bổ sung cho màn quản trị (đều yêu cầu vai trò `Admin`):
 > - `DELETE` một loại hàng **đã phát sinh trong đơn** sẽ chuyển nó sang `isActive = false` thay vì xóa vật lý, để dữ liệu lịch sử không bị hỏng. Loại hàng chưa dùng ở đâu mới bị xóa hẳn.
 > - Đổi tên một loại hàng **không** cập nhật lại các đơn cũ. Cân nhắc kỹ trước khi đổi tên loại hàng đã sử dụng.
 
+### 46.1b. Đơn vị tính (Unit of Measure)
+
+Danh mục đơn vị tính dùng khi khách hàng khai báo hàng hoá trong yêu cầu ký gửi và yêu cầu mua hộ.
+
+`GET /api/units-of-measure` **không cần đăng nhập**, trả các đơn vị đang hoạt động và sắp xếp theo `displayOrder` — dùng để đổ dropdown. Cùng kiểu với `/api/product-types`.
+
+| Method | Endpoint | Quyền | Mô tả |
+|---|---|---|---|
+| `GET` | `/api/units-of-measure` | Không cần đăng nhập | Đơn vị tính đang hoạt động |
+| `GET` | `/api/units-of-measure/all` | Admin | Toàn bộ, gồm cả loại đã ngừng sử dụng |
+| `GET` | `/api/units-of-measure/{id}` | Admin | Chi tiết một đơn vị tính |
+| `POST` | `/api/units-of-measure` | Admin | Thêm đơn vị tính |
+| `PUT` | `/api/units-of-measure/{id}` | Admin | Cập nhật đơn vị tính |
+| `DELETE` | `/api/units-of-measure/{id}` | Admin | Xóa đơn vị tính |
+
+**Body tạo/cập nhật:**
+```json
+{
+  "unitCode": "CTN",
+  "unitName": "Thùng",
+  "description": "Hàng đóng theo thùng carton",
+  "displayOrder": 6,
+  "isActive": true
+}
+```
+
+- `unitCode` bắt buộc, **duy nhất**, tự động chuyển thành chữ hoa.
+- `displayOrder` quyết định thứ tự trong dropdown, số nhỏ hiện trước.
+
+**Dữ liệu seed sẵn:** `PCS` (Cái), `SET` (Bộ), `PAIR` (Đôi), `BOX` (Hộp), `PKG` (Gói), `CTN` (Thùng), `ROLL` (Cuộn), `KG` (Kilôgam), `M` (Mét).
+
+> **Lưu ý giống mục 46.1:** `ORDER_ITEMS.unit` đang lưu **chuỗi**, không phải khóa ngoại. Xóa một đơn vị đã phát sinh trong đơn sẽ chuyển sang `isActive = false` thay vì xóa vật lý. Dữ liệu cũ trong DB đang có 2 giá trị tự do là `pack` và `pcs` trên 6 dòng — nên chuẩn hoá dần về mã trong danh mục.
+>
+> **Migration:** bảng `UNIT_OF_MEASURES` được tạo bởi `AddUnitOfMeasureTable`, kèm seed 9 đơn vị thông dụng. Phần seed chỉ chèn khi bảng còn rỗng nên chạy lại nhiều lần vẫn an toàn.
+
 ### 46.2. Nhà cung cấp dịch vụ (Supplier)
 
 Danh mục nhà cung cấp phục vụ luồng xuất kho và mua hộ tại nước ngoài, ví dụ đơn vị trung chuyển và đơn vị lấy hàng.
@@ -6215,3 +6256,217 @@ Authorization: Bearer {token}
 - Response trả kèm `originWarehouseName`, `destinationWarehouseName`, `carrierName`, `supplierName` để FE không phải gọi thêm API.
 
 > **Migration:** hai bảng `SUPPLIERS` và `SHIPPING_ROUTES` được tạo bởi migration `AddSupplierAndShippingRouteTables`.
+
+---
+
+## 47. Phân hệ M05: Xác nhận nhập kho & Biên bản nhập kho có đối chiếu thực tế
+
+### 47.1. Thay đổi quy tắc: phiếu tiếp nhận áp dụng cho cả kho gốc
+
+Trước đây `POST /api/warehouse-receiving-notes` **chỉ cho phép kho `DESTINATION`**, nên 3 kho `ORIGIN` (kho quốc tế) không tạo được phiếu tiếp nhận — luồng nhập kho quốc tế của M05 bị chặn hoàn toàn.
+
+Nay quy tắc mở cho **cả `ORIGIN` và `DESTINATION`**:
+- `ORIGIN`: nhập kho quốc tế (M05)
+- `DESTINATION`: nhận lô hàng về kho Việt Nam (M11)
+
+Kho thuộc loại khác vẫn bị từ chối. Các điều kiện còn lại giữ nguyên: kho phải đang hoạt động, yêu cầu ký gửi phải ở trạng thái `APPROVED`, và mỗi yêu cầu ký gửi chỉ có một phiếu đang hoạt động.
+
+### 47.2. Xác nhận nhập kho (Warehouse Staff)
+
+Nhân viên kho quét mã phiếu bằng `GET /api/warehouse-receiving-notes/scan?code=...` để lấy **danh sách hàng khách khai báo** (`expectedItems`), nhập số lượng và trọng lượng đếm được thực tế, rồi gọi:
+
+```http
+POST /api/warehouse-receiving-notes/{receivingNoteId}/confirm-receipt
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "warehouseNote": "Thùng số 3 móp góc, đã chụp ảnh",
+  "items": [
+    {
+      "orderItemId": "5c94b9d5-...",
+      "actualQuantity": 9,
+      "actualWeight": 12.4,
+      "note": "Thiếu 1 cái so với khai báo"
+    },
+    {
+      "orderItemId": null,
+      "productName": "Sạc dự phòng",
+      "productType": "Hàng điện tử",
+      "actualQuantity": 2,
+      "actualWeight": 0.8,
+      "note": "Hàng phát sinh ngoài khai báo"
+    }
+  ]
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+**Quy tắc:**
+- Phải có ít nhất một dòng hàng; `actualQuantity` không được âm.
+- `orderItemId` nếu có thì phải thuộc đúng yêu cầu ký gửi của phiếu — chống nhập nhầm sang đơn khác.
+- `orderItemId = null` dùng cho **hàng phát sinh ngoài khai báo**; khi đó `productName` bắt buộc và `declaredQuantity` được tính bằng 0.
+- Server **tự tính** `quantityDifference` và `weightDifference`, không lấy theo số client gửi lên.
+- Phiếu chuyển sang trạng thái `RECEIVED`. Gọi lại lần hai trả `409`.
+
+### 47.3. Lấy biên bản nhập kho đầy đủ
+
+```http
+GET /api/warehouse-receiving-notes/{receivingNoteId}
+Authorization: Bearer {token}
+```
+
+**Phân quyền:** `Admin`, `Sale`, `WarehouseStaff`, `OperationsManager`.
+
+**Response (200 OK):**
+```json
+{
+  "message": "Lấy biên bản nhập kho thành công.",
+  "data": {
+    "id": "1ae85f64-...",
+    "receivingNoteCode": "WRN-20260801-001",
+    "consignmentOrderId": "5c94b9d5-...",
+    "consignmentCode": "CN20260731001",
+    "customerName": "Nguyễn Văn A",
+    "customerCode": "KH000123",
+    "warehouseId": "7de85f64-...",
+    "warehouseName": "Kho Quảng Châu",
+    "warehouseNote": "Thùng số 3 móp góc, đã chụp ảnh",
+    "status": "RECEIVED",
+    "createdAt": "2026-08-01T09:00:00Z",
+    "hasDiscrepancy": true,
+    "items": [
+      {
+        "id": "2be85f64-...",
+        "orderItemId": "5c94b9d5-...",
+        "productName": "Tai nghe Bluetooth",
+        "productType": "Hàng điện tử",
+        "declaredQuantity": 10,
+        "actualQuantity": 9,
+        "quantityDifference": -1,
+        "declaredWeight": 13.0,
+        "actualWeight": 12.4,
+        "weightDifference": -0.6,
+        "note": "Thiếu 1 cái so với khai báo"
+      }
+    ]
+  }
+}
+```
+
+- `quantityDifference` và `weightDifference`: **âm là thiếu** so với khai báo, **dương là thừa**.
+- `hasDiscrepancy` bằng `true` khi có bất kỳ dòng nào lệch số lượng hoặc trọng lượng — dùng để tô cảnh báo trên giao diện.
+- Đây cũng là nguồn dữ liệu cho phiếu PDF bên web Sale.
+
+> **Migration:** bảng `WAREHOUSE_RECEIVING_NOTE_ITEMS` được tạo bởi migration `AddWarehouseReceivingNoteItems`.
+
+---
+
+## 48. Phân hệ M06: Gộp & Tách kiện hàng (Cấu trúc kiện cha – con)
+
+Bảng `PARCELS` được bổ sung cột `parent_parcel_id` để lưu quan hệ cha – con:
+
+- **Tách kiện:** các kiện con trỏ `parentParcelId` về kiện gốc; kiện gốc chuyển sang trạng thái `SPLIT`.
+- **Gộp kiện:** các kiện gốc trỏ `parentParcelId` về kiện mới; các kiện gốc chuyển sang trạng thái `MERGED`.
+
+Kiện ở trạng thái `SPLIT` hoặc `MERGED` không còn là kiện vật lý đang tồn tại, nên tự động biến mất khỏi các danh sách lọc theo `RECEIVED` / `STORED`.
+
+### 48.1. Tách kiện
+
+```http
+POST /api/parcels/{parcelId}/split
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "note": "Tách để xếp vừa hai ô kệ",
+  "children": [
+    { "quantity": 6, "actualWeight": 7.5, "length": 30, "width": 20, "height": 15 },
+    { "quantity": 4, "actualWeight": 5.0, "length": 25, "width": 20, "height": 15, "binId": "ffe85f64-..." }
+  ]
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+**Ràng buộc:**
+- Tối thiểu **2 kiện con**; mỗi kiện con phải có `actualWeight > 0` và `quantity >= 0`.
+- Kiện gốc phải ở trạng thái `RECEIVED`, `RECEIVED_AT_DESTINATION` hoặc `STORED`.
+- Hàng tồn của kiện gốc phải đang `AVAILABLE` — không tách kiện đã được giữ cho phiếu xuất kho (BR-91).
+- **Tổng cân nặng kiện con không được vượt cân nặng kiện gốc.**
+- **Tổng số lượng kiện con phải bằng đúng số lượng hàng tồn của kiện gốc** — tránh thất thoát khi tách.
+- `binId` của kiện con nếu khác kiện gốc thì phải là ô kệ đang hoạt động và **cùng kho** (BR-56).
+- `packageCode` để trống thì hệ thống tự sinh theo dạng `PCL-{yyyyMMddHHmmss}-{random}`.
+
+Hệ thống tự tính lại `volumetricWeight` và `chargeableWeight` cho từng kiện con theo hệ số quy đổi đang cấu hình, đồng thời trừ thể tích kiện gốc và cộng thể tích kiện con vào ô kệ tương ứng.
+
+### 48.2. Gộp kiện
+
+```http
+POST /api/parcels/merge
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "sourceParcelIds": ["bfe85f64-...", "cae85f64-..."],
+  "packageCode": "",
+  "actualWeight": 12.5,
+  "length": 45,
+  "width": 35,
+  "height": 30,
+  "binId": "ffe85f64-...",
+  "note": "Gộp hai kiện nhỏ cùng đơn để tiết kiệm cước"
+}
+```
+
+**Phân quyền:** `Admin`, `WarehouseStaff`.
+
+**Ràng buộc:**
+- Tối thiểu **2 kiện khác nhau**.
+- **Tất cả kiện phải thuộc cùng một yêu cầu ký gửi** — gộp chéo đơn sẽ làm lẫn quyền sở hữu hàng tồn.
+- **Tất cả kiện phải đang nằm trong cùng một kho.**
+- Trạng thái kiện và hàng tồn phải hợp lệ, giống điều kiện của tách kiện.
+- `binId` để trống thì dùng ô kệ của kiện gốc đầu tiên; nếu truyền thì phải cùng kho.
+
+Hàng tồn của các kiện gốc được dồn thành **một dòng duy nhất** cho kiện mới với tổng số lượng, các dòng cũ bị xoá.
+
+### 48.3. Response chung
+
+```json
+{
+  "message": "Tách kiện hàng thành công.",
+  "data": {
+    "operation": "SPLIT",
+    "parent": {
+      "parcelId": "bfe85f64-...",
+      "packageCode": "PCL-20260801100000-123456",
+      "parentParcelId": null,
+      "actualWeight": 12.5,
+      "chargeableWeight": 12.5,
+      "packageStatus": "SPLIT",
+      "binId": "ffe85f64-...",
+      "binCode": "A-01-03",
+      "quantity": 0
+    },
+    "children": [
+      {
+        "parcelId": "dde85f64-...",
+        "packageCode": "PCL-20260801100001-654321",
+        "parentParcelId": "bfe85f64-...",
+        "actualWeight": 7.5,
+        "volumetricWeight": 1.8,
+        "chargeableWeight": 7.5,
+        "packageStatus": "STORED",
+        "binId": "ffe85f64-...",
+        "binCode": "A-01-03",
+        "quantity": 6
+      }
+    ]
+  }
+}
+```
+
+`operation` nhận `SPLIT` hoặc `MERGE`. Với `MERGE`, `parent` là kiện mới sau khi gộp còn `children` là các kiện gốc đã bị gộp.
+
+> **Migration:** cột `parent_parcel_id` được thêm bởi migration `AddParentParcelId`.
