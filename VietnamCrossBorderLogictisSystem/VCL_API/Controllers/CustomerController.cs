@@ -20,7 +20,7 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Lấy danh sách khách hàng. Hỗ trợ tìm kiếm theo tên, mã, email, SĐT, địa chỉ, công ty.
+        /// Lấy danh sách khách hàng. Hỗ trợ tìm kiếm theo tên, mã, email, SĐT, địa chỉ, tên công ty.
         /// </summary>
         [HttpGet("api/customers")]
         public async Task<IActionResult> GetAllCustomers([FromQuery] string? search)
