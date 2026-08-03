@@ -1069,6 +1069,19 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("payment_confirmed_by_id");
 
+                    b.Property<DateTime?>("ReceiptGeneratedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("receipt_generated_at");
+
+                    b.Property<Guid?>("ReceiptGeneratedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("receipt_generated_by_id");
+
+                    b.Property<string>("ReceiptPdfUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("receipt_pdf_url");
+
                     b.Property<string>("ReceiverAddress")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("receiver_address");
@@ -1288,6 +1301,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("check_in_time");
 
+                    b.Property<Guid?>("CheckedInById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("checked_in_by_id");
+
                     b.Property<Guid?>("ConsignmentId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("consignment_id");
@@ -1304,6 +1321,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("master_box_id");
 
+                    b.Property<Guid?>("OrderItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_item_id");
+
                     b.Property<string>("PackageCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -1317,6 +1338,10 @@ namespace VCL_DLL.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("package_status");
+
+                    b.Property<Guid?>("ParentParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parent_parcel_id");
 
                     b.Property<DateTime?>("PutAwayTime")
                         .HasColumnType("datetime2")
@@ -3086,6 +3111,62 @@ namespace VCL_DLL.Migrations
                     b.ToTable("TRACKINGS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.UnitOfMeasure", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("description");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int")
+                        .HasColumnName("display_order");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("unit_code");
+
+                    b.Property<string>("UnitName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("unit_name");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("PK_UNIT_OF_MEASURES");
+
+                    b.HasIndex("UnitCode")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_UNIT_OF_MEASURES_UNIT_CODE");
+
+                    b.ToTable("UNIT_OF_MEASURES", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3381,6 +3462,74 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("WarehouseId");
 
                     b.ToTable("WAREHOUSE_RECEIVING_NOTES", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseReceivingNoteItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<int>("ActualQuantity")
+                        .HasColumnType("int")
+                        .HasColumnName("actual_quantity");
+
+                    b.Property<decimal?>("ActualWeight")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("actual_weight");
+
+                    b.Property<int>("DeclaredQuantity")
+                        .HasColumnType("int")
+                        .HasColumnName("declared_quantity");
+
+                    b.Property<decimal?>("DeclaredWeight")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("declared_weight");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("OrderItemId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_item_id");
+
+                    b.Property<string>("ProductName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("product_name");
+
+                    b.Property<string>("ProductType")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("product_type");
+
+                    b.Property<int>("QuantityDifference")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity_difference");
+
+                    b.Property<Guid>("ReceivingNoteId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("receiving_note_id");
+
+                    b.Property<decimal?>("WeightDifference")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("weight_difference");
+
+                    b.HasKey("Id")
+                        .HasName("PK_WAREHOUSE_RECEIVING_NOTE_ITEMS");
+
+                    b.HasIndex("OrderItemId");
+
+                    b.HasIndex("ReceivingNoteId");
+
+                    b.ToTable("WAREHOUSE_RECEIVING_NOTE_ITEMS", (string)null);
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.WarehouseZone", b =>
@@ -4349,6 +4498,25 @@ namespace VCL_DLL.Migrations
                     b.Navigation("ConsignmentOrder");
 
                     b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseReceivingNoteItem", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.OrderItem", "OrderItem")
+                        .WithMany()
+                        .HasForeignKey("OrderItemId")
+                        .HasConstraintName("FK_WRN_ITEM_ORDER_ITEM");
+
+                    b.HasOne("VCL_DLL.Models.WarehouseReceivingNote", "ReceivingNote")
+                        .WithMany()
+                        .HasForeignKey("ReceivingNoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_WRN_ITEM_RECEIVING_NOTE");
+
+                    b.Navigation("OrderItem");
+
+                    b.Navigation("ReceivingNote");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.WarehouseZone", b =>

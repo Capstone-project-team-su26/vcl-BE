@@ -44,7 +44,14 @@ namespace VCL_BLL.DTOs
         public string ZoneName { get; set; } = string.Empty;
         public string ShelfCode { get; set; } = string.Empty;
         public string BinCode { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Sức chứa của ô kệ tính bằng <b>cm³</b>, cùng đơn vị với kích thước kiện hàng (cm).
+        /// Ví dụ ô kệ 100 × 60 × 50 cm ⇒ 300000. Một lít = 1000 cm³, một m³ = 1000000 cm³.
+        /// </summary>
         public decimal? MaxVolume { get; set; }
+
+        /// <summary>Tải trọng tối đa của ô kệ, tính bằng <b>kg</b>.</summary>
         public decimal? MaxWeight { get; set; }
         public bool IsActive { get; set; } = true;
         public string Note { get; set; } = string.Empty;

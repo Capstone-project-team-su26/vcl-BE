@@ -137,9 +137,20 @@ namespace VCL_BLL.Services
                     .Distinct()
                     .ToList();
 
+                var quotationWarehouse = latestQuotation.WarehouseId.HasValue
+                    ? (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                        .FirstOrDefault(w => w.Id == latestQuotation.WarehouseId.Value)
+                    : null;
+
                 quotationSummary = new ConsignmentQuotationSummary
                 {
                     QuotationId = latestQuotation.Id,
+                    WarehouseId = latestQuotation.WarehouseId,
+                    WarehouseName = quotationWarehouse?.WarehouseName,
+                    WarehouseCode = quotationWarehouse?.WarehouseCode,
+                    WarehouseAddress = quotationWarehouse?.Address,
+                    WarehouseRegion = quotationWarehouse?.Region?.ToString(),
+                    WarehouseType = quotationWarehouse?.WarehouseType,
                     QuoteType = latestQuotation.QuoteType,
                     Status = latestQuotation.Status,
                     EstimatedFreightCharge = latestQuotation.EstimatedFreightCharge,
@@ -182,6 +193,7 @@ namespace VCL_BLL.Services
                 CreatedAt = order.CreatedAt,
                 PaymentConfirmedAt = paymentConfirmedAt,
                 StatusUpdatedAt = paymentConfirmedAt ?? latestQuotation?.CreatedAt ?? order.CreatedAt,
+                ReceiptPdfUrl = order.ReceiptPdfUrl,
                 PricingRuleIds = pricingRuleIds,
                 Customer = new ConsignmentCustomerInfo
                 {
@@ -261,6 +273,8 @@ namespace VCL_BLL.Services
 
             var allInvoices = await _unitOfWork.Repository<Invoice>().GetAllAsync();
             var allPayments = await _unitOfWork.Repository<Payment>().GetAllAsync();
+            var warehouseMap = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                .ToDictionary(w => w.Id, w => w);
 
             var invoiceQuotationMap = allInvoices
                 .Where(i => i.QuotationId.HasValue)
@@ -308,6 +322,12 @@ namespace VCL_BLL.Services
                 var paidTime = paidPaymentsByOrder.TryGetValue(o.Id, out var pt) ? pt : (DateTime?)null;
                 var paymentConfirmed = o.PaymentConfirmedAt ?? paidTime;
 
+                Warehouse? orderWarehouse = null;
+                if (latestQuotation?.WarehouseId != null)
+                {
+                    warehouseMap.TryGetValue(latestQuotation.WarehouseId.Value, out orderWarehouse);
+                }
+
                 return new ConsignmentResponseDto
                 {
                     OrderId = o.Id,
@@ -327,6 +347,11 @@ namespace VCL_BLL.Services
                     QuotationCreatedAt = latestQuotation?.CreatedAt,
                     StatusUpdatedAt = paymentConfirmed ?? latestQuotation?.CreatedAt ?? o.CreatedAt,
                     WarehouseId = latestQuotation?.WarehouseId,
+                    WarehouseName = orderWarehouse?.WarehouseName,
+                    WarehouseCode = orderWarehouse?.WarehouseCode,
+                    WarehouseRegion = orderWarehouse?.Region?.ToString(),
+                    WarehouseType = orderWarehouse?.WarehouseType,
+                    ReceiptPdfUrl = o.ReceiptPdfUrl,
                     PricingRuleIds = pricingRuleIds,
                     ItemNames = allItems
                         .Where(i => i.OrderId == o.Id && !string.IsNullOrWhiteSpace(i.ProductName))

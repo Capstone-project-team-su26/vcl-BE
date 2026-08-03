@@ -45,5 +45,22 @@ namespace VCL_BLL.Services
 
             return result.SecureUrl?.ToString() ?? string.Empty;
         }
+
+        public async Task<string> UploadDocumentAsync(Stream fileStream, string fileName)
+        {
+            // PDF phải upload dưới dạng raw, Cloudinary không xử lý được như ảnh.
+            var uploadParams = new RawUploadParams
+            {
+                File = new FileDescription(fileName, fileStream),
+                Folder = "vcl/consignment-receipts"
+            };
+
+            var result = await _cloudinary.UploadAsync(uploadParams);
+
+            if (result.Error != null)
+                throw new Exception($"Upload phiếu PDF thất bại: {result.Error.Message}");
+
+            return result.SecureUrl?.ToString() ?? string.Empty;
+        }
     }
 }

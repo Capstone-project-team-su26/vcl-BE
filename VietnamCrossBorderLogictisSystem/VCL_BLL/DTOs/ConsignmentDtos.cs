@@ -39,6 +39,9 @@ namespace VCL_BLL.DTOs
         /// <summary>Mốc thời gian tương ứng với trạng thái hiện tại của đơn (dùng cho FE hiển thị real-time theo status).</summary>
         public DateTime? StatusUpdatedAt { get; set; }
 
+        /// <summary>Link phiếu xác nhận ký gửi (PDF) sinh khi Sale xác nhận yêu cầu. Null nếu chưa sinh.</summary>
+        public string? ReceiptPdfUrl { get; set; }
+
         /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
         public List<Guid> PricingRuleIds { get; set; } = new();
 
@@ -94,6 +97,18 @@ namespace VCL_BLL.DTOs
         public decimal TotalEstimatedCost { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? ExpiredAt { get; set; }
+
+        /// <summary>Kho tiếp nhận hàng do Sale chọn khi lập báo giá (kho quốc tế đầu tuyến, VD kho Trung Quốc).</summary>
+        public Guid? WarehouseId { get; set; }
+        public string? WarehouseName { get; set; }
+        public string? WarehouseCode { get; set; }
+        public string? WarehouseAddress { get; set; }
+
+        /// <summary>Mã vùng của kho theo ISO (VD "CN", "VN"). Dùng để lọc đơn theo kho phụ trách.</summary>
+        public string? WarehouseRegion { get; set; }
+
+        /// <summary>ORIGIN (kho đầu tuyến) hoặc DESTINATION (kho đích).</summary>
+        public string? WarehouseType { get; set; }
     }
 
     /// <summary>

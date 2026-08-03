@@ -13,6 +13,9 @@ namespace VCL_BLL.DTOs
     {
         public string Status { get; set; } = string.Empty;
         public string? ConsignmentCode { get; set; }
+
+        /// <summary>Link phiếu xác nhận ký gửi (PDF) sinh khi duyệt đơn. Null nếu chưa sinh được.</summary>
+        public string? ReceiptPdfUrl { get; set; }
     }
 
     public class ConsignmentResponseDto
@@ -37,6 +40,19 @@ namespace VCL_BLL.DTOs
         /// <summary>Mốc thời gian tương ứng với trạng thái hiện tại của đơn (dùng cho FE hiển thị real-time theo status).</summary>
         public DateTime? StatusUpdatedAt { get; set; }
         public Guid? WarehouseId { get; set; }
+
+        /// <summary>Kho tiếp nhận hàng lấy từ báo giá. Dùng để kho lọc đúng đơn mình phụ trách.</summary>
+        public string? WarehouseName { get; set; }
+        public string? WarehouseCode { get; set; }
+
+        /// <summary>Mã vùng của kho theo ISO (VD "CN", "VN").</summary>
+        public string? WarehouseRegion { get; set; }
+
+        /// <summary>ORIGIN (kho đầu tuyến) hoặc DESTINATION (kho đích).</summary>
+        public string? WarehouseType { get; set; }
+
+        /// <summary>Link phiếu xác nhận ký gửi (PDF) sinh khi Sale xác nhận yêu cầu. Null nếu chưa sinh.</summary>
+        public string? ReceiptPdfUrl { get; set; }
 
         /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
         public List<Guid> PricingRuleIds { get; set; } = new();
