@@ -35,7 +35,7 @@ namespace VCL_BLL.Services
 
         public async Task<List<GoshipRateOption>> GetRatesAsync(GoshipRateRequest request, string token)
         {
-            var baseUrl = _configuration["GoshipSettings:ApiUrl"] ?? "https://api.goship.io/api/v2/";
+            var baseUrl = _configuration["GoshipSettings:ApiUrl"] ?? "https://sandbox.goship.io/api/v2/";
             var endpoint = $"{baseUrl.TrimEnd('/')}/rates";
 
             var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
@@ -64,7 +64,7 @@ namespace VCL_BLL.Services
 
         public async Task<GoshipOrderResponseData> CreateOrderAsync(GoshipOrderRequest request, string token)
         {
-            var baseUrl = _configuration["GoshipSettings:ApiUrl"] ?? "https://api.goship.io/api/v2/";
+            var baseUrl = _configuration["GoshipSettings:ApiUrl"] ?? "https://sandbox.goship.io/api/v2/";
             var endpoint = $"{baseUrl.TrimEnd('/')}/shipments";
 
             var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
