@@ -286,10 +286,12 @@ jobs:
               docker tag "$running" "$rollback_tag"
             fi
 
-            # Container mo coi (network bi xoa, project doi thu muc...) khong con thuoc compose project
-            # nhung van giu ten -> phai don truoc, neu khong `compose up` se bao Conflict.
+            # Don container mo coi truoc khi `compose up`, neu khong se bao Conflict.
+            # Khong neo dau chuoi: luc recreate, compose doi ten container cu thanh
+            # "<short-id>_<ten-goc>". Lan deploy truoc chet giua chung de lai container
+            # ten "361a7f63ee55_vcl-dev-vcl-api-1", neo ^/ se bo sot dung cai nay.
             # --no-trunc de ID day du, khop duoc voi ID compose tra ve o tren.
-            stale=$(docker ps -aq --no-trunc --filter "name=^/${PROJECT}-vcl-api-" || true)
+            stale=$(docker ps -aq --no-trunc --filter "name=${PROJECT}-vcl-api" || true)
             if [ -n "$stale" ]; then
               for c in $stale; do
                 if [ "$c" != "$cid" ]; then

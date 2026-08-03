@@ -48,7 +48,7 @@ namespace VCL_API.Controllers
 
         /// <summary>
         /// Nhân viên xem sổ địa chỉ nhận hàng của một khách hàng cụ thể.
-        /// Dùng khi cần lấy địa chỉ để bàn giao cho đơn vị vận chuyển thứ 3 (GHN/GHTK...).
+        /// Dùng khi cần lấy địa chỉ để bàn giao cho đơn vị vận chuyển thứ 3 (GHN/GHTK...)
         /// </summary>
         /// <param name="customerId">ID khách hàng (lấy từ chi tiết đơn hoặc danh sách khách).</param>
         /// <response code="200">Lấy danh sách địa chỉ thành công</response>
