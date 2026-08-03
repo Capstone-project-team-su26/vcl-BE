@@ -18,5 +18,10 @@ namespace VCL_BLL.Interface
         /// Sinh nội dung PDF của phiếu mà không upload, dùng cho tải trực tiếp.
         /// </summary>
         Task<(byte[] Content, string FileName)> BuildReceiptPdfAsync(Guid orderId, Guid? generatedByUserId);
+
+        /// <summary>
+        /// Lấy phiếu theo khoá công khai, dùng cho link mở trên trình duyệt không có token.
+        /// </summary>
+        Task<(byte[] Content, string FileName)> GetReceiptByPublicKeyAsync(Guid publicKey);
     }
 }
