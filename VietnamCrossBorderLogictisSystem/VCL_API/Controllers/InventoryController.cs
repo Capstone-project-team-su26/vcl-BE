@@ -56,10 +56,27 @@ namespace VCL_API.Controllers
         /// <param name="status">Lọc theo trạng thái tồn kho, ví dụ AVAILABLE</param>
         /// <param name="customerId">Lọc theo khách hàng sở hữu hàng tồn</param>
         /// <param name="warehouseId">Lọc theo kho đang lưu hàng</param>
+        /// <param name="regionCode">Lọc theo mã vùng quốc gia của kho (JP, VN, TQ...)</param>
+        /// <param name="region">Alias tham số cho regionCode</param>
         [HttpGet]
-        public async Task<IActionResult> GetInventories([FromQuery] string? status, [FromQuery] Guid? customerId, [FromQuery] Guid? warehouseId)
+        public async Task<IActionResult> GetInventories(
+            [FromQuery] string? status, 
+            [FromQuery] Guid? customerId, 
+            [FromQuery] Guid? warehouseId,
+            [FromQuery] string? regionCode = null,
+            [FromQuery] string? region = null)
         {
-            var result = await _inventoryService.GetInventoriesAsync(status, customerId, warehouseId);
+            var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
+            if (string.IsNullOrWhiteSpace(effectiveRegion))
+            {
+                var tokenRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrWhiteSpace(tokenRegion))
+                {
+                    effectiveRegion = tokenRegion;
+                }
+            }
+
+            var result = await _inventoryService.GetInventoriesAsync(status, customerId, warehouseId, effectiveRegion);
             return Ok(new { message = "Lấy danh sách tồn kho thành công.", items = result });
         }
 
@@ -69,7 +86,7 @@ namespace VCL_API.Controllers
         /// <param name="inventoryId">ID bản ghi tồn kho cần điều chuyển</param>
         /// <param name="request">Ô kệ đích và lý do điều chuyển</param>
         [HttpPost("{inventoryId}/relocate")]
-        [Authorize(Roles = "Admin,WarehouseStaff")]
+        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> RelocateInventory(Guid inventoryId, [FromBody] RelocateInventoryRequestDto request)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -115,15 +132,29 @@ namespace VCL_API.Controllers
         /// <param name="minDays">Ngưỡng cảnh báo, mặc định 7 ngày</param>
         /// <param name="criticalDays">Ngưỡng nghiêm trọng, mặc định 30 ngày</param>
         /// <param name="limit">Số dòng tối đa, mặc định 100</param>
+        /// <param name="regionCode">Lọc theo mã vùng quốc gia của kho (JP, VN, TQ...)</param>
+        /// <param name="region">Alias tham số cho regionCode</param>
         [HttpGet("long-stay-alerts")]
         public async Task<IActionResult> GetLongStayAlerts(
             [FromQuery] Guid? warehouseId,
             [FromQuery] Guid? customerId,
             [FromQuery] int minDays = 7,
             [FromQuery] int criticalDays = 30,
-            [FromQuery] int limit = 100)
+            [FromQuery] int limit = 100,
+            [FromQuery] string? regionCode = null,
+            [FromQuery] string? region = null)
         {
-            var result = await _inventoryService.GetLongStayAlertsAsync(warehouseId, customerId, minDays, criticalDays, limit);
+            var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
+            if (string.IsNullOrWhiteSpace(effectiveRegion))
+            {
+                var tokenRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrWhiteSpace(tokenRegion))
+                {
+                    effectiveRegion = tokenRegion;
+                }
+            }
+
+            var result = await _inventoryService.GetLongStayAlertsAsync(warehouseId, customerId, minDays, criticalDays, limit, effectiveRegion);
             return Ok(new { message = "Lấy danh sách cảnh báo tồn kho lâu ngày thành công.", items = result });
         }
 
@@ -132,10 +163,26 @@ namespace VCL_API.Controllers
         /// </summary>
         /// <param name="warehouseId">Lọc theo kho</param>
         /// <param name="customerId">Lọc theo một khách hàng cụ thể</param>
+        /// <param name="regionCode">Lọc theo mã vùng quốc gia của kho (JP, VN, TQ...)</param>
+        /// <param name="region">Alias tham số cho regionCode</param>
         [HttpGet("storage-report")]
-        public async Task<IActionResult> GetCustomerStorageReport([FromQuery] Guid? warehouseId, [FromQuery] Guid? customerId)
+        public async Task<IActionResult> GetCustomerStorageReport(
+            [FromQuery] Guid? warehouseId, 
+            [FromQuery] Guid? customerId,
+            [FromQuery] string? regionCode = null,
+            [FromQuery] string? region = null)
         {
-            var result = await _inventoryService.GetCustomerStorageReportAsync(warehouseId, customerId);
+            var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
+            if (string.IsNullOrWhiteSpace(effectiveRegion))
+            {
+                var tokenRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrWhiteSpace(tokenRegion))
+                {
+                    effectiveRegion = tokenRegion;
+                }
+            }
+
+            var result = await _inventoryService.GetCustomerStorageReportAsync(warehouseId, customerId, effectiveRegion);
             return Ok(new { message = "Lấy báo cáo tồn kho theo khách hàng thành công.", items = result });
         }
 

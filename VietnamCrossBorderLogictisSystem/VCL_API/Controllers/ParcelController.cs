@@ -116,14 +116,26 @@ namespace VCL_API.Controllers
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? search = null,
-            [FromQuery] string? status = null)
+            [FromQuery] string? status = null,
+            [FromQuery] string? regionCode = null,
+            [FromQuery] string? region = null)
         {
             if (pageNumber < 1) pageNumber = 1;
             if (pageSize < 1) pageSize = 10;
 
             try
             {
-                var result = await _parcelService.GetPendingPutawayParcelsAsync(pageNumber, pageSize, search, status);
+                var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
+                if (string.IsNullOrWhiteSpace(effectiveRegion))
+                {
+                    var tokenRegion = User.FindFirst("region")?.Value;
+                    if (!string.IsNullOrWhiteSpace(tokenRegion))
+                    {
+                        effectiveRegion = tokenRegion;
+                    }
+                }
+
+                var result = await _parcelService.GetPendingPutawayParcelsAsync(pageNumber, pageSize, search, status, effectiveRegion);
                 return Ok(new
                 {
                     message = "Lấy danh sách kiện chờ nhập vị trí kho thành công.",

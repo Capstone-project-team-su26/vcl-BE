@@ -97,7 +97,7 @@ namespace VCL_BLL.Services
             return createdDtos.First();
         }
 
-        public async Task<List<InventoryResponseDto>> GetInventoriesAsync(string? status, Guid? customerId, Guid? warehouseId)
+        public async Task<List<InventoryResponseDto>> GetInventoriesAsync(string? status, Guid? customerId, Guid? warehouseId, string? region = null)
         {
             var inventoryRepo = _unitOfWork.Repository<Inventory>();
             var allInventories = await inventoryRepo.GetAllAsync();
@@ -123,6 +123,18 @@ namespace VCL_BLL.Services
             if (warehouseId.HasValue)
             {
                 dtos = dtos.Where(d => d.WarehouseId == warehouseId.Value).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                var regUpper = region.Trim().ToUpperInvariant();
+                dtos = dtos.Where(d => !string.IsNullOrWhiteSpace(d.WarehouseRegion) && (
+                    d.WarehouseRegion.Equals(regUpper, StringComparison.OrdinalIgnoreCase) ||
+                    (regUpper == "JP" && d.WarehouseRegion.Equals("NB", StringComparison.OrdinalIgnoreCase)) ||
+                    (regUpper == "NB" && d.WarehouseRegion.Equals("JP", StringComparison.OrdinalIgnoreCase)) ||
+                    (regUpper == "CN" && d.WarehouseRegion.Equals("TQ", StringComparison.OrdinalIgnoreCase)) ||
+                    (regUpper == "TQ" && d.WarehouseRegion.Equals("CN", StringComparison.OrdinalIgnoreCase))
+                )).ToList();
             }
 
             return dtos;
@@ -353,16 +365,16 @@ namespace VCL_BLL.Services
         /// </summary>
         private static readonly string[] InStorageStatuses = { "AVAILABLE", "RESERVED" };
 
-        public async Task<List<LongStayAlertResponseDto>> GetLongStayAlertsAsync(Guid? warehouseId, Guid? customerId, int minDays, int criticalDays, int limit)
+        public async Task<List<LongStayAlertResponseDto>> GetLongStayAlertsAsync(Guid? warehouseId, Guid? customerId, int minDays, int criticalDays, int limit, string? region = null)
         {
-            if (minDays < 0)
+            if (minDays <= 0)
             {
-                minDays = 0;
+                minDays = 7;
             }
 
-            if (criticalDays < minDays)
+            if (criticalDays <= 0)
             {
-                criticalDays = minDays;
+                criticalDays = 30;
             }
 
             if (limit <= 0)
@@ -370,7 +382,7 @@ namespace VCL_BLL.Services
                 limit = 100;
             }
 
-            var inventories = await GetInventoriesAsync(null, customerId, warehouseId);
+            var inventories = await GetInventoriesAsync(null, customerId, warehouseId, region);
 
             return inventories
                 .Where(i => InStorageStatuses.Contains(i.Status, StringComparer.OrdinalIgnoreCase))
@@ -396,6 +408,7 @@ namespace VCL_BLL.Services
                     BinCode = i.BinCode,
                     WarehouseId = i.WarehouseId,
                     WarehouseName = i.WarehouseName,
+                    WarehouseRegion = i.WarehouseRegion,
                     StoredAt = i.StoredAt,
                     ActualWeight = i.ActualWeight,
                     ActualVolume = i.ActualVolume,
@@ -406,9 +419,9 @@ namespace VCL_BLL.Services
                 .ToList();
         }
 
-        public async Task<List<CustomerStorageReportResponseDto>> GetCustomerStorageReportAsync(Guid? warehouseId, Guid? customerId)
+        public async Task<List<CustomerStorageReportResponseDto>> GetCustomerStorageReportAsync(Guid? warehouseId, Guid? customerId, string? region = null)
         {
-            var inventories = await GetInventoriesAsync(null, customerId, warehouseId);
+            var inventories = await GetInventoriesAsync(null, customerId, warehouseId, region);
 
             var inStorage = inventories
                 .Where(i => InStorageStatuses.Contains(i.Status, StringComparer.OrdinalIgnoreCase))
@@ -427,6 +440,7 @@ namespace VCL_BLL.Services
                         CustomerCode = first.CustomerCode,
                         CustomerName = first.CustomerName,
                         CustomerPhone = first.CustomerPhone,
+                        WarehouseRegion = first.WarehouseRegion,
                         ParcelCount = parcelCount,
                         TotalQuantity = group.Sum(i => i.Quantity),
                         TotalWeight = group.Sum(i => i.ActualWeight),
@@ -728,6 +742,7 @@ namespace VCL_BLL.Services
                     BinCode = bin?.BinCode ?? string.Empty,
                     WarehouseId = bin?.WarehouseId,
                     WarehouseName = warehouse?.WarehouseName ?? string.Empty,
+                    WarehouseRegion = warehouse?.Region?.ToString(),
                     StoredAt = storedAt,
                     ActualWeight = parcel?.ActualWeight ?? 0,
                     ActualVolume = actualVolume,

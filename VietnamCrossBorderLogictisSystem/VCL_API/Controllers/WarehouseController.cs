@@ -22,10 +22,24 @@ namespace VCL_API.Controllers
         /// Lấy danh sách các kho vận hành (chỉ Admin).
         /// </summary>
         [HttpGet("api/warehouses")]
-        [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> GetWarehouses([FromQuery] bool? isActive, [FromQuery] string? search)
+        [Authorize(Roles = "Admin,ADMIN")]
+        public async Task<IActionResult> GetWarehouses(
+            [FromQuery] bool? isActive, 
+            [FromQuery] string? search,
+            [FromQuery] string? regionCode = null,
+            [FromQuery] string? region = null)
         {
-            var result = await _warehouseService.GetWarehousesAsync(isActive, search);
+            var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
+            if (string.IsNullOrWhiteSpace(effectiveRegion))
+            {
+                var tokenRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrWhiteSpace(tokenRegion))
+                {
+                    effectiveRegion = tokenRegion;
+                }
+            }
+
+            var result = await _warehouseService.GetWarehousesAsync(isActive, search, effectiveRegion);
             return Ok(new
             {
                 items = result
@@ -36,10 +50,22 @@ namespace VCL_API.Controllers
         /// Lấy danh sách các kho đang hoạt động (dùng cho nghiệp vụ, tất cả các role hệ thống).
         /// </summary>
         [HttpGet("api/warehouses/active")]
-        [Authorize(Roles = "Admin,Sale,Staff,WarehouseStaff,OperationsManager,Operations")]
-        public async Task<IActionResult> GetActiveWarehouses()
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Customer,CUSTOMER")]
+        public async Task<IActionResult> GetActiveWarehouses(
+            [FromQuery] string? regionCode = null,
+            [FromQuery] string? region = null)
         {
-            var result = await _warehouseService.GetActiveWarehousesAsync();
+            var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
+            if (string.IsNullOrWhiteSpace(effectiveRegion))
+            {
+                var tokenRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrWhiteSpace(tokenRegion))
+                {
+                    effectiveRegion = tokenRegion;
+                }
+            }
+
+            var result = await _warehouseService.GetActiveWarehousesAsync(effectiveRegion);
             return Ok(new { items = result });
         }
 

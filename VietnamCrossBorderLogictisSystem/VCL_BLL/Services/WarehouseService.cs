@@ -36,7 +36,7 @@ namespace VCL_BLL.Services
             return trimmed.ToUpperInvariant();
         }
 
-        public async Task<IEnumerable<WarehouseResponseDto>> GetWarehousesAsync(bool? isActive, string? search)
+        public async Task<IEnumerable<WarehouseResponseDto>> GetWarehousesAsync(bool? isActive, string? search, string? region = null)
         {
             var warehouseRepo = _unitOfWork.Repository<Warehouse>();
             var warehouses = await warehouseRepo.GetAllAsync();
@@ -46,6 +46,18 @@ namespace VCL_BLL.Services
             if (isActive.HasValue)
             {
                 query = query.Where(w => w.IsActive == isActive.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                var regUpper = region.Trim().ToUpperInvariant();
+                query = query.Where(w => w.Region.HasValue && (
+                    w.Region.Value.ToString().Equals(regUpper, StringComparison.OrdinalIgnoreCase) ||
+                    (regUpper == "JP" && w.Region.Value == RegionCode.NB) ||
+                    (regUpper == "NB" && w.Region.Value == RegionCode.JP) ||
+                    (regUpper == "CN" && w.Region.Value == RegionCode.TQ) ||
+                    (regUpper == "TQ" && w.Region.Value == RegionCode.CN)
+                ));
             }
 
             if (!string.IsNullOrWhiteSpace(search))
@@ -279,9 +291,9 @@ namespace VCL_BLL.Services
             await _unitOfWork.SaveChangesAsync();
         }
 
-        public async Task<IEnumerable<WarehouseResponseDto>> GetActiveWarehousesAsync()
+        public async Task<IEnumerable<WarehouseResponseDto>> GetActiveWarehousesAsync(string? region = null)
         {
-            return await GetWarehousesAsync(true, null);
+            return await GetWarehousesAsync(true, null, region);
         }
 
         public async Task<IEnumerable<WarehouseLocationResponseDto>> GetWarehouseLocationsAsync(Guid warehouseId, bool? isActive)

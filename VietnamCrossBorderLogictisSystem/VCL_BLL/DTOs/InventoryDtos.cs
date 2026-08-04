@@ -51,6 +51,12 @@ namespace VCL_BLL.DTOs
         /// <summary>Thể tích thực tế của kiện hàng = Length × Width × Height</summary>
         public decimal ActualVolume { get; set; }
 
+        /// <summary>Khu vực kho lưu kiện hàng (JP, VN, TQ...)</summary>
+        public string? WarehouseRegion { get; set; }
+
+        /// <summary>Mã vùng của kho (JP, VN, TQ...)</summary>
+        public string? RegionCode => WarehouseRegion;
+
         /// <summary>Số ngày đã lưu kho tính từ StoredAt tới hiện tại</summary>
         public int StorageDays { get; set; }
 
@@ -72,6 +78,8 @@ namespace VCL_BLL.DTOs
         public string CustomerCode { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
         public string CustomerPhone { get; set; } = string.Empty;
+        public string? WarehouseRegion { get; set; }
+        public string? RegionCode => WarehouseRegion;
 
         /// <summary>Số kiện đang lưu kho của khách hàng</summary>
         public int ParcelCount { get; set; }

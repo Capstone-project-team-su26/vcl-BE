@@ -209,6 +209,8 @@ namespace VCL_BLL.DTOs
         public decimal? ChargeableWeight { get; set; }
         public string PackageStatus { get; set; } = string.Empty;
         public DateTime? CheckInTime { get; set; }
+        public string? WarehouseRegion { get; set; }
+        public string? RegionCode => WarehouseRegion;
 
         /// <summary>Người nhận hàng cuối tại Việt Nam, khác với khách ký gửi.</summary>
         public string? ReceiverName { get; set; }

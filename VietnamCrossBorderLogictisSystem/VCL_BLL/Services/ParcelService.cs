@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -551,16 +551,21 @@ namespace VCL_BLL.Services
             int pageNumber, 
             int pageSize, 
             string? search, 
-            string? status)
+            string? status,
+            string? region = null)
         {
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var orderRepo = _unitOfWork.Repository<Order>();
             var customerRepo = _unitOfWork.Repository<Customer>();
+            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
+            var userRepo = _unitOfWork.Repository<User>();
 
             // Get all data into memory - suitable for GenericRepository pattern
             var allParcels = await parcelRepo.GetAllAsync();
             var allOrders = await orderRepo.GetAllAsync();
             var allCustomers = await customerRepo.GetAllAsync();
+            var allWarehouses = await warehouseRepo.GetAllAsync();
+            var allUsers = await userRepo.GetAllAsync();
 
             var query = allParcels.Where(p => p.BinId == null).AsQueryable();
 
@@ -588,24 +593,36 @@ namespace VCL_BLL.Services
                                        o.ConsignmentCode.Contains(search, StringComparison.OrdinalIgnoreCase))));
             }
 
-            var totalCount = query.Count();
-
-            // Pagination - order by CheckInTime descending
-            var paginatedParcels = query
-                .OrderByDescending(p => p.CheckInTime)
-                .Skip((pageNumber - 1) * pageSize)
-                .Take(pageSize)
-                .ToList();
-
             // Kèm dòng hàng của kiện để nhân viên xếp kệ phân biệt được các kiện cùng một đơn.
             var orderItemMap = (await _unitOfWork.Repository<OrderItem>().GetAllAsync())
                 .ToDictionary(i => i.Id, i => i);
 
-            // Map to DTO
-            var resultItems = paginatedParcels.Select(p =>
+            var allWrns = await _unitOfWork.Repository<WarehouseReceivingNote>().GetAllAsync();
+
+            // Map all matching parcels first to allow region filtering
+            var allMappedItems = query.ToList().Select(p =>
             {
                 var order = allOrders.FirstOrDefault(o => o.Id == p.ConsignmentId);
                 var customer = order != null ? allCustomers.FirstOrDefault(c => c.Id == order.CustomerId) : null;
+                var wrn = order != null ? allWrns.FirstOrDefault(w => w.ConsignmentOrderId == order.Id) : null;
+                var warehouse = wrn != null ? allWarehouses.FirstOrDefault(w => w.Id == wrn.WarehouseId) : null;
+
+                string? warehouseRegion = warehouse?.Region?.ToString();
+
+                if (string.IsNullOrWhiteSpace(warehouseRegion) && order != null && !string.IsNullOrWhiteSpace(order.Route))
+                {
+                    var routeUpper = order.Route.Trim().ToUpperInvariant();
+                    if (routeUpper.StartsWith("JP") || routeUpper.StartsWith("NB")) warehouseRegion = "JP";
+                    else if (routeUpper.StartsWith("CN") || routeUpper.StartsWith("TQ")) warehouseRegion = "CN";
+                    else if (routeUpper.StartsWith("KR")) warehouseRegion = "KR";
+                    else if (routeUpper.StartsWith("VN")) warehouseRegion = "VN";
+                }
+
+                if (string.IsNullOrWhiteSpace(warehouseRegion) && p.CheckedInById.HasValue)
+                {
+                    var checkedInUser = allUsers.FirstOrDefault(u => u.Id == p.CheckedInById.Value);
+                    warehouseRegion = checkedInUser?.Region?.ToString();
+                }
 
                 OrderItem? orderItem = null;
                 if (p.OrderItemId.HasValue)
@@ -634,13 +651,36 @@ namespace VCL_BLL.Services
                     VolumetricWeight = p.VolumetricWeight.HasValue ? Math.Round(p.VolumetricWeight.Value, 4) : null,
                     ChargeableWeight = p.ChargeableWeight.HasValue ? Math.Round(p.ChargeableWeight.Value, 4) : null,
                     PackageStatus = p.PackageStatus ?? string.Empty,
-                    CheckInTime = p.CheckInTime
+                    CheckInTime = p.CheckInTime,
+                    WarehouseRegion = warehouseRegion
                 };
-            }).ToList();
+            }).AsQueryable();
+
+            // Filter by Region if provided
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                var regUpper = region.Trim().ToUpperInvariant();
+                allMappedItems = allMappedItems.Where(d => !string.IsNullOrWhiteSpace(d.WarehouseRegion) && (
+                    d.WarehouseRegion.Equals(regUpper, StringComparison.OrdinalIgnoreCase) ||
+                    (regUpper == "JP" && d.WarehouseRegion.Equals("NB", StringComparison.OrdinalIgnoreCase)) ||
+                    (regUpper == "NB" && d.WarehouseRegion.Equals("JP", StringComparison.OrdinalIgnoreCase)) ||
+                    (regUpper == "CN" && d.WarehouseRegion.Equals("TQ", StringComparison.OrdinalIgnoreCase)) ||
+                    (regUpper == "TQ" && d.WarehouseRegion.Equals("CN", StringComparison.OrdinalIgnoreCase))
+                ));
+            }
+
+            var totalCount = allMappedItems.Count();
+
+            // Pagination - order by CheckInTime descending
+            var paginatedItems = allMappedItems
+                .OrderByDescending(p => p.CheckInTime)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
 
             return new PaginatedResponse<PendingPutawayParcelDto>
             {
-                Items = resultItems,
+                Items = paginatedItems,
                 TotalCount = totalCount,
                 PageNumber = pageNumber,
                 PageSize = pageSize
