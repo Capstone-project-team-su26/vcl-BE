@@ -108,16 +108,11 @@ namespace VCL_API.Controllers
             try
             {
                 var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GHNSettings:Token"];
-                var targetWebhookUrl = !string.IsNullOrEmpty(webhookUrl) ? webhookUrl : _configuration["GHNSettings:WebhookUrl"];
+                var targetWebhookUrl = !string.IsNullOrEmpty(webhookUrl) ? webhookUrl : "https://api-vcl.zushin.io.vn/api/ghn/webhook";
 
                 if (string.IsNullOrEmpty(effectiveToken))
                 {
                     return BadRequest(new { message = "Chưa cấu hình GHN API Token trong hệ thống." });
-                }
-
-                if (string.IsNullOrEmpty(targetWebhookUrl))
-                {
-                    return BadRequest(new { message = "Chưa cấu hình GHNSettings:WebhookUrl cho server này." });
                 }
 
                 var success = await _ghnService.RegisterWebhookUrlAsync(targetWebhookUrl, effectiveToken);
