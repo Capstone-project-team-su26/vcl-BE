@@ -10,7 +10,6 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
     public class GoshipController : ControllerBase
     {
         private readonly IGoshipService _goshipService;
@@ -26,12 +25,17 @@ namespace VCL_API.Controllers
         /// Ước tính và so sánh phí giao hàng của tất cả các hãng vận chuyển qua GoShip Express.
         /// </summary>
         [HttpPost("rates")]
-        [Authorize]
+        [AllowAnonymous]
         public async Task<IActionResult> GetRates([FromBody] GoshipRateRequest request, [FromQuery] string? token = null)
         {
             try
             {
                 var userRegion = User.FindFirst("region")?.Value;
+                if (string.IsNullOrEmpty(userRegion) && Request.Headers.TryGetValue("x-region", out var headerRegion))
+                {
+                    userRegion = headerRegion.ToString();
+                }
+
                 if (!string.IsNullOrEmpty(userRegion) && !userRegion.Equals("VN", StringComparison.OrdinalIgnoreCase))
                 {
                     return BadRequest(new { message = $"GoShip Express chỉ hỗ trợ dịch vụ vận chuyển chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });
@@ -56,12 +60,17 @@ namespace VCL_API.Controllers
         /// Đăng đơn tự động sang GoShip Express.
         /// </summary>
         [HttpPost("orders")]
-        [Authorize(Roles = "Admin,OperationsManager,WarehouseStaff")]
+        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,Sale,SALE,Customer,CUSTOMER")]
         public async Task<IActionResult> CreateOrder([FromBody] GoshipOrderRequest request, [FromQuery] string? token = null)
         {
             try
             {
                 var userRegion = User.FindFirst("region")?.Value;
+                if (string.IsNullOrEmpty(userRegion) && Request.Headers.TryGetValue("x-region", out var headerRegion))
+                {
+                    userRegion = headerRegion.ToString();
+                }
+
                 if (!string.IsNullOrEmpty(userRegion) && !userRegion.Equals("VN", StringComparison.OrdinalIgnoreCase))
                 {
                     return BadRequest(new { message = $"GoShip Express chỉ hỗ trợ dịch vụ vận chuyển chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });

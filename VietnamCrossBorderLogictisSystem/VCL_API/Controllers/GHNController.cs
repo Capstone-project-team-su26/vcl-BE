@@ -10,7 +10,6 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/ghn")]
-    [Authorize]
     public class GHNController : ControllerBase
     {
         private readonly IGHNService _ghnService;
@@ -26,12 +25,17 @@ namespace VCL_API.Controllers
         /// Đăng đơn tự động sang Giao Hàng Nhanh (GHN API v2).
         /// </summary>
         [HttpPost("orders")]
-        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager")]
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,WarehouseStaff,WAREHOUSESTAFF,OperationsManager,OPERATIONSMANAGER,Staff,STAFF,Customer,CUSTOMER")]
         public async Task<IActionResult> CreateOrder([FromBody] GHNOrderRequest request, [FromQuery] string? token = null, [FromQuery] int? shopId = null)
         {
             try
             {
                 var userRegion = User.FindFirst("region")?.Value;
+                if (string.IsNullOrEmpty(userRegion) && Request.Headers.TryGetValue("x-region", out var headerRegion))
+                {
+                    userRegion = headerRegion.ToString();
+                }
+
                 if (!string.IsNullOrEmpty(userRegion) && !userRegion.Equals("VN", StringComparison.OrdinalIgnoreCase))
                 {
                     return BadRequest(new { message = $"Giao Hàng Nhanh (GHN) chỉ hỗ trợ giao hàng chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });
@@ -58,12 +62,17 @@ namespace VCL_API.Controllers
         /// Ước tính phí giao hàng qua Giao Hàng Nhanh (GHN).
         /// </summary>
         [HttpPost("calculate-fee")]
-        [Authorize]
+        [AllowAnonymous]
         public async Task<IActionResult> CalculateFee([FromBody] GHNCalculateFeeRequest request, [FromQuery] string? token = null, [FromQuery] int? shopId = null)
         {
             try
             {
                 var userRegion = User.FindFirst("region")?.Value;
+                if (string.IsNullOrEmpty(userRegion) && Request.Headers.TryGetValue("x-region", out var headerRegion))
+                {
+                    userRegion = headerRegion.ToString();
+                }
+
                 if (!string.IsNullOrEmpty(userRegion) && !userRegion.Equals("VN", StringComparison.OrdinalIgnoreCase))
                 {
                     return BadRequest(new { message = $"Giao Hàng Nhanh (GHN) chỉ hỗ trợ giao hàng chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });

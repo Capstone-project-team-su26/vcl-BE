@@ -10,7 +10,6 @@ namespace VCL_API.Controllers
 {
     [Route("api/product-types")]
     [ApiController]
-    [Authorize]
     public class ProductTypeController : ControllerBase
     {
         private readonly IProductTypeService _productTypeService;
@@ -35,7 +34,7 @@ namespace VCL_API.Controllers
         /// Lấy toàn bộ loại hàng cho màn quản trị danh mục, gồm cả loại đã ngừng sử dụng.
         /// </summary>
         [HttpGet("all")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,ADMIN")]
         public async Task<IActionResult> GetAllProductTypes()
         {
             var data = await _productTypeService.GetAllProductTypesAsync();
@@ -46,7 +45,7 @@ namespace VCL_API.Controllers
         /// Lấy chi tiết một loại hàng.
         /// </summary>
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetById(Guid id)
         {
             try

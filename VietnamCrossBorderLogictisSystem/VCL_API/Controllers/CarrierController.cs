@@ -10,7 +10,6 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/carriers")]
-    [Authorize]
     public class CarrierController : ControllerBase
     {
         private readonly ICarrierService _carrierService;
@@ -24,7 +23,7 @@ namespace VCL_API.Controllers
         /// Xem danh sách tất cả các đơn vị vận chuyển (chỉ Admin).
         /// </summary>
         [HttpGet]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,ADMIN")]
         public async Task<IActionResult> GetAll()
         {
             var carriers = await _carrierService.GetAllAsync();
@@ -35,7 +34,7 @@ namespace VCL_API.Controllers
         /// Lấy danh sách các đơn vị vận chuyển đang hoạt động (dùng cho nghiệp vụ, Staff hoặc Operations).
         /// </summary>
         [HttpGet("active")]
-        [Authorize(Roles = "Admin,Staff,Operations,OperationsManager,WarehouseStaff")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetActive()
         {
             var carriers = await _carrierService.GetActiveAsync();

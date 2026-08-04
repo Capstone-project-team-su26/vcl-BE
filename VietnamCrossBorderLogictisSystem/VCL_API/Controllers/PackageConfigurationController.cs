@@ -9,7 +9,6 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/package-configurations")]
-    [Authorize]
     public class PackageConfigurationController : ControllerBase
     {
         private readonly IPackageConfigurationService _packageConfigService;
@@ -23,7 +22,7 @@ namespace VCL_API.Controllers
         /// Lấy danh sách các thùng đóng gói tiêu chuẩn đang hoạt động.
         /// </summary>
         [HttpGet]
-        [Authorize]
+        [AllowAnonymous]
         public async Task<IActionResult> GetActive()
         {
             var configs = await _packageConfigService.GetActiveConfigurationsAsync();
@@ -35,7 +34,7 @@ namespace VCL_API.Controllers
         /// phục vụ Mobile UI render danh sách loại kiện xuất kho động thay vì nhập tay.
         /// </summary>
         [HttpGet("options")]
-        [Authorize]
+        [AllowAnonymous]
         public async Task<IActionResult> GetPackagingOptions()
         {
             var options = await _packageConfigService.GetPackagingOptionsAsync();
