@@ -23,7 +23,7 @@ namespace VCL_API.Controllers
         /// <summary>
         /// Xem danh sách phí dịch vụ bổ sung.
         /// </summary>
-        /// <param name="activeOnly">Nếu true, chỉ lấy các loại phí đang hoạt động. Mặc định là false.</param>
+        /// <param name="activeOnly">Nếu true, chỉ lấy các loại phí đang hoạt động. Mặc định là false</param>
         [HttpGet]
         [AllowAnonymous]
         public async Task<IActionResult> GetAll([FromQuery] bool activeOnly = false)
