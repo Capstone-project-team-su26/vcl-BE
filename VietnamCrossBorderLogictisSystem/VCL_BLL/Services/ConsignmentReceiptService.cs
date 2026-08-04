@@ -432,15 +432,26 @@ namespace VCL_BLL.Services
             return status.Trim().ToUpperInvariant() is "PAID" or "SUCCESS" or "COMPLETED";
         }
 
+        /// <summary>
+        /// Phí đóng gói của một kiện. Thùng tiêu chuẩn tính phí cố định, riêng thùng CUSTOM thì
+        /// PackageFee là đơn giá theo lít nên phải nhân với thể tích — dùng chung helper với
+        /// báo giá để phiếu không lệch số so với tiền khách đã chốt.
+        /// </summary>
         private static decimal GetPackageFee(ReceiptData data, OrderItem item)
         {
-            if (item.PackageConfigurationId.HasValue &&
-                data.PackageConfigurations.TryGetValue(item.PackageConfigurationId.Value, out var config))
+            if (!item.PackageConfigurationId.HasValue ||
+                !data.PackageConfigurations.TryGetValue(item.PackageConfigurationId.Value, out var config))
             {
-                return config.PackageFee;
+                return 0m;
             }
 
-            return 0m;
+            if (string.Equals(config.ConfigCode, "CUSTOM", StringComparison.OrdinalIgnoreCase))
+            {
+                return IPackageConfigurationService.ComputeCustomBoxFee(
+                    config.PackageFee, item.Length ?? 0m, item.Width ?? 0m, item.Height ?? 0m);
+            }
+
+            return config.PackageFee;
         }
 
         private static void Total(RowDescriptor row, string label, string value)
