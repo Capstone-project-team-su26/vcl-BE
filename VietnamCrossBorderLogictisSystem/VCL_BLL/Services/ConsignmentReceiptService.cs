@@ -80,6 +80,22 @@ namespace VCL_BLL.Services
             ["EXPIRED"] = "Đã hết hạn"
         };
 
+        // Phụ phí lưu RuleName do sale đặt, nhiều rule seed sẵn bằng mã tiếng Anh.
+        // Phiếu là chứng từ cho khách nên đổi sang tiếng Việt; mã lạ thì giữ nguyên tên đã lưu.
+        private static readonly Dictionary<string, string> SurchargeLabels = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["WOOD_CRATE"] = "Phí đóng thùng gỗ",
+            ["WOODEN_BOX"] = "Phí đóng thùng gỗ",
+            ["INSPECTION"] = "Phí kiểm hàng",
+            ["PACKING"] = "Phí đóng gói",
+            ["INSURANCE"] = "Phí bảo hiểm hàng hóa",
+            ["FRAGILE"] = "Phụ phí hàng dễ vỡ",
+            ["OVERWEIGHT"] = "Phụ phí quá tải trọng",
+            ["OVERSIZE"] = "Phụ phí quá khổ",
+            ["REMOTE_AREA"] = "Phụ phí vùng xa",
+            ["OTHER"] = "Phụ phí khác"
+        };
+
         private static readonly Dictionary<string, string> PaymentMethodLabels = new(StringComparer.OrdinalIgnoreCase)
         {
             ["SEPAY"] = "Chuyển khoản SePay",
@@ -208,7 +224,14 @@ namespace VCL_BLL.Services
                 .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
                 .Sum(f => f.Amount);
 
+            // Chỉ in phụ phí thực sự phát sinh; rule được lưu cả khi Amount = 0 để giữ lịch sử.
+            var surcharges = fees
+                .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) && f.Amount > 0)
+                .OrderByDescending(f => f.Amount)
+                .ToList();
+
             Payment? payment = null;
+            var paidAmount = 0m;
             if (quotation != null)
             {
                 var invoiceIds = (await _unitOfWork.Repository<Invoice>().GetAllAsync())
@@ -216,10 +239,18 @@ namespace VCL_BLL.Services
                     .Select(i => i.Id)
                     .ToHashSet();
 
-                payment = (await _unitOfWork.Repository<Payment>().GetAllAsync())
+                var payments = (await _unitOfWork.Repository<Payment>().GetAllAsync())
                     .Where(p => p.InvoiceId.HasValue && invoiceIds.Contains(p.InvoiceId.Value))
                     .OrderByDescending(p => p.PaidAt ?? p.CreatedAt)
-                    .FirstOrDefault();
+                    .ToList();
+
+                payment = payments.FirstOrDefault();
+
+                // Đơn trả làm hai đợt (đặt cọc rồi tất toán) nên phải cộng dồn,
+                // lấy mỗi giao dịch gần nhất sẽ báo thiếu đúng bằng phần đã cọc.
+                paidAmount = payments
+                    .Where(p => IsSettledPayment(p.PaymentStatus))
+                    .Sum(p => p.Amount ?? 0m);
             }
 
             User? preparedBy = null;
@@ -263,8 +294,16 @@ namespace VCL_BLL.Services
                     .FirstOrDefault(u => u.Id == checkedInById);
             }
 
+            // OrderItem.ProductType lưu Id của PRODUCT_TYPES; dữ liệu cũ còn lưu thẳng tên nên
+            // chỉ tra bảng khi giá trị là GUID, còn lại in nguyên như trước.
+            var productTypeNames = (await _unitOfWork.Repository<ProductType>().GetAllAsync())
+                .ToDictionary(p => p.Id, p => p.Name);
+
             return new ReceiptData
             {
+                Surcharges = surcharges,
+                ProductTypeNames = productTypeNames,
+                PaidAmount = paidAmount,
                 ItemImages = await DownloadItemImagesAsync(items),
                 ParcelByItemId = parcelByItemId,
                 ServicePricing = servicePricing,
@@ -346,6 +385,53 @@ namespace VCL_BLL.Services
             return "Chưa xác định";
         }
 
+        /// <summary>
+        /// Tên loại hàng để in lên phiếu. ProductType lưu Id của PRODUCT_TYPES từ khi có bảng này;
+        /// đơn cũ lưu thẳng tên nên giá trị không phải GUID thì in nguyên.
+        /// </summary>
+        private static string GetProductTypeName(ReceiptData data, OrderItem item)
+        {
+            if (string.IsNullOrWhiteSpace(item.ProductType))
+            {
+                return "—";
+            }
+
+            var raw = item.ProductType.Trim();
+
+            if (Guid.TryParse(raw, out var productTypeId) &&
+                data.ProductTypeNames.TryGetValue(productTypeId, out var name) &&
+                !string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+
+            return raw;
+        }
+
+        /// <summary>Tên phụ phí cho khách đọc; ưu tiên nhãn tiếng Việt, không có thì dùng tên sale đã đặt.</summary>
+        private static string FormatSurchargeName(QuotationFee fee)
+        {
+            var raw = fee.FeeName?.Trim();
+
+            if (!string.IsNullOrWhiteSpace(raw) && SurchargeLabels.TryGetValue(raw, out var mapped))
+            {
+                return mapped;
+            }
+
+            return string.IsNullOrWhiteSpace(raw) ? "Phụ phí khác" : raw;
+        }
+
+        /// <summary>Giao dịch đã thực sự vào tiền; các trạng thái chờ/thất bại không được tính là đã trả.</summary>
+        private static bool IsSettledPayment(string? status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+            {
+                return false;
+            }
+
+            return status.Trim().ToUpperInvariant() is "PAID" or "SUCCESS" or "COMPLETED";
+        }
+
         private static decimal GetPackageFee(ReceiptData data, OrderItem item)
         {
             if (item.PackageConfigurationId.HasValue &&
@@ -390,7 +476,7 @@ namespace VCL_BLL.Services
             var tax = quotation?.TaxAndDuty ?? 0m;
             var total = freight + (quotation?.ServiceFee ?? 0m) + tax;
 
-            var paidAmount = data.Payment?.Amount ?? 0m;
+            var paidAmount = data.PaidAmount;
             var remaining = Math.Max(0m, total - paidAmount);
 
             return Document.Create(doc =>
@@ -441,9 +527,10 @@ namespace VCL_BLL.Services
 
         private void ComposeHeader(IContainer container, ReceiptData data)
         {
-            var companyName = _configuration["Company:Name"] ?? "CÔNG TY TNHH VIETNAM LOGISTICS";
-            var taxCode = _configuration["Company:TaxCode"] ?? "—";
-            var phone = _configuration["Company:Phone"] ?? "—";
+            // Config để trống vẫn là chuỗi rỗng chứ không null, nên ?? không đủ để rơi về mặc định.
+            var companyName = Fallback(_configuration["Company:Name"], "CÔNG TY TNHH VIETNAM LOGICTIC");
+            var taxCode = Fallback(_configuration["Company:TaxCode"], "—");
+            var phone = Fallback(_configuration["Company:Phone"], "—");
 
             container.Column(col =>
             {
@@ -524,14 +611,14 @@ namespace VCL_BLL.Services
                     row.RelativeItem().Column(x =>
                     {
                         Field(x, "Tuyến hàng", order.Route);
-                        Field(x, "Xác nhận thanh toán", FormatDateTime(order.PaymentConfirmedAt));
+                        Field(x, "Xác nhận thanh toán", FormatDateTime(data.PaymentConfirmedAt));
                         Field(x, "Yêu cầu kiểm hàng", order.RequiresInspection ? "Có" : "Không");
                         Field(x, "Tổng trọng lượng", $"{FormatNumber(totalWeight)} kg");
                     });
                     row.ConstantItem(12);
                     row.RelativeItem().Column(x =>
                     {
-                        Field(x, "Tổng thể tích", $"{FormatNumber(order.TotalVolume ?? 0m)} cm³");
+                        Field(x, "Tổng thể tích", $"{FormatInteger(order.TotalVolume ?? 0m)} cm³");
                         Field(x, "Tổng số kiện", $"{packageCount} kiện");
                         Field(x, "Kho nhập", data.Warehouse?.WarehouseName ?? "Chưa chọn kho ở báo giá");
                         Field(x, "Mã kho", data.Warehouse?.WarehouseCode);
@@ -577,7 +664,7 @@ namespace VCL_BLL.Services
                         {
                             r.ConstantItem(58).Text($"KIỆN {number:D2}").Bold().FontSize(11);
                             r.RelativeItem().Text(item.ProductName ?? "Chưa có tên sản phẩm").Bold().FontSize(11);
-                            r.ConstantItem(110).AlignRight().Text(item.ProductType ?? "—").FontSize(9).Bold().FontColor(Head);
+                            r.ConstantItem(110).AlignRight().Text(GetProductTypeName(data, item)).FontSize(9).Bold().FontColor(Head);
                         });
 
                         card.Item().Padding(7).Row(r =>
@@ -683,10 +770,22 @@ namespace VCL_BLL.Services
                     {
                         x.Item().PaddingBottom(4).Text("Chi tiết báo giá").Bold().FontSize(10);
                         Field(x, "Trạng thái báo giá", MapLabel(QuotationStatusLabels, data.Quotation?.Status));
-                        Field(x, "Cước vận chuyển", FormatCurrency(freight));
+                        Field(x, "Phí vận chuyển quốc tế", FormatCurrency(freight));
                         Field(x, "Phí vận chuyển nội địa", FormatCurrency(data.DomesticFee));
                         Field(x, "Phí dịch vụ", FormatCurrency(serviceFee));
-                        Field(x, "Thuế và nghĩa vụ", FormatCurrency(tax));
+                        // Phụ phí đã được cộng vào ServiceFee, nên in thụt vào dưới dạng diễn giải
+                        // thay vì dòng phí riêng — tránh người đọc cộng thêm lần nữa.
+                        foreach (var surcharge in data.Surcharges)
+                        {
+                            x.Item().PaddingLeft(10).PaddingBottom(1).Text(t =>
+                            {
+                                t.Span($"• {FormatSurchargeName(surcharge)}: ").FontSize(8.5f).FontColor(Muted);
+                                t.Span(FormatCurrency(surcharge.Amount)).FontSize(8.5f).FontColor(Muted);
+                            });
+                        }
+
+                        Field(x, "Thuế và phí nhập khẩu", FormatCurrency(tax));
+
                         x.Item().PaddingTop(4).BorderTop(0.5f).BorderColor(Line).PaddingTop(4).Text(t =>
                         {
                             t.Span("TỔNG BÁO GIÁ: ").Bold().FontSize(10);
@@ -863,9 +962,15 @@ namespace VCL_BLL.Services
                 : $"{warehouse.WarehouseName} · {warehouse.WarehouseCode}";
         }
 
+        private static string Fallback(string? value, string fallback) =>
+            string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
         private static string FormatCurrency(decimal value) => $"{Math.Round(value, 0).ToString("N0", Vi)} ₫";
 
         private static string FormatNumber(decimal value) => Math.Round(value, 2).ToString("N2", Vi);
+
+        /// <summary>Số nguyên có phân tách nghìn — dùng cho thể tích, phần thập phân ở đây không có ý nghĩa.</summary>
+        private static string FormatInteger(decimal value) => Math.Round(value, 0).ToString("N0", Vi);
 
         private static string FormatDate(DateTime? value) => value?.ToString("dd/MM/yyyy", Vi) ?? "—";
 
@@ -903,6 +1008,22 @@ namespace VCL_BLL.Services
             public Payment? Payment { get; init; }
             public User? PreparedBy { get; init; }
             public decimal DomesticFee { get; init; }
+
+            /// <summary>Tổng tiền đã thu của đơn, cộng dồn mọi đợt thanh toán thành công.</summary>
+            public decimal PaidAmount { get; init; }
+
+            /// <summary>Phụ phí phát sinh, đã nằm trong ServiceFee của báo giá.</summary>
+            public List<QuotationFee> Surcharges { get; init; } = new();
+
+            /// <summary>Tên loại hàng theo Id, rỗng nếu bảng PRODUCT_TYPES chưa có dữ liệu.</summary>
+            public Dictionary<Guid, string> ProductTypeNames { get; init; } = new();
+
+            /// <summary>
+            /// Mốc xác nhận thanh toán: ưu tiên cột trên đơn, thiếu thì lấy theo giao dịch.
+            /// Đơn do webhook chốt đôi khi chưa kịp ghi cột nên không được để trống trên phiếu.
+            /// </summary>
+            public DateTime? PaymentConfirmedAt =>
+                Order.PaymentConfirmedAt ?? Payment?.PaidAt ?? Payment?.CreatedAt;
             public Dictionary<Guid, PackageConfiguration> PackageConfigurations { get; init; } = new();
             public Dictionary<Guid, List<byte[]>> ItemImages { get; init; } = new();
 
