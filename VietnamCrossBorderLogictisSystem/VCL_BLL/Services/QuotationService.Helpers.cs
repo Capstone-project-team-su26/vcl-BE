@@ -448,11 +448,22 @@ namespace VCL_BLL.Services
                     {
                         // Thùng CUSTOM: phí theo thể tích khách nhập (dims cm) —
                         // PackageFee là đơn giá cho mỗi 1.000 cm³, làm tròn lên.
+                        var volumeCm3 = (item.Length ?? 0m) * (item.Width ?? 0m) * (item.Height ?? 0m);
+
+                        // Thiếu kích thước thì phí ra 0. Bỏ qua im lặng sẽ cho ra báo giá
+                        // thiếu tiền mà không ai biết, nên chặn ngay như cách xử lý thiếu ProductType.
+                        if (volumeCm3 <= 0m)
+                        {
+                            throw new ArgumentException(
+                                $"Kiện '{item.ProductName}' chọn thùng đóng theo kích thước ({config.ConfigName}) " +
+                                $"nên bắt buộc phải nhập đủ dài, rộng, cao để tính phí đóng gói.");
+                        }
+
                         var feePerBox = VCL_BLL.Interface.IPackageConfigurationService.ComputeCustomBoxFee(
                             config.PackageFee, item.Length ?? 0m, item.Width ?? 0m, item.Height ?? 0m);
-                        if (feePerBox <= 0m) continue;
 
-                        var volumeCm3 = (item.Length ?? 0m) * (item.Width ?? 0m) * (item.Height ?? 0m);
+                        // Đơn giá chưa cấu hình (= 0) là chủ ý của admin, không phải lỗi dữ liệu đơn.
+                        if (feePerBox <= 0m) continue;
                         fees.Add(new QuotationFee
                         {
                             Id = Guid.NewGuid(),
