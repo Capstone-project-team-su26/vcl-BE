@@ -13,6 +13,7 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/conversations")]
+    [Authorize]
     public class ConversationController : ControllerBase
     {
         private readonly IConversationService _conversationService;

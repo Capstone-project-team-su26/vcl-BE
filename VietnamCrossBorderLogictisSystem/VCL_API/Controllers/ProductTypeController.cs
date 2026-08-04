@@ -10,6 +10,7 @@ namespace VCL_API.Controllers
 {
     [Route("api/product-types")]
     [ApiController]
+    [Authorize]
     public class ProductTypeController : ControllerBase
     {
         private readonly IProductTypeService _productTypeService;

@@ -10,6 +10,7 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class GoshipController : ControllerBase
     {
         private readonly IGoshipService _goshipService;
@@ -25,10 +26,17 @@ namespace VCL_API.Controllers
         /// Ước tính và so sánh phí giao hàng của tất cả các hãng vận chuyển qua GoShip Express.
         /// </summary>
         [HttpPost("rates")]
+        [Authorize]
         public async Task<IActionResult> GetRates([FromBody] GoshipRateRequest request, [FromQuery] string? token = null)
         {
             try
             {
+                var userRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrEmpty(userRegion) && !userRegion.Equals("VN", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { message = $"GoShip Express chỉ hỗ trợ dịch vụ vận chuyển chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });
+                }
+
                 var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GoshipSettings:Token"];
                 if (string.IsNullOrEmpty(effectiveToken))
                 {
@@ -53,6 +61,12 @@ namespace VCL_API.Controllers
         {
             try
             {
+                var userRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrEmpty(userRegion) && !userRegion.Equals("VN", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { message = $"GoShip Express chỉ hỗ trợ dịch vụ vận chuyển chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });
+                }
+
                 var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GoshipSettings:Token"];
                 if (string.IsNullOrEmpty(effectiveToken))
                 {

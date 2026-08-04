@@ -10,6 +10,7 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/carriers")]
+    [Authorize]
     public class CarrierController : ControllerBase
     {
         private readonly ICarrierService _carrierService;

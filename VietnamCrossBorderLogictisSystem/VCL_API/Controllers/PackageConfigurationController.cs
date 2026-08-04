@@ -9,6 +9,7 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/package-configurations")]
+    [Authorize]
     public class PackageConfigurationController : ControllerBase
     {
         private readonly IPackageConfigurationService _packageConfigService;

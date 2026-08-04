@@ -10,6 +10,7 @@ namespace VCL_API.Controllers
 {
     [ApiController]
     [Route("api/ghn")]
+    [Authorize]
     public class GHNController : ControllerBase
     {
         private readonly IGHNService _ghnService;
@@ -30,6 +31,12 @@ namespace VCL_API.Controllers
         {
             try
             {
+                var userRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrEmpty(userRegion) && !userRegion.Equals("VN", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { message = $"Giao Hàng Nhanh (GHN) chỉ hỗ trợ giao hàng chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });
+                }
+
                 var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GHNSettings:Token"];
                 var effectiveShopId = shopId ?? int.Parse(_configuration["GHNSettings:ShopId"] ?? "6575712");
 
@@ -56,6 +63,12 @@ namespace VCL_API.Controllers
         {
             try
             {
+                var userRegion = User.FindFirst("region")?.Value;
+                if (!string.IsNullOrEmpty(userRegion) && !userRegion.Equals("VN", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { message = $"Giao Hàng Nhanh (GHN) chỉ hỗ trợ giao hàng chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });
+                }
+
                 var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GHNSettings:Token"];
                 var effectiveShopId = shopId ?? int.Parse(_configuration["GHNSettings:ShopId"] ?? "6575712");
 
