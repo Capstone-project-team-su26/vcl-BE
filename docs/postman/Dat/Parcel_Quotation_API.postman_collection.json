@@ -512,7 +512,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"parcelId\": \"{{parcelId}}\",\n    \"warehouseId\": \"{{warehouseId}}\",\n    \"preferredZoneId\": \"{{preferredZoneId}}\",\n    \"note\": \"Gợi ý cho kiện hàng dễ vỡ\"\n}"
+							"raw": "{\n    \"parcelId\": \"{{parcelId}}\",\n    \"warehouseId\": \"{{warehouseId}}\",\n    \"preferredZoneId\": \"{{preferredZoneId}}\"\n}"
 						},
 						"url": {
 							"raw": "{{baseUrl}}/api/ai/warehouse/putaway-suggestions",

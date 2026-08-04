@@ -314,8 +314,23 @@ namespace VCL_BLL.Services
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var allParcels = await parcelRepo.GetAllAsync();
             var parcels = allParcels.Where(p => parcelIds.Contains(p.Id)).ToList();
+            // Kiện đã rời kho nguồn nên phải nhả chỗ trong ô kệ. Thiếu bước này thì
+            // Bin.CurrentVolume chỉ tăng mà không bao giờ giảm, lâu dần mọi ô đều trông như đã đầy.
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var allBins = await binRepo.GetAllAsync();
+            var binsById = allBins.ToDictionary(b => b.Id);
+
             foreach (var parcel in parcels)
             {
+                if (parcel.BinId.HasValue && binsById.TryGetValue(parcel.BinId.Value, out var sourceBin))
+                {
+                    var released = (parcel.Length ?? 0m) * (parcel.Width ?? 0m) * (parcel.Height ?? 0m);
+                    var remaining = (sourceBin.CurrentVolume ?? 0m) - released;
+                    sourceBin.CurrentVolume = remaining < 0m ? 0m : remaining;
+                    binRepo.Update(sourceBin);
+                }
+
+                parcel.BinId = null;
                 parcel.PackageStatus = "ARRIVED_DESTINATION";
                 parcelRepo.Update(parcel);
             }

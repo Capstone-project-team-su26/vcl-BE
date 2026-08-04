@@ -13,8 +13,6 @@ public class PutawaySuggestionRequest
     public Guid WarehouseId { get; set; }
 
     public Guid? PreferredZoneId { get; set; }
-
-    public string? Note { get; set; }
 }
 
 public class PutawaySuggestionResponseDto

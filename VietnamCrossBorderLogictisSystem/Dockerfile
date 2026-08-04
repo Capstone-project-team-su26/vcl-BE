@@ -14,6 +14,13 @@ RUN dotnet publish VCL_API/VCL_API.csproj -c Release -o /app/publish /p:UseAppHo
 
 # ---- Runtime stage ----
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+
+# QuestPDF cần font hệ thống để render phiếu PDF; ảnh aspnet không kèm font nào,
+# thiếu font thì chữ tiếng Việt ra ô vuông.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-liberation fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY --from=build /app/publish .
 
