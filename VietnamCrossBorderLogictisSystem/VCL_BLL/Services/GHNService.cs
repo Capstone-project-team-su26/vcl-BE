@@ -33,7 +33,7 @@ namespace VCL_BLL.Services
 
         public async Task<GHNOrderResponseData> CreateOrderAsync(GHNOrderRequest request, string token, int shopId)
         {
-            var baseUrl = _configuration["GHNSettings:ApiUrl"] ?? "https://online-gateway.ghn.vn/shiip/public-api/v2/";
+            var baseUrl = _configuration["GHNSettings:ApiUrl"] ?? "https://dev-online-gateway.ghn.vn/shiip/public-api/v2/";
             var endpoint = $"{baseUrl.TrimEnd('/')}/shipping-order/create";
 
             // Enforce max insurance value rule (5,000,000 VNĐ)
@@ -72,7 +72,7 @@ namespace VCL_BLL.Services
 
         public async Task<GHNFeeResponseData> CalculateFeeAsync(GHNCalculateFeeRequest request, string token, int shopId)
         {
-            var baseUrl = _configuration["GHNSettings:ApiUrl"] ?? "https://online-gateway.ghn.vn/shiip/public-api/v2/";
+            var baseUrl = _configuration["GHNSettings:ApiUrl"] ?? "https://dev-online-gateway.ghn.vn/shiip/public-api/v2/";
             var endpoint = $"{baseUrl.TrimEnd('/')}/shipping-order/fee";
 
             if (request.InsuranceValue > 5000000)
