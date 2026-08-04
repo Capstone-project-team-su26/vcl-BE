@@ -909,7 +909,7 @@ namespace VCL_BLL.Services
                     throw new ArgumentException($"Loại hàng '{reqItem.ProductType}' chưa được cấu hình thuế nhập khẩu hợp lệ.");
                 }
 
-                var itemImportTax = Math.Round(lineTotal * category.ImportTaxRate.Value, 2);
+                var itemImportTax = Math.Round(lineTotal * category.ImportTaxRate.Value, 0);
                 importTax += itemImportTax;
 
                 if (itemImportTax > 0)
@@ -1038,7 +1038,7 @@ namespace VCL_BLL.Services
                 vatRatePercent = vatRule.Value <= 1.0m ? vatRule.Value * 100m : vatRule.Value;
             }
 
-            decimal vatAmount = Math.Round((request.PurchaseFee + request.ShippingFee + totalAdditionalFees) * (vatRatePercent / 100m), 2);
+            decimal vatAmount = Math.Round((request.PurchaseFee + request.ShippingFee + totalAdditionalFees) * (vatRatePercent / 100m), 0);
             if (vatAmount > 0)
             {
                 quotationFees.Add(new QuotationFee

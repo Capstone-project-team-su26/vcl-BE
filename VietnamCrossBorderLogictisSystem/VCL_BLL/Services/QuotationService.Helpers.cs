@@ -296,7 +296,7 @@ namespace VCL_BLL.Services
                 var volume = length * width * height;
                 var volumetricWeight = Math.Round(volume / divisor, 4);
                 var chargeableWeight = Math.Max(actualWeight, volumetricWeight);
-                var shippingFee = Math.Round(chargeableWeight * freightRate, 2);
+                var shippingFee = Math.Round(chargeableWeight * freightRate, 0);
 
                 result.TotalWeight += actualWeight;
                 result.TotalVolume += volume;
@@ -371,7 +371,7 @@ namespace VCL_BLL.Services
                     throw new ArgumentException($"Loại hàng '{item.ProductType}' chưa được cấu hình thuế nhập khẩu hợp lệ.");
                 }
 
-                var itemImportTax = Math.Round((item.DeclaredValue ?? 0m) * category.ImportTaxRate.Value, 2);
+                var itemImportTax = Math.Round((item.DeclaredValue ?? 0m) * category.ImportTaxRate.Value, 0);
                 importTax += itemImportTax;
 
                 if (itemImportTax > 0)
@@ -391,7 +391,7 @@ namespace VCL_BLL.Services
             }
 
             var vatRatePercent = GetVatRatePercent(activeRules);
-            decimal vatAmount = Math.Round((estimatedFreightCharge + serviceFee) * (vatRatePercent / 100m), 2);
+            decimal vatAmount = Math.Round((estimatedFreightCharge + serviceFee) * (vatRatePercent / 100m), 0);
             if (vatAmount > 0)
             {
                 taxFees.Add(new QuotationFee

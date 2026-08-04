@@ -261,7 +261,7 @@ namespace VCL_BLL.Services
                     Height = p.Height ?? 0m,
                     VolumetricWeight = pVolWeight,
                     ChargeableWeight = pChargeable,
-                    ShippingFee = Math.Round(pChargeable * pRate, 2)
+                    ShippingFee = Math.Round(pChargeable * pRate, 0)
                 });
             }
 
@@ -365,7 +365,7 @@ namespace VCL_BLL.Services
                     Height = p.Height ?? 0m,
                     VolumetricWeight = pVolWeight,
                     ChargeableWeight = pChargeable,
-                    ShippingFee = Math.Round(pChargeable * pRate, 2)
+                    ShippingFee = Math.Round(pChargeable * pRate, 0)
                 });
             }
 

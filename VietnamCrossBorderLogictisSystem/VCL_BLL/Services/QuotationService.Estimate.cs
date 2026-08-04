@@ -165,11 +165,11 @@ namespace VCL_BLL.Services
 
                 if (matchedPricing != null && matchedPricing.Price.HasValue)
                 {
-                    estimatedFreightCharge = Math.Round(chargeableWeight * matchedPricing.Price.Value, 2);
+                    estimatedFreightCharge = Math.Round(chargeableWeight * matchedPricing.Price.Value, 0);
                 }
                 else
                 {
-                    estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 2);
+                    estimatedFreightCharge = Math.Round(chargeableWeight * freightRate, 0);
                 }
 
                 if (estimatedFreightCharge > 0)

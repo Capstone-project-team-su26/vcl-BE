@@ -149,7 +149,7 @@ namespace VCL_BLL.Services
                 var minimumWeight = GetMinimumWeight(activeRules, matchedPricing);
                 netWeight = Math.Max(totalActualWeight, Math.Max(totalVolumetricWeight, minimumWeight));
 
-                estimatedFreightCharge = Math.Round(netWeight * freightRate, 2);
+                estimatedFreightCharge = Math.Round(netWeight * freightRate, 0);
 
                 if (estimatedFreightCharge > 0)
                 {
