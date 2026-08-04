@@ -11,7 +11,7 @@ namespace VCL_API.Controllers
 {
     [Route("api/parcels")]
     [ApiController]
-    [Authorize(Roles = "Staff,WarehouseStaff")]
+    [Authorize]
     public class ParcelController : ControllerBase
     {
         private readonly IParcelService _parcelService;
@@ -32,6 +32,7 @@ namespace VCL_API.Controllers
         /// <response code="403">Không có quyền thao tác (yêu cầu role Staff hoặc WarehouseStaff)</response>
         /// <response code="404">Không tìm thấy yêu cầu ký gửi tương ứng</response>
         [HttpPost("check-in")]
+        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         [ProducesResponseType(typeof(ParcelCheckInResponse), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
@@ -77,6 +78,7 @@ namespace VCL_API.Controllers
         /// <response code="403">Không có quyền truy cập (yêu cầu role Staff hoặc WarehouseStaff)</response>
         /// <response code="404">Không tìm thấy kiện hàng</response>
         [HttpGet("{parcelId:guid}")]
+        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Sale,SALE,Customer,CUSTOMER")]
         [ProducesResponseType(typeof(ParcelDetailResponse), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(403)]
@@ -106,6 +108,7 @@ namespace VCL_API.Controllers
         /// <response code="401">Chưa đăng nhập</response>
         /// <response code="403">Không có quyền truy cập (yêu cầu role Staff hoặc WarehouseStaff)</response>
         [HttpGet("pending-putaway")]
+        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Sale,SALE")]
         [ProducesResponseType(typeof(PaginatedResponse<PendingPutawayParcelDto>), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(403)]
@@ -145,6 +148,7 @@ namespace VCL_API.Controllers
         /// <response code="403">Không có quyền thao tác (yêu cầu role Staff hoặc WarehouseStaff)</response>
         /// <response code="404">Không tìm thấy kiện hàng hoặc vị trí kho</response>
         [HttpPut("{parcelId}/put-away")]
+        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         [ProducesResponseType(typeof(ParcelPutAwayResponse), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
