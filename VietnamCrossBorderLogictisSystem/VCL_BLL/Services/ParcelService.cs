@@ -861,6 +861,46 @@ namespace VCL_BLL.Services
                 // Chuyển trạng thái đơn sang WAREHOUSE_RECEIVED khi đã hoàn tất put-away và có inventory
                 order.Status = "WAREHOUSE_RECEIVED";
                 orderRepo.Update(order);
+
+                var inventoryForParcel = (await inventoryRepo.GetAllAsync())
+                    .FirstOrDefault(i => i.ParcelId == parcel.Id);
+
+                // Nhật ký nhập kho. Trước đây chỉ điều chuyển nội bộ mới được ghi nên
+                // sổ vận động không dựng lại được lịch sử hàng vào/ra.
+                if (inventoryForParcel != null)
+                {
+                    await _unitOfWork.Repository<InventoryMovement>().AddAsync(new InventoryMovement
+                    {
+                        Id = Guid.NewGuid(),
+                        InventoryId = inventoryForParcel.Id,
+                        ParcelId = parcel.Id,
+                        FromBinId = null,
+                        ToBinId = bin.Id,
+                        MovementType = "INBOUND",
+                        Reason = $"Nhập kho kiện {parcel.PackageCode} vào ô {bin.BinCode}",
+                        Quantity = inventoryForParcel.Quantity,
+                        MovedById = parcel.CheckedInById,
+                        MovedAt = putAwayTime
+                    });
+                }
+
+                // Lịch sử xếp dỡ cho mô hình gợi ý vị trí. Bảng này trước đây chỉ có code đọc
+                // nên AI luôn học từ dữ liệu giả; phải ghi ở đây thì gợi ý mới khá dần lên.
+                var categoryItem = (await _unitOfWork.Repository<OrderItem>().GetAllAsync())
+                    .FirstOrDefault(i => i.Id == parcel.OrderItemId || i.OrderId == order.Id);
+
+                await _unitOfWork.Repository<PutAwayHistory>().AddAsync(new PutAwayHistory
+                {
+                    Id = Guid.NewGuid(),
+                    WarehouseId = warehouse.Id,
+                    ZoneId = zone.Id,
+                    ShelfId = shelf.Id,
+                    BinId = bin.Id,
+                    ParcelWeight = parcel.ActualWeight ?? 0m,
+                    Volume = parcelVolume,
+                    Category = string.IsNullOrWhiteSpace(categoryItem?.ProductName) ? "General" : categoryItem.ProductName,
+                    ChosenAt = putAwayTime
+                });
             }
 
             await _unitOfWork.SaveChangesAsync();

@@ -80,8 +80,11 @@ namespace VCL_BLL.Services
             decimal domesticShippingFee = 0m;
 
             var parcelRepo = _unitOfWork.Repository<Parcel>();
+            // Kiện gốc đã tách vẫn nằm trong bảng với trạng thái SPLIT; kiện con đã thay thế nó.
+            // Không loại ra thì đơn từng tách kiện bị tính cước hai lần.
             var parcels = (await parcelRepo.GetAllAsync())
-                .Where(p => p.ConsignmentId == orderId)
+                .Where(p => p.ConsignmentId == orderId
+                            && !string.Equals(p.PackageStatus, "SPLIT", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             decimal freightRate;
