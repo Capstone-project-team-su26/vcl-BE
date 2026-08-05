@@ -1946,6 +1946,28 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("rejection_reason");
             entity.Property(e => e.ReleasedBy).HasColumnName("released_by");
             entity.Property(e => e.ReleasedAt).HasColumnName("released_at");
+            entity.Property(e => e.CarrierId).HasColumnName("carrier_id");
+            entity.Property(e => e.DriverName)
+                .HasMaxLength(255)
+                .HasColumnName("driver_name");
+            entity.Property(e => e.DriverPhone)
+                .HasMaxLength(50)
+                .HasColumnName("driver_phone");
+            entity.Property(e => e.VehicleNumber)
+                .HasMaxLength(100)
+                .HasColumnName("vehicle_number");
+            entity.Property(e => e.TrackingNumber)
+                .HasMaxLength(100)
+                .HasColumnName("tracking_number");
+            entity.Property(e => e.HandoverNotes)
+                .HasMaxLength(500)
+                .HasColumnName("handover_notes");
+            entity.Property(e => e.HandoverAt).HasColumnName("handover_at");
+
+            entity.HasOne(d => d.Carrier).WithMany()
+                .HasForeignKey(d => d.CarrierId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WRO_CARRIER");
 
             entity.HasOne(d => d.Customer).WithMany(p => p.WroRequests)
                 .HasForeignKey(d => d.CustomerId)
@@ -2009,6 +2031,49 @@ public partial class VCLDBContext : DbContext
                 new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000006"), Name = "Sách", IsActive = true, ImportTaxRate = 0.05m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
                 new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000007"), Name = "Đồ chơi", IsActive = true, ImportTaxRate = 0.05m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
                 new ProductType { Id = new Guid("11111111-0000-0000-0000-000000000008"), Name = "Đồ gia dụng", IsActive = true, ImportTaxRate = 0.08m, CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+            );
+        });
+
+        modelBuilder.Entity<PricingRule>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PRICING_RULES");
+            entity.ToTable("PRICING_RULES");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.RuleCode).HasMaxLength(50).HasColumnName("rule_code");
+            entity.Property(e => e.RuleName).HasMaxLength(150).HasColumnName("rule_name");
+            entity.Property(e => e.RuleType).HasMaxLength(50).HasColumnName("rule_type");
+            entity.Property(e => e.CalculationType).HasMaxLength(50).HasColumnName("calculation_type");
+            entity.Property(e => e.Value).HasColumnType("decimal(18, 2)").HasColumnName("value");
+            entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");
+            entity.Property(e => e.Description).HasMaxLength(1000).HasColumnName("description");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+
+            entity.HasData(
+                new PricingRule
+                {
+                    Id = new Guid("e9b3a1d4-8f2c-4e61-9c35-1a2b3c4d5e6f"),
+                    RuleCode = "PURCHASE_FEE_PERCENT",
+                    RuleName = "Phí dịch vụ mua hộ (5%)",
+                    RuleType = "PURCHASE_FEE",
+                    CalculationType = "PERCENTAGE",
+                    Value = 5.00m,
+                    Status = "ACTIVE",
+                    Description = "Phí dịch vụ mua hộ tiêu chuẩn (5% tổng giá trị sản phẩm)",
+                    CreatedAt = new DateTime(2026, 8, 5, 0, 0, 0, DateTimeKind.Utc)
+                },
+                new PricingRule
+                {
+                    Id = new Guid("f1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c"),
+                    RuleCode = "PURCHASE_FEE_FIXED",
+                    RuleName = "Phí dịch vụ mua hộ cố định (50.000 VNĐ)",
+                    RuleType = "PURCHASE_FEE",
+                    CalculationType = "FIXED",
+                    Value = 50000.00m,
+                    Status = "ACTIVE",
+                    Description = "Phí dịch vụ mua hộ cố định 50.000 VNĐ mỗi đơn hàng",
+                    CreatedAt = new DateTime(2026, 8, 5, 0, 0, 0, DateTimeKind.Utc)
+                }
             );
         });
 

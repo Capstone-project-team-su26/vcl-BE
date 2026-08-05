@@ -94,6 +94,12 @@ namespace VCL_BLL.DTOs
         public string? ExportReason { get; set; }
         public Guid? CarrierId { get; set; }
         public string CarrierName { get; set; } = string.Empty;
+        public string? DriverName { get; set; }
+        public string? DriverPhone { get; set; }
+        public string? VehicleNumber { get; set; }
+        public string? TrackingNumber { get; set; }
+        public string? HandoverNotes { get; set; }
+        public DateTime? HandoverAt { get; set; }
         public decimal? ShippingFee { get; set; }
         public List<string> CustomsDocumentUrls { get; set; } = new();
         public string? Note { get; set; }

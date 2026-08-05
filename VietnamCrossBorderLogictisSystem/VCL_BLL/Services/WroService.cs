@@ -319,6 +319,14 @@ namespace VCL_BLL.Services
                 totalQuantity += item.Quantity;
             }
 
+            string carrierName = string.Empty;
+            if (wroRequest.CarrierId.HasValue)
+            {
+                var carrierRepo = _unitOfWork.Repository<Carrier>();
+                var carrier = await carrierRepo.GetByIdAsync(wroRequest.CarrierId.Value);
+                carrierName = carrier?.CarrierName ?? string.Empty;
+            }
+
             return new WroDetailResponseDto
             {
                 WroId = wroRequest.Id,
@@ -333,6 +341,14 @@ namespace VCL_BLL.Services
                 DeliveryAddress = wroRequest.DeliveryAddress ?? string.Empty,
                 Status = wroRequest.Status ?? string.Empty,
                 ShelfCode = wroRequest.ShelfCode,
+                CarrierId = wroRequest.CarrierId,
+                CarrierName = carrierName,
+                DriverName = wroRequest.DriverName,
+                DriverPhone = wroRequest.DriverPhone,
+                VehicleNumber = wroRequest.VehicleNumber,
+                TrackingNumber = wroRequest.TrackingNumber,
+                HandoverNotes = wroRequest.HandoverNotes,
+                HandoverAt = wroRequest.HandoverAt,
                 Note = wroRequest.RejectionReason,
                 CreatedAt = wroRequest.CreatedAt ?? DateTime.UtcNow,
                 TotalQuantity = totalQuantity,
@@ -1025,7 +1041,16 @@ namespace VCL_BLL.Services
             var carrier = await carrierRepo.GetByIdAsync(request.CarrierId);
             string carrierName = carrier?.CarrierName ?? "Đơn vị vận chuyển";
 
+            var now = DateTime.UtcNow;
+            wroRequest.CarrierId = request.CarrierId;
+            wroRequest.DriverName = request.DriverName;
+            wroRequest.DriverPhone = request.DriverPhone;
+            wroRequest.VehicleNumber = request.VehicleNumber;
+            wroRequest.TrackingNumber = request.TrackingNumber;
+            wroRequest.HandoverNotes = request.HandoverNotes;
+            wroRequest.HandoverAt = now;
             wroRequest.Status = "HANDED_OVER";
+
             wroRepo.Update(wroRequest);
             await _unitOfWork.SaveChangesAsync();
 
@@ -1035,11 +1060,11 @@ namespace VCL_BLL.Services
                 WroCode = wroRequest.WroCode,
                 Status = wroRequest.Status,
                 CarrierName = carrierName,
-                DriverName = request.DriverName,
-                DriverPhone = request.DriverPhone,
-                VehicleNumber = request.VehicleNumber,
-                TrackingNumber = request.TrackingNumber,
-                HandoverAt = DateTime.UtcNow
+                DriverName = wroRequest.DriverName,
+                DriverPhone = wroRequest.DriverPhone,
+                VehicleNumber = wroRequest.VehicleNumber,
+                TrackingNumber = wroRequest.TrackingNumber,
+                HandoverAt = now
             };
         }
 
