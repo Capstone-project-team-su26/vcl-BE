@@ -1946,6 +1946,28 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("rejection_reason");
             entity.Property(e => e.ReleasedBy).HasColumnName("released_by");
             entity.Property(e => e.ReleasedAt).HasColumnName("released_at");
+            entity.Property(e => e.CarrierId).HasColumnName("carrier_id");
+            entity.Property(e => e.DriverName)
+                .HasMaxLength(255)
+                .HasColumnName("driver_name");
+            entity.Property(e => e.DriverPhone)
+                .HasMaxLength(50)
+                .HasColumnName("driver_phone");
+            entity.Property(e => e.VehicleNumber)
+                .HasMaxLength(100)
+                .HasColumnName("vehicle_number");
+            entity.Property(e => e.TrackingNumber)
+                .HasMaxLength(100)
+                .HasColumnName("tracking_number");
+            entity.Property(e => e.HandoverNotes)
+                .HasMaxLength(500)
+                .HasColumnName("handover_notes");
+            entity.Property(e => e.HandoverAt).HasColumnName("handover_at");
+
+            entity.HasOne(d => d.Carrier).WithMany()
+                .HasForeignKey(d => d.CarrierId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WRO_CARRIER");
 
             entity.HasOne(d => d.Customer).WithMany(p => p.WroRequests)
                 .HasForeignKey(d => d.CustomerId)
