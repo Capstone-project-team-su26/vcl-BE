@@ -155,6 +155,14 @@ namespace VCL_BLL.Services
 
         private CarrierDto MapToDto(Carrier carrier)
         {
+            string contactPerson = !string.IsNullOrWhiteSpace(carrier.CarrierName)
+                ? $"Đại diện {carrier.CarrierName}"
+                : "Tài xế / Đại diện nhà xe";
+
+            string contactPhone = !string.IsNullOrWhiteSpace(carrier.ContactPhone)
+                ? carrier.ContactPhone
+                : "0901234567";
+
             return new CarrierDto
             {
                 Id = carrier.Id,
@@ -163,7 +171,8 @@ namespace VCL_BLL.Services
                 CarrierType = carrier.CarrierType,
                 ApiUrl = carrier.ApiUrl,
                 ContactEmail = carrier.ContactEmail,
-                ContactPhone = carrier.ContactPhone,
+                ContactPhone = contactPhone,
+                ContactPerson = contactPerson,
                 SupportedShippingMethods = carrier.SupportedShippingMethods,
                 SupportedRegions = carrier.SupportedRegions,
                 IsActive = carrier.IsActive,

@@ -1126,11 +1126,13 @@ namespace VCL_BLL.Services
                 WroId = wroRequest.Id,
                 WroCode = wroRequest.WroCode,
                 Status = wroRequest.Status,
+                CarrierId = wroRequest.CarrierId,
                 CarrierName = carrierName,
                 DriverName = wroRequest.DriverName,
                 DriverPhone = wroRequest.DriverPhone,
                 VehicleNumber = wroRequest.VehicleNumber,
                 TrackingNumber = wroRequest.TrackingNumber,
+                HandoverNotes = wroRequest.HandoverNotes,
                 HandoverAt = now
             };
         }

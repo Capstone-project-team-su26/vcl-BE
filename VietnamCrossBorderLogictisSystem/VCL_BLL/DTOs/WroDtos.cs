@@ -262,6 +262,18 @@ namespace VCL_BLL.DTOs
         public string? HandoverNotes { get; set; }
     }
 
+    public class HandoverDetailsDto
+    {
+        public Guid? CarrierId { get; set; }
+        public string CarrierName { get; set; } = string.Empty;
+        public string? DriverName { get; set; }
+        public string? DriverPhone { get; set; }
+        public string? VehicleNumber { get; set; }
+        public string? TrackingNumber { get; set; }
+        public string? HandoverNotes { get; set; }
+        public DateTime HandoverAt { get; set; }
+    }
+
     public class ReleaseHandoverResponseDto
     {
         public Guid WroId { get; set; }
@@ -273,12 +285,26 @@ namespace VCL_BLL.DTOs
             : string.Empty;
 
         public string Status { get; set; } = string.Empty;
+        public Guid? CarrierId { get; set; }
         public string CarrierName { get; set; } = string.Empty;
         public string? DriverName { get; set; }
         public string? DriverPhone { get; set; }
         public string? VehicleNumber { get; set; }
         public string? TrackingNumber { get; set; }
+        public string? HandoverNotes { get; set; }
         public DateTime HandoverAt { get; set; }
+
+        public HandoverDetailsDto HandoverDetails => new HandoverDetailsDto
+        {
+            CarrierId = CarrierId,
+            CarrierName = CarrierName,
+            DriverName = DriverName,
+            DriverPhone = DriverPhone,
+            VehicleNumber = VehicleNumber,
+            TrackingNumber = TrackingNumber,
+            HandoverNotes = HandoverNotes,
+            HandoverAt = HandoverAt
+        };
     }
 
     public class GetWroListRequestDto

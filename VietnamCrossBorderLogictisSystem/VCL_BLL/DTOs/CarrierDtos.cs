@@ -44,6 +44,11 @@ namespace VCL_BLL.DTOs
         public string? ContactPhone { get; set; }
 
         /// <summary>
+        /// Tên người liên hệ / Đại diện / Tài xế mặc định của đơn vị vận chuyển (tự động gợi ý cho Mobile App).
+        /// </summary>
+        public string? ContactPerson { get; set; }
+
+        /// <summary>
         /// Phương thức vận chuyển hỗ trợ (ví dụ: Hỏa tốc, Tiết kiệm, Đường bộ, Đường hàng không).
         /// </summary>
         public string? SupportedShippingMethods { get; set; }
