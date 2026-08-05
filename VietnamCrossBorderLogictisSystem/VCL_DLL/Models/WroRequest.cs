@@ -49,6 +49,8 @@ public partial class WroRequest
 
     public DateTime? HandoverAt { get; set; }
 
+    public string CustomsDocumentUrls { get; set; }
+
     public virtual Carrier Carrier { get; set; }
 
     public virtual ShippingRoute ShippingRoute { get; set; }

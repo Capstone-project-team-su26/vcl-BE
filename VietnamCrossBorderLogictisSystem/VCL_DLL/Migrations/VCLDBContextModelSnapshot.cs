@@ -3656,6 +3656,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_id");
 
+                    b.Property<string>("CustomsDocumentUrls")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("customs_document_urls");
+
                     b.Property<string>("DeliveryAddress")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("delivery_address");

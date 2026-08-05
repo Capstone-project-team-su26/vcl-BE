@@ -156,6 +156,10 @@ namespace VCL_BLL.Services
                 initialDeliveryAddress = customer.Address ?? string.Empty;
             }
 
+            string? customsDocUrlsStr = request.CustomsDocumentUrls != null && request.CustomsDocumentUrls.Any()
+                ? string.Join(";", request.CustomsDocumentUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+                : null;
+
             var wroCode = $"WRO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
             var wroRequest = new WroRequest
             {
@@ -168,6 +172,7 @@ namespace VCL_BLL.Services
                 DeliveryAddress = initialDeliveryAddress,
                 CarrierId = request.CarrierId,
                 ShelfCode = request.ShelfCode,
+                CustomsDocumentUrls = customsDocUrlsStr,
                 Status = "RELEASE_PENDING",
                 CreatedAt = DateTime.UtcNow
             };
@@ -247,6 +252,10 @@ namespace VCL_BLL.Services
                 carrierName = carrier?.CarrierName ?? string.Empty;
             }
 
+            var customsUrlsList = !string.IsNullOrWhiteSpace(wroRequest.CustomsDocumentUrls)
+                ? wroRequest.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList()
+                : new List<string>();
+
             // 5. Trả về thông tin WRO kết quả
             return new WroResponseDto
             {
@@ -261,6 +270,7 @@ namespace VCL_BLL.Services
                 ShelfCode = wroRequest.ShelfCode,
                 CarrierId = wroRequest.CarrierId,
                 CarrierName = carrierName,
+                CustomsDocumentUrls = customsUrlsList,
                 CreatedAt = wroRequest.CreatedAt ?? DateTime.UtcNow,
                 Items = resultItems
             };
@@ -434,6 +444,10 @@ namespace VCL_BLL.Services
                 shippingRouteName = route?.RouteName ?? route?.RouteCode ?? string.Empty;
             }
 
+            var customsUrlsListDetail = !string.IsNullOrWhiteSpace(wroRequest.CustomsDocumentUrls)
+                ? wroRequest.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList()
+                : new List<string>();
+
             return new WroDetailResponseDto
             {
                 WroId = wroRequest.Id,
@@ -453,6 +467,7 @@ namespace VCL_BLL.Services
                 CarrierName = carrierName,
                 ShippingRouteId = wroRequest.ShippingRouteId,
                 ShippingRoute = shippingRouteName,
+                CustomsDocumentUrls = customsUrlsListDetail,
                 DriverName = wroRequest.DriverName,
                 DriverPhone = wroRequest.DriverPhone,
                 VehicleNumber = wroRequest.VehicleNumber,

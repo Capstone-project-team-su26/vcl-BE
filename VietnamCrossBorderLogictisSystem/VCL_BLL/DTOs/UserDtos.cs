@@ -70,8 +70,9 @@ namespace VCL_BLL.DTOs
         [Required(ErrorMessage = "Số điện thoại không được để trống.")]
         public string Phone { get; set; }
 
-        // Optional, only used for Customers
-        public string Country { get; set; }
-        public string Address { get; set; }
+        // Optional
+        public string? Country { get; set; }
+        public string? Address { get; set; }
+        public string? Region { get; set; }
     }
 }
