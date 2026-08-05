@@ -108,24 +108,45 @@ namespace VCL_BLL.Services
                 }
             }
 
-            string initialReceiverName = string.Empty;
-            string initialReceiverPhone = string.Empty;
-            string initialDeliveryAddress = string.Empty;
+            // Kiểm tra thông tin người nhận của các đơn hàng chứa kiện
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var orderReceivers = new List<(string Name, string Phone, string Address)>();
 
-            if (request.Items.Any())
+            foreach (var item in request.Items)
             {
-                var firstInv = await inventoryRepo.GetByIdAsync(request.Items.First().InventoryId);
-                if (firstInv != null && firstInv.OrderId != Guid.Empty)
+                var inv = await inventoryRepo.GetByIdAsync(item.InventoryId);
+                if (inv != null && inv.OrderId != Guid.Empty)
                 {
-                    var orderRepo = _unitOfWork.Repository<Order>();
-                    var order = await orderRepo.GetByIdAsync(firstInv.OrderId);
-                    if (order != null)
+                    var order = await orderRepo.GetByIdAsync(inv.OrderId);
+                    if (order != null && (!string.IsNullOrWhiteSpace(order.ReceiverName) || !string.IsNullOrWhiteSpace(order.ReceiverPhone)))
                     {
-                        initialReceiverName = order.ReceiverName ?? string.Empty;
-                        initialReceiverPhone = order.ReceiverPhone ?? string.Empty;
-                        initialDeliveryAddress = order.ReceiverAddress ?? string.Empty;
+                        var name = order.ReceiverName?.Trim() ?? string.Empty;
+                        var phone = order.ReceiverPhone?.Trim() ?? string.Empty;
+                        var addr = order.ReceiverAddress?.Trim() ?? string.Empty;
+
+                        if (!orderReceivers.Any(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase) && string.Equals(r.Phone, phone, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            orderReceivers.Add((name, phone, addr));
+                        }
                     }
                 }
+            }
+
+            if (orderReceivers.Count > 1 && string.IsNullOrWhiteSpace(request.ReceiverName))
+            {
+                throw new ArgumentException("Không thể gom hàng của 2 người nhận khác nhau vào cùng 1 phiếu xuất.");
+            }
+
+            string initialReceiverName = request.ReceiverName?.Trim() ?? string.Empty;
+            string initialReceiverPhone = request.ReceiverPhone?.Trim() ?? string.Empty;
+            string initialDeliveryAddress = request.ReceiverAddress?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(initialReceiverName) && orderReceivers.Any())
+            {
+                var firstRec = orderReceivers.First();
+                initialReceiverName = firstRec.Name;
+                initialReceiverPhone = firstRec.Phone;
+                initialDeliveryAddress = firstRec.Address;
             }
 
             if (string.IsNullOrWhiteSpace(initialReceiverName) && customer != null)
@@ -145,6 +166,7 @@ namespace VCL_BLL.Services
                 ReceiverName = initialReceiverName,
                 ReceiverPhone = initialReceiverPhone,
                 DeliveryAddress = initialDeliveryAddress,
+                CarrierId = request.CarrierId,
                 ShelfCode = request.ShelfCode,
                 Status = "RELEASE_PENDING",
                 CreatedAt = DateTime.UtcNow
@@ -217,6 +239,14 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
+            string carrierName = string.Empty;
+            if (wroRequest.CarrierId.HasValue)
+            {
+                var carrierRepo = _unitOfWork.Repository<Carrier>();
+                var carrier = await carrierRepo.GetByIdAsync(wroRequest.CarrierId.Value);
+                carrierName = carrier?.CarrierName ?? string.Empty;
+            }
+
             // 5. Trả về thông tin WRO kết quả
             return new WroResponseDto
             {
@@ -226,8 +256,11 @@ namespace VCL_BLL.Services
                 ReceiverName = wroRequest.ReceiverName,
                 ReceiverPhone = wroRequest.ReceiverPhone,
                 DeliveryAddress = wroRequest.DeliveryAddress,
+                ReceiverAddress = wroRequest.DeliveryAddress,
                 Status = wroRequest.Status,
                 ShelfCode = wroRequest.ShelfCode,
+                CarrierId = wroRequest.CarrierId,
+                CarrierName = carrierName,
                 CreatedAt = wroRequest.CreatedAt ?? DateTime.UtcNow,
                 Items = resultItems
             };
@@ -393,6 +426,14 @@ namespace VCL_BLL.Services
                 carrierName = carrier?.CarrierName ?? string.Empty;
             }
 
+            string shippingRouteName = string.Empty;
+            if (wroRequest.ShippingRouteId.HasValue)
+            {
+                var routeRepo = _unitOfWork.Repository<ShippingRoute>();
+                var route = await routeRepo.GetByIdAsync(wroRequest.ShippingRouteId.Value);
+                shippingRouteName = route?.RouteName ?? route?.RouteCode ?? string.Empty;
+            }
+
             return new WroDetailResponseDto
             {
                 WroId = wroRequest.Id,
@@ -410,6 +451,8 @@ namespace VCL_BLL.Services
                 ShelfCode = wroRequest.ShelfCode,
                 CarrierId = wroRequest.CarrierId,
                 CarrierName = carrierName,
+                ShippingRouteId = wroRequest.ShippingRouteId,
+                ShippingRoute = shippingRouteName,
                 DriverName = wroRequest.DriverName,
                 DriverPhone = wroRequest.DriverPhone,
                 VehicleNumber = wroRequest.VehicleNumber,
@@ -1029,6 +1072,40 @@ namespace VCL_BLL.Services
                 {
                     carrierName = carrier.CarrierName ?? string.Empty;
                 }
+                wroRequest.CarrierId = request.CarrierId;
+            }
+
+            // Gán và lưu ShippingRouteId
+            Guid? resolvedRouteId = request.ShippingRouteId;
+            string resolvedRouteName = request.ShippingRoute ?? string.Empty;
+
+            var routeRepo = _unitOfWork.Repository<ShippingRoute>();
+            if (resolvedRouteId.HasValue && resolvedRouteId.Value != Guid.Empty)
+            {
+                var route = await routeRepo.GetByIdAsync(resolvedRouteId.Value);
+                if (route != null)
+                {
+                    resolvedRouteName = route.RouteName ?? route.RouteCode ?? resolvedRouteName;
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(request.ShippingRoute))
+            {
+                var allRoutes = await routeRepo.GetAllAsync();
+                var matchedRoute = allRoutes.FirstOrDefault(r =>
+                    string.Equals(r.RouteCode, request.ShippingRoute.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(r.RouteName, request.ShippingRoute.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    r.Id.ToString().Equals(request.ShippingRoute.Trim(), StringComparison.OrdinalIgnoreCase));
+
+                if (matchedRoute != null)
+                {
+                    resolvedRouteId = matchedRoute.Id;
+                    resolvedRouteName = matchedRoute.RouteName ?? matchedRoute.RouteCode ?? resolvedRouteName;
+                }
+            }
+
+            if (resolvedRouteId.HasValue)
+            {
+                wroRequest.ShippingRouteId = resolvedRouteId.Value;
             }
 
             // Tự động chuyển trạng thái sang IN_TRANSIT nếu WRO đang ở các bước bàn giao / hoàn tất đóng gói
@@ -1047,9 +1124,10 @@ namespace VCL_BLL.Services
                 WroId = wroRequest.Id,
                 WroCode = wroRequest.WroCode,
                 Status = wroRequest.Status,
-                CarrierId = request.CarrierId,
+                CarrierId = wroRequest.CarrierId,
                 CarrierName = carrierName,
-                ShippingRoute = request.ShippingRoute ?? string.Empty,
+                ShippingRouteId = resolvedRouteId,
+                ShippingRoute = resolvedRouteName,
                 Note = request.Note ?? string.Empty
             };
         }

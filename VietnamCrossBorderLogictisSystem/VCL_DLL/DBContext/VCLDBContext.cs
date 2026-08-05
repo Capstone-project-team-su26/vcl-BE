@@ -1947,6 +1947,7 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ReleasedBy).HasColumnName("released_by");
             entity.Property(e => e.ReleasedAt).HasColumnName("released_at");
             entity.Property(e => e.CarrierId).HasColumnName("carrier_id");
+            entity.Property(e => e.ShippingRouteId).HasColumnName("shipping_route_id");
             entity.Property(e => e.DriverName)
                 .HasMaxLength(255)
                 .HasColumnName("driver_name");
@@ -1968,6 +1969,11 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.CarrierId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_WRO_CARRIER");
+
+            entity.HasOne(d => d.ShippingRoute).WithMany()
+                .HasForeignKey(d => d.ShippingRouteId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_WRO_SHIPPING_ROUTE");
 
             entity.HasOne(d => d.Customer).WithMany(p => p.WroRequests)
                 .HasForeignKey(d => d.CustomerId)

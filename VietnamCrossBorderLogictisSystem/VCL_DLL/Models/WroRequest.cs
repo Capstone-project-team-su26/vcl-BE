@@ -35,6 +35,8 @@ public partial class WroRequest
 
     public Guid? CarrierId { get; set; }
 
+    public Guid? ShippingRouteId { get; set; }
+
     public string DriverName { get; set; }
 
     public string DriverPhone { get; set; }
@@ -48,6 +50,8 @@ public partial class WroRequest
     public DateTime? HandoverAt { get; set; }
 
     public virtual Carrier Carrier { get; set; }
+
+    public virtual ShippingRoute ShippingRoute { get; set; }
 
     public virtual Customer Customer { get; set; }
 

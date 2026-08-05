@@ -3707,6 +3707,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("shelf_code");
 
+                    b.Property<Guid?>("ShippingRouteId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("shipping_route_id");
+
                     b.Property<string>("Status")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
@@ -3739,6 +3743,8 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("CustomerId");
 
                     b.HasIndex("ReleasedBy");
+
+                    b.HasIndex("ShippingRouteId");
 
                     b.HasIndex("UserId");
 
@@ -4631,6 +4637,12 @@ namespace VCL_DLL.Migrations
                         .HasForeignKey("ReleasedBy")
                         .HasConstraintName("FK_WRO_RELEASED_USER");
 
+                    b.HasOne("VCL_DLL.Models.ShippingRoute", "ShippingRoute")
+                        .WithMany()
+                        .HasForeignKey("ShippingRouteId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_WRO_SHIPPING_ROUTE");
+
                     b.HasOne("VCL_DLL.Models.User", "User")
                         .WithMany("WroRequests")
                         .HasForeignKey("UserId")
@@ -4641,6 +4653,8 @@ namespace VCL_DLL.Migrations
                     b.Navigation("Customer");
 
                     b.Navigation("ReleasedByUser");
+
+                    b.Navigation("ShippingRoute");
 
                     b.Navigation("User");
                 });
