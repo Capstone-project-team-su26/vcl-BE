@@ -155,13 +155,11 @@ namespace VCL_BLL.Services
 
         private CarrierDto MapToDto(Carrier carrier)
         {
-            string contactPerson = !string.IsNullOrWhiteSpace(carrier.CarrierName)
-                ? $"Đại diện {carrier.CarrierName}"
-                : "Tài xế / Đại diện nhà xe";
+            string? contactPerson = null;
 
-            string contactPhone = !string.IsNullOrWhiteSpace(carrier.ContactPhone)
+            string? contactPhone = !string.IsNullOrWhiteSpace(carrier.ContactPhone)
                 ? carrier.ContactPhone
-                : "0901234567";
+                : null;
 
             return new CarrierDto
             {

@@ -1201,14 +1201,46 @@ namespace VCL_BLL.Services
                 .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            var purchaseFeeRule = activeRules.FirstOrDefault(r =>
-                string.Equals(r.RuleType, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(r.RuleCode, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase) ||
-                r.RuleName.Contains("mua hộ", StringComparison.OrdinalIgnoreCase) ||
-                r.RuleName.Contains("mua hang", StringComparison.OrdinalIgnoreCase));
+            var selectedRuleIds = SplitPricingRuleIds(purchaseRequest.PricingRuleIds);
+            PricingRule? purchaseFeeRule = null;
+            if (selectedRuleIds.Any())
+            {
+                purchaseFeeRule = activeRules.FirstOrDefault(r => selectedRuleIds.Contains(r.Id) &&
+                    (string.Equals(r.RuleType, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.RuleCode, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.RuleCode, "PURCHASE_FEE_PERCENT", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(r.RuleCode, "PURCHASE_FEE_FIXED", StringComparison.OrdinalIgnoreCase)));
+            }
 
-            decimal feePercent = purchaseFeeRule != null && purchaseFeeRule.Value > 0 ? purchaseFeeRule.Value : 5.0m;
-            decimal calculatedPurchaseFee = productsSubtotal * (feePercent / 100m);
+            if (purchaseFeeRule == null)
+            {
+                purchaseFeeRule = activeRules
+                    .Where(r => string.Equals(r.RuleType, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(r.RuleCode, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(r.RuleCode, "PURCHASE_FEE_PERCENT", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(r.RuleCode, "PURCHASE_FEE_FIXED", StringComparison.OrdinalIgnoreCase) ||
+                                (r.RuleName != null && r.RuleName.Contains("mua hộ", StringComparison.OrdinalIgnoreCase)) ||
+                                (r.RuleName != null && r.RuleName.Contains("mua hang", StringComparison.OrdinalIgnoreCase)))
+                    .OrderByDescending(r => string.Equals(r.RuleCode, "PURCHASE_FEE_PERCENT", StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(r => string.Equals(r.CalculationType, "PERCENTAGE", StringComparison.OrdinalIgnoreCase))
+                    .ThenBy(r => r.RuleCode)
+                    .FirstOrDefault();
+            }
+
+            decimal calculatedPurchaseFee = 0m;
+            decimal feePercent = 5.0m;
+            bool isFixedFee = purchaseFeeRule != null && string.Equals(purchaseFeeRule.CalculationType, "FIXED", StringComparison.OrdinalIgnoreCase);
+
+            if (isFixedFee)
+            {
+                calculatedPurchaseFee = purchaseFeeRule!.Value;
+                feePercent = productsSubtotal > 0 ? Math.Round(calculatedPurchaseFee / productsSubtotal * 100m, 2) : 0m;
+            }
+            else
+            {
+                feePercent = purchaseFeeRule != null && purchaseFeeRule.Value > 0 ? purchaseFeeRule.Value : 5.0m;
+                calculatedPurchaseFee = productsSubtotal * (feePercent / 100m);
+            }
 
             if (purchaseFeeRule?.MinAmount.HasValue == true && calculatedPurchaseFee < purchaseFeeRule.MinAmount.Value)
             {
@@ -1248,6 +1280,7 @@ namespace VCL_BLL.Services
             decimal domesticFee = domesticFeeRule != null && domesticFeeRule.Value > 0 ? domesticFeeRule.Value : 5000m;
 
             decimal totalEstimatedCost = productsSubtotal + calculatedPurchaseFee + estimatedShippingFee + domesticFee;
+            string feeDescription = isFixedFee ? $"{calculatedPurchaseFee:N0}đ (cố định)" : $"{feePercent:G29}%";
 
             return new CalculatePurchaseQuotationFeesResponseDto
             {
@@ -1258,7 +1291,7 @@ namespace VCL_BLL.Services
                 EstimatedShippingFee = estimatedShippingFee,
                 DomesticShippingFee = domesticFee,
                 TotalEstimatedCost = Math.Round(totalEstimatedCost, 0),
-                Note = $"Phí mua hộ: {feePercent}%. Ship quốc tế ước tính: {estimatedShippingFee:N0}đ ({estimatedWeightKg}kg). Ship nội địa: {domesticFee:N0}đ."
+                Note = $"Phí mua hộ: {feeDescription}. Ship quốc tế ước tính: {estimatedShippingFee:N0}đ ({estimatedWeightKg}kg). Ship nội địa: {domesticFee:N0}đ."
             };
         }
     }

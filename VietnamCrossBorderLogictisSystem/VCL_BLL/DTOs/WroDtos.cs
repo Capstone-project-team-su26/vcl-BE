@@ -20,6 +20,9 @@ namespace VCL_BLL.DTOs
         public Guid? CarrierId { get; set; }
         public decimal? ShippingFee { get; set; }
         public List<string>? CustomsDocumentUrls { get; set; }
+        public string? ReceiverName { get; set; }
+        public string? ReceiverPhone { get; set; }
+        public string? ReceiverAddress { get; set; }
 
         [Required]
         [MinLength(1, ErrorMessage = "Danh sách xuất kho phải có ít nhất một mặt hàng.")]
@@ -48,11 +51,24 @@ namespace VCL_BLL.DTOs
         public string ReceiverName { get; set; } = string.Empty;
         public string ReceiverPhone { get; set; } = string.Empty;
         public string DeliveryAddress { get; set; } = string.Empty;
+        public string ReceiverAddress { get; set; } = string.Empty;
+
+        /// <summary>Alias đồng bộ với consigneeName ở khâu Nhập kho cho Mobile App.</summary>
+        public string ConsigneeName => ReceiverName;
+
+        /// <summary>Alias đồng bộ với consigneePhone ở khâu Nhập kho cho Mobile App.</summary>
+        public string ConsigneePhone => ReceiverPhone;
+
+        /// <summary>Alias đồng bộ với consigneeAddress ở khâu Nhập kho cho Mobile App.</summary>
+        public string ConsigneeAddress => !string.IsNullOrWhiteSpace(ReceiverAddress) ? ReceiverAddress : DeliveryAddress;
+
         public string Status { get; set; } = string.Empty;
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
         public Guid? CarrierId { get; set; }
         public string CarrierName { get; set; } = string.Empty;
+        public Guid? ShippingRouteId { get; set; }
+        public string ShippingRoute { get; set; } = string.Empty;
         public decimal? ShippingFee { get; set; }
         public List<string> CustomsDocumentUrls { get; set; } = new();
         public DateTime CreatedAt { get; set; }
@@ -98,12 +114,14 @@ namespace VCL_BLL.DTOs
         public string ConsigneePhone => ReceiverPhone;
 
         /// <summary>Alias đồng bộ với consigneeAddress ở khâu Nhập kho cho Mobile App.</summary>
-        public string ConsigneeAddress => ReceiverAddress;
+        public string ConsigneeAddress => !string.IsNullOrWhiteSpace(ReceiverAddress) ? ReceiverAddress : DeliveryAddress;
         public string Status { get; set; } = string.Empty;
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
         public Guid? CarrierId { get; set; }
         public string CarrierName { get; set; } = string.Empty;
+        public Guid? ShippingRouteId { get; set; }
+        public string ShippingRoute { get; set; } = string.Empty;
         public string? DriverName { get; set; }
         public string? DriverPhone { get; set; }
         public string? VehicleNumber { get; set; }
@@ -194,6 +212,7 @@ namespace VCL_BLL.DTOs
     {
         public Guid? CarrierId { get; set; }
         public Guid? ShippingMethodId { get; set; }
+        public Guid? ShippingRouteId { get; set; }
         public string ShippingRoute { get; set; } = string.Empty;
         public int? EstimatedDeliveryDays { get; set; }
         public string? Note { get; set; }
@@ -206,6 +225,7 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; } = string.Empty;
         public Guid? CarrierId { get; set; }
         public string CarrierName { get; set; } = string.Empty;
+        public Guid? ShippingRouteId { get; set; }
         public string ShippingRoute { get; set; } = string.Empty;
         public string Note { get; set; } = string.Empty;
     }
