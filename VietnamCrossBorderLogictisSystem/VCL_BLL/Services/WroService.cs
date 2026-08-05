@@ -1083,6 +1083,22 @@ namespace VCL_BLL.Services
             parcel.BinId = null;
             parcel.PackageStatus = "RELEASED";
             parcelRepo.Update(parcel);
+
+            // Nhật ký xuất kho. Cột to_bin_id là NOT NULL nên ghi lại chính ô vừa rời đi;
+            // MovementType = OUTBOUND đã đủ để phân biệt với điều chuyển nội bộ.
+            await _unitOfWork.Repository<InventoryMovement>().AddAsync(new InventoryMovement
+            {
+                Id = Guid.NewGuid(),
+                InventoryId = releasedInventory.Id,
+                ParcelId = parcel.Id,
+                FromBinId = releasedInventory.BinId,
+                ToBinId = releasedInventory.BinId,
+                MovementType = "OUTBOUND",
+                Reason = $"Xuất kho kiện {parcel.PackageCode}",
+                Quantity = releasedInventory.Quantity,
+                MovedById = null,
+                MovedAt = DateTime.UtcNow
+            });
         }
 
         private async Task ReleaseInventoryToAvailableAsync(
