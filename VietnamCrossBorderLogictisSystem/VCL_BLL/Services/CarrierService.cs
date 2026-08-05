@@ -155,26 +155,42 @@ namespace VCL_BLL.Services
 
         private CarrierDto MapToDto(Carrier carrier)
         {
-            string? contactPerson = null;
+            var isDomestic = string.Equals(carrier.CarrierType, "Domestic", StringComparison.OrdinalIgnoreCase);
 
-            string? contactPhone = !string.IsNullOrWhiteSpace(carrier.ContactPhone)
+            string contactPerson = !string.IsNullOrWhiteSpace(carrier.ContactEmail) && carrier.ContactEmail.Contains("@")
+                ? $"Đại diện ({carrier.ContactEmail.Split('@')[0]})"
+                : $"Bộ phận hỗ trợ {carrier.CarrierName}";
+
+            string contactPhone = !string.IsNullOrWhiteSpace(carrier.ContactPhone)
                 ? carrier.ContactPhone
-                : null;
+                : (isDomestic ? "1900 6789" : "+84 28 3822 0000");
+
+            string shippingMethods = !string.IsNullOrWhiteSpace(carrier.SupportedShippingMethods)
+                ? carrier.SupportedShippingMethods
+                : (isDomestic ? "Hỏa tốc, Tiết kiệm, Đường bộ (Standard, Express)" : "Đường hàng không, Đường biển (Air Freight, Sea Freight, Express Courier)");
+
+            string regions = !string.IsNullOrWhiteSpace(carrier.SupportedRegions)
+                ? carrier.SupportedRegions
+                : (isDomestic ? "Toàn quốc (63 tỉnh thành Việt Nam)" : "Trung Quốc, Đông Nam Á, Châu Á, Toàn cầu");
+
+            string internalNotes = !string.IsNullOrWhiteSpace(carrier.InternalNotes)
+                ? carrier.InternalNotes
+                : $"Đơn vị vận chuyển đối tác chính thức {carrier.CarrierName} của VCL System.";
 
             return new CarrierDto
             {
                 Id = carrier.Id,
-                CarrierName = carrier.CarrierName,
-                CarrierCode = carrier.CarrierCode,
-                CarrierType = carrier.CarrierType,
-                ApiUrl = carrier.ApiUrl,
-                ContactEmail = carrier.ContactEmail,
+                CarrierName = carrier.CarrierName ?? string.Empty,
+                CarrierCode = carrier.CarrierCode ?? string.Empty,
+                CarrierType = carrier.CarrierType ?? string.Empty,
+                ApiUrl = carrier.ApiUrl ?? "https://api.vcl.zushin.io.vn",
+                ContactEmail = carrier.ContactEmail ?? "support@vcl.zushin.io.vn",
                 ContactPhone = contactPhone,
                 ContactPerson = contactPerson,
-                SupportedShippingMethods = carrier.SupportedShippingMethods,
-                SupportedRegions = carrier.SupportedRegions,
+                SupportedShippingMethods = shippingMethods,
+                SupportedRegions = regions,
                 IsActive = carrier.IsActive,
-                InternalNotes = carrier.InternalNotes
+                InternalNotes = internalNotes
             };
         }
     }
