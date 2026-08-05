@@ -178,9 +178,18 @@ namespace VCL_BLL.Services
         public async Task UpdateProfileAsync(Guid userId, UpdateProfileRequest request)
         {
             var user = await GetUserOrThrowAsync(userId);
-            
+
             user.FullName = request.FullName;
             user.Phone = request.Phone;
+
+            if (!string.IsNullOrWhiteSpace(request.Region))
+            {
+                if (Enum.TryParse<VCL_DLL.Enums.RegionCode>(request.Region, true, out var parsedRegion))
+                {
+                    user.Region = parsedRegion;
+                }
+            }
+
             _unitOfWork.Repository<User>().Update(user);
 
             var customerRepo = _unitOfWork.Repository<Customer>();

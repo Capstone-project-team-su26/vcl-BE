@@ -1964,6 +1964,9 @@ public partial class VCLDBContext : DbContext
                 .HasMaxLength(500)
                 .HasColumnName("handover_notes");
             entity.Property(e => e.HandoverAt).HasColumnName("handover_at");
+            entity.Property(e => e.CustomsDocumentUrls)
+                .HasMaxLength(4000)
+                .HasColumnName("customs_document_urls");
 
             entity.HasOne(d => d.Carrier).WithMany()
                 .HasForeignKey(d => d.CarrierId)
