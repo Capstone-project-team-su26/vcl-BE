@@ -213,6 +213,12 @@ namespace VCL_BLL.Services
                         {
                             continue;
                         }
+
+                        // Phí mua hộ thuộc luồng PurchaseRequest, không phải phụ phí của đơn ký gửi.
+                        if (string.Equals(rule.RuleType, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
                     }
 
                     decimal feeAmount = feeDto.Enabled ? feeDto.Amount : 0m;

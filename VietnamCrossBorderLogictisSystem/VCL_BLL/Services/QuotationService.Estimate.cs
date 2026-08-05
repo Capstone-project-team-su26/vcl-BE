@@ -248,6 +248,14 @@ namespace VCL_BLL.Services
                     continue;
                 }
 
+                // Phí mua hộ chỉ thuộc luồng PurchaseRequest và được sale nhập tay ở đó.
+                // Rule PURCHASE_FEE không gắn ServicePricing nên nếu không loại ra sẽ hiện thành
+                // ô tick phụ phí trên form ký gửi, khách tick vào là bị tính thêm tiền.
+                if (string.Equals(rule.RuleType, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 // Nếu rule liên kết với một ServicePricing cụ thể, kiểm tra xem có khớp không
                 if (rule.ServicePricingId.HasValue)
                 {
