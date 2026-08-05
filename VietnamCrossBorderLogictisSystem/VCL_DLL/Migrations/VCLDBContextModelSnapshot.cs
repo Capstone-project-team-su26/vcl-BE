@@ -1627,6 +1627,32 @@ namespace VCL_DLL.Migrations
                     b.HasData(
                         new
                         {
+                            Id = new Guid("e9b3a1d4-8f2c-4e61-9c35-1a2b3c4d5e6f"),
+                            CalculationType = "PERCENTAGE",
+                            CreatedAt = new DateTime(2026, 8, 5, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Phí dịch vụ mua hộ tiêu chuẩn (5% tổng giá trị sản phẩm)",
+                            IsRequired = false,
+                            RuleCode = "PURCHASE_FEE_PERCENT",
+                            RuleName = "Phí dịch vụ mua hộ (5%)",
+                            RuleType = "PURCHASE_FEE",
+                            Status = "ACTIVE",
+                            Value = 5.00m
+                        },
+                        new
+                        {
+                            Id = new Guid("f1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c"),
+                            CalculationType = "FIXED",
+                            CreatedAt = new DateTime(2026, 8, 5, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Phí dịch vụ mua hộ cố định 50.000 VNĐ mỗi đơn hàng",
+                            IsRequired = false,
+                            RuleCode = "PURCHASE_FEE_FIXED",
+                            RuleName = "Phí dịch vụ mua hộ cố định (50.000 VNĐ)",
+                            RuleType = "PURCHASE_FEE",
+                            Status = "ACTIVE",
+                            Value = 50000.00m
+                        },
+                        new
+                        {
                             Id = new Guid("7f8dcbac-c9fb-4c25-802b-dacc74751a7b"),
                             CalculationType = "FIXED",
                             CreatedAt = new DateTime(2026, 7, 9, 5, 19, 29, 0, DateTimeKind.Utc),
