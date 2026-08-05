@@ -108,6 +108,33 @@ namespace VCL_BLL.Services
                 }
             }
 
+            string initialReceiverName = string.Empty;
+            string initialReceiverPhone = string.Empty;
+            string initialDeliveryAddress = string.Empty;
+
+            if (request.Items.Any())
+            {
+                var firstInv = await inventoryRepo.GetByIdAsync(request.Items.First().InventoryId);
+                if (firstInv != null && firstInv.OrderId != Guid.Empty)
+                {
+                    var orderRepo = _unitOfWork.Repository<Order>();
+                    var order = await orderRepo.GetByIdAsync(firstInv.OrderId);
+                    if (order != null)
+                    {
+                        initialReceiverName = order.ReceiverName ?? string.Empty;
+                        initialReceiverPhone = order.ReceiverPhone ?? string.Empty;
+                        initialDeliveryAddress = order.ReceiverAddress ?? string.Empty;
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(initialReceiverName) && customer != null)
+            {
+                initialReceiverName = customer.FullName ?? string.Empty;
+                initialReceiverPhone = customer.Phone ?? string.Empty;
+                initialDeliveryAddress = customer.Address ?? string.Empty;
+            }
+
             var wroCode = $"WRO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
             var wroRequest = new WroRequest
             {
@@ -115,9 +142,9 @@ namespace VCL_BLL.Services
                 UserId = userId,
                 CustomerId = targetCustomerId,
                 WroCode = wroCode,
-                ReceiverName = string.Empty,
-                ReceiverPhone = string.Empty,
-                DeliveryAddress = string.Empty,
+                ReceiverName = initialReceiverName,
+                ReceiverPhone = initialReceiverPhone,
+                DeliveryAddress = initialDeliveryAddress,
                 ShelfCode = request.ShelfCode,
                 Status = "RELEASE_PENDING",
                 CreatedAt = DateTime.UtcNow
@@ -319,6 +346,45 @@ namespace VCL_BLL.Services
                 totalQuantity += item.Quantity;
             }
 
+            string receiverName = wroRequest.ReceiverName ?? string.Empty;
+            string receiverPhone = wroRequest.ReceiverPhone ?? string.Empty;
+            string deliveryAddress = wroRequest.DeliveryAddress ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(receiverName) || string.IsNullOrWhiteSpace(receiverPhone) || string.IsNullOrWhiteSpace(deliveryAddress))
+            {
+                var orderRepo = _unitOfWork.Repository<Order>();
+                var allOrders = await orderRepo.GetAllAsync();
+
+                foreach (var item in relatedWroItems)
+                {
+                    var inventory = allInventories.FirstOrDefault(inv => inv.Id == item.InventoryId);
+                    if (inventory != null && inventory.OrderId != Guid.Empty)
+                    {
+                        var order = allOrders.FirstOrDefault(o => o.Id == inventory.OrderId);
+                        if (order != null)
+                        {
+                            if (string.IsNullOrWhiteSpace(receiverName)) receiverName = order.ReceiverName ?? string.Empty;
+                            if (string.IsNullOrWhiteSpace(receiverPhone)) receiverPhone = order.ReceiverPhone ?? string.Empty;
+                            if (string.IsNullOrWhiteSpace(deliveryAddress)) deliveryAddress = order.ReceiverAddress ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(receiverName) && !string.IsNullOrWhiteSpace(receiverPhone) && !string.IsNullOrWhiteSpace(deliveryAddress))
+                                break;
+                        }
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(receiverName) && wroRequest.CustomerId.HasValue)
+                {
+                    var customerRepo = _unitOfWork.Repository<Customer>();
+                    var wroOwner = await customerRepo.GetByIdAsync(wroRequest.CustomerId.Value);
+                    if (wroOwner != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(receiverName)) receiverName = wroOwner.FullName ?? string.Empty;
+                        if (string.IsNullOrWhiteSpace(receiverPhone)) receiverPhone = wroOwner.Phone ?? string.Empty;
+                        if (string.IsNullOrWhiteSpace(deliveryAddress)) deliveryAddress = wroOwner.Address ?? string.Empty;
+                    }
+                }
+            }
+
             string carrierName = string.Empty;
             if (wroRequest.CarrierId.HasValue)
             {
@@ -336,9 +402,10 @@ namespace VCL_BLL.Services
                 WarehouseName = warehouseName,
                 CustomerId = wroRequest.CustomerId,
                 CustomerName = customerName,
-                ReceiverName = wroRequest.ReceiverName ?? string.Empty,
-                ReceiverPhone = wroRequest.ReceiverPhone ?? string.Empty,
-                DeliveryAddress = wroRequest.DeliveryAddress ?? string.Empty,
+                ReceiverName = receiverName,
+                ReceiverPhone = receiverPhone,
+                DeliveryAddress = deliveryAddress,
+                ReceiverAddress = deliveryAddress,
                 Status = wroRequest.Status ?? string.Empty,
                 ShelfCode = wroRequest.ShelfCode,
                 CarrierId = wroRequest.CarrierId,

@@ -89,6 +89,16 @@ namespace VCL_BLL.DTOs
         public string ReceiverName { get; set; } = string.Empty;
         public string ReceiverPhone { get; set; } = string.Empty;
         public string DeliveryAddress { get; set; } = string.Empty;
+        public string ReceiverAddress { get; set; } = string.Empty;
+
+        /// <summary>Alias đồng bộ với consigneeName ở khâu Nhập kho cho Mobile App.</summary>
+        public string ConsigneeName => ReceiverName;
+
+        /// <summary>Alias đồng bộ với consigneePhone ở khâu Nhập kho cho Mobile App.</summary>
+        public string ConsigneePhone => ReceiverPhone;
+
+        /// <summary>Alias đồng bộ với consigneeAddress ở khâu Nhập kho cho Mobile App.</summary>
+        public string ConsigneeAddress => ReceiverAddress;
         public string Status { get; set; } = string.Empty;
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
@@ -256,6 +266,12 @@ namespace VCL_BLL.DTOs
     {
         public Guid WroId { get; set; }
         public string WroCode { get; set; } = string.Empty;
+
+        /// <summary>Mã vạch xuất kho quét khi bàn giao (VD: EXP-20260731-9348).</summary>
+        public string ExportBarcode => !string.IsNullOrWhiteSpace(WroCode)
+            ? WroCode.Replace("WRO-", "EXP-", StringComparison.OrdinalIgnoreCase)
+            : string.Empty;
+
         public string Status { get; set; } = string.Empty;
         public string CarrierName { get; set; } = string.Empty;
         public string? DriverName { get; set; }
