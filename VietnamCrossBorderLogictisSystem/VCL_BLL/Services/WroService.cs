@@ -790,6 +790,7 @@ namespace VCL_BLL.Services
                         inventoryRecord.Quantity = qShipped;
                         inventoryRecord.Status = "RELEASED";
                         inventoryRepo.Update(inventoryRecord);
+                        await ReleaseParcelFromBinAsync(inventoryRecord, inventoryRepo, allInventories);
                     }
 
                     item.Quantity = qShipped;
@@ -814,6 +815,7 @@ namespace VCL_BLL.Services
                     {
                         inventoryRecord.Status = "RELEASED";
                         inventoryRepo.Update(inventoryRecord);
+                        await ReleaseParcelFromBinAsync(inventoryRecord, inventoryRepo, allInventories);
                     }
 
                     confirmedItemsResponse.Add(new CompleteWroItemResponseDto
@@ -1039,6 +1041,48 @@ namespace VCL_BLL.Services
                 TrackingNumber = request.TrackingNumber,
                 HandoverAt = DateTime.UtcNow
             };
+        }
+
+        /// <summary>
+        /// Nhả kiện khỏi ô kệ khi hàng thực sự rời kho: trừ thể tích đang chiếm, bỏ liên kết ô
+        /// và đổi trạng thái kiện. Thiếu bước này thì Bin.CurrentVolume chỉ tăng mà không bao giờ
+        /// giảm, lâu dần mọi ô đều báo hết chỗ dù đang trống.
+        ///
+        /// Chỉ nhả khi kiện đã ra hết. Đơn xuất một phần vẫn còn hàng nằm trong ô nên giữ nguyên.
+        /// </summary>
+        private async Task ReleaseParcelFromBinAsync(
+            Inventory? releasedInventory,
+            IGenericRepository<Inventory> inventoryRepo,
+            IEnumerable<Inventory> allInventories)
+        {
+            if (releasedInventory == null) return;
+
+            // Còn dòng tồn kho nào của kiện này chưa xuất thì hàng vẫn nằm trong ô.
+            var stillInWarehouse = allInventories.Any(inv =>
+                inv.Id != releasedInventory.Id &&
+                inv.ParcelId == releasedInventory.ParcelId &&
+                inv.Quantity > 0 &&
+                !string.Equals(inv.Status, "RELEASED", StringComparison.OrdinalIgnoreCase));
+
+            if (stillInWarehouse) return;
+
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var parcel = await parcelRepo.GetByIdAsync(releasedInventory.ParcelId);
+            if (parcel == null) return;
+
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var bin = await binRepo.GetByIdAsync(releasedInventory.BinId);
+            if (bin != null)
+            {
+                var released = (parcel.Length ?? 0m) * (parcel.Width ?? 0m) * (parcel.Height ?? 0m);
+                var remaining = (bin.CurrentVolume ?? 0m) - released;
+                bin.CurrentVolume = remaining < 0m ? 0m : remaining;
+                binRepo.Update(bin);
+            }
+
+            parcel.BinId = null;
+            parcel.PackageStatus = "RELEASED";
+            parcelRepo.Update(parcel);
         }
 
         private async Task ReleaseInventoryToAvailableAsync(
