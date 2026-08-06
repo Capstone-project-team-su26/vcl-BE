@@ -22,6 +22,58 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Danh sách lô vận chuyển quốc tế, phục vụ màn Vận chuyển trên web và mobile.
+        /// </summary>
+        /// <param name="statusTab">Lọc theo tab: PREPARING · IN_TRANSIT · CUSTOMS · ARRIVED · ISSUE</param>
+        /// <param name="status">Lọc theo trạng thái cụ thể (CUSTOMS_EXPORT_PENDING, IN_TRANSIT…)</param>
+        /// <param name="originWarehouseId">Lọc theo kho đi</param>
+        /// <param name="search">Tìm theo mã lô</param>
+        [HttpGet]
+        [ProducesResponseType(typeof(PaginatedResponse<InternationalShipmentResponseDto>), 200)]
+        public async Task<IActionResult> GetInternationalShipments(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? statusTab = null,
+            [FromQuery] string? status = null,
+            [FromQuery] Guid? originWarehouseId = null,
+            [FromQuery] string? search = null)
+        {
+            try
+            {
+                var result = await _shipmentService.GetListAsync(pageNumber, pageSize, statusTab, status, originWarehouseId, search);
+                return Ok(new { message = "Lấy danh sách lô vận chuyển thành công.", data = result });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Chi tiết một lô vận chuyển quốc tế: kho đi/đến, tuyến, danh sách WRO, kiện hàng,
+        /// hồ sơ PDF và chứng từ thông quan.
+        /// </summary>
+        [HttpGet("{shipmentId}")]
+        [ProducesResponseType(typeof(InternationalShipmentResponseDto), 200)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetInternationalShipmentById(Guid shipmentId)
+        {
+            try
+            {
+                var result = await _shipmentService.GetByIdAsync(shipmentId);
+                return Ok(new { message = "Lấy chi tiết lô vận chuyển thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Staff/Operations tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED
         /// </summary>
         [HttpPost]

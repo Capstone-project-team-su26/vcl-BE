@@ -25,6 +25,169 @@ namespace VCL_BLL.Services
             _unitOfWork = unitOfWork;
         }
 
+        /// <summary>
+        /// Dựng DTO đầy đủ cho một lô. Dùng chung cho cả danh sách lẫn chi tiết để hai
+        /// đầu không lệch nhau — FE render cùng một component cho cả hai màn.
+        /// </summary>
+        private async Task<InternationalShipmentResponseDto> BuildShipmentDtoAsync(Shipment shipment)
+        {
+            var wroLinks = (await _unitOfWork.Repository<ShipmentWroRequest>().GetAllAsync())
+                .Where(sw => sw.ShipmentId == shipment.Id)
+                .ToList();
+            var wroIds = wroLinks.Select(sw => sw.WroRequestId).ToHashSet();
+
+            var wroRequests = (await _unitOfWork.Repository<WroRequest>().GetAllAsync())
+                .Where(w => wroIds.Contains(w.Id))
+                .ToList();
+
+            var allWarehouses = await _unitOfWork.Repository<Warehouse>().GetAllAsync();
+            var origin = allWarehouses.FirstOrDefault(w => w.Id == shipment.OriginWarehouseId);
+            var destination = allWarehouses.FirstOrDefault(w => w.Id == shipment.DestinationWarehouseId);
+
+            Carrier? carrier = shipment.CarrierId.HasValue
+                ? (await _unitOfWork.Repository<Carrier>().GetAllAsync()).FirstOrDefault(c => c.Id == shipment.CarrierId.Value)
+                : null;
+
+            // Tuyến không lưu trên Shipment; mọi WRO trong lô đã được validate là cùng tuyến
+            // nên lấy của phiếu đầu tiên là đại diện cho cả lô.
+            var routeId = wroRequests.Select(w => w.ShippingRouteId).FirstOrDefault(r => r.HasValue);
+            ShippingRoute? route = routeId.HasValue
+                ? (await _unitOfWork.Repository<ShippingRoute>().GetAllAsync()).FirstOrDefault(r => r.Id == routeId.Value)
+                : null;
+
+            // Kiện trong lô: qua WroItem → Inventory → Parcel
+            var wroItems = (await _unitOfWork.Repository<WroItem>().GetAllAsync())
+                .Where(i => wroIds.Contains(i.WroRequestId))
+                .ToList();
+            var inventories = (await _unitOfWork.Repository<Inventory>().GetAllAsync())
+                .ToDictionary(i => i.Id, i => i);
+            var allParcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .ToDictionary(p => p.Id, p => p);
+
+            var parcels = new List<InternationalShipmentParcelDto>();
+            var orderIds = new HashSet<Guid>();
+
+            foreach (var item in wroItems)
+            {
+                if (!inventories.TryGetValue(item.InventoryId, out var inv)) continue;
+
+                orderIds.Add(inv.OrderId);
+
+                if (allParcels.TryGetValue(inv.ParcelId, out var parcel))
+                {
+                    parcels.Add(new InternationalShipmentParcelDto
+                    {
+                        ParcelId = parcel.Id,
+                        PackageCode = parcel.PackageCode ?? string.Empty,
+                        Weight = parcel.ActualWeight ?? parcel.ChargeableWeight
+                    });
+                }
+            }
+
+            // Hồ sơ PDF: phiếu nhập kho của các đơn liên quan. Phiếu xuất kho từng WRO
+            // sẽ được nối vào đây khi ReleasePdfUrl có mặt.
+            var pdfUrls = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                .Where(o => orderIds.Contains(o.Id) && !string.IsNullOrWhiteSpace(o.ReceiptPdfUrl))
+                .Select(o => o.ReceiptPdfUrl!)
+                .Distinct()
+                .ToList();
+
+            var customsDocs = wroRequests
+                .Where(w => !string.IsNullOrWhiteSpace(w.CustomsDocumentUrls))
+                .SelectMany(w => w.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries))
+                .Distinct()
+                .ToList();
+
+            return new InternationalShipmentResponseDto
+            {
+                ShipmentId = shipment.Id,
+                ShipmentCode = shipment.ShipmentCode ?? string.Empty,
+                OriginWarehouseId = shipment.OriginWarehouseId,
+                OriginWarehouseName = origin?.WarehouseName ?? string.Empty,
+                DestinationWarehouseId = shipment.DestinationWarehouseId,
+                DestinationWarehouseName = destination?.WarehouseName ?? string.Empty,
+                CarrierId = shipment.CarrierId,
+                CarrierName = carrier?.CarrierName,
+                ShippingMethod = shipment.ShippingMethod,
+                ShippingRouteId = routeId,
+                ShippingRouteName = route?.RouteName ?? route?.RouteCode,
+                TotalPackages = shipment.TotalPackages ?? parcels.Count,
+                TotalWeight = shipment.TotalWeight ?? parcels.Sum(p => p.Weight ?? 0m),
+                Status = shipment.Status ?? string.Empty,
+                StatusTab = MapStatusToTab(shipment.Status),
+                ShippedAt = shipment.ShippedAt,
+                DeliveredAt = shipment.DeliveredAt,
+                PdfUrls = pdfUrls,
+                CustomsDocUrls = customsDocs,
+                WroRequests = wroRequests
+                    .Select(w => new InternationalShipmentWroDto { WroRequestId = w.Id, WroCode = w.WroCode ?? string.Empty })
+                    .ToList(),
+                Parcels = parcels
+            };
+        }
+
+        public async Task<PaginatedResponse<InternationalShipmentResponseDto>> GetListAsync(
+            int pageNumber, int pageSize, string? statusTab, string? status, Guid? originWarehouseId, string? search)
+        {
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+            var query = (await _unitOfWork.Repository<Shipment>().GetAllAsync())
+                .Where(s => string.Equals(s.ShipmentStage, "INTERNATIONAL", StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(s => string.Equals(s.Status, status.Trim(), StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(statusTab))
+            {
+                var tab = statusTab.Trim();
+                query = query.Where(s => string.Equals(MapStatusToTab(s.Status), tab, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (originWarehouseId.HasValue)
+            {
+                query = query.Where(s => s.OriginWarehouseId == originWarehouseId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                query = query.Where(s => (s.ShipmentCode ?? string.Empty).Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var ordered = query.OrderByDescending(s => s.ShippedAt ?? DateTime.MinValue).ToList();
+            var totalCount = ordered.Count;
+
+            var page = ordered.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToList();
+
+            var items = new List<InternationalShipmentResponseDto>();
+            foreach (var shipment in page)
+            {
+                items.Add(await BuildShipmentDtoAsync(shipment));
+            }
+
+            return new PaginatedResponse<InternationalShipmentResponseDto>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
+        }
+
+        public async Task<InternationalShipmentResponseDto> GetByIdAsync(Guid shipmentId)
+        {
+            var shipment = await _unitOfWork.Repository<Shipment>().GetByIdAsync(shipmentId);
+            if (shipment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {shipmentId}");
+            }
+
+            return await BuildShipmentDtoAsync(shipment);
+        }
+
         public async Task<InternationalShipmentResponseDto> CreateAsync(Guid userId, string userRole, CreateInternationalShipmentDto request)
         {
             if (request == null)
@@ -71,6 +234,55 @@ namespace VCL_BLL.Services
                 }
 
                 wroRequests.Add(wro);
+            }
+
+            // 2b. Mọi WRO trong lô phải cùng kho xuất và cùng tuyến, nếu không thì lô này
+            // không thể đi chung một chuyến. Kho xuất suy từ vị trí thật của hàng
+            // (WroItem → Inventory → Bin → Warehouse) chứ không tin số client khai.
+            var routeIds = wroRequests
+                .Select(w => w.ShippingRouteId)
+                .Distinct()
+                .ToList();
+
+            if (routeIds.Count > 1)
+            {
+                throw new ArgumentException(
+                    "Tất cả phiếu WRO trong Lô phải cùng Kho xuất và cùng Tuyến vận chuyển! " +
+                    $"Đang có {routeIds.Count} tuyến khác nhau trong danh sách đã chọn.");
+            }
+
+            var wroItemsForCheck = (await _unitOfWork.Repository<WroItem>().GetAllAsync())
+                .Where(i => wroRequestIds.Contains(i.WroRequestId))
+                .ToList();
+
+            var inventoriesForCheck = (await _unitOfWork.Repository<Inventory>().GetAllAsync())
+                .ToDictionary(i => i.Id, i => i);
+
+            var binsForCheck = (await _unitOfWork.Repository<Bin>().GetAllAsync())
+                .ToDictionary(b => b.Id, b => b);
+
+            var sourceWarehouseIds = new HashSet<Guid>();
+            foreach (var wroItem in wroItemsForCheck)
+            {
+                if (inventoriesForCheck.TryGetValue(wroItem.InventoryId, out var inv) &&
+                    binsForCheck.TryGetValue(inv.BinId, out var bin) &&
+                    bin.WarehouseId.HasValue)
+                {
+                    sourceWarehouseIds.Add(bin.WarehouseId.Value);
+                }
+            }
+
+            if (sourceWarehouseIds.Count > 1)
+            {
+                throw new ArgumentException(
+                    "Tất cả phiếu WRO trong Lô phải cùng Kho xuất và cùng Tuyến vận chuyển! " +
+                    $"Đang có {sourceWarehouseIds.Count} kho xuất khác nhau trong danh sách đã chọn.");
+            }
+
+            if (sourceWarehouseIds.Count == 1 && !sourceWarehouseIds.Contains(request.OriginWarehouseId))
+            {
+                throw new ArgumentException(
+                    "Kho đi khai báo không khớp với kho đang chứa hàng của các phiếu WRO đã chọn.");
             }
 
             // 3. Validate kho đi/kho đến
@@ -187,13 +399,50 @@ namespace VCL_BLL.Services
             };
         }
 
-        // Chuyển trạng thái hợp lệ: mỗi target chỉ được từ 1 trạng thái nguồn nhất định
-        private static readonly Dictionary<string, string> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
+        /// <summary>
+        /// Vòng đời lô vận chuyển quốc tế, bám theo nghiệp vụ thực tế:
+        ///
+        ///   CREATED → MANIFESTED → CUSTOMS_EXPORT_PENDING → IN_TRANSIT
+        ///           → CUSTOMS_IMPORT_PENDING → ARRIVED_DESTINATION
+        ///
+        /// Hai chặng thông quan tách riêng vì mỗi chặng có thể bị treo độc lập:
+        /// xuất tại nước nguồn và nhập tại Việt Nam.
+        ///
+        /// Giữ lại đường tắt MANIFESTED → IN_TRANSIT và IN_TRANSIT → ARRIVED_DESTINATION
+        /// để client cũ chưa cập nhật vẫn chạy được.
+        /// </summary>
+        private static readonly Dictionary<string, string[]> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
         {
-            { "MANIFESTED", "CREATED" },
-            { "IN_TRANSIT", "MANIFESTED" },
-            { "ARRIVED_DESTINATION", "IN_TRANSIT" }
+            ["MANIFESTED"] = new[] { "CREATED" },
+            ["CUSTOMS_EXPORT_PENDING"] = new[] { "MANIFESTED", "CUSTOMS_REJECTED", "HOLD" },
+            ["IN_TRANSIT"] = new[] { "CUSTOMS_EXPORT_PENDING", "MANIFESTED", "HOLD" },
+            ["CUSTOMS_IMPORT_PENDING"] = new[] { "IN_TRANSIT", "CUSTOMS_REJECTED", "HOLD" },
+            ["ARRIVED_DESTINATION"] = new[] { "CUSTOMS_IMPORT_PENDING", "IN_TRANSIT" },
+
+            // Trạng thái sự cố: vào được từ mọi chặng chưa kết thúc, và gỡ ra được.
+            ["CUSTOMS_REJECTED"] = new[] { "CUSTOMS_EXPORT_PENDING", "CUSTOMS_IMPORT_PENDING" },
+            ["HOLD"] = new[] { "CREATED", "MANIFESTED", "CUSTOMS_EXPORT_PENDING", "IN_TRANSIT", "CUSTOMS_IMPORT_PENDING", "CUSTOMS_REJECTED" },
+            ["ISSUE"] = new[] { "CREATED", "MANIFESTED", "CUSTOMS_EXPORT_PENDING", "IN_TRANSIT", "CUSTOMS_IMPORT_PENDING", "CUSTOMS_REJECTED", "HOLD" }
         };
+
+        /// <summary>
+        /// Gom trạng thái về đúng 5 tab của màn Vận chuyển bên mobile, để FE lọc theo
+        /// một giá trị thay vì phải tự nhớ trạng thái nào thuộc tab nào.
+        /// </summary>
+        public static string MapStatusToTab(string? status)
+        {
+            var s = status?.Trim().ToUpperInvariant() ?? string.Empty;
+
+            return s switch
+            {
+                "CREATED" or "MANIFESTED" or "LOT_CREATED" or "PREPARING" => "PREPARING",
+                "CUSTOMS_EXPORT_PENDING" or "CUSTOMS_IMPORT_PENDING" => "CUSTOMS",
+                "IN_TRANSIT" => "IN_TRANSIT",
+                "ARRIVED_DESTINATION" or "ARRIVED_IN_VN" => "ARRIVED",
+                "ISSUE" or "CUSTOMS_REJECTED" or "HOLD" => "ISSUE",
+                _ => "PREPARING"
+            };
+        }
 
         public async Task<UpdateInternationalShipmentStatusResponseDto> UpdateStatusAsync(
             Guid shipmentId, Guid userId, string userRole, UpdateInternationalShipmentStatusDto request)
@@ -221,15 +470,17 @@ namespace VCL_BLL.Services
             var targetStatus = request.Status.Trim().ToUpperInvariant();
             if (!AllowedTransitions.ContainsKey(targetStatus))
             {
-                throw new ArgumentException("Trạng thái không hợp lệ. Hợp lệ: MANIFESTED, IN_TRANSIT, ARRIVED_DESTINATION.");
+                throw new ArgumentException(
+                    $"Trạng thái không hợp lệ. Hợp lệ: {string.Join(", ", AllowedTransitions.Keys)}.");
             }
 
             var currentStatus = shipment.Status?.Trim().ToUpperInvariant() ?? string.Empty;
-            var requiredFrom = AllowedTransitions[targetStatus];
-            if (!string.Equals(currentStatus, requiredFrom, StringComparison.OrdinalIgnoreCase))
+            var allowedFrom = AllowedTransitions[targetStatus];
+            if (!allowedFrom.Contains(currentStatus, StringComparer.OrdinalIgnoreCase))
             {
                 throw new ArgumentException(
-                    $"Không thể chuyển sang {targetStatus} khi lô đang ở trạng thái {shipment.Status}. Chỉ chuyển được từ {requiredFrom}.");
+                    $"Không thể chuyển sang {targetStatus} khi lô đang ở trạng thái {shipment.Status}. " +
+                    $"Chỉ chuyển được từ: {string.Join(", ", allowedFrom)}.");
             }
 
             // 4. Cập nhật trạng thái + mốc thời gian tương ứng
@@ -260,6 +511,7 @@ namespace VCL_BLL.Services
                 ShipmentId = shipment.Id,
                 ShipmentCode = shipment.ShipmentCode ?? string.Empty,
                 Status = shipment.Status,
+                StatusTab = MapStatusToTab(shipment.Status),
                 Note = request.Note,
                 UpdatedAt = now,
                 UpdatedByName = user?.FullName ?? string.Empty
