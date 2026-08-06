@@ -33,6 +33,34 @@ public class SuggestedLocationDto
     public string Reason { get; set; } = string.Empty;
 }
 
+public class GeminiResponseDto
+{
+    public List<GeminiBinRecommendation>? Recommendations { get; set; }
+}
+
+public class GeminiBinRecommendation
+{
+    public Guid BinId { get; set; }
+    public decimal ConfidenceScore { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
+public class CandidateBinDto
+{
+    public Guid LayoutId { get; set; }
+    public Guid WarehouseId { get; set; }
+    public Guid? ZoneId { get; set; }
+    public Guid? ShelfId { get; set; }
+    public Guid BinId { get; set; }
+    public string DisplayLabel { get; set; } = string.Empty;
+    public decimal OccupiedVolume { get; set; }
+    public decimal AvailableVolume { get; set; }
+    public decimal OccupancyRatio { get; set; }
+    public decimal CurrentWeight { get; set; }
+    public decimal AvailableWeight { get; set; }
+    public bool IsEntirelyEmpty { get; set; }
+}
+
 public class SalesOrderStatusQueryRequest
 {
     [Required(ErrorMessage = "Message không được để trống.")]

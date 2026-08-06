@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
-using Microsoft.ML;
-using Microsoft.ML.Data;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
@@ -16,15 +17,14 @@ namespace VCL_BLL.Services;
 public class AiService : IAiService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly HttpClient _httpClient;
+    private readonly IConfiguration _configuration;
 
-    private static PredictionEngine<PutAwayModelInput, PutAwayModelPrediction>? _cachedPredEngine;
-    private static string[] _cachedBinIdLabels = Array.Empty<string>();
-    private static int _cachedHistoryHash = -1;
-    private static readonly object _modelLock = new object();
-
-    public AiService(IUnitOfWork unitOfWork)
+    public AiService(IUnitOfWork unitOfWork, HttpClient httpClient, IConfiguration configuration)
     {
         _unitOfWork = unitOfWork;
+        _httpClient = httpClient;
+        _configuration = configuration;
     }
 
     public async Task<PutawaySuggestionResponseDto> GetPutawaySuggestionsAsync(PutawaySuggestionRequest request)
@@ -100,7 +100,7 @@ public class AiService : IAiService
                                                   string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
                                       .ToList();
 
-        // 5. Xác định Category của kiện hàng để làm đầu vào mô hình
+        // 5. Xác định Category của kiện hàng
         string category = "General";
         if (parcel.ConsignmentId.HasValue)
         {
@@ -113,109 +113,8 @@ public class AiService : IAiService
             }
         }
 
-        // 6. Lấy lịch sử xếp dỡ và huấn luyện mô hình ML.NET in-process
-        var historyRepo = _unitOfWork.Repository<PutAwayHistory>();
-        var histories = await historyRepo.GetAllAsync();
-
-        var trainingData = histories.Select(h => new PutAwayModelInput
-        {
-            Weight = (float)h.ParcelWeight,
-            Volume = (float)h.Volume,
-            Category = h.Category,
-            BinId = h.BinId.ToString()
-        }).ToList();
-
-        var distinctBinsInHistory = trainingData.Select(x => x.BinId).Distinct().ToList();
-
-        // Bảo đảm có ít nhất 2 nhãn phân loại khác nhau để ML.NET phân loại
-        if (distinctBinsInHistory.Count < 2)
-        {
-            var activeBinIds = activeBins.Keys.Select(k => k.ToString()).ToList();
-            if (activeBinIds.Count >= 2)
-            {
-                trainingData.Add(new PutAwayModelInput { Weight = 5.0f, Volume = 0.01f, Category = "Fragile", BinId = activeBinIds[0] });
-                trainingData.Add(new PutAwayModelInput { Weight = 1.0f, Volume = 0.002f, Category = "Shoes", BinId = activeBinIds[1] });
-            }
-            else if (activeBinIds.Count == 1)
-            {
-                trainingData.Add(new PutAwayModelInput { Weight = 5.0f, Volume = 0.01f, Category = "Fragile", BinId = activeBinIds[0] });
-                trainingData.Add(new PutAwayModelInput { Weight = 1.0f, Volume = 0.001f, Category = "Dummy", BinId = Guid.Empty.ToString() });
-            }
-        }
-
-        var suggestions = new List<SuggestedLocationDto>();
-        bool preferredZoneHasAvailable = false;
-
-        // Xác suất model gán cho từng bin. Bin chưa từng xuất hiện trong lịch sử sẽ không có
-        // mặt ở đây; trước kia những bin đó bị bỏ qua hoàn toàn nên kho mới không gợi ý được gì.
-        var binScores = new Dictionary<Guid, decimal>();
-        var modelTrained = false;
-
-        try
-        {
-            lock (_modelLock)
-            {
-                int currentHash = trainingData.Count;
-                foreach (var item in trainingData)
-                {
-                    currentHash = HashCode.Combine(currentHash, item.BinId, item.Weight, item.Volume, item.Category);
-                }
-
-                if (_cachedPredEngine == null || currentHash != _cachedHistoryHash)
-                {
-                    var mlContext = new MLContext(seed: 42);
-                    var trainingDataView = mlContext.Data.LoadFromEnumerable(trainingData);
-
-                    // Pipeline huấn luyện ML.NET
-                    var pipeline = mlContext.Transforms.Conversion.MapValueToKey("Label", nameof(PutAwayModelInput.BinId))
-                        .Append(mlContext.Transforms.Categorical.OneHotEncoding("CategoryEncoded", nameof(PutAwayModelInput.Category)))
-                        .Append(mlContext.Transforms.Concatenate("Features", nameof(PutAwayModelInput.Weight), nameof(PutAwayModelInput.Volume), "CategoryEncoded"))
-                        .Append(mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy("Label", "Features"))
-                        .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
-
-                    var mlModel = pipeline.Fit(trainingDataView);
-
-                    // Đọc danh sách nhãn BinId đã ánh xạ sang chỉ số của mảng Score
-                    VBuffer<ReadOnlyMemory<char>> keys = default;
-                    var labelColumn = mlModel.Transform(trainingDataView).Schema["Label"];
-                    labelColumn.GetKeyValues(ref keys);
-                    
-                    _cachedBinIdLabels = keys.DenseValues().Select(x => x.ToString()).ToArray();
-                    _cachedPredEngine = mlContext.Model.CreatePredictionEngine<PutAwayModelInput, PutAwayModelPrediction>(mlModel);
-                    _cachedHistoryHash = currentHash;
-                }
-
-                // PredictionEngine không thread-safe mà engine lại là static dùng chung,
-                // nên phải dự đoán ngay trong lock thay vì mang ra ngoài.
-                var modelInput = new PutAwayModelInput
-                {
-                    Weight = (float)parcelWeight,
-                    Volume = (float)parcelVolume,
-                    Category = category
-                };
-
-                var prediction = _cachedPredEngine.Predict(modelInput);
-                var binIdLabels = _cachedBinIdLabels;
-
-                for (int i = 0; i < prediction.Score.Length && i < binIdLabels.Length; i++)
-                {
-                    if (Guid.TryParse(binIdLabels[i], out var scoredBinId) && scoredBinId != Guid.Empty)
-                    {
-                        binScores[scoredBinId] = (decimal)prediction.Score[i];
-                    }
-                }
-
-                modelTrained = true;
-            }
-
-        }
-        catch (Exception ex)
-        {
-            // Model hỏng không được làm chết tính năng: vẫn chấm điểm bằng sức chứa thực tế.
-            response.Warnings.Add($"Không thể chạy mô hình AI ML.NET: {ex.Message}. Đang chấm điểm bằng sức chứa thực tế của ô kệ.");
-        }
-
-        // 7. Duyệt TOÀN BỘ ô kệ hợp lệ của kho, không chỉ những ô từng xuất hiện trong lịch sử.
+        // 6. Lọc danh sách Candidate Bins đủ sức chứa thể tích & tải trọng
+        var candidateBins = new List<CandidateBinDto>();
         var rejectedByVolume = 0;
         var rejectedByWeight = 0;
         var binsWithoutLayout = 0;
@@ -229,10 +128,6 @@ public class AiService : IAiService
             }
 
             var parcelsInBin = storedParcels.Where(p => p.BinId == bin.Id).ToList();
-
-            // Thể tích đang chiếm được cộng lại từ kiện thực tế đang nằm trong ô, giống cách
-            // tính tải trọng. Cột Bin.CurrentVolume chỉ được cộng lúc xếp vào mà không trừ khi
-            // hàng xuất kho nên trôi dần và làm mọi ô trông như đã đầy.
             decimal occupiedVolume = parcelsInBin.Sum(GetParcelVolume);
 
             decimal availableVolume = decimal.MaxValue;
@@ -263,65 +158,25 @@ public class AiService : IAiService
                 }
             }
 
-            // Ô càng rộng chỗ càng dễ thao tác, nên lấy phần trống làm điểm nền.
-            decimal spaceScore = bin.MaxVolume.HasValue && bin.MaxVolume.Value > 0
-                ? 1m - occupancyRatio
-                : 0.5m;
-
-            bool isEntirelyEmpty = parcelsInBin.Count == 0;
-            decimal confidenceScore;
-            string reason;
-
-            if (binScores.TryGetValue(bin.Id, out var modelProbability))
+            candidateBins.Add(new CandidateBinDto
             {
-                // Model biết ô này: trộn xác suất với chỗ trống còn lại.
-                confidenceScore = (0.65m * modelProbability) + (0.35m * spaceScore);
-                reason = $"AI dự đoán {modelProbability * 100:0.0}% dựa trên lịch sử xếp dỡ, ô còn trống {spaceScore * 100:0.0}% sức chứa.";
-            }
-            else
-            {
-                // Ô hợp lệ nhưng chưa có lịch sử: vẫn đề xuất, chỉ hạ trần điểm để
-                // luôn xếp sau ô mà model thực sự có căn cứ.
-                confidenceScore = 0.20m + (0.50m * spaceScore);
-                reason = isEntirelyEmpty
-                    ? "Ô kệ trống hoàn toàn, chưa có lịch sử xếp dỡ để AI đối chiếu."
-                    : $"Ô kệ còn trống {spaceScore * 100:0.0}% sức chứa, chưa có lịch sử xếp dỡ để AI đối chiếu.";
-            }
-
-            if (request.PreferredZoneId.HasValue && layout.ZoneId == request.PreferredZoneId.Value)
-            {
-                confidenceScore += 0.1m;
-                reason = $"Thuộc khu vực ưu tiên. {reason}";
-                preferredZoneHasAvailable = true;
-            }
-
-            suggestions.Add(new SuggestedLocationDto
-            {
-                LocationId = layout.Id,
+                LayoutId = layout.Id,
                 WarehouseId = layout.WarehouseId,
                 ZoneId = layout.ZoneId,
                 ShelfId = layout.ShelfId,
-                BinId = layout.BinId,
-                DisplayLabel = layout.DisplayLabel,
-                ConfidenceScore = Math.Round(Math.Min(1.0m, confidenceScore), 4),
-                Reason = reason
+                BinId = bin.Id,
+                DisplayLabel = layout.DisplayLabel ?? $"Bin {bin.Id}",
+                OccupiedVolume = occupiedVolume,
+                AvailableVolume = availableVolume == decimal.MaxValue ? 999999m : availableVolume,
+                OccupancyRatio = occupancyRatio,
+                CurrentWeight = currentWeightInBin,
+                AvailableWeight = availableWeight == decimal.MaxValue ? 9999m : availableWeight,
+                IsEntirelyEmpty = parcelsInBin.Count == 0
             });
         }
 
-        // 8. Thêm cảnh báo nếu khu vực ưu tiên không có chỗ
-        if (request.PreferredZoneId.HasValue && !preferredZoneHasAvailable)
-        {
-            response.Warnings.Add("Khu vực yêu cầu (preferredZoneId) không có vị trí trống hoặc khả dụng. Đã đề xuất các khu vực khác.");
-        }
-
-        // 9. Sắp xếp giảm dần theo ConfidenceScore và lấy Top 5
-        response.SuggestedLocations = suggestions
-            .OrderByDescending(s => s.ConfidenceScore)
-            .Take(5)
-            .ToList();
-
-        // 10. Rỗng thì phải nói rõ vì sao, không để nhân viên kho đoán.
-        if (!response.SuggestedLocations.Any())
+        // 7. Xử lý trường hợp không có ô nào phù hợp
+        if (!candidateBins.Any())
         {
             if (validLayouts.Count == 0)
             {
@@ -342,14 +197,213 @@ public class AiService : IAiService
                     $"{rejectedByVolume} ô không đủ thể tích (kiện cần {parcelVolume:N0} cm³), " +
                     $"{rejectedByWeight} ô không đủ tải trọng (kiện nặng {parcelWeight:N2} kg).");
             }
+            return response;
         }
 
-        if (!modelTrained && response.SuggestedLocations.Any())
+        // 8. Gọi Gemini AI để lấy đánh giá & xếp hạng gợi ý
+        try
         {
-            response.Warnings.Add("Gợi ý đang dựa trên sức chứa thực tế của ô kệ, chưa có mô hình AI hợp lệ để đối chiếu lịch sử.");
+            var geminiRecommendations = await CallGeminiForPutawayAsync(parcel, category, candidateBins, request.PreferredZoneId);
+
+            foreach (var rec in geminiRecommendations)
+            {
+                var cand = candidateBins.FirstOrDefault(c => c.BinId == rec.BinId);
+                if (cand == null) continue;
+
+                response.SuggestedLocations.Add(new SuggestedLocationDto
+                {
+                    LocationId = cand.LayoutId,
+                    WarehouseId = cand.WarehouseId,
+                    ZoneId = cand.ZoneId,
+                    ShelfId = cand.ShelfId,
+                    BinId = cand.BinId,
+                    DisplayLabel = cand.DisplayLabel,
+                    ConfidenceScore = Math.Round(Math.Min(1.0m, Math.Max(0.01m, rec.ConfidenceScore)), 4),
+                    Reason = rec.Reason
+                });
+            }
+
+            // Nếu Gemini trả về danh sách có vị trí gợi ý thì sắp xếp Top 5
+            if (response.SuggestedLocations.Any())
+            {
+                response.SuggestedLocations = response.SuggestedLocations
+                    .OrderByDescending(s => s.ConfidenceScore)
+                    .Take(5)
+                    .ToList();
+            }
+            else
+            {
+                // Trường hợp Gemini trả rỗng: Fallback sang Heuristic
+                response.Warnings.Add("Gemini AI không trả về gợi ý cụ thể. Đã sử dụng thuật toán tính toán sức chứa còn trống.");
+                response.SuggestedLocations = BuildFallbackSuggestions(candidateBins, request.PreferredZoneId);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Fallback an toàn nếu Gemini bị lỗi (timeout, hết quota, mất mạng)
+            response.Warnings.Add($"Không thể kết nối Gemini AI ({ex.Message}). Đang sử dụng thuật toán tính toán sức chứa còn trống.");
+            response.SuggestedLocations = BuildFallbackSuggestions(candidateBins, request.PreferredZoneId);
+        }
+
+        // 9. Cảnh báo nếu PreferredZoneId không có ô khả dụng
+        if (request.PreferredZoneId.HasValue && !candidateBins.Any(c => c.ZoneId == request.PreferredZoneId.Value))
+        {
+            response.Warnings.Add("Khu vực yêu cầu (preferredZoneId) không có vị trí trống hoặc khả dụng. Đã đề xuất các khu vực khác.");
         }
 
         return response;
+    }
+
+    private async Task<List<GeminiBinRecommendation>> CallGeminiForPutawayAsync(
+        Parcel parcel,
+        string category,
+        List<CandidateBinDto> candidateBins,
+        Guid? preferredZoneId)
+    {
+        var apiKey = _configuration["GeminiSettings:ApiKey"];
+        var model = _configuration["GeminiSettings:Model"] ?? "gemini-1.5-flash";
+        var baseUrl = _configuration["GeminiSettings:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta/models/";
+
+        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_"))
+        {
+            throw new InvalidOperationException("Gemini API Key chưa được cấu hình hợp lệ.");
+        }
+
+        var url = $"{baseUrl}{model}:generateContent?key={apiKey}";
+
+        // Tối ưu Payload gọn nhẹ để gửi Gemini
+        var promptPayload = new
+        {
+            Parcel = new
+            {
+                ParcelId = parcel.Id.ToString(),
+                WeightKg = parcel.ActualWeight ?? 0m,
+                DimensionsCm = $"{parcel.Length ?? 0}x{parcel.Width ?? 0}x{parcel.Height ?? 0}",
+                VolumeCm3 = (parcel.Length ?? 0m) * (parcel.Width ?? 0m) * (parcel.Height ?? 0m),
+                Category = category
+            },
+            PreferredZoneId = preferredZoneId?.ToString(),
+            AvailableBins = candidateBins.Select(b => new
+            {
+                BinId = b.BinId.ToString(),
+                Label = b.DisplayLabel,
+                ZoneId = b.ZoneId?.ToString(),
+                AvailableVolumeCm3 = b.AvailableVolume,
+                AvailableWeightKg = b.AvailableWeight,
+                FreeSpacePercent = Math.Round((1m - b.OccupancyRatio) * 100, 1)
+            })
+        };
+
+        string systemInstruction = @"Bạn là Chuyên gia AI Quản lý Kho Vận (Logistics WMS Expert).
+Nhiệm vụ của bạn là phân tích kiện hàng và danh sách các ô kệ khả dụng trong kho, sau đó chọn ra các ô vị trí xếp dỡ tối ưu nhất.
+Quy tắc đề xuất:
+1. Hàng nặng (>10kg) ưu tiên xếp ô kệ có tải trọng dư dả, tầng thấp hoặc tầng giữa.
+2. Hàng nhẹ/nhỏ ưu tiên tối ưu khoảng trống ô kệ.
+3. Nếu kiện hàng thuộc PreferredZoneId, cộng thêm điểm ưu tiên.
+4. Giải thích ngắn gọn, rõ ràng lý do đề xuất bằng tiếng Việt tự nhiên cho nhân viên kho.
+5. BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
+{
+  ""recommendations"": [
+    {
+      ""binId"": ""guid-string-trùng-với-AvailableBins"",
+      ""confidenceScore"": 0.95,
+      ""reason"": ""Lý do chi tiết bằng tiếng Việt""
+    }
+  ]
+}";
+
+        var requestBody = new
+        {
+            contents = new[]
+            {
+                new
+                {
+                    parts = new object[]
+                    {
+                        new { text = $"{systemInstruction}\n\nDữ liệu đầu vào:\n{JsonSerializer.Serialize(promptPayload)}" }
+                    }
+                }
+            },
+            generationConfig = new
+            {
+                response_mime_type = "application/json",
+                temperature = 0.2
+            }
+        };
+
+        var client = _httpClient;
+
+        var jsonContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json");
+
+        var httpResponse = await client.PostAsync(url, jsonContent);
+        if (!httpResponse.IsSuccessStatusCode)
+        {
+            var errText = await httpResponse.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"Lỗi kết nối Gemini API (Mã {httpResponse.StatusCode}): {errText}");
+        }
+
+        var responseString = await httpResponse.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(responseString);
+
+        var textContent = doc.RootElement
+            .GetProperty("candidates")[0]
+            .GetProperty("content")
+            .GetProperty("parts")[0]
+            .GetProperty("text")
+            .GetString();
+
+        if (string.IsNullOrWhiteSpace(textContent))
+        {
+            return new List<GeminiBinRecommendation>();
+        }
+
+        var result = JsonSerializer.Deserialize<GeminiResponseDto>(
+            textContent,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        return result?.Recommendations ?? new List<GeminiBinRecommendation>();
+    }
+
+    private static List<SuggestedLocationDto> BuildFallbackSuggestions(
+        List<CandidateBinDto> candidateBins,
+        Guid? preferredZoneId)
+    {
+        var suggestions = new List<SuggestedLocationDto>();
+
+        foreach (var cand in candidateBins)
+        {
+            decimal spaceScore = 1m - cand.OccupancyRatio;
+            decimal confidenceScore = 0.30m + (0.60m * spaceScore);
+            string reason = cand.IsEntirelyEmpty
+                ? "Ô kệ trống hoàn toàn, sức chứa dư dả để xếp dỡ."
+                : $"Ô kệ còn trống {spaceScore * 100:0.0}% sức chứa.";
+
+            if (preferredZoneId.HasValue && cand.ZoneId == preferredZoneId.Value)
+            {
+                confidenceScore += 0.1m;
+                reason = $"Thuộc khu vực ưu tiên. {reason}";
+            }
+
+            suggestions.Add(new SuggestedLocationDto
+            {
+                LocationId = cand.LayoutId,
+                WarehouseId = cand.WarehouseId,
+                ZoneId = cand.ZoneId,
+                ShelfId = cand.ShelfId,
+                BinId = cand.BinId,
+                DisplayLabel = cand.DisplayLabel,
+                ConfidenceScore = Math.Round(Math.Min(1.0m, confidenceScore), 4),
+                Reason = reason
+            });
+        }
+
+        return suggestions
+            .OrderByDescending(s => s.ConfidenceScore)
+            .Take(5)
+            .ToList();
     }
 
     /// <summary>Thể tích một kiện theo cm³; thiếu kích thước thì coi như không chiếm chỗ.</summary>
