@@ -50,6 +50,14 @@ namespace VCL_BLL.DTOs
         public Guid ShipmentId { get; set; }
         public string ShipmentCode { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Nhóm trạng thái ứng với 5 tab màn Vận chuyển:
+        /// PREPARING · IN_TRANSIT · CUSTOMS · ARRIVED · ISSUE.
+        /// FE lọc theo trường này thay vì tự map từng trạng thái.
+        /// </summary>
+        public string StatusTab { get; set; } = string.Empty;
+
         public string? Note { get; set; }
         public DateTime UpdatedAt { get; set; }
         public string UpdatedByName { get; set; } = string.Empty;
@@ -117,6 +125,29 @@ namespace VCL_BLL.DTOs
         public int TotalPackages { get; set; }
         public decimal TotalWeight { get; set; }
         public string Status { get; set; } = string.Empty;
+
+        /// <summary>Nhóm trạng thái ứng với 5 tab màn Vận chuyển. FE lọc theo trường này.</summary>
+        public string StatusTab { get; set; } = string.Empty;
+
+        /// <summary>Tuyến vận chuyển, suy từ các WRO thành phần (mọi WRO trong lô đều cùng tuyến).</summary>
+        public Guid? ShippingRouteId { get; set; }
+        public string? ShippingRouteName { get; set; }
+
+        public DateTime? ShippedAt { get; set; }
+        public DateTime? DeliveredAt { get; set; }
+
+        /// <summary>
+        /// Toàn bộ chứng từ PDF của lô: phiếu nhập kho của các đơn ký gửi liên quan,
+        /// và phiếu xuất kho của từng WRO. FE hiển thị dạng danh sách link để mở/in.
+        /// </summary>
+        public List<string> PdfUrls { get; set; } = new();
+
+        /// <summary>Ảnh chụp thực tế lúc đóng gói và bàn giao lô.</summary>
+        public List<string> ExportImageUrls { get; set; } = new();
+
+        /// <summary>Chứng từ thông quan của các WRO trong lô.</summary>
+        public List<string> CustomsDocUrls { get; set; } = new();
+
         public List<InternationalShipmentWroDto> WroRequests { get; set; } = new();
         public List<InternationalShipmentParcelDto> Parcels { get; set; } = new();
     }
