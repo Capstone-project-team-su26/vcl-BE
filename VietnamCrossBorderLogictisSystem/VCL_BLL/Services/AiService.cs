@@ -83,30 +83,24 @@ public class AiService : IAiService
 
         // 4. Lấy danh sách layout items hợp lệ của kho và các Bin hoạt động
         var layoutRepo = _unitOfWork.Repository<WarehouseLocationLayout>();
-        var allLayouts = await layoutRepo.GetAllAsync();
-        var validLayouts = allLayouts.Where(l => l.WarehouseId == request.WarehouseId &&
-                                                string.Equals(l.LayoutType, "BIN", StringComparison.OrdinalIgnoreCase) &&
-                                                !string.Equals(l.Status, "INACTIVE", StringComparison.OrdinalIgnoreCase) &&
-                                                !string.Equals(l.Status, "LOCKED", StringComparison.OrdinalIgnoreCase) &&
-                                                !string.Equals(l.Status, "DISABLED", StringComparison.OrdinalIgnoreCase))
-                                    .ToList();
+        var validLayouts = (await layoutRepo.FindAsync(l => l.WarehouseId == request.WarehouseId &&
+                                                           l.LayoutType != null && l.LayoutType.ToUpper() == "BIN" &&
+                                                           l.Status != "INACTIVE" && l.Status != "LOCKED" && l.Status != "DISABLED"))
+                                            .ToList();
 
         var binRepo = _unitOfWork.Repository<Bin>();
-        var bins = await binRepo.GetAllAsync();
-        var activeBins = bins.Where(b => b.WarehouseId == request.WarehouseId && b.IsActive).ToDictionary(b => b.Id);
+        var activeBins = (await binRepo.FindAsync(b => b.WarehouseId == request.WarehouseId && b.IsActive))
+                                       .ToDictionary(b => b.Id);
 
-        var allParcels = await parcelRepo.GetAllAsync();
-        var storedParcels = allParcels.Where(p => p.BinId.HasValue &&
-                                                  string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
-                                      .ToList();
+        var storedParcels = (await parcelRepo.FindAsync(p => p.BinId.HasValue && p.PackageStatus != null && p.PackageStatus.ToUpper() == "STORED"))
+                                            .ToList();
 
         // 5. Xác định Category của kiện hàng
         string category = "General";
         if (parcel.ConsignmentId.HasValue)
         {
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            var orderItems = await orderItemRepo.GetAllAsync();
-            var item = orderItems.FirstOrDefault(oi => oi.OrderId == parcel.ConsignmentId.Value);
+            var item = await orderItemRepo.FirstOrDefaultAsync(oi => oi.OrderId == parcel.ConsignmentId.Value);
             if (item != null && !string.IsNullOrEmpty(item.ProductName))
             {
                 category = item.ProductName;
@@ -338,7 +332,17 @@ Quy tắc đề xuất:
             Encoding.UTF8,
             "application/json");
 
-        var httpResponse = await client.PostAsync(url, jsonContent);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        HttpResponseMessage httpResponse;
+        try
+        {
+            httpResponse = await client.PostAsync(url, jsonContent, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException("Gemini API phản hồi quá thời hạn cho phép (5 giây).");
+        }
+
         if (!httpResponse.IsSuccessStatusCode)
         {
             var errText = await httpResponse.Content.ReadAsStringAsync();
@@ -431,18 +435,6 @@ Quy tắc đề xuất:
         var shipmentRepo = _unitOfWork.Repository<Shipment>();
         var quotationRepo = _unitOfWork.Repository<Quotation>();
 
-        var allOrders = await orderRepo.GetAllAsync();
-        var allPurchaseRequests = await purchaseRequestRepo.GetAllAsync();
-        var allCustomers = await customerRepo.GetAllAsync();
-        var allParcels = await parcelRepo.GetAllAsync();
-        var allInvoices = await invoiceRepo.GetAllAsync();
-        var allPayments = await paymentRepo.GetAllAsync();
-        var allPurchasePayments = await purchasePaymentRepo.GetAllAsync();
-        var allReceivingNotes = await receivingNoteRepo.GetAllAsync();
-        var allWroRequests = await wroRequestRepo.GetAllAsync();
-        var allShipments = await shipmentRepo.GetAllAsync();
-        var allQuotations = await quotationRepo.GetAllAsync();
-
         Order? matchedOrder = null;
         PurchaseRequest? matchedPurchaseRequest = null;
         Customer? matchedCustomer = null;
@@ -453,33 +445,33 @@ Quy tắc đề xuất:
         if (!string.IsNullOrWhiteSpace(request.OrderCode))
         {
             var code = request.OrderCode.Trim();
-            matchedOrder = allOrders.FirstOrDefault(o => string.Equals(o.ConsignmentCode, code, StringComparison.OrdinalIgnoreCase));
-            matchedPurchaseRequest = allPurchaseRequests.FirstOrDefault(p => string.Equals(p.PurchaseCode, code, StringComparison.OrdinalIgnoreCase));
-            matchedParcel = allParcels.FirstOrDefault(p => string.Equals(p.PackageCode, code, StringComparison.OrdinalIgnoreCase));
+            matchedOrder = await orderRepo.FirstOrDefaultAsync(o => o.ConsignmentCode == code);
+            matchedPurchaseRequest = await purchaseRequestRepo.FirstOrDefaultAsync(p => p.PurchaseCode == code);
+            matchedParcel = await parcelRepo.FirstOrDefaultAsync(p => p.PackageCode == code);
         }
 
         if (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty)
         {
-            matchedCustomer = allCustomers.FirstOrDefault(c => c.Id == request.CustomerId.Value);
+            matchedCustomer = await customerRepo.GetByIdAsync(request.CustomerId.Value);
         }
 
         if (request.RelatedId.HasValue && request.RelatedId.Value != Guid.Empty)
         {
             if (string.Equals(request.RelatedType, "CONSIGNMENT", StringComparison.OrdinalIgnoreCase))
             {
-                matchedOrder = allOrders.FirstOrDefault(o => o.Id == request.RelatedId.Value);
+                matchedOrder = await orderRepo.GetByIdAsync(request.RelatedId.Value);
             }
             else if (string.Equals(request.RelatedType, "PURCHASE", StringComparison.OrdinalIgnoreCase))
             {
-                matchedPurchaseRequest = allPurchaseRequests.FirstOrDefault(p => p.Id == request.RelatedId.Value);
+                matchedPurchaseRequest = await purchaseRequestRepo.GetByIdAsync(request.RelatedId.Value);
             }
             else if (string.Equals(request.RelatedType, "PARCEL", StringComparison.OrdinalIgnoreCase))
             {
-                matchedParcel = allParcels.FirstOrDefault(p => p.Id == request.RelatedId.Value);
+                matchedParcel = await parcelRepo.GetByIdAsync(request.RelatedId.Value);
             }
             else if (string.Equals(request.RelatedType, "CUSTOMER", StringComparison.OrdinalIgnoreCase))
             {
-                matchedCustomer = allCustomers.FirstOrDefault(c => c.Id == request.RelatedId.Value);
+                matchedCustomer = await customerRepo.GetByIdAsync(request.RelatedId.Value);
             }
         }
 
@@ -492,23 +484,23 @@ Quy tắc đề xuất:
         {
             foreach (var token in searchTokens)
             {
-                matchedOrder ??= allOrders.FirstOrDefault(o =>
-                    (!string.IsNullOrEmpty(o.ConsignmentCode) && string.Equals(o.ConsignmentCode, token, StringComparison.OrdinalIgnoreCase)) ||
-                    (!string.IsNullOrEmpty(o.ReceiverPhone) && o.ReceiverPhone.Contains(token)) ||
-                    (!string.IsNullOrEmpty(o.ReceiverName) && o.ReceiverName.Contains(token, StringComparison.OrdinalIgnoreCase)));
+                matchedOrder ??= await orderRepo.FirstOrDefaultAsync(o =>
+                    (o.ConsignmentCode != null && o.ConsignmentCode == token) ||
+                    (o.ReceiverPhone != null && o.ReceiverPhone.Contains(token)) ||
+                    (o.ReceiverName != null && o.ReceiverName.Contains(token)));
 
-                matchedPurchaseRequest ??= allPurchaseRequests.FirstOrDefault(p =>
-                    (!string.IsNullOrEmpty(p.PurchaseCode) && string.Equals(p.PurchaseCode, token, StringComparison.OrdinalIgnoreCase)) ||
-                    (!string.IsNullOrEmpty(p.ReceiverPhone) && p.ReceiverPhone.Contains(token)) ||
-                    (!string.IsNullOrEmpty(p.ReceiverName) && p.ReceiverName.Contains(token, StringComparison.OrdinalIgnoreCase)));
+                matchedPurchaseRequest ??= await purchaseRequestRepo.FirstOrDefaultAsync(p =>
+                    (p.PurchaseCode != null && p.PurchaseCode == token) ||
+                    (p.ReceiverPhone != null && p.ReceiverPhone.Contains(token)) ||
+                    (p.ReceiverName != null && p.ReceiverName.Contains(token)));
 
-                matchedParcel ??= allParcels.FirstOrDefault(p =>
-                    (!string.IsNullOrEmpty(p.PackageCode) && string.Equals(p.PackageCode, token, StringComparison.OrdinalIgnoreCase)));
+                matchedParcel ??= await parcelRepo.FirstOrDefaultAsync(p =>
+                    p.PackageCode != null && p.PackageCode == token);
 
-                matchedCustomer ??= allCustomers.FirstOrDefault(c =>
-                    (!string.IsNullOrEmpty(c.Phone) && c.Phone.Contains(token)) ||
-                    (!string.IsNullOrEmpty(c.FullName) && c.FullName.Contains(token, StringComparison.OrdinalIgnoreCase)) ||
-                    (!string.IsNullOrEmpty(c.Email) && c.Email.Contains(token, StringComparison.OrdinalIgnoreCase)));
+                matchedCustomer ??= await customerRepo.FirstOrDefaultAsync(c =>
+                    (c.Phone != null && c.Phone.Contains(token)) ||
+                    (c.FullName != null && c.FullName.Contains(token)) ||
+                    (c.Email != null && c.Email.Contains(token)));
 
                 if (matchedOrder != null || matchedPurchaseRequest != null || matchedParcel != null || matchedCustomer != null)
                     break;
@@ -517,18 +509,16 @@ Quy tắc đề xuất:
 
         if (matchedParcel != null && matchedOrder == null && matchedParcel.ConsignmentId.HasValue)
         {
-            matchedOrder = allOrders.FirstOrDefault(o => o.Id == matchedParcel.ConsignmentId.Value);
+            matchedOrder = await orderRepo.GetByIdAsync(matchedParcel.ConsignmentId.Value);
         }
 
         if (matchedCustomer != null && matchedOrder == null && matchedPurchaseRequest == null)
         {
-            matchedOrder = allOrders.Where(o => o.CustomerId == matchedCustomer.Id)
-                                    .OrderByDescending(o => o.CreatedAt)
-                                    .FirstOrDefault();
+            var custOrders = await orderRepo.FindAsync(o => o.CustomerId == matchedCustomer.Id);
+            matchedOrder = custOrders.OrderByDescending(o => o.CreatedAt).FirstOrDefault();
 
-            matchedPurchaseRequest ??= allPurchaseRequests.Where(p => p.CustomerId == matchedCustomer.Id)
-                                                          .OrderByDescending(p => p.CreatedAt)
-                                                          .FirstOrDefault();
+            var custPurchases = await purchaseRequestRepo.FindAsync(p => p.CustomerId == matchedCustomer.Id);
+            matchedPurchaseRequest = custPurchases.OrderByDescending(p => p.CreatedAt).FirstOrDefault();
         }
 
         if (matchedOrder == null && matchedPurchaseRequest == null && matchedParcel == null && matchedCustomer == null)
@@ -542,7 +532,7 @@ Quy tắc đề xuất:
         {
             dataSources.Add("Orders");
             matchedCustomer ??= matchedOrder.CustomerId.HasValue
-                ? allCustomers.FirstOrDefault(c => c.Id == matchedOrder.CustomerId.Value)
+                ? await customerRepo.GetByIdAsync(matchedOrder.CustomerId.Value)
                 : null;
 
             response.RelatedOrders.Add(new SalesQueryOrderSummaryDto
@@ -558,7 +548,7 @@ Quy tắc đề xuất:
 
             response.CurrentStatus = matchedOrder.Status ?? "PENDING";
 
-            var orderParcels = allParcels.Where(p => p.ConsignmentId == matchedOrder.Id).ToList();
+            var orderParcels = (await parcelRepo.FindAsync(p => p.ConsignmentId == matchedOrder.Id)).ToList();
             if (orderParcels.Any())
             {
                 dataSources.Add("Parcels");
@@ -575,12 +565,18 @@ Quy tắc đề xuất:
                 }
             }
 
-            var orderQuotationIds = allQuotations.Where(q => q.OrderId == matchedOrder.Id).Select(q => q.Id).ToList();
-            var orderInvoice = allInvoices.FirstOrDefault(i => i.QuotationId.HasValue && orderQuotationIds.Contains(i.QuotationId.Value));
+            var orderQuotations = (await quotationRepo.FindAsync(q => q.OrderId == matchedOrder.Id)).ToList();
+            var orderQuotationIds = orderQuotations.Select(q => q.Id).ToList();
+            Invoice? orderInvoice = null;
+            if (orderQuotationIds.Any())
+            {
+                orderInvoice = await invoiceRepo.FirstOrDefaultAsync(i => i.QuotationId.HasValue && orderQuotationIds.Contains(i.QuotationId.Value));
+            }
+
             if (orderInvoice != null)
             {
                 dataSources.Add("Invoices");
-                var invoicePayments = allPayments.Where(p => p.InvoiceId == orderInvoice.Id && string.Equals(p.PaymentStatus, "SUCCESS", StringComparison.OrdinalIgnoreCase)).ToList();
+                var invoicePayments = (await paymentRepo.FindAsync(p => p.InvoiceId == orderInvoice.Id && p.PaymentStatus != null && p.PaymentStatus.ToUpper() == "SUCCESS")).ToList();
                 var totalPaid = invoicePayments.Sum(p => p.Amount);
                 var totalInvoiceAmount = orderInvoice.TotalAmount ?? 0m;
 
@@ -602,8 +598,8 @@ Quy tắc đề xuất:
                 response.PaymentStatus = "Chưa phát hành hóa đơn thanh toán";
             }
 
-            var note = allReceivingNotes.FirstOrDefault(n => n.ConsignmentOrderId == matchedOrder.Id);
-            var release = matchedCustomer != null ? allWroRequests.FirstOrDefault(r => r.CustomerId == matchedCustomer.Id) : null;
+            var note = await receivingNoteRepo.FirstOrDefaultAsync(n => n.ConsignmentOrderId == matchedOrder.Id);
+            var release = matchedCustomer != null ? await wroRequestRepo.FirstOrDefaultAsync(r => r.CustomerId == matchedCustomer.Id) : null;
             if (release != null)
             {
                 dataSources.Add("WroRequests");
@@ -620,7 +616,17 @@ Quy tắc đề xuất:
             }
 
             var parcelIds = orderParcels.Select(p => p.Id).ToList();
-            var shipment = allShipments.FirstOrDefault(s => s.ShipmentParcels.Any(sp => parcelIds.Contains(sp.ParcelId)));
+            Shipment? shipment = null;
+            if (parcelIds.Any())
+            {
+                var shipmentParcelRepo = _unitOfWork.Repository<ShipmentParcel>();
+                var spMatch = await shipmentParcelRepo.FirstOrDefaultAsync(sp => parcelIds.Contains(sp.ParcelId));
+                if (spMatch != null)
+                {
+                    shipment = await shipmentRepo.GetByIdAsync(spMatch.ShipmentId);
+                }
+            }
+
             if (shipment != null)
             {
                 dataSources.Add("Shipments");
@@ -657,7 +663,7 @@ Quy tắc đề xuất:
         {
             dataSources.Add("PurchaseRequests");
             matchedCustomer ??= matchedPurchaseRequest.CustomerId.HasValue
-                ? allCustomers.FirstOrDefault(c => c.Id == matchedPurchaseRequest.CustomerId.Value)
+                ? await customerRepo.GetByIdAsync(matchedPurchaseRequest.CustomerId.Value)
                 : null;
 
             response.RelatedOrders.Add(new SalesQueryOrderSummaryDto
@@ -673,8 +679,8 @@ Quy tắc đề xuất:
 
             response.CurrentStatus = matchedPurchaseRequest.Status ?? "PENDING";
 
-            var pPayments = allPurchasePayments.Where(p => p.PurchaseRequestId == matchedPurchaseRequest.Id).ToList();
-            if (pPayments.Any(p => string.Equals(p.Status, "PAID", StringComparison.OrdinalIgnoreCase) || string.Equals(p.Status, "SUCCESS", StringComparison.OrdinalIgnoreCase)))
+            var pPayments = (await purchasePaymentRepo.FindAsync(p => p.PurchaseRequestId == matchedPurchaseRequest.Id)).ToList();
+            if (pPayments.Any(p => p.Status != null && (p.Status.ToUpper() == "PAID" || p.Status.ToUpper() == "SUCCESS")))
             {
                 dataSources.Add("PurchasePayments");
                 response.PaymentStatus = "Đã thanh toán (PAID)";
