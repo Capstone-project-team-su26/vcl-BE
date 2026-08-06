@@ -214,6 +214,62 @@ namespace VCL_DLL.Migrations
                         .IsUnique();
 
                     b.ToTable("CARRIERS", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("5ded98a2-dc10-4a36-b5d6-3b15c5e373d2"),
+                            ApiUrl = "https://sandbox.goship.io/api/v2/",
+                            CarrierCode = "GOSHIP",
+                            CarrierName = "GoShip Aggregator",
+                            CarrierType = "Domestic",
+                            ContactEmail = "support@goship.io",
+                            ContactPhone = "1900 6789",
+                            InternalNotes = "Cổng kết nối đa hãng GoShip Sandbox cho giao hàng chặng cuối tại Việt Nam.",
+                            IsActive = true,
+                            SupportedRegions = "Toàn quốc (63 tỉnh thành Việt Nam)",
+                            SupportedShippingMethods = "GHTK, GHN, Viettel Post, NJV, JT Express"
+                        },
+                        new
+                        {
+                            Id = new Guid("41bbc694-4590-49c7-aa30-6ad2f01a5c37"),
+                            ApiUrl = "https://online-gateway.ghn.vn/shiip/public-api/v2/",
+                            CarrierCode = "GHN",
+                            CarrierName = "Giao Hàng Nhanh (GHN)",
+                            CarrierType = "Domestic",
+                            ContactEmail = "cskh@ghn.vn",
+                            ContactPhone = "1900 636677",
+                            InternalNotes = "Đối tác chuyển phát nhanh nội địa GHN.",
+                            IsActive = true,
+                            SupportedRegions = "Toàn quốc Việt Nam",
+                            SupportedShippingMethods = "Giao nhanh, Giao tiết kiệm"
+                        },
+                        new
+                        {
+                            Id = new Guid("8a2e1d4b-7c3f-4e5a-9b8c-1d2e3f4a5b6c"),
+                            CarrierCode = "HOPPHAT_TRUCK",
+                            CarrierName = "Nhà Xe Vận Tải Hợp Phát",
+                            CarrierType = "CrossBorder_Road",
+                            ContactEmail = "lienhe@hopphatlogistics.com",
+                            ContactPhone = "0903 123 456",
+                            InternalNotes = "Đơn vị đối tác liên hệ ngoài chặng xe tải đường bộ Trung - Việt.",
+                            IsActive = true,
+                            SupportedRegions = "Bằng Tường, Lạng Sơn, Hà Nội, TP.HCM",
+                            SupportedShippingMethods = "Xe container, Xe tải đường bộ TQ-VN"
+                        },
+                        new
+                        {
+                            Id = new Guid("7b1a2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"),
+                            CarrierCode = "COSCO_SEA",
+                            CarrierName = "COSCO Shipping Lines",
+                            CarrierType = "CrossBorder_Sea",
+                            ContactEmail = "booking@coscoshipping.com",
+                            ContactPhone = "+84 28 3823 0000",
+                            InternalNotes = "Hãng tàu đối tác chặng đường biển Cảng Trung Quốc - Cảng Việt Nam.",
+                            IsActive = true,
+                            SupportedRegions = "Thượng Hải, Thâm Quyến, Hải Phòng, Cát Lái",
+                            SupportedShippingMethods = "Vận tải đường biển FCL/LCL"
+                        });
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Company", b =>
