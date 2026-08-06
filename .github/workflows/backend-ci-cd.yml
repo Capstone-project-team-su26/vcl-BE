@@ -19,7 +19,7 @@ jobs:
 
     concurrency:
       group: vcl-backend-deployment
-      cancel-in-progress: false
+      cancel-in-progress: true
 
     steps:
       - name: Deploy API
