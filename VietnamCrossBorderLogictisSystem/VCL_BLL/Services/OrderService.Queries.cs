@@ -192,6 +192,7 @@ namespace VCL_BLL.Services
                 RequiresInspection = order.RequiresInspection,
                 CreatedAt = order.CreatedAt,
                 PaymentConfirmedAt = paymentConfirmedAt,
+                QuotationCreatedAt = latestQuotation?.CreatedAt,
                 StatusUpdatedAt = paymentConfirmedAt ?? latestQuotation?.CreatedAt ?? order.CreatedAt,
                 ReceiptPdfUrl = order.ReceiptPdfUrl,
                 PricingRuleIds = pricingRuleIds,

@@ -36,6 +36,9 @@ namespace VCL_BLL.DTOs
         public DateTime? CreatedAt { get; set; }
         public DateTime? PaymentConfirmedAt { get; set; }
 
+        /// <summary>Thời điểm lập báo giá mới nhất của đơn (null nếu chưa có báo giá).</summary>
+        public DateTime? QuotationCreatedAt { get; set; }
+
         /// <summary>Mốc thời gian tương ứng với trạng thái hiện tại của đơn (dùng cho FE hiển thị real-time theo status).</summary>
         public DateTime? StatusUpdatedAt { get; set; }
 
