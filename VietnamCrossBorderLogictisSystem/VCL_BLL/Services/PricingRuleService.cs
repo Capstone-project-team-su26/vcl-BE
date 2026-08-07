@@ -19,12 +19,37 @@ namespace VCL_BLL.Services
             _unitOfWork = unitOfWork;
         }
 
-        public async Task<IEnumerable<PricingRuleDto>> GetAllAsync()
+        /// <summary>
+        /// Các rule chỉ dành cho luồng mua hộ — không được hiện ở danh sách dịch vụ bổ sung
+        /// của đơn ký gửi. Nhận diện theo mã/loại rule thay vì ID để không phụ thuộc GUID seed,
+        /// vì Id của rule lệch nhau giữa DB chung và DB dựng mới.
+        /// </summary>
+        private static readonly string[] PurchaseOnlyRuleKeywords = { "PURCHASE", "VAT", "IMPORT_TAX" };
+
+        private static bool IsPurchaseOnlyRule(PricingRule rule)
+        {
+            var code = rule.RuleCode?.ToUpperInvariant() ?? string.Empty;
+            var type = rule.RuleType?.ToUpperInvariant() ?? string.Empty;
+
+            return PurchaseOnlyRuleKeywords.Any(keyword => code.Contains(keyword) || type.Contains(keyword));
+        }
+
+        public async Task<IEnumerable<PricingRuleDto>> GetAllAsync(string? orderType = null)
         {
             await EnsureDefaultRulesAsync();
 
             var pricingRepo = _unitOfWork.Repository<PricingRule>();
             var rules = await pricingRepo.GetAllAsync();
+
+            var normalizedOrderType = orderType?.Trim().ToUpperInvariant();
+            if (normalizedOrderType == "CONSIGNMENT")
+            {
+                rules = rules.Where(r => !IsPurchaseOnlyRule(r)).ToList();
+            }
+            else if (normalizedOrderType == "PURCHASE")
+            {
+                rules = rules.Where(IsPurchaseOnlyRule).ToList();
+            }
 
             return rules.Select(r => new PricingRuleDto
             {

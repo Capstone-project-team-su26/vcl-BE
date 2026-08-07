@@ -21,13 +21,15 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Xem danh sách cấu hình bảng giá
+        /// Xem danh sách cấu hình bảng giá.
+        /// Truyền <c>orderType=CONSIGNMENT</c> để lấy đúng bộ dịch vụ bổ sung của đơn ký gửi
+        /// (đã loại phí mua hộ/VAT/thuế nhập khẩu), hoặc <c>orderType=PURCHASE</c> cho luồng mua hộ.
         /// </summary>
         [HttpGet]
         [AllowAnonymous]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] string? orderType = null)
         {
-            var rules = await _pricingRuleService.GetAllAsync();
+            var rules = await _pricingRuleService.GetAllAsync(orderType);
             return Ok(rules);
         }
 

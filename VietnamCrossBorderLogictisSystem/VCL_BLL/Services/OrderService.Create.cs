@@ -15,6 +15,8 @@ namespace VCL_BLL.Services
         {
             var (route, shippingOption) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
             EnsureHasItems(request.Items);
+            EnsureItemsWithinLimits(request.Items!);
+            EnsureWoodenCrateSelected(request.RequiresWoodenCrate, request.Items!);
 
             // Map user → customer (cùng pattern với các service khác)
             var customerRepo = _unitOfWork.Repository<Customer>();
@@ -38,6 +40,7 @@ namespace VCL_BLL.Services
         {
             var (route, shippingOption) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
             EnsureHasItems(request.Items);
+            EnsureItemsWithinLimits(request.Items!);
 
             var customer = await ResolveCustomerForStaffAsync(request);
 
@@ -110,6 +113,98 @@ namespace VCL_BLL.Services
         {
             if (items == null || items.Count == 0)
                 throw new ArgumentException("Yêu cầu ký gửi phải có ít nhất một mặt hàng.");
+        }
+
+        /// <summary>
+        /// Ngưỡng giới hạn kiện/đơn ký gửi. Giá trị mặc định khớp với validate phía web khách
+        /// (<c>ConsignmentOrder.jsx</c>); ghi đè được qua section <c>ConsignmentSettings:Limits</c>
+        /// để đổi hạn mức lúc demo mà không phải deploy lại.
+        /// </summary>
+        private sealed class ConsignmentLimits
+        {
+            public decimal MaxItemWeightKg { get; init; }
+            public decimal MaxItemLengthCm { get; init; }
+            public decimal MaxItemWidthCm { get; init; }
+            public decimal MaxItemHeightCm { get; init; }
+            public int MaxItemQuantity { get; init; }
+            public decimal MaxItemDeclaredValue { get; init; }
+            public decimal MaxOrderWeightKg { get; init; }
+            public decimal MaxOrderDeclaredValue { get; init; }
+        }
+
+        private ConsignmentLimits ResolveConsignmentLimits()
+        {
+            decimal Read(string key, decimal fallback) =>
+                decimal.TryParse(_configuration[$"ConsignmentSettings:Limits:{key}"], out var parsed) && parsed > 0
+                    ? parsed
+                    : fallback;
+
+            return new ConsignmentLimits
+            {
+                MaxItemWeightKg = Read(nameof(ConsignmentLimits.MaxItemWeightKg), 3m),
+                MaxItemLengthCm = Read(nameof(ConsignmentLimits.MaxItemLengthCm), 100m),
+                MaxItemWidthCm = Read(nameof(ConsignmentLimits.MaxItemWidthCm), 200m),
+                MaxItemHeightCm = Read(nameof(ConsignmentLimits.MaxItemHeightCm), 50m),
+                MaxItemQuantity = (int)Read(nameof(ConsignmentLimits.MaxItemQuantity), 5m),
+                MaxItemDeclaredValue = Read(nameof(ConsignmentLimits.MaxItemDeclaredValue), 6_000_000m),
+                MaxOrderWeightKg = Read(nameof(ConsignmentLimits.MaxOrderWeightKg), 5m),
+                MaxOrderDeclaredValue = Read(nameof(ConsignmentLimits.MaxOrderDeclaredValue), 10_000_000m)
+            };
+        }
+
+        /// <summary>
+        /// Chặn kiện/đơn vượt hạn mức. Kích thước và cân nặng chỉ kiểm khi client có gửi,
+        /// vì luồng Sale tạo hộ và mobile không bắt buộc nhập đủ các trường này.
+        /// </summary>
+        private void EnsureItemsWithinLimits(List<ConsignmentItemRequest> items)
+        {
+            var limits = ResolveConsignmentLimits();
+
+            foreach (var item in items)
+            {
+                var label = string.IsNullOrWhiteSpace(item.ProductName) ? "kiện hàng" : $"kiện \"{item.ProductName}\"";
+
+                if (item.Quantity > limits.MaxItemQuantity)
+                    throw new ArgumentException($"Số lượng tối đa {limits.MaxItemQuantity} sản phẩm trên 1 kiện hàng ({label}).");
+
+                if (item.Weight.HasValue && item.Weight.Value > limits.MaxItemWeightKg)
+                    throw new ArgumentException($"Cân nặng tối đa {limits.MaxItemWeightKg:0.##} kg cho mỗi kiện hàng ({label}).");
+
+                if (item.Length.HasValue && item.Length.Value > limits.MaxItemLengthCm)
+                    throw new ArgumentException($"Chiều dài tối đa {limits.MaxItemLengthCm:0.##} cm ({label}).");
+
+                if (item.Width.HasValue && item.Width.Value > limits.MaxItemWidthCm)
+                    throw new ArgumentException($"Chiều rộng tối đa {limits.MaxItemWidthCm:0.##} cm ({label}).");
+
+                if (item.Height.HasValue && item.Height.Value > limits.MaxItemHeightCm)
+                    throw new ArgumentException($"Chiều cao tối đa {limits.MaxItemHeightCm:0.##} cm ({label}).");
+
+                if (item.DeclaredValue.HasValue && item.DeclaredValue.Value > limits.MaxItemDeclaredValue)
+                    throw new ArgumentException($"Giá trị 1 kiện hàng không được vượt quá {limits.MaxItemDeclaredValue:#,##0} đ ({label}).");
+            }
+
+            var totalWeight = items.Sum(i => i.Weight ?? 0m);
+            if (totalWeight > limits.MaxOrderWeightKg)
+                throw new ArgumentException($"Tổng cân nặng toàn bộ đơn hàng ({totalWeight:0.##} kg) vượt quá giới hạn tối đa {limits.MaxOrderWeightKg:0.##} kg.");
+
+            var totalDeclaredValue = items.Sum(i => i.DeclaredValue ?? 0m);
+            if (totalDeclaredValue > limits.MaxOrderDeclaredValue)
+                throw new ArgumentException($"Tổng giá trị hàng hóa của đơn hàng ({totalDeclaredValue:#,##0} đ) vượt quá giới hạn tối đa {limits.MaxOrderDeclaredValue:#,##0} đ.");
+        }
+
+        /// <summary>
+        /// Web khách hàng bắt buộc đóng thùng gỗ và phải chọn cấu hình thùng cho từng kiện,
+        /// nên chặn luôn ở server thay vì để <c>SuggestPackageConfigurationIdAsync</c> đoán hộ.
+        /// Luồng Sale tạo hộ không áp ràng buộc này.
+        /// </summary>
+        private static void EnsureWoodenCrateSelected(bool requiresWoodenCrate, List<ConsignmentItemRequest> items)
+        {
+            if (!requiresWoodenCrate)
+                throw new ArgumentException("Đóng thùng gỗ là dịch vụ bắt buộc. Vui lòng chọn cấu hình thùng cho từng kiện.");
+
+            var missingCount = items.Count(i => !i.PackageConfigurationId.HasValue);
+            if (missingCount > 0)
+                throw new ArgumentException($"Còn {missingCount} kiện chưa có cấu hình thùng gỗ. Vui lòng chọn cấu hình cho từng kiện.");
         }
 
         /// <summary>
