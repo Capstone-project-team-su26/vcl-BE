@@ -25,12 +25,17 @@ namespace VCL_BLL.Services
         private const int MaxProofImages = 3;
 
         /// <summary>
-        /// Nhóm trạng thái tiến độ đi mua hàng, do Sale/Buying bấm tay ở popup "Xác nhận mua hộ".
-        /// Cố tình KHÔNG gồm các trạng thái do luồng thanh toán tự đặt (WAITING_PAYMENT, PAID,
-        /// WAITING_FINAL_PAYMENT, COMPLETED) để hai luồng không ghi đè lẫn nhau.
+        /// Các trạng thái popup "Xác nhận mua hộ" được phép đặt, theo đúng 4 nấc bấm của FE.
+        /// <para>
+        /// <c>PENDING_REVIEW</c> và <c>PAID</c> bình thường do hệ thống tự đặt (PAID đến từ webhook
+        /// thanh toán). Mở cho bấm tay theo yêu cầu FE — không ảnh hưởng dòng tiền vì mọi điều kiện
+        /// thanh toán đều đọc bảng PURCHASE_PAYMENTS chứ không đọc trạng thái đơn. Mọi lần bấm đều
+        /// ghi vào PURCHASE_REQUEST_HISTORY nên truy được ai đặt tay.
+        /// </para>
+        /// Vẫn chặn <c>COMPLETED</c>: đó là trạng thái kết thúc, chỉ đặt khi đã thu đủ tiền.
         /// </summary>
         private static readonly string[] PurchaseProgressStatuses =
-            { "PURCHASED", "SELLER_SHIPPED", "ARRIVED_ORIGIN_WAREHOUSE" };
+            { "PENDING_REVIEW", "PAID", "PURCHASED", "SELLER_SHIPPED", "ARRIVED_ORIGIN_WAREHOUSE" };
 
         /// <summary>Nhãn tiếng Việt của trạng thái yêu cầu mua hộ, dùng chung cho mọi response.</summary>
         private static readonly Dictionary<string, string> StatusDisplayNames = new(StringComparer.OrdinalIgnoreCase)
