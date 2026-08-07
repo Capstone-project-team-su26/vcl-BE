@@ -2208,6 +2208,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("pricing_rule_ids");
 
+                    b.Property<string>("ProofImageUrls")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("proof_image_urls");
+
                     b.Property<string>("PurchaseCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -2280,6 +2285,63 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("PURCHASE_REQUESTS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PurchaseRequestHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid?>("ChangedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("changed_by");
+
+                    b.Property<string>("ChangedByName")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("changed_by_name");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("FromStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("from_status");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("ProofImageUrls")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("proof_image_urls");
+
+                    b.Property<Guid>("PurchaseRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("purchase_request_id");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("to_status");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PURCHASE_REQUEST_HISTORY");
+
+                    b.HasIndex("PurchaseRequestId")
+                        .HasDatabaseName("IX_PURCHASE_REQUEST_HISTORY_REQUEST");
+
+                    b.ToTable("PURCHASE_REQUEST_HISTORY", (string)null);
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.PurchaseRequestItem", b =>
@@ -4386,6 +4448,18 @@ namespace VCL_DLL.Migrations
                     b.Navigation("Customer");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.PurchaseRequestHistory", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.PurchaseRequest", "PurchaseRequest")
+                        .WithMany()
+                        .HasForeignKey("PurchaseRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_PURCHASE_REQUEST_HISTORY_REQUEST");
+
+                    b.Navigation("PurchaseRequest");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.PurchaseRequestItem", b =>

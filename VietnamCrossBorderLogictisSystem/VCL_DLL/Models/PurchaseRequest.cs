@@ -45,6 +45,9 @@ public partial class PurchaseRequest
 
     public DateTime? CreatedAt { get; set; }
 
+    /// <summary>Ảnh bằng chứng mua hộ (hoá đơn / màn hình đã đặt hàng), nối bằng '|'. Tối đa 3 ảnh.</summary>
+    public string? ProofImageUrls { get; set; }
+
     public virtual Customer Customer { get; set; }
 
     public virtual User User { get; set; }

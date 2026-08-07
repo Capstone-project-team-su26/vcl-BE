@@ -180,6 +180,50 @@ namespace VCL_BLL.DTOs
         public PurchaseQuotationResponseDto? Quotation { get; set; }
     }
 
+    /// <summary>
+    /// Xác nhận mua hộ &amp; cập nhật tiến độ — theo bản tả kỹ thuật của FE.
+    /// Dùng cho nhóm trạng thái đi mua hàng, tách khỏi luồng duyệt yêu cầu
+    /// (<see cref="UpdatePurchaseRequestStatusRequestDto"/>) để không đá nhau.
+    /// </summary>
+    public class ConfirmPurchaseRequestDto
+    {
+        [Required(ErrorMessage = "Trạng thái không được để trống.")]
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>URL ảnh hoá đơn / màn hình đã đặt hàng. Tối đa 3 ảnh.</summary>
+        public List<string>? ProofImages { get; set; }
+
+        [StringLength(500, ErrorMessage = "Ghi chú tối đa 500 ký tự.")]
+        public string? GeneralNote { get; set; }
+    }
+
+    public class ConfirmPurchaseResponseDto
+    {
+        public Guid PurchaseRequestId { get; set; }
+        public string PurchaseCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>Nhãn tiếng Việt của trạng thái, FE hiển thị thẳng khỏi tự map.</summary>
+        public string StatusDisplayName { get; set; } = string.Empty;
+
+        public List<string> ProofImages { get; set; } = new();
+        public string? GeneralNote { get; set; }
+        public DateTime UpdatedAt { get; set; }
+    }
+
+    public class PurchaseRequestHistoryItemDto
+    {
+        public Guid HistoryId { get; set; }
+        public string? FromStatus { get; set; }
+        public string ToStatus { get; set; } = string.Empty;
+        public string ToStatusDisplayName { get; set; } = string.Empty;
+        public string? Note { get; set; }
+        public List<string> ProofImages { get; set; } = new();
+        public Guid? ChangedBy { get; set; }
+        public string? ChangedByName { get; set; }
+        public DateTime? CreatedAt { get; set; }
+    }
+
     public class UpdatePurchaseRequestStatusRequestDto
     {
         [Required(ErrorMessage = "Trạng thái không được để trống.")]
