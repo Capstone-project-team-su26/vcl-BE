@@ -59,6 +59,9 @@ public class CandidateBinDto
     public decimal CurrentWeight { get; set; }
     public decimal AvailableWeight { get; set; }
     public bool IsEntirelyEmpty { get; set; }
+    public int SameCustomerParcelCount { get; set; }
+    public int ShelfRowIndex { get; set; }
+    public string BinLevelDescription { get; set; } = string.Empty;
 }
 
 public class SalesOrderStatusQueryRequest

@@ -95,10 +95,24 @@ public class AiService : IAiService
         var storedParcels = (await parcelRepo.FindAsync(p => p.BinId.HasValue && p.PackageStatus != null && p.PackageStatus.ToUpper() == "STORED"))
                                             .ToList();
 
-        // 5. Xác định Category của kiện hàng
+        // 5. Xác định Đơn hàng, Loại hình nghiệp vụ, Khách hàng & Category
+        string businessType = "Hàng Ký Gửi (CONSIGNMENT)";
+        Guid? customerId = null;
         string category = "General";
+
         if (parcel.ConsignmentId.HasValue)
         {
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(parcel.ConsignmentId.Value);
+            if (order != null)
+            {
+                customerId = order.CustomerId;
+                if (!string.IsNullOrEmpty(order.OrderType) && order.OrderType.ToUpper() == "PURCHASE")
+                {
+                    businessType = "Hàng Mua Hộ (PURCHASE)";
+                }
+            }
+
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
             var item = await orderItemRepo.FirstOrDefaultAsync(oi => oi.OrderId == parcel.ConsignmentId.Value);
             if (item != null && !string.IsNullOrEmpty(item.ProductName))
@@ -152,6 +166,14 @@ public class AiService : IAiService
                 }
             }
 
+            // Thống kê số kiện của cùng khách hàng trong ô này
+            int sameCustomerCount = customerId.HasValue
+                ? parcelsInBin.Count(p => p.Consignment != null && p.Consignment.CustomerId == customerId.Value)
+                : 0;
+
+            int levelIndex = layout.RowIndex;
+            string levelDesc = levelIndex <= 1 ? "Tầng thấp (Ground/Low Level)" : (levelIndex <= 3 ? "Tầng giữa (Mid Level)" : "Tầng cao (High Level)");
+
             candidateBins.Add(new CandidateBinDto
             {
                 LayoutId = layout.Id,
@@ -165,7 +187,10 @@ public class AiService : IAiService
                 OccupancyRatio = occupancyRatio,
                 CurrentWeight = currentWeightInBin,
                 AvailableWeight = availableWeight == decimal.MaxValue ? 9999m : availableWeight,
-                IsEntirelyEmpty = parcelsInBin.Count == 0
+                IsEntirelyEmpty = parcelsInBin.Count == 0,
+                SameCustomerParcelCount = sameCustomerCount,
+                ShelfRowIndex = levelIndex,
+                BinLevelDescription = levelDesc
             });
         }
 
@@ -194,12 +219,12 @@ public class AiService : IAiService
             return response;
         }
 
-        // 8. Gọi Gemini AI để lấy đánh giá & xếp hạng gợi ý
+        // 8. Gọi OpenRouter AI để lấy đánh giá & xếp hạng gợi ý theo 4 tiêu chí nghiệp vụ
         try
         {
-            var geminiRecommendations = await CallGeminiForPutawayAsync(parcel, category, candidateBins, request.PreferredZoneId);
+            var recommendations = await CallOpenRouterForPutawayAsync(parcel, businessType, customerId, category, candidateBins, request.PreferredZoneId);
 
-            foreach (var rec in geminiRecommendations)
+            foreach (var rec in recommendations)
             {
                 var cand = candidateBins.FirstOrDefault(c => c.BinId == rec.BinId);
                 if (cand == null) continue;
@@ -217,7 +242,7 @@ public class AiService : IAiService
                 });
             }
 
-            // Nếu Gemini trả về danh sách có vị trí gợi ý thì sắp xếp Top 5
+            // Nếu AI trả về danh sách có vị trí gợi ý thì sắp xếp Top 5
             if (response.SuggestedLocations.Any())
             {
                 response.SuggestedLocations = response.SuggestedLocations
@@ -227,16 +252,16 @@ public class AiService : IAiService
             }
             else
             {
-                // Trường hợp Gemini trả rỗng: Fallback sang Heuristic
-                response.Warnings.Add("Gemini AI không trả về gợi ý cụ thể. Đã sử dụng thuật toán tính toán sức chứa còn trống.");
-                response.SuggestedLocations = BuildFallbackSuggestions(candidateBins, request.PreferredZoneId);
+                // Trường hợp AI trả rỗng: Fallback sang Heuristic
+                response.Warnings.Add("OpenRouter AI không trả về gợi ý cụ thể. Đã sử dụng thuật toán tính toán sức chứa còn trống.");
+                response.SuggestedLocations = BuildFallbackSuggestions(parcel, businessType, candidateBins, request.PreferredZoneId);
             }
         }
         catch (Exception ex)
         {
-            // Fallback an toàn nếu Gemini bị lỗi (timeout, hết quota, mất mạng)
-            response.Warnings.Add($"Không thể kết nối Gemini AI ({ex.Message}). Đang sử dụng thuật toán tính toán sức chứa còn trống.");
-            response.SuggestedLocations = BuildFallbackSuggestions(candidateBins, request.PreferredZoneId);
+            // Fallback an toàn nếu OpenRouter bị lỗi (timeout, chưa nhập key, hết quota, mất mạng)
+            response.Warnings.Add($"Không thể kết nối OpenRouter AI ({ex.Message}). Đang sử dụng thuật toán tính toán sức chứa còn trống.");
+            response.SuggestedLocations = BuildFallbackSuggestions(parcel, businessType, candidateBins, request.PreferredZoneId);
         }
 
         // 9. Cảnh báo nếu PreferredZoneId không có ô khả dụng
@@ -248,29 +273,32 @@ public class AiService : IAiService
         return response;
     }
 
-    private async Task<List<GeminiBinRecommendation>> CallGeminiForPutawayAsync(
+    private async Task<List<GeminiBinRecommendation>> CallOpenRouterForPutawayAsync(
         Parcel parcel,
+        string businessType,
+        Guid? customerId,
         string category,
         List<CandidateBinDto> candidateBins,
         Guid? preferredZoneId)
     {
-        var apiKey = _configuration["GeminiSettings:ApiKey"];
-        var model = _configuration["GeminiSettings:Model"] ?? "gemini-1.5-flash";
-        var baseUrl = _configuration["GeminiSettings:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta/models/";
+        var apiKey = _configuration["OpenRouterSettings:ApiKey"] 
+            ?? Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+        var model = _configuration["OpenRouterSettings:Model"] ?? "google/gemini-2.0-flash-exp:free";
+        var baseUrl = _configuration["OpenRouterSettings:BaseUrl"] ?? "https://openrouter.ai/api/v1/chat/completions";
 
         if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_"))
         {
-            throw new InvalidOperationException("Gemini API Key chưa được cấu hình hợp lệ.");
+            throw new InvalidOperationException("OpenRouter API Key chưa được cấu hình hợp lệ trong appsettings.json hoặc môi trường.");
         }
 
-        var url = $"{baseUrl}{model}:generateContent?key={apiKey}";
-
-        // Tối ưu Payload gọn nhẹ để gửi Gemini
         var promptPayload = new
         {
             Parcel = new
             {
                 ParcelId = parcel.Id.ToString(),
+                PackageCode = parcel.PackageCode ?? "N/A",
+                BusinessType = businessType, // "Hàng Mua Hộ (PURCHASE)" hoặc "Hàng Ký Gửi (CONSIGNMENT)"
+                CustomerId = customerId?.ToString() ?? "N/A",
                 WeightKg = parcel.ActualWeight ?? 0m,
                 DimensionsCm = $"{parcel.Length ?? 0}x{parcel.Width ?? 0}x{parcel.Height ?? 0}",
                 VolumeCm3 = (parcel.Length ?? 0m) * (parcel.Width ?? 0m) * (parcel.Height ?? 0m),
@@ -284,79 +312,90 @@ public class AiService : IAiService
                 ZoneId = b.ZoneId?.ToString(),
                 AvailableVolumeCm3 = b.AvailableVolume,
                 AvailableWeightKg = b.AvailableWeight,
-                FreeSpacePercent = Math.Round((1m - b.OccupancyRatio) * 100, 1)
+                FreeSpacePercent = Math.Round((1m - b.OccupancyRatio) * 100, 1),
+                ShelfLevelDesc = b.BinLevelDescription,
+                SameCustomerParcelsCount = b.SameCustomerParcelCount
             })
         };
 
         string systemInstruction = @"Bạn là Chuyên gia AI Quản lý Kho Vận (Logistics WMS Expert).
-Nhiệm vụ của bạn là phân tích kiện hàng và danh sách các ô kệ khả dụng trong kho, sau đó chọn ra các ô vị trí xếp dỡ tối ưu nhất.
-Quy tắc đề xuất:
-1. Hàng nặng (>10kg) ưu tiên xếp ô kệ có tải trọng dư dả, tầng thấp hoặc tầng giữa.
-2. Hàng nhẹ/nhỏ ưu tiên tối ưu khoảng trống ô kệ.
-3. Nếu kiện hàng thuộc PreferredZoneId, cộng thêm điểm ưu tiên.
-4. Giải thích ngắn gọn, rõ ràng lý do đề xuất bằng tiếng Việt tự nhiên cho nhân viên kho.
-5. BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
+Nhiệm vụ của bạn là phân tích kiện hàng và danh sách các ô kệ khả dụng trong kho, sau đó chọn ra các ô vị trí xếp dỡ tối ưu nhất dựa theo 4 QUY TẮC NGHIỆP VỤ BẮT BUỘC:
+
+1. PHÂN LOẠI THEO LOẠI HÌNH NGHIỆP VỤ (BusinessType):
+   - Hàng Mua Hộ (PURCHASE): Thường vận chuyển thẳng/nhanh về Việt Nam -> Ưu tiên đề xuất xếp ở Tầng thấp (Ground/Low Level), vị trí dễ tiếp cận/ngoài cùng gần khu vực đóng gói/xuất hàng.
+   - Hàng Ký Gửi (CONSIGNMENT): Đưa vào các vị trí lưu kho tiêu chuẩn theo chuẩn WMS.
+
+2. PHÂN LOẠI THEO KÍCH THƯỚC (Dimensions & Volume Fit):
+   - Phân tích kích thước Dài x Rộng x Cao và Thể tích (VolumeCm3) của kiện hàng với thể tích trống của ô kệ (AvailableVolumeCm3).
+   - Ưu tiên chọn ô kệ có thể tích vừa vặn thích hợp nhất với kiện hàng, tránh lãng phí ô kệ quá lớn cho kiện hàng nhỏ.
+
+3. PHÂN BỔ THEO TẢI TRỌNG & AN TOÀN KỆ (Weight & Safety):
+   - Hàng nặng (> 10kg): TUYỆT ĐỐI KHÔNG xếp ở Tầng cao. Chỉ xếp ở Tầng thấp (Ground/Low Level) hoặc Tầng giữa để đảm bảo an toàn lao động và tải trọng kệ.
+   - Hàng nhẹ (< 5kg): Ưu tiên đưa lên Tầng giữa hoặc Tầng cao để nhường tầng thấp cho hàng nặng.
+
+4. PHÂN BỔ GẦN KIỆN CÙNG KHÁCH HÀNG (Customer Clustering):
+   - Nếu ô kệ đã có chứa sẵn các kiện hàng khác của CÙNG KHÁCH HÀNG (SameCustomerParcelsCount > 0), ƯU TIÊN CỘNG ĐIỂM ĐỀ XUẤT xếp kiện mới vào cùng ô kệ đó hoặc ô kế bên để thuận tiện gộp đơn, gom hàng khi xuất kho.
+
+BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
 {
   ""recommendations"": [
     {
       ""binId"": ""guid-string-trùng-với-AvailableBins"",
       ""confidenceScore"": 0.95,
-      ""reason"": ""Lý do chi tiết bằng tiếng Việt""
+      ""reason"": ""Lý do chi tiết bằng tiếng Việt giải thích rõ theo các quy tắc trên""
     }
   ]
 }";
 
         var requestBody = new
         {
-            contents = new[]
+            model = model,
+            messages = new object[]
             {
-                new
-                {
-                    parts = new object[]
-                    {
-                        new { text = $"{systemInstruction}\n\nDữ liệu đầu vào:\n{JsonSerializer.Serialize(promptPayload)}" }
-                    }
-                }
+                new { role = "system", content = systemInstruction },
+                new { role = "user", content = $"Dữ liệu đầu vào:\n{JsonSerializer.Serialize(promptPayload)}" }
             },
-            generationConfig = new
-            {
-                response_mime_type = "application/json",
-                temperature = 0.2
-            }
+            response_format = new { type = "json_object" },
+            temperature = 0.2
         };
 
-        var client = _httpClient;
+        var requestMessage = new HttpRequestMessage(HttpMethod.Post, baseUrl)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
+        };
 
-        var jsonContent = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
-            "application/json");
+        requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        requestMessage.Headers.TryAddWithoutValidation("HTTP-Referer", "https://logictic.site");
+        requestMessage.Headers.TryAddWithoutValidation("X-Title", "VCL System");
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
         HttpResponseMessage httpResponse;
         try
         {
-            httpResponse = await client.PostAsync(url, jsonContent, cts.Token);
+            httpResponse = await _httpClient.SendAsync(requestMessage, cts.Token);
         }
         catch (OperationCanceledException)
         {
-            throw new TimeoutException("Gemini API phản hồi quá thời hạn cho phép (5 giây).");
+            throw new TimeoutException("OpenRouter API phản hồi quá thời hạn cho phép (8 giây).");
         }
 
         if (!httpResponse.IsSuccessStatusCode)
         {
             var errText = await httpResponse.Content.ReadAsStringAsync();
-            throw new HttpRequestException($"Lỗi kết nối Gemini API (Mã {httpResponse.StatusCode}): {errText}");
+            throw new HttpRequestException($"Lỗi kết nối OpenRouter API (Mã {httpResponse.StatusCode}): {errText}");
         }
 
         var responseString = await httpResponse.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(responseString);
 
-        var textContent = doc.RootElement
-            .GetProperty("candidates")[0]
+        if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
+        {
+            return new List<GeminiBinRecommendation>();
+        }
+
+        var textContent = choices[0]
+            .GetProperty("message")
             .GetProperty("content")
-            .GetProperty("parts")[0]
-            .GetProperty("text")
             .GetString();
 
         if (string.IsNullOrWhiteSpace(textContent))
@@ -372,23 +411,59 @@ Quy tắc đề xuất:
     }
 
     private static List<SuggestedLocationDto> BuildFallbackSuggestions(
+        Parcel parcel,
+        string businessType,
         List<CandidateBinDto> candidateBins,
         Guid? preferredZoneId)
     {
         var suggestions = new List<SuggestedLocationDto>();
+        decimal parcelWeight = parcel.ActualWeight ?? 0m;
 
         foreach (var cand in candidateBins)
         {
             decimal spaceScore = 1m - cand.OccupancyRatio;
-            decimal confidenceScore = 0.30m + (0.60m * spaceScore);
-            string reason = cand.IsEntirelyEmpty
-                ? "Ô kệ trống hoàn toàn, sức chứa dư dả để xếp dỡ."
-                : $"Ô kệ còn trống {spaceScore * 100:0.0}% sức chứa.";
+            decimal confidenceScore = 0.30m + (0.50m * spaceScore);
+            var reasons = new List<string>();
+
+            if (cand.IsEntirelyEmpty)
+            {
+                reasons.Add("Ô kệ trống hoàn toàn");
+            }
+            else
+            {
+                reasons.Add($"Còn trống {spaceScore * 100:0.0}% sức chứa");
+            }
+
+            // Quy tắc 1: Loại hình nghiệp vụ
+            if (businessType.Contains("PURCHASE") && cand.ShelfRowIndex <= 1)
+            {
+                confidenceScore += 0.10m;
+                reasons.Add("Đơn mua hộ ưu tiên tầng thấp dễ lấy hàng đóng gói xuất kho");
+            }
+
+            // Quy tắc 3: Tải trọng & Tầng cao
+            if (parcelWeight > 10m && cand.ShelfRowIndex > 2)
+            {
+                confidenceScore -= 0.40m; // Trừ điểm vì hàng nặng ở tầng cao
+                reasons.Add("Cảnh báo: Kiện hàng nặng ở tầng cao");
+            }
+            else if (parcelWeight > 10m && cand.ShelfRowIndex <= 1)
+            {
+                confidenceScore += 0.15m;
+                reasons.Add("Hàng nặng xếp ở tầng thấp an toàn");
+            }
+
+            // Quy tắc 4: Gom kiện cùng khách hàng
+            if (cand.SameCustomerParcelCount > 0)
+            {
+                confidenceScore += 0.20m;
+                reasons.Add($"Có sẵn {cand.SameCustomerParcelCount} kiện cùng khách hàng để gom đơn");
+            }
 
             if (preferredZoneId.HasValue && cand.ZoneId == preferredZoneId.Value)
             {
-                confidenceScore += 0.1m;
-                reason = $"Thuộc khu vực ưu tiên. {reason}";
+                confidenceScore += 0.10m;
+                reasons.Add("Thuộc khu vực ưu tiên");
             }
 
             suggestions.Add(new SuggestedLocationDto
@@ -399,8 +474,8 @@ Quy tắc đề xuất:
                 ShelfId = cand.ShelfId,
                 BinId = cand.BinId,
                 DisplayLabel = cand.DisplayLabel,
-                ConfidenceScore = Math.Round(Math.Min(1.0m, confidenceScore), 4),
-                Reason = reason
+                ConfidenceScore = Math.Round(Math.Min(1.0m, Math.Max(0.01m, confidenceScore)), 4),
+                Reason = string.Join(". ", reasons) + "."
             });
         }
 

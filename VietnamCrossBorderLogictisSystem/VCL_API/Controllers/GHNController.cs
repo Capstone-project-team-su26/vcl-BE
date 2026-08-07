@@ -41,8 +41,8 @@ namespace VCL_API.Controllers
                     return BadRequest(new { message = $"Giao Hàng Nhanh (GHN) chỉ hỗ trợ giao hàng chặng nội địa tại Việt Nam (VN). Khu vực kho/người dùng hiện tại ('{userRegion}') không được hỗ trợ." });
                 }
 
-                var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GHNSettings:Token"];
-                var effectiveShopId = shopId ?? int.Parse(_configuration["GHNSettings:ShopId"] ?? "6575712");
+                var effectiveToken = !string.IsNullOrEmpty(token) ? token : (_configuration["GHNSettings:Token"] ?? Environment.GetEnvironmentVariable("GHN_TOKEN") ?? "");
+                var effectiveShopId = shopId ?? int.Parse(_configuration["GHNSettings:ShopId"] ?? Environment.GetEnvironmentVariable("GHN_SHOP_ID") ?? "6575712");
 
                 if (string.IsNullOrEmpty(effectiveToken))
                 {
