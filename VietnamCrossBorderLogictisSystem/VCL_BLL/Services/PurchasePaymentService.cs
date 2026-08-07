@@ -501,6 +501,17 @@ namespace VCL_BLL.Services
             return value;
         }
 
+        /// <summary>
+        /// Các trạng thái nằm SAU khi đã trả cọc trong vòng đời mua hộ (Sale bấm tay ở popup
+        /// "Xác nhận mua hộ"). Webhook thanh toán không được ghi đè lên chúng.
+        /// </summary>
+        private static readonly string[] PurchaseProgressStatuses =
+            { "PURCHASED", "SELLER_SHIPPED", "ARRIVED_ORIGIN_WAREHOUSE" };
+
+        private static bool IsPurchaseProgressStatus(string? status) =>
+            !string.IsNullOrWhiteSpace(status)
+            && PurchaseProgressStatuses.Contains(status.Trim(), StringComparer.OrdinalIgnoreCase);
+
         private static bool IsPaid(PurchasePayment payment)
             => string.Equals(payment.Status, "PAID", StringComparison.OrdinalIgnoreCase);
 
@@ -623,8 +634,16 @@ namespace VCL_BLL.Services
             if (purchaseRequest != null)
             {
                 // Đợt cuối trả xong -> kết thúc luồng mua hộ; đợt đầu -> chờ mua hàng & vận chuyển
-                purchaseRequest.Status = IsPaymentType(payment, PaymentTypeFinal) ? "COMPLETED" : "PAID";
-                requestRepo.Update(purchaseRequest);
+                var paidStatus = IsPaymentType(payment, PaymentTypeFinal) ? "COMPLETED" : "PAID";
+
+                // Không kéo lùi tiến độ: Sale có thể đã bấm PURCHASED/SELLER_SHIPPED/ARRIVED trước khi
+                // tiền về (webhook có thể tới muộn). Ghi đè lúc đó sẽ làm đơn tụt trạng thái.
+                // COMPLETED vẫn được đặt vì đó là điểm kết thúc của cả luồng.
+                if (paidStatus == "COMPLETED" || !IsPurchaseProgressStatus(purchaseRequest.Status))
+                {
+                    purchaseRequest.Status = paidStatus;
+                    requestRepo.Update(purchaseRequest);
+                }
             }
 
             await _unitOfWork.SaveChangesAsync();
