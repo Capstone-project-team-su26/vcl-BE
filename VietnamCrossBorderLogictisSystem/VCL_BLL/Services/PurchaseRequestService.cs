@@ -552,7 +552,15 @@ namespace VCL_BLL.Services
                 .Take(pageSize)
                 .ToList();
 
-            // 5. Map sang DTO (kèm tên người nhận và danh sách sản phẩm tóm tắt)
+            // 5. Mốc báo giá mới nhất của từng yêu cầu (chỉ tra cho trang hiện tại)
+            var pagedRequestIds = pagedRequests.Select(r => r.Id).ToHashSet();
+            var allQuotations = await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync();
+            var quotationCreatedAtByRequest = allQuotations
+                .Where(q => pagedRequestIds.Contains(q.PurchaseRequestId) && q.CreatedAt.HasValue)
+                .GroupBy(q => q.PurchaseRequestId)
+                .ToDictionary(g => g.Key, g => g.Max(q => q.CreatedAt!.Value));
+
+            // 6. Map sang DTO (kèm tên người nhận và danh sách sản phẩm tóm tắt)
             var resultItems = pagedRequests.Select(r =>
             {
                 var products = allItems
@@ -563,6 +571,10 @@ namespace VCL_BLL.Services
                         Quantity = i.Quantity
                     })
                     .ToList();
+
+                var quotationCreatedAt = quotationCreatedAtByRequest.TryGetValue(r.Id, out var quotedAt)
+                    ? quotedAt
+                    : (DateTime?)null;
 
                 return new PurchaseRequestListItemDto
                 {
@@ -577,6 +589,8 @@ namespace VCL_BLL.Services
                     Status = r.Status ?? string.Empty,
                     GeneralNote = r.GeneralNote,
                     CreatedAt = r.CreatedAt ?? DateTime.MinValue,
+                    QuotationCreatedAt = quotationCreatedAt,
+                    StatusUpdatedAt = quotationCreatedAt ?? r.CreatedAt,
                     Items = products
                 };
             }).ToList();
@@ -658,8 +672,12 @@ namespace VCL_BLL.Services
             PurchaseQuotationResponseDto? quotationDto = null;
             var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
             var allQuotations = await quotationRepo.GetAllAsync();
+            // Lấy báo giá mới nhất (giống luồng ký gửi) — trước đây FirstOrDefault trả về
+            // bản ngẫu nhiên khi một yêu cầu có nhiều lần báo giá.
             var quotation = allQuotations
-                .FirstOrDefault(q => q.PurchaseRequestId == requestId);
+                .Where(q => q.PurchaseRequestId == requestId)
+                .OrderByDescending(q => q.CreatedAt ?? DateTime.MinValue)
+                .FirstOrDefault();
 
             if (quotation != null)
             {
@@ -734,6 +752,8 @@ namespace VCL_BLL.Services
                 Status = request.Status ?? string.Empty,
                 Reason = request.Reason,
                 CreatedAt = request.CreatedAt ?? DateTime.MinValue,
+                QuotationCreatedAt = quotation?.CreatedAt,
+                StatusUpdatedAt = quotation?.CreatedAt ?? request.CreatedAt,
                 TotalQuantity = relatedItems.Sum(i => i.Quantity),
                 Items = itemDtos,
                 Quotation = quotationDto

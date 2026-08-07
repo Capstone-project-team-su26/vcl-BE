@@ -168,6 +168,13 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; } = string.Empty;
         public string? Reason { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>Thời điểm lập báo giá mới nhất (null nếu chưa có báo giá).</summary>
+        public DateTime? QuotationCreatedAt { get; set; }
+
+        /// <summary>Mốc thời gian tương ứng với trạng thái hiện tại — FE dùng để hiển thị "cập nhật lúc…".</summary>
+        public DateTime? StatusUpdatedAt { get; set; }
+
         public int TotalQuantity { get; set; }
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
         public PurchaseQuotationResponseDto? Quotation { get; set; }
@@ -295,6 +302,13 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; } = string.Empty;
         public string? GeneralNote { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>Thời điểm lập báo giá mới nhất (null nếu chưa có báo giá).</summary>
+        public DateTime? QuotationCreatedAt { get; set; }
+
+        /// <summary>Mốc thời gian tương ứng với trạng thái hiện tại — FE dùng để hiển thị "cập nhật lúc…".</summary>
+        public DateTime? StatusUpdatedAt { get; set; }
+
         public List<PurchaseRequestListProductDto> Items { get; set; } = new();
     }
 
