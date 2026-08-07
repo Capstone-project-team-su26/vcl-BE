@@ -233,6 +233,14 @@ namespace VCL_BLL.DTOs
 
     public class CreatePurchaseQuotationDto
     {
+        /// <summary>
+        /// Đồng tiền của <c>Items[].UnitPrice</c> — CNY, USD, JPY... Bỏ trống hoặc "VND" là không quy đổi.
+        /// Chỉ áp cho giá sản phẩm; <see cref="PurchaseFee"/>, <see cref="ShippingFee"/> và phụ phí
+        /// luôn nhập bằng VND vì đó là phí của công ty, không phải giá mua ở nước ngoài.
+        /// </summary>
+        [StringLength(10)]
+        public string? Currency { get; set; }
+
         /// <summary>Phí mua hộ.</summary>
         [Range(0, double.MaxValue, ErrorMessage = "Phí mua hộ không được âm.")]
         public decimal PurchaseFee { get; set; }
@@ -256,7 +264,13 @@ namespace VCL_BLL.DTOs
         public Guid QuotationItemId { get; set; }
         public Guid PurchaseRequestItemId { get; set; }
         public string? ProductName { get; set; }
+
+        /// <summary>Đơn giá đã quy đổi sang VND.</summary>
         public decimal UnitPrice { get; set; }
+
+        /// <summary>Đơn giá gốc theo ngoại tệ Sale đã nhập. Null khi nhập thẳng VND.</summary>
+        public decimal? UnitPriceOriginal { get; set; }
+
         public int Quantity { get; set; }
         public decimal LineTotal { get; set; }
     }
@@ -275,6 +289,15 @@ namespace VCL_BLL.DTOs
         public string? Note { get; set; }
         public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>Đồng tiền Sale đã nhập giá sản phẩm. "VND" nghĩa là không quy đổi.</summary>
+        public string? Currency { get; set; }
+
+        /// <summary>Tỷ giá đã áp dụng, khoá cứng theo báo giá này — không đổi khi Admin sửa bảng tỷ giá.</summary>
+        public decimal? ExchangeRate { get; set; }
+
+        public DateTime? ExchangeRateAt { get; set; }
+
         public List<PurchaseQuotationItemResponseDto> Items { get; set; } = new();
         public List<PurchaseQuotationAdditionalFeeResponseDto> AdditionalFees { get; set; } = new();
     }

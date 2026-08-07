@@ -22,10 +22,16 @@ namespace VCL_BLL.Services
         // Ký tự phân cách các danh sách lưu gộp trong 1 cột DB (dùng chung quy ước với ký gửi)
         private const char ListSeparator = '|';
 
-        public PurchaseRequestService(IUnitOfWork unitOfWork, IOrderService orderService)
+        private readonly IExchangeRateService _exchangeRateService;
+
+        public PurchaseRequestService(
+            IUnitOfWork unitOfWork,
+            IOrderService orderService,
+            IExchangeRateService exchangeRateService)
         {
             _unitOfWork = unitOfWork;
             _orderService = orderService;
+            _exchangeRateService = exchangeRateService;
         }
 
         public async Task<PurchaseRequestResponseDto> CreatePurchaseRequestAsync(Guid userId, string userRole, CreatePurchaseRequestDto request)
@@ -692,6 +698,7 @@ namespace VCL_BLL.Services
                     PurchaseRequestItemId = qi.PurchaseRequestItemId,
                     ProductName = itemMap.ContainsKey(qi.PurchaseRequestItemId) ? itemMap[qi.PurchaseRequestItemId].ProductName : string.Empty,
                     UnitPrice = qi.UnitPrice,
+                    UnitPriceOriginal = qi.UnitPriceOriginal,
                     Quantity = qi.Quantity,
                     LineTotal = qi.LineTotal
                 }).ToList();
@@ -724,6 +731,9 @@ namespace VCL_BLL.Services
                     Vat = quotation.Vat ?? 0m,
                     ImportTax = quotation.ImportTax ?? 0m,
                     TotalAmount = quotation.TotalAmount,
+                    Currency = quotation.Currency,
+                    ExchangeRate = quotation.ExchangeRate,
+                    ExchangeRateAt = quotation.ExchangeRateAt,
                     Note = quotation.Note,
                     Status = quotation.Status,
                     CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
@@ -883,6 +893,14 @@ namespace VCL_BLL.Services
             }
 
             // 6. Tạo báo giá + chi tiết chi phí theo từng sản phẩm
+            // Tỷ giá lấy MỘT LẦN cho cả báo giá rồi đóng băng vào bản ghi: nếu tra lại lúc thanh toán
+            // thì Admin sửa bảng tỷ giá là báo giá cũ tự đổi số tiền, gây tranh chấp với khách.
+            var quotationCurrency = string.IsNullOrWhiteSpace(request.Currency)
+                ? "VND"
+                : request.Currency.Trim().ToUpperInvariant();
+            var appliedRate = await _exchangeRateService.GetRateToVndAsync(quotationCurrency);
+            var isForeignCurrency = quotationCurrency != "VND";
+
             var quotation = new PurchaseQuotation
             {
                 Id = Guid.NewGuid(),
@@ -892,7 +910,10 @@ namespace VCL_BLL.Services
                 Note = request.Note,
                 Status = "PENDING_CUSTOMER_CONFIRMATION",
                 CreatedBy = userId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                Currency = quotationCurrency,
+                ExchangeRate = appliedRate,
+                ExchangeRateAt = DateTime.UtcNow
             };
 
             var categories = await _unitOfWork.Repository<ProductType>().GetAllAsync();
@@ -905,7 +926,13 @@ namespace VCL_BLL.Services
             foreach (var line in request.Items)
             {
                 var reqItem = requestItemMap[line.PurchaseRequestItemId];
-                var lineTotal = line.UnitPrice * reqItem.Quantity;
+
+                // Sale nhập giá theo ngoại tệ; mọi tính toán phía sau (thuế, phí, tổng bill) đều theo VND.
+                var unitPriceVnd = isForeignCurrency
+                    ? Math.Round(line.UnitPrice * appliedRate, 0, MidpointRounding.AwayFromZero)
+                    : line.UnitPrice;
+
+                var lineTotal = unitPriceVnd * reqItem.Quantity;
                 productsSubtotal += lineTotal;
 
                 if (string.IsNullOrWhiteSpace(reqItem.ProductType))
@@ -952,7 +979,8 @@ namespace VCL_BLL.Services
                     Id = Guid.NewGuid(),
                     PurchaseQuotationId = quotation.Id,
                     PurchaseRequestItemId = reqItem.Id,
-                    UnitPrice = line.UnitPrice,
+                    UnitPrice = unitPriceVnd,
+                    UnitPriceOriginal = isForeignCurrency ? line.UnitPrice : null,
                     Quantity = reqItem.Quantity,
                     LineTotal = lineTotal
                 };
@@ -963,7 +991,8 @@ namespace VCL_BLL.Services
                     QuotationItemId = quotationItem.Id,
                     PurchaseRequestItemId = reqItem.Id,
                     ProductName = reqItem.ProductName,
-                    UnitPrice = line.UnitPrice,
+                    UnitPrice = unitPriceVnd,
+                    UnitPriceOriginal = isForeignCurrency ? line.UnitPrice : null,
                     Quantity = reqItem.Quantity,
                     LineTotal = lineTotal
                 });
@@ -1106,6 +1135,9 @@ namespace VCL_BLL.Services
                 Vat = vatAmount,
                 ImportTax = importTax,
                 TotalAmount = quotation.TotalAmount,
+                Currency = quotation.Currency,
+                ExchangeRate = quotation.ExchangeRate,
+                ExchangeRateAt = quotation.ExchangeRateAt,
                 Note = quotation.Note,
                 Status = quotation.Status,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
@@ -1157,6 +1189,7 @@ namespace VCL_BLL.Services
                 PurchaseRequestItemId = qi.PurchaseRequestItemId,
                 ProductName = itemMap.ContainsKey(qi.PurchaseRequestItemId) ? itemMap[qi.PurchaseRequestItemId].ProductName : string.Empty,
                 UnitPrice = qi.UnitPrice,
+                UnitPriceOriginal = qi.UnitPriceOriginal,
                 Quantity = qi.Quantity,
                 LineTotal = qi.LineTotal
             }).ToList();
@@ -1189,6 +1222,9 @@ namespace VCL_BLL.Services
                 Vat = quotation.Vat ?? 0m,
                 ImportTax = quotation.ImportTax ?? 0m,
                 TotalAmount = quotation.TotalAmount,
+                Currency = quotation.Currency,
+                ExchangeRate = quotation.ExchangeRate,
+                ExchangeRateAt = quotation.ExchangeRateAt,
                 Note = quotation.Note,
                 Status = quotation.Status,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,

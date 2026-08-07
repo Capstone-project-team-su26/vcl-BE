@@ -30,6 +30,18 @@ public partial class PurchaseQuotation
 
     public DateTime? CreatedAt { get; set; }
 
+    /// <summary>Đồng tiền Sale nhập giá sản phẩm (CNY, USD, JPY...). "VND" nghĩa là không quy đổi.</summary>
+    public string? Currency { get; set; }
+
+    /// <summary>
+    /// Tỷ giá áp dụng, ĐÓNG BĂNG tại thời điểm lập báo giá. Bắt buộc phải lưu lại:
+    /// nếu tính lại theo tỷ giá hiện hành thì báo giá cũ sẽ âm thầm đổi số tiền khi Admin sửa tỷ giá.
+    /// </summary>
+    public decimal? ExchangeRate { get; set; }
+
+    /// <summary>Thời điểm chốt tỷ giá, để đối chiếu khi khách thắc mắc.</summary>
+    public DateTime? ExchangeRateAt { get; set; }
+
     public virtual PurchaseRequest PurchaseRequest { get; set; }
 
     public virtual ICollection<PurchaseQuotationItem> PurchaseQuotationItems { get; set; } = new List<PurchaseQuotationItem>();

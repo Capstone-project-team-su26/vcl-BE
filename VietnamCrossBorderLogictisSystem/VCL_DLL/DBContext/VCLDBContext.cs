@@ -161,6 +161,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<ProductType> ProductTypes { get; set; }
 
+    public virtual DbSet<ExchangeRate> ExchangeRates { get; set; }
+
     public virtual DbSet<PurchaseQuotation> PurchaseQuotations { get; set; }
 
     public virtual DbSet<PurchaseQuotationItem> PurchaseQuotationItems { get; set; }
@@ -2162,11 +2164,31 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.Status).HasMaxLength(50).HasColumnName("status");
             entity.Property(e => e.CreatedBy).HasColumnName("created_by");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.Currency).HasMaxLength(10).HasColumnName("currency");
+            entity.Property(e => e.ExchangeRate).HasColumnType("decimal(18, 6)").HasColumnName("exchange_rate");
+            entity.Property(e => e.ExchangeRateAt).HasColumnName("exchange_rate_at");
 
             entity.HasOne(d => d.PurchaseRequest).WithMany()
                 .HasForeignKey(d => d.PurchaseRequestId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("FK_PURCHASE_QUOTATION_REQUEST");
+        });
+
+        modelBuilder.Entity<ExchangeRate>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_EXCHANGE_RATES");
+            entity.ToTable("EXCHANGE_RATES");
+
+            entity.HasIndex(e => e.CurrencyCode).IsUnique().HasDatabaseName("UX_EXCHANGE_RATES_CURRENCY_CODE");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.CurrencyCode).HasMaxLength(10).HasColumnName("currency_code");
+            entity.Property(e => e.CurrencyName).HasMaxLength(100).HasColumnName("currency_name");
+            entity.Property(e => e.RateToVnd).HasColumnType("decimal(18, 6)").HasColumnName("rate_to_vnd");
+            entity.Property(e => e.IsActive).HasDefaultValue(true).HasColumnName("is_active");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<PurchaseQuotationItem>(entity =>
@@ -2178,6 +2200,7 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.PurchaseQuotationId).HasColumnName("purchase_quotation_id");
             entity.Property(e => e.PurchaseRequestItemId).HasColumnName("purchase_request_item_id");
             entity.Property(e => e.UnitPrice).HasColumnType("decimal(18, 2)").HasColumnName("unit_price");
+            entity.Property(e => e.UnitPriceOriginal).HasColumnType("decimal(18, 2)").HasColumnName("unit_price_original");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
             entity.Property(e => e.LineTotal).HasColumnType("decimal(18, 2)").HasColumnName("line_total");
 

@@ -723,6 +723,60 @@ namespace VCL_DLL.Migrations
                     b.ToTable("DOMESTIC_WAYBILLS", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.ExchangeRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("(getutcdate())");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<string>("CurrencyName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("currency_name");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<decimal>("RateToVnd")
+                        .HasColumnType("decimal(18, 6)")
+                        .HasColumnName("rate_to_vnd");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("PK_EXCHANGE_RATES");
+
+                    b.HasIndex("CurrencyCode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EXCHANGE_RATES_CURRENCY_CODE");
+
+                    b.ToTable("EXCHANGE_RATES", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.Inventory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2027,6 +2081,19 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("created_by");
 
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("currency");
+
+                    b.Property<decimal?>("ExchangeRate")
+                        .HasColumnType("decimal(18, 6)")
+                        .HasColumnName("exchange_rate");
+
+                    b.Property<DateTime?>("ExchangeRateAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("exchange_rate_at");
+
                     b.Property<decimal?>("ImportTax")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("import_tax");
@@ -2100,6 +2167,10 @@ namespace VCL_DLL.Migrations
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("unit_price");
+
+                    b.Property<decimal?>("UnitPriceOriginal")
+                        .HasColumnType("decimal(18, 2)")
+                        .HasColumnName("unit_price_original");
 
                     b.HasKey("Id")
                         .HasName("PK_PURCHASE_QUOTATION_ITEMS");
