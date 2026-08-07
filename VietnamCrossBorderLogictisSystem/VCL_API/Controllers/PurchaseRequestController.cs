@@ -223,6 +223,79 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Xác nhận mua hộ &amp; cập nhật tiến độ đơn mua hàng.
+        /// Nhận PURCHASED, SELLER_SHIPPED hoặc ARRIVED_ORIGIN_WAREHOUSE, kèm tối đa 3 ảnh bằng chứng.
+        /// </summary>
+        [HttpPut("{requestId}/confirm-purchase")]
+        public async Task<IActionResult> ConfirmPurchase(Guid requestId, [FromBody] ConfirmPurchaseRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchaseRequestService.ConfirmPurchaseAsync(requestId, userId, userRole, request);
+                return Ok(new
+                {
+                    success = true,
+                    message = "Xác nhận mua hộ & cập nhật tiến độ thành công.",
+                    data = result
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { success = false, message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { success = false, message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Nhật ký đổi trạng thái của một yêu cầu mua hộ (mới nhất trước).
+        /// </summary>
+        [HttpGet("{requestId}/history")]
+        public async Task<IActionResult> GetHistory(Guid requestId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = Guid.TryParse(userIdClaim, out var parsed) ? parsed : null;
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchaseRequestService.GetPurchaseRequestHistoryAsync(requestId, userId, userRole);
+                return Ok(new { message = "Lấy lịch sử trạng thái thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Staff/Sales tạo báo giá cho một yêu cầu mua hộ
         /// </summary>
         [HttpPost("{requestId}/quotation")]

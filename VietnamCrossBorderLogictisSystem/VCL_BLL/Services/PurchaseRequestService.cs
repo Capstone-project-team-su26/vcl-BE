@@ -22,6 +22,40 @@ namespace VCL_BLL.Services
         // Ký tự phân cách các danh sách lưu gộp trong 1 cột DB (dùng chung quy ước với ký gửi)
         private const char ListSeparator = '|';
 
+        private const int MaxProofImages = 3;
+
+        /// <summary>
+        /// Nhóm trạng thái tiến độ đi mua hàng, do Sale/Buying bấm tay ở popup "Xác nhận mua hộ".
+        /// Cố tình KHÔNG gồm các trạng thái do luồng thanh toán tự đặt (WAITING_PAYMENT, PAID,
+        /// WAITING_FINAL_PAYMENT, COMPLETED) để hai luồng không ghi đè lẫn nhau.
+        /// </summary>
+        private static readonly string[] PurchaseProgressStatuses =
+            { "PURCHASED", "SELLER_SHIPPED", "ARRIVED_ORIGIN_WAREHOUSE" };
+
+        /// <summary>Nhãn tiếng Việt của trạng thái yêu cầu mua hộ, dùng chung cho mọi response.</summary>
+        private static readonly Dictionary<string, string> StatusDisplayNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["NEW"] = "Tạo đơn hàng",
+            ["PENDING_REVIEW"] = "Chờ xác nhận",
+            ["IN_REVIEW"] = "Đang xem xét",
+            ["NEED_MORE_INFO"] = "Cần bổ sung thông tin",
+            ["REJECTED"] = "Đã từ chối",
+            ["QUOTED"] = "Đã báo giá",
+            ["WAITING_PAYMENT"] = "Chờ thanh toán",
+            ["PAID"] = "Đã thanh toán",
+            ["PURCHASED"] = "Xác nhận mua hàng",
+            ["SELLER_SHIPPED"] = "NCC đã phát hàng",
+            ["ARRIVED_ORIGIN_WAREHOUSE"] = "Đã về kho nước ngoài",
+            ["WAITING_FINAL_PAYMENT"] = "Chờ thanh toán cuối",
+            ["COMPLETED"] = "Hoàn tất nghiệp vụ",
+            ["CANCELLED"] = "Đã hủy"
+        };
+
+        private static string GetStatusDisplayName(string? status) =>
+            !string.IsNullOrWhiteSpace(status) && StatusDisplayNames.TryGetValue(status.Trim(), out var label)
+                ? label
+                : status ?? string.Empty;
+
         private readonly IExchangeRateService _exchangeRateService;
 
         public PurchaseRequestService(
@@ -769,6 +803,126 @@ namespace VCL_BLL.Services
                 Quotation = quotationDto
             };
         }
+
+        public async Task<ConfirmPurchaseResponseDto> ConfirmPurchaseAsync(
+            Guid requestId, Guid userId, string userRole, ConfirmPurchaseRequestDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Nội dung xác nhận mua hộ không được để trống.");
+
+            // 1. Phân quyền: chỉ Staff/Sales/Buying được cập nhật tiến độ mua hàng
+            if (string.IsNullOrWhiteSpace(userRole) || !StaffRoles.Contains(userRole.Trim().ToUpperInvariant()))
+                throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được xác nhận mua hộ.");
+
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+
+            var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (currentStatus is "CANCELLED" or "REJECTED")
+                throw new ArgumentException($"Không thể cập nhật tiến độ do đơn đang ở trạng thái {purchaseRequest.Status}.");
+
+            // 2. Chỉ nhận nhóm trạng thái tiến độ mua hàng
+            var targetStatus = request.Status.Trim().ToUpperInvariant();
+            if (!PurchaseProgressStatuses.Contains(targetStatus))
+            {
+                throw new ArgumentException(
+                    $"Trạng thái '{request.Status}' không thuộc nhóm tiến độ mua hàng. " +
+                    $"Hợp lệ: {string.Join(", ", PurchaseProgressStatuses)}.");
+            }
+
+            // 3. Validate ảnh bằng chứng ở phía server, không tin số client gửi
+            var proofImages = (request.ProofImages ?? new List<string>())
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Select(u => u.Trim())
+                .Distinct()
+                .ToList();
+
+            if (proofImages.Count > MaxProofImages)
+                throw new ArgumentException($"Chỉ được tải tối đa {MaxProofImages} ảnh bằng chứng.");
+
+            if (proofImages.Any(u => u.Contains(ListSeparator)))
+                throw new ArgumentException($"URL ảnh không được chứa ký tự '{ListSeparator}'.");
+
+            // 4. Ghi nhật ký TRƯỚC khi đổi, để giữ được trạng thái cũ
+            var actor = (await _unitOfWork.Repository<User>().GetAllAsync())
+                .FirstOrDefault(u => u.Id == userId);
+
+            await _unitOfWork.Repository<PurchaseRequestHistory>().AddAsync(new PurchaseRequestHistory
+            {
+                Id = Guid.NewGuid(),
+                PurchaseRequestId = requestId,
+                FromStatus = purchaseRequest.Status,
+                ToStatus = targetStatus,
+                Note = request.GeneralNote?.Trim(),
+                ProofImageUrls = proofImages.Any() ? string.Join(ListSeparator, proofImages) : null,
+                ChangedBy = userId,
+                ChangedByName = actor?.FullName,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            // 5. Cập nhật đơn. Ảnh chỉ ghi đè khi lần này có gửi, để không xoá mất ảnh cũ.
+            purchaseRequest.Status = targetStatus;
+            if (proofImages.Any())
+                purchaseRequest.ProofImageUrls = string.Join(ListSeparator, proofImages);
+            if (!string.IsNullOrWhiteSpace(request.GeneralNote))
+                purchaseRequest.GeneralNote = request.GeneralNote.Trim();
+
+            requestRepo.Update(purchaseRequest);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new ConfirmPurchaseResponseDto
+            {
+                PurchaseRequestId = purchaseRequest.Id,
+                PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
+                Status = purchaseRequest.Status,
+                StatusDisplayName = GetStatusDisplayName(purchaseRequest.Status),
+                ProofImages = SplitList(purchaseRequest.ProofImageUrls),
+                GeneralNote = purchaseRequest.GeneralNote,
+                UpdatedAt = DateTime.UtcNow
+            };
+        }
+
+        public async Task<List<PurchaseRequestHistoryItemDto>> GetPurchaseRequestHistoryAsync(
+            Guid requestId, Guid? userId, string userRole)
+        {
+            var purchaseRequest = await _unitOfWork.Repository<PurchaseRequest>().GetByIdAsync(requestId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+
+            // Customer chỉ xem lịch sử đơn của chính mình
+            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
+                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            if (!isStaff)
+            {
+                var customer = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                    .FirstOrDefault(c => c.UserId == userId);
+                if (customer == null || purchaseRequest.CustomerId != customer.Id)
+                    throw new UnauthorizedAccessException("Bạn không có quyền xem lịch sử của đơn mua hộ này.");
+            }
+
+            var histories = (await _unitOfWork.Repository<PurchaseRequestHistory>().GetAllAsync())
+                .Where(h => h.PurchaseRequestId == requestId)
+                .OrderByDescending(h => h.CreatedAt)
+                .ToList();
+
+            return histories.Select(h => new PurchaseRequestHistoryItemDto
+            {
+                HistoryId = h.Id,
+                FromStatus = h.FromStatus,
+                ToStatus = h.ToStatus,
+                ToStatusDisplayName = GetStatusDisplayName(h.ToStatus),
+                Note = h.Note,
+                ProofImages = SplitList(h.ProofImageUrls),
+                ChangedBy = h.ChangedBy,
+                ChangedByName = h.ChangedByName,
+                CreatedAt = h.CreatedAt
+            }).ToList();
+        }
+
+        private static List<string> SplitList(string? value) =>
+            string.IsNullOrWhiteSpace(value)
+                ? new List<string>()
+                : value.Split(ListSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
 
         public async Task<UpdatePurchaseRequestStatusResponseDto> UpdatePurchaseRequestStatusAsync(
             Guid requestId, Guid userId, string userRole, UpdatePurchaseRequestStatusRequestDto request)

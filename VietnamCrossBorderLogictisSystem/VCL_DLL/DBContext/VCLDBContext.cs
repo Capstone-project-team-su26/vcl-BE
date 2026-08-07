@@ -163,6 +163,8 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<ExchangeRate> ExchangeRates { get; set; }
 
+    public virtual DbSet<PurchaseRequestHistory> PurchaseRequestHistories { get; set; }
+
     public virtual DbSet<PurchaseQuotation> PurchaseQuotations { get; set; }
 
     public virtual DbSet<PurchaseQuotationItem> PurchaseQuotationItems { get; set; }
@@ -2174,6 +2176,29 @@ public partial class VCLDBContext : DbContext
                 .HasConstraintName("FK_PURCHASE_QUOTATION_REQUEST");
         });
 
+        modelBuilder.Entity<PurchaseRequestHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_PURCHASE_REQUEST_HISTORY");
+            entity.ToTable("PURCHASE_REQUEST_HISTORY");
+
+            entity.HasIndex(e => e.PurchaseRequestId).HasDatabaseName("IX_PURCHASE_REQUEST_HISTORY_REQUEST");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())").HasColumnName("id");
+            entity.Property(e => e.PurchaseRequestId).HasColumnName("purchase_request_id");
+            entity.Property(e => e.FromStatus).HasMaxLength(50).HasColumnName("from_status");
+            entity.Property(e => e.ToStatus).HasMaxLength(50).HasColumnName("to_status");
+            entity.Property(e => e.Note).HasMaxLength(500).HasColumnName("note");
+            entity.Property(e => e.ProofImageUrls).HasMaxLength(2000).HasColumnName("proof_image_urls");
+            entity.Property(e => e.ChangedBy).HasColumnName("changed_by");
+            entity.Property(e => e.ChangedByName).HasMaxLength(255).HasColumnName("changed_by_name");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())").HasColumnName("created_at");
+
+            entity.HasOne(d => d.PurchaseRequest).WithMany()
+                .HasForeignKey(d => d.PurchaseRequestId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PURCHASE_REQUEST_HISTORY_REQUEST");
+        });
+
         modelBuilder.Entity<ExchangeRate>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("PK_EXCHANGE_RATES");
@@ -2311,6 +2336,9 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ReceiverAddress)
                 .HasMaxLength(500)
                 .HasColumnName("receiver_address");
+            entity.Property(e => e.ProofImageUrls)
+                .HasMaxLength(2000)
+                .HasColumnName("proof_image_urls");
             entity.Property(e => e.RequiresInspection)
                 .HasColumnName("requires_inspection");
             entity.Property(e => e.RequiresQuantityCheck)
