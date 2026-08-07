@@ -455,6 +455,18 @@ namespace VCL_BLL.DTOs
         /// <summary>Số tiền còn thiếu. Bằng 0 là đã thanh toán đủ.</summary>
         public decimal Outstanding { get; set; }
 
+        /// <summary>Tiền hàng — khách trả 100% ngay đợt cọc.</summary>
+        public decimal ProductsSubtotal { get; set; }
+
+        /// <summary>Phần dịch vụ &amp; cước (tổng bill trừ tiền hàng).</summary>
+        public decimal ServicesSubtotal { get; set; }
+
+        /// <summary>Tiền cọc đợt đầu theo công thức (tiền hàng + 50% dịch vụ).</summary>
+        public decimal DepositAmount { get; set; }
+
+        /// <summary>Diễn giải cách tính cọc để FE hiển thị.</summary>
+        public string DepositDescription { get; set; } = string.Empty;
+
         public List<PurchasePaymentHistoryItemDto> Payments { get; set; } = new();
     }
 
@@ -469,9 +481,32 @@ namespace VCL_BLL.DTOs
 
         public Guid PaymentId { get; set; }
         public long OrderCode { get; set; }
+
+        /// <summary>Số tiền của đợt này — chính là <see cref="DepositAmount"/>.</summary>
         public decimal Amount { get; set; }
         public string PaymentMethod { get; set; } = string.Empty;
         public string PaymentStatus { get; set; } = string.Empty;
+
+        /// <summary>Diễn giải cách tính cọc để FE hiển thị, ví dụ "100% tiền hàng + 50% phí dịch vụ &amp; cước".</summary>
+        public string DepositDescription { get; set; } = string.Empty;
+
+        /// <summary>Tổng bill của báo giá.</summary>
+        public decimal TotalBillAmount { get; set; }
+
+        /// <summary>Tiền hàng — khách trả 100% ngay đợt đầu.</summary>
+        public decimal ProductsSubtotal { get; set; }
+
+        /// <summary>Phần dịch vụ &amp; cước (tổng bill trừ tiền hàng) — gồm phí mua hộ, cước, thuế, phụ phí.</summary>
+        public decimal ServicesSubtotal { get; set; }
+
+        /// <summary>Phần dịch vụ khách trả ở đợt đầu (mặc định 50%).</summary>
+        public decimal ServicesDepositAmount { get; set; }
+
+        /// <summary>Tổng tiền cọc đợt đầu = tiền hàng + phần dịch vụ trả trước.</summary>
+        public decimal DepositAmount { get; set; }
+
+        /// <summary>Phần còn lại sẽ thu ở đợt cuối (chưa gồm chi phí phát sinh sau này).</summary>
+        public decimal RemainingAmount { get; set; }
 
         /// <summary>Link thanh toán payOS để FE điều hướng khách hàng.</summary>
         public string CheckoutUrl { get; set; } = string.Empty;

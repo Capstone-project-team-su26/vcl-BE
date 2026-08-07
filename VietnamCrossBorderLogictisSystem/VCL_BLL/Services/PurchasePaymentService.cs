@@ -20,8 +20,19 @@ namespace VCL_BLL.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<PurchasePaymentService> _logger;
 
-        /// <summary>Đợt 1: khách trả toàn bộ giá trị báo giá (mua hộ không thu cọc như ký gửi).</summary>
+        /// <summary>
+        /// Đợt 1 (dữ liệu cũ): khách trả toàn bộ giá trị báo giá. Giữ lại để đọc được các bản ghi
+        /// đã tạo trước khi chuyển sang thu cọc — không dùng cho khoản thanh toán mới.
+        /// </summary>
         private const string PaymentTypeFull = "FULL_PAYMENT";
+
+        /// <summary>Đợt 1: cọc 100% tiền hàng + phần trăm cấu hình của phí dịch vụ &amp; cước.</summary>
+        private const string PaymentTypeDeposit = "DEPOSIT";
+
+        /// <summary>Phần trăm phí dịch vụ &amp; cước thu ở đợt cọc. Khớp với web khách hàng.</summary>
+        private const decimal DefaultServiceDepositRate = 50m;
+
+        private const string DepositDescriptionTemplate = "100% tiền hàng + {0}% phí dịch vụ & cước";
 
         /// <summary>Đợt 2: chi phí phát sinh sau khi hàng về (lưu kho, giao lại...).</summary>
         private const string PaymentTypeFinal = "FINAL_PAYMENT";
@@ -99,10 +110,16 @@ namespace VCL_BLL.Services
             var allPayments = await paymentRepo.GetAllAsync();
             long orderCode = await GenerateUniqueOrderCode(allPayments);
 
-            // 6. Tạo link thanh toán theo phương thức đã chọn — khách trả toàn bộ giá trị báo giá
+            // 6. Tạo link thanh toán theo phương thức đã chọn — đợt đầu chỉ thu tiền cọc
+            var deposit = await BuildDepositBreakdownAsync(quotation);
+            if (deposit.DepositAmount <= 0m)
+            {
+                throw new ArgumentException("Số tiền cọc phải lớn hơn 0. Vui lòng kiểm tra lại báo giá.");
+            }
+
             var purchaseCode = purchaseRequest.PurchaseCode ?? string.Empty;
             var (checkoutUrl, paymentLinkId, paymentMethodString) = await CreatePaymentLinkAsync(
-                orderCode, quotation.TotalAmount, purchaseCode, request.PaymentMethod, request.ReturnUrl);
+                orderCode, deposit.DepositAmount, purchaseCode, request.PaymentMethod, request.ReturnUrl);
 
             // 7. Lưu khoản thanh toán ở trạng thái PENDING
             var payment = new PurchasePayment
@@ -111,10 +128,10 @@ namespace VCL_BLL.Services
                 PurchaseRequestId = requestId,
                 PurchaseQuotationId = quotation.Id,
                 OrderCode = orderCode,
-                Amount = quotation.TotalAmount,
+                Amount = deposit.DepositAmount,
                 PaymentMethod = paymentMethodString,
                 Status = "PENDING",
-                PaymentType = PaymentTypeFull,
+                PaymentType = PaymentTypeDeposit,
                 PaymentLinkId = paymentLinkId,
                 CheckoutUrl = checkoutUrl,
                 CreatedAt = DateTime.UtcNow
@@ -142,6 +159,13 @@ namespace VCL_BLL.Services
                 Amount = payment.Amount,
                 PaymentMethod = payment.PaymentMethod,
                 PaymentStatus = payment.Status,
+                DepositDescription = deposit.Description,
+                TotalBillAmount = deposit.TotalBill,
+                ProductsSubtotal = deposit.ProductsSubtotal,
+                ServicesSubtotal = deposit.ServicesSubtotal,
+                ServicesDepositAmount = deposit.ServicesDeposit,
+                DepositAmount = deposit.DepositAmount,
+                RemainingAmount = deposit.RemainingAmount,
                 CheckoutUrl = payment.CheckoutUrl,
                 PaymentLinkId = payment.PaymentLinkId
             };
@@ -181,11 +205,12 @@ namespace VCL_BLL.Services
             var allPayments = await paymentRepo.GetAllAsync();
             var requestPayments = allPayments.Where(p => p.PurchaseRequestId == requestId).ToList();
 
-            bool fullPaymentDone = requestPayments.Any(p =>
-                IsPaymentType(p, PaymentTypeFull) && IsPaid(p));
-            if (!fullPaymentDone)
+            // Đơn mới trả cọc (DEPOSIT); đơn tạo trước khi đổi công thức trả FULL_PAYMENT — chấp nhận cả hai.
+            bool firstInstalmentDone = requestPayments.Any(p =>
+                (IsPaymentType(p, PaymentTypeDeposit) || IsPaymentType(p, PaymentTypeFull)) && IsPaid(p));
+            if (!firstInstalmentDone)
             {
-                throw new ArgumentException("Chưa thể tạo thanh toán cuối: khách chưa thanh toán giá trị đơn mua hộ.");
+                throw new ArgumentException("Chưa thể tạo thanh toán cuối: khách chưa thanh toán đợt cọc.");
             }
 
             // 4. Không cho trùng đợt cuối
@@ -381,6 +406,14 @@ namespace VCL_BLL.Services
             var outstanding = totalBill - totalPaid;
             if (outstanding < 0m) outstanding = 0m;
 
+            var deposit = quotation != null ? await BuildDepositBreakdownAsync(quotation) : null;
+
+            // Cọc đã tạo thì lấy đúng số đã thu, KHÔNG tính lại theo bill hiện tại: chi phí phát sinh
+            // làm tổng bill tăng lên, tính lại sẽ ra một con số khách chưa từng trả.
+            var depositPayment = payments.FirstOrDefault(p =>
+                IsPaymentType(p, PaymentTypeDeposit) || IsPaymentType(p, PaymentTypeFull));
+            var depositAmount = depositPayment?.Amount ?? deposit?.DepositAmount ?? 0m;
+
             return new PurchasePaymentHistoryResponseDto
             {
                 PurchaseRequestId = requestId,
@@ -389,6 +422,10 @@ namespace VCL_BLL.Services
                 TotalBillAmount = totalBill,
                 TotalPaid = totalPaid,
                 Outstanding = outstanding,
+                ProductsSubtotal = deposit?.ProductsSubtotal ?? 0m,
+                ServicesSubtotal = deposit?.ServicesSubtotal ?? 0m,
+                DepositAmount = depositAmount,
+                DepositDescription = deposit?.Description ?? string.Empty,
                 Payments = payments.Select(p => new PurchasePaymentHistoryItemDto
                 {
                     PaymentId = p.Id,
@@ -403,6 +440,65 @@ namespace VCL_BLL.Services
                     PaidAt = p.PaidAt
                 }).ToList()
             };
+        }
+
+        /// <summary>Kết quả tách bill thành phần tiền hàng và phần dịch vụ để tính cọc.</summary>
+        private sealed class DepositBreakdown
+        {
+            public decimal TotalBill { get; init; }
+            public decimal ProductsSubtotal { get; init; }
+            public decimal ServicesSubtotal { get; init; }
+            public decimal ServicesDeposit { get; init; }
+            public decimal DepositAmount { get; init; }
+            public decimal RemainingAmount { get; init; }
+            public string Description { get; init; } = string.Empty;
+        }
+
+        /// <summary>
+        /// Cọc mua hộ = 100% tiền hàng + N% phần còn lại của bill (phí mua hộ, cước, thuế, phụ phí).
+        /// "Phần dịch vụ" lấy bằng tổng bill trừ tiền hàng thay vì cộng từng khoản, để không bỏ sót
+        /// phụ phí phát sinh và luôn khớp với cách web khách hàng tính.
+        /// </summary>
+        private async Task<DepositBreakdown> BuildDepositBreakdownAsync(PurchaseQuotation quotation)
+        {
+            var rate = await GetServiceDepositRateAsync();
+
+            var totalBill = quotation.TotalAmount;
+            var productsSubtotal = Math.Max(quotation.ProductsSubtotal, 0m);
+            if (productsSubtotal > totalBill) productsSubtotal = totalBill;
+
+            var servicesSubtotal = Math.Max(totalBill - productsSubtotal, 0m);
+            var servicesDeposit = Math.Round(servicesSubtotal * rate / 100m, MidpointRounding.AwayFromZero);
+            var depositAmount = productsSubtotal + servicesDeposit;
+
+            return new DepositBreakdown
+            {
+                TotalBill = totalBill,
+                ProductsSubtotal = productsSubtotal,
+                ServicesSubtotal = servicesSubtotal,
+                ServicesDeposit = servicesDeposit,
+                DepositAmount = depositAmount,
+                RemainingAmount = Math.Max(totalBill - depositAmount, 0m),
+                Description = string.Format(DepositDescriptionTemplate, rate.ToString("0.##"))
+            };
+        }
+
+        /// <summary>
+        /// Phần trăm dịch vụ thu trước, đọc từ <c>AdditionalServiceFee</c> mã
+        /// <c>PURCHASE_SERVICE_DEPOSIT_RATE</c> (cùng cách ký gửi đọc <c>DEPOSIT_RATE</c>).
+        /// </summary>
+        private async Task<decimal> GetServiceDepositRateAsync()
+        {
+            var fees = await _unitOfWork.Repository<AdditionalServiceFee>().GetAllAsync();
+            var rateFee = fees.FirstOrDefault(f =>
+                f.IsActive && string.Equals(f.FeeCode, "PURCHASE_SERVICE_DEPOSIT_RATE", StringComparison.OrdinalIgnoreCase));
+
+            if (rateFee == null) return DefaultServiceDepositRate;
+
+            var value = rateFee.Value;
+            if (value < 0m) value = 0m;
+            if (value > 100m) value = 100m;
+            return value;
         }
 
         private static bool IsPaid(PurchasePayment payment)
