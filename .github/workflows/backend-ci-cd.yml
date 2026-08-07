@@ -19,7 +19,10 @@ jobs:
 
     concurrency:
       group: vcl-backend-deployment
-      cancel-in-progress: true
+      # Xếp hàng thay vì huỷ: huỷ giữa chừng làm `docker compose up --build` đứt gánh,
+      # container cũ vẫn chạy nên commit đã merge mà server vẫn là bản trước đó.
+      # Run treo không tắc hàng đợi vĩnh viễn vì đã có timeout-minutes ở trên.
+      cancel-in-progress: false
 
     steps:
       - name: Deploy API
