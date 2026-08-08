@@ -309,7 +309,9 @@ namespace VCL_BLL.Services
                     ParcelId = created.Parcel.Id,
                     ShippingCode = request.ShippingCode,
                     ConsignmentId = order.Id,
-                    ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                    OrderCode = order.ConsignmentCode ?? string.Empty,
+                    // Đơn mua hộ không có "mã ký gửi" — để null thay vì lặp lại mã ở field sai nghĩa.
+                    ConsignmentCode = purchaseCodeOfOrder == null ? order.ConsignmentCode : null,
                     OrderType = order.OrderType,
                     PurchaseCode = purchaseCodeOfOrder,
                     CustomerName = customer?.FullName ?? string.Empty,

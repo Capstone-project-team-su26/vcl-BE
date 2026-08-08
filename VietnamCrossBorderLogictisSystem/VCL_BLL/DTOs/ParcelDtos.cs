@@ -42,10 +42,20 @@ namespace VCL_BLL.DTOs
         /// <summary>Mã người dùng đã nhập lúc check-in — có thể là mã ký gửi (VCL-) hoặc mã mua hộ (PUR-).</summary>
         public string ShippingCode { get; set; } = string.Empty;
 
+        /// <summary>Id đơn kho, dùng chung cho cả hai loại đơn.</summary>
         public Guid ConsignmentId { get; set; }
 
-        /// <summary>Mã đơn kho mà kiện này thuộc về. Hàng mua hộ cũng có mã đơn kho riêng.</summary>
-        public string ConsignmentCode { get; set; } = string.Empty;
+        /// <summary>
+        /// Mã đơn kho, KHÔNG phân biệt loại — dùng field này cho mọi trường hợp.
+        /// Ký gửi ra VCL-…, mua hộ ra PUR-…
+        /// </summary>
+        public string OrderCode { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Mã ký gửi. Chỉ có giá trị với đơn ký gửi, <c>null</c> với đơn mua hộ —
+        /// đơn mua hộ không có "mã ký gửi", dùng <see cref="PurchaseCode"/>.
+        /// </summary>
+        public string? ConsignmentCode { get; set; }
 
         /// <summary>Loại đơn kho: CONSIGNMENT hoặc PURCHASE.</summary>
         public string? OrderType { get; set; }
