@@ -22,7 +22,7 @@ namespace VCL_BLL.Services
         private static readonly string[] CancellableStatuses = { "PENDING_REVIEW", "APPROVED" };
 
         // Các role nội bộ được xem mọi yêu cầu ký gửi (không cần là chủ đơn).
-        private static readonly string[] StaffRoles = { "ADMIN", "SALE", "WAREHOUSESTAFF", "OPERATIONSMANAGER", "DELIVERY" };
+        private static readonly string[] StaffRoles = { "ADMIN", "ADMINISTRATOR", "SALE", "WAREHOUSESTAFF", "OPERATIONSMANAGER", "DELIVERY" };
 
         public OrderService(
             IUnitOfWork unitOfWork,

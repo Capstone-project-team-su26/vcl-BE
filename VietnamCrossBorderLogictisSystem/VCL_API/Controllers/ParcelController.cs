@@ -78,7 +78,7 @@ namespace VCL_API.Controllers
         /// <response code="403">Không có quyền truy cập (yêu cầu role Staff hoặc WarehouseStaff)</response>
         /// <response code="404">Không tìm thấy kiện hàng</response>
         [HttpGet("{parcelId:guid}")]
-        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Sale,SALE,Customer,CUSTOMER")]
+        [Authorize(Roles = "Admin,ADMIN,Administrator,ADMINISTRATOR,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Sale,SALE,Customer,CUSTOMER")]
         [ProducesResponseType(typeof(ParcelDetailResponse), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(403)]

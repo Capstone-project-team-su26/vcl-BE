@@ -22,7 +22,7 @@ namespace VCL_BLL.Services
 
         // Role nội bộ được tạo thanh toán cuối / xem lịch sử thanh toán.
         private static readonly string[] StaffRoles =
-            { "ADMIN", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
+            { "ADMIN", "ADMINISTRATOR", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
 
         // Tỷ lệ cọc mặc định nếu Admin chưa cấu hình DEPOSIT_RATE.
         private const decimal DefaultDepositRate = 50m;
