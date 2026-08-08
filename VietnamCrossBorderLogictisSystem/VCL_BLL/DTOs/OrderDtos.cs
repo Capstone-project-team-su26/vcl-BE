@@ -22,6 +22,14 @@ namespace VCL_BLL.DTOs
     {
         public Guid OrderId { get; set; }
         public string ConsignmentCode { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Loại đơn kho: <c>CONSIGNMENT</c> hoặc <c>PURCHASE</c>. Danh sách này trả về cả hai loại
+        /// vì màn kho cần thấy đủ, nên màn ký gửi phải lọc — bằng tham số <c>orderType</c> của API,
+        /// hoặc bằng field này. Thiếu nó thì đơn mua hộ (mã PUR-) hiện lẫn trong màn ký gửi.
+        /// </summary>
+        public string? OrderType { get; set; }
+
         public string CustomerName { get; set; } = string.Empty;
         public string ConsignmentType { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;

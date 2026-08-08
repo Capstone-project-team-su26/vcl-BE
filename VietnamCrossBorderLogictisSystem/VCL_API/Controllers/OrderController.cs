@@ -300,15 +300,20 @@ namespace VCL_API.Controllers
         /// <param name="pageSize">Số lượng item mỗi trang (mặc định 10)</param>
         /// <param name="status">Trạng thái yêu cầu (tuỳ chọn)</param>
         /// <param name="searchCode">Mã yêu cầu ký gửi để tìm kiếm (tuỳ chọn)</param>
+        /// <param name="orderType">
+        /// Lọc theo loại đơn kho: <c>CONSIGNMENT</c> hoặc <c>PURCHASE</c>. Bỏ trống trả về cả hai.
+        /// Màn ký gửi phải truyền <c>CONSIGNMENT</c>, không thì đơn mua hộ (mã PUR-) hiện lẫn vào danh sách.
+        /// </param>
         /// <returns>Danh sách yêu cầu ký gửi phân trang</returns>
         [HttpGet("consignments")]
         [ProducesResponseType(typeof(object), 200)]
         [ProducesResponseType(401)]
         public async Task<IActionResult> GetConsignments(
-            [FromQuery] int pageNumber = 1, 
-            [FromQuery] int pageSize = 10, 
-            [FromQuery] string? status = null, 
-            [FromQuery] string? searchCode = null)
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? status = null,
+            [FromQuery] string? searchCode = null,
+            [FromQuery] string? orderType = null)
         {
             if (pageNumber < 1) pageNumber = 1;
             if (pageSize < 1) pageSize = 10;
@@ -324,7 +329,7 @@ namespace VCL_API.Controllers
 
             try
             {
-                var result = await _orderService.GetConsignmentsAsync(userId, role, pageNumber, pageSize, status, searchCode);
+                var result = await _orderService.GetConsignmentsAsync(userId, role, pageNumber, pageSize, status, searchCode, orderType);
                 return Ok(new
                 {
                     message = "Lấy danh sách yêu cầu ký gửi thành công.",

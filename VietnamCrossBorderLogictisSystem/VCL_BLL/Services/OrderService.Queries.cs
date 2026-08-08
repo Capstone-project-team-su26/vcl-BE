@@ -208,7 +208,7 @@ namespace VCL_BLL.Services
             };
         }
 
-        public async Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode)
+        public async Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode, string? orderType = null)
         {
             var orderRepo = _unitOfWork.Repository<Order>();
             var customerRepo = _unitOfWork.Repository<Customer>();
@@ -250,6 +250,15 @@ namespace VCL_BLL.Services
             if (!string.IsNullOrWhiteSpace(status))
             {
                 query = query.Where(o => string.Equals(o.Status, status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Lọc theo loại đơn kho. Bỏ trống thì trả cả hai loại — màn kho cần thấy đủ, nên không
+            // mặc định chỉ CONSIGNMENT, làm vậy sẽ nuốt mất đơn mua hộ khỏi màn đó.
+            // Màn ký gửi phải truyền orderType=CONSIGNMENT, không thì đơn mua hộ (mã PUR-) hiện lẫn vào.
+            if (!string.IsNullOrWhiteSpace(orderType))
+            {
+                var normalizedOrderType = orderType.Trim();
+                query = query.Where(o => string.Equals(o.OrderType, normalizedOrderType, StringComparison.OrdinalIgnoreCase));
             }
 
             // Search by consignment code
@@ -333,6 +342,7 @@ namespace VCL_BLL.Services
                 {
                     OrderId = o.Id,
                     ConsignmentCode = o.ConsignmentCode ?? string.Empty,
+                    OrderType = o.OrderType,
                     CustomerName = customerInfo?.FullName ?? string.Empty,
                     ConsignmentType = o.ConsignmentType ?? string.Empty,
                     Status = o.Status ?? string.Empty,
