@@ -620,6 +620,17 @@ namespace VCL_BLL.Services
                 .GroupBy(q => q.PurchaseRequestId)
                 .ToDictionary(g => g.Key, g => g.Max(q => q.CreatedAt!.Value));
 
+            // Tên kho cho các dòng có chọn kho — tra một lần rồi map, không query trong vòng lặp
+            var warehouseIds = pagedRequests
+                .Where(r => r.ExpectedWarehouseId.HasValue)
+                .Select(r => r.ExpectedWarehouseId!.Value)
+                .ToHashSet();
+            var warehouseNames = warehouseIds.Count == 0
+                ? new Dictionary<Guid, string?>()
+                : (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                    .Where(w => warehouseIds.Contains(w.Id))
+                    .ToDictionary(w => w.Id, w => (string?)w.WarehouseName);
+
             // 6. Map sang DTO (kèm tên người nhận và danh sách sản phẩm tóm tắt)
             var resultItems = pagedRequests.Select(r =>
             {
@@ -651,6 +662,12 @@ namespace VCL_BLL.Services
                     CreatedAt = r.CreatedAt ?? DateTime.MinValue,
                     QuotationCreatedAt = quotationCreatedAt,
                     StatusUpdatedAt = quotationCreatedAt ?? r.CreatedAt,
+                    StatusDisplayName = GetStatusDisplayName(r.Status),
+                    WarehouseId = r.ExpectedWarehouseId,
+                    WarehouseName = r.ExpectedWarehouseId.HasValue
+                        && warehouseNames.TryGetValue(r.ExpectedWarehouseId.Value, out var whName)
+                        ? whName
+                        : null,
                     Items = products
                 };
             }).ToList();
@@ -727,6 +744,10 @@ namespace VCL_BLL.Services
                     ImageUrls = urls
                 };
             }).ToList();
+
+            var expectedWarehouse = request.ExpectedWarehouseId.HasValue
+                ? await _unitOfWork.Repository<Warehouse>().GetByIdAsync(request.ExpectedWarehouseId.Value)
+                : null;
 
             // 4.1 Lấy báo giá liên quan nếu có
             PurchaseQuotationResponseDto? quotationDto = null;
@@ -818,6 +839,10 @@ namespace VCL_BLL.Services
                 CreatedAt = request.CreatedAt ?? DateTime.MinValue,
                 QuotationCreatedAt = quotation?.CreatedAt,
                 StatusUpdatedAt = quotation?.CreatedAt ?? request.CreatedAt,
+                StatusDisplayName = GetStatusDisplayName(request.Status),
+                WarehouseId = request.ExpectedWarehouseId,
+                WarehouseName = expectedWarehouse?.WarehouseName,
+                ProofImages = SplitList(request.ProofImageUrls),
                 TotalQuantity = relatedItems.Sum(i => i.Quantity),
                 Items = itemDtos,
                 Quotation = quotationDto

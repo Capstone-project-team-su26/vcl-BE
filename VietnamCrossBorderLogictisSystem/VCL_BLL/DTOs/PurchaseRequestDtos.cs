@@ -175,6 +175,18 @@ namespace VCL_BLL.DTOs
         /// <summary>Mốc thời gian tương ứng với trạng thái hiện tại — FE dùng để hiển thị "cập nhật lúc…".</summary>
         public DateTime? StatusUpdatedAt { get; set; }
 
+        /// <summary>Nhãn tiếng Việt của <see cref="Status"/>, FE hiển thị thẳng.</summary>
+        public string StatusDisplayName { get; set; } = string.Empty;
+
+        /// <summary>Kho dự kiến nhận hàng Sale đã chọn ở bước xác nhận mua hàng. Null nếu chưa chọn.</summary>
+        public Guid? WarehouseId { get; set; }
+
+        /// <summary>Tên kho tra từ DB theo <see cref="WarehouseId"/>.</summary>
+        public string? WarehouseName { get; set; }
+
+        /// <summary>Ảnh bằng chứng mua hộ đã tải lên (hoá đơn / màn hình đã đặt hàng).</summary>
+        public List<string> ProofImages { get; set; } = new();
+
         public int TotalQuantity { get; set; }
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
         public PurchaseQuotationResponseDto? Quotation { get; set; }
@@ -400,6 +412,14 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Mốc thời gian tương ứng với trạng thái hiện tại — FE dùng để hiển thị "cập nhật lúc…".</summary>
         public DateTime? StatusUpdatedAt { get; set; }
+
+        /// <summary>Nhãn tiếng Việt của <see cref="Status"/>, FE hiển thị thẳng.</summary>
+        public string StatusDisplayName { get; set; } = string.Empty;
+
+        /// <summary>Kho dự kiến nhận hàng Sale đã chọn. Null nếu chưa chọn.</summary>
+        public Guid? WarehouseId { get; set; }
+
+        public string? WarehouseName { get; set; }
 
         public List<PurchaseRequestListProductDto> Items { get; set; } = new();
     }
