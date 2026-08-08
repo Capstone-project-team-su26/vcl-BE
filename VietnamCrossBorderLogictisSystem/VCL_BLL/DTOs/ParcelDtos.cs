@@ -38,9 +38,20 @@ namespace VCL_BLL.DTOs
     public class ParcelCheckInResponse
     {
         public Guid ParcelId { get; set; }
+
+        /// <summary>Mã người dùng đã nhập lúc check-in — có thể là mã ký gửi (VCL-) hoặc mã mua hộ (PUR-).</summary>
         public string ShippingCode { get; set; } = string.Empty;
+
         public Guid ConsignmentId { get; set; }
+
+        /// <summary>Mã đơn kho mà kiện này thuộc về. Hàng mua hộ cũng có mã đơn kho riêng.</summary>
         public string ConsignmentCode { get; set; } = string.Empty;
+
+        /// <summary>Loại đơn kho: CONSIGNMENT hoặc PURCHASE.</summary>
+        public string? OrderType { get; set; }
+
+        /// <summary>Mã yêu cầu mua hộ (PUR-) nếu đơn kho này sinh ra từ mua hộ. Null với đơn ký gửi.</summary>
+        public string? PurchaseCode { get; set; }
         public string CustomerName { get; set; } = string.Empty;
         public string CustomerCode { get; set; } = string.Empty;
 
