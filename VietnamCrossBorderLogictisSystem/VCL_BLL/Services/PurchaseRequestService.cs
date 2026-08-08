@@ -82,15 +82,18 @@ namespace VCL_BLL.Services
                 : status ?? string.Empty;
 
         private readonly IExchangeRateService _exchangeRateService;
+        private readonly IConsignmentReceiptService _receiptService;
 
         public PurchaseRequestService(
             IUnitOfWork unitOfWork,
             IOrderService orderService,
-            IExchangeRateService exchangeRateService)
+            IExchangeRateService exchangeRateService,
+            IConsignmentReceiptService receiptService)
         {
             _unitOfWork = unitOfWork;
             _orderService = orderService;
             _exchangeRateService = exchangeRateService;
+            _receiptService = receiptService;
         }
 
         public async Task<PurchaseRequestResponseDto> CreatePurchaseRequestAsync(Guid userId, string userRole, CreatePurchaseRequestDto request)
@@ -897,6 +900,8 @@ namespace VCL_BLL.Services
             {
                 warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(warehouseId.Value)
                     ?? throw new NotFoundException($"Không tìm thấy kho với ID {warehouseId.Value}");
+
+                EnsureWarehouseMatchesRoute(warehouse, purchaseRequest.Route);
             }
 
             // 3. Validate ảnh bằng chứng ở phía server, không tin số client gửi
@@ -1006,9 +1011,130 @@ namespace VCL_BLL.Services
                 purchaseRequest.GeneralNote = request.Note.Trim();
 
             requestRepo.Update(purchaseRequest);
+
+            var (consignmentCode, orderId) = await MaterializeWarehouseOrderAsync(purchaseRequest, userId);
+
             await _unitOfWork.SaveChangesAsync();
 
-            return await BuildConfirmResponseAsync(purchaseRequest);
+            // Phiếu là chứng từ để kho đối chiếu khi nhận hàng, nên phát hành ngay khi OM duyệt.
+            // Lỗi sinh phiếu không được làm hỏng việc duyệt — Sale/OM tải lại sau vẫn được.
+            string? receiptPdfUrl = null;
+            if (orderId.HasValue)
+            {
+                try
+                {
+                    receiptPdfUrl = await _receiptService.GenerateAndStoreReceiptAsync(orderId.Value, userId);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"GENERATE PURCHASE RECEIPT ERROR ({purchaseRequest.Id}): {ex.Message}");
+                }
+            }
+
+            var response = await BuildConfirmResponseAsync(purchaseRequest);
+            response.ConsignmentCode = consignmentCode;
+            response.ReceiptPdfUrl = receiptPdfUrl;
+            return response;
+        }
+
+        /// <summary>
+        /// Biến yêu cầu mua hộ thành một <see cref="Order"/> loại "PURCHASE" khi hàng được duyệt nhập kho.
+        /// <para>
+        /// Từ mốc này hàng nằm trong kho VCL, nên nó dùng chung nguyên vẹn luồng kho đã có của ký gửi:
+        /// nhân viên kho check-in cân đo → sinh <c>Parcel</c> → put-away → <c>Inventory</c> → gom vào
+        /// WRO → lô quốc tế về VN. Không phải viết lại bất cứ bước kho nào.
+        /// </para>
+        /// Trả về mã đơn để kho tra cứu; null nếu đã vật chất hoá trước đó.
+        /// </summary>
+        private async Task<(string? Code, Guid? OrderId)> MaterializeWarehouseOrderAsync(PurchaseRequest purchaseRequest, Guid actorUserId)
+        {
+            var orderRepo = _unitOfWork.Repository<Order>();
+
+            var existing = (await orderRepo.GetAllAsync())
+                .FirstOrDefault(o => o.PurchaseRequestId == purchaseRequest.Id);
+            if (existing != null)
+                return (existing.ConsignmentCode, existing.Id);
+
+            var now = DateTime.UtcNow;
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerId = purchaseRequest.CustomerId,
+                PurchaseRequestId = purchaseRequest.Id,
+                ConsignmentCode = await GenerateWarehouseOrderCodeAsync(),
+                ConsignmentType = purchaseRequest.ShippingOption,
+                Route = purchaseRequest.Route,
+                ReceiverName = purchaseRequest.ReceiverName,
+                ReceiverPhone = purchaseRequest.ReceiverPhone,
+                ReceiverAddress = purchaseRequest.ReceiverAddress,
+                RequiresInspection = purchaseRequest.RequiresInspection,
+                OrderType = "PURCHASE",
+                // Kho chỉ check-in được khi đơn ở trạng thái này (xem ParcelService.CheckInParcelAsync)
+                Status = "APPROVED",
+                Note = $"Sinh tự động từ yêu cầu mua hộ {purchaseRequest.PurchaseCode}.",
+                CreatedById = actorUserId,
+                CreatedAt = now
+            };
+            await orderRepo.AddAsync(order);
+
+            // Mỗi sản phẩm mua hộ thành một dòng hàng. Cân nặng/kích thước để trống —
+            // nhân viên kho điền lúc check-in, đó mới là số đo thật để tính cước.
+            var items = (await _unitOfWork.Repository<PurchaseRequestItem>().GetAllAsync())
+                .Where(i => i.PurchaseRequestId == purchaseRequest.Id)
+                .ToList();
+
+            // Giá trị khai báo của hàng mua hộ chính là giá sản phẩm trên báo giá đã chốt.
+            var acceptedQuotation = (await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync())
+                .Where(q => q.PurchaseRequestId == purchaseRequest.Id)
+                .OrderByDescending(q => q.CreatedAt)
+                .FirstOrDefault();
+
+            var lineTotalByItem = acceptedQuotation == null
+                ? new Dictionary<Guid, decimal>()
+                : (await _unitOfWork.Repository<PurchaseQuotationItem>().GetAllAsync())
+                    .Where(qi => qi.PurchaseQuotationId == acceptedQuotation.Id)
+                    .GroupBy(qi => qi.PurchaseRequestItemId)
+                    .ToDictionary(g => g.Key, g => g.Sum(qi => qi.LineTotal));
+
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            foreach (var item in items)
+            {
+                await orderItemRepo.AddAsync(new OrderItem
+                {
+                    Id = Guid.NewGuid(),
+                    OrderId = order.Id,
+                    ProductName = item.ProductName,
+                    ProductType = item.ProductType,
+                    Quantity = item.Quantity,
+                    DeclaredValue = lineTotalByItem.TryGetValue(item.Id, out var lineTotal) ? lineTotal : null,
+                    // ReferenceUrl là nơi phiếu PDF đọc ẢNH sản phẩm, không phải link trang bán hàng —
+                    // nhét ProductLink vào đây thì phiếu tải về HTML rồi vỡ lúc vẽ ảnh.
+                    ReferenceUrl = item.ImageUrl,
+                    Description = string.IsNullOrWhiteSpace(item.ProductLink)
+                        ? item.Note
+                        : $"{item.ProductLink}{(string.IsNullOrWhiteSpace(item.Note) ? "" : " — " + item.Note)}",
+                    CreatedAt = now
+                });
+            }
+
+            return (order.ConsignmentCode, order.Id);
+        }
+
+        private async Task<string> GenerateWarehouseOrderCodeAsync()
+        {
+            var existingCodes = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                .Where(o => !string.IsNullOrEmpty(o.ConsignmentCode))
+                .Select(o => o.ConsignmentCode!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var random = new Random();
+            string code;
+            do
+            {
+                code = $"VCL-{DateTime.UtcNow:yyyyMMddHHmmss}-{random.Next(100000, 999999)}";
+            } while (existingCodes.Contains(code));
+
+            return code;
         }
 
         private async Task<ConfirmPurchaseResponseDto> BuildConfirmResponseAsync(PurchaseRequest purchaseRequest)
@@ -1065,6 +1191,31 @@ namespace VCL_BLL.Services
                 ChangedByName = h.ChangedByName,
                 CreatedAt = h.CreatedAt
             }).ToList();
+        }
+
+        /// <summary>
+        /// Kho nhận hàng phải nằm ở nước xuất phát của tuyến. Đơn tuyến Trung Quốc mà chọn kho Hàn Quốc
+        /// là sai nghiệp vụ — không chặn ở server thì hàng bị gán nhầm kho và lô gom sai chặng.
+        /// FE đã lọc sẵn, nhưng lọc ở client không phải là kiểm soát.
+        /// </summary>
+        private static void EnsureWarehouseMatchesRoute(Warehouse warehouse, string? route)
+        {
+            var canonicalRoute = OrderService.NormalizeRoute(route);
+            if (string.IsNullOrEmpty(canonicalRoute)) return;
+
+            // Tuyến có dạng "CN-VN", nước xuất phát là phần đứng trước dấu gạch.
+            var originCode = canonicalRoute.Split('-').FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(originCode)) return;
+
+            var warehouseRegion = warehouse.Region?.ToString();
+            if (string.IsNullOrWhiteSpace(warehouseRegion)) return;
+
+            if (!string.Equals(warehouseRegion, originCode, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"Kho '{warehouse.WarehouseName}' thuộc khu vực {warehouseRegion}, không khớp tuyến {canonicalRoute}. " +
+                    $"Vui lòng chọn kho ở {originCode}.");
+            }
         }
 
         private static List<string> SplitList(string? value) =>

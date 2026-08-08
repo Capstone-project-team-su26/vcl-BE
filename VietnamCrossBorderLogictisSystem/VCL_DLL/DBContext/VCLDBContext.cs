@@ -888,6 +888,8 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.OrderType)
                 .HasMaxLength(50)
                 .HasColumnName("order_type");
+            entity.Property(e => e.PurchaseRequestId)
+                .HasColumnName("purchase_request_id");
             entity.Property(e => e.Route)
                 .HasMaxLength(100)
                 .HasColumnName("route");

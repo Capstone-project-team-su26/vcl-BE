@@ -1179,6 +1179,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("payment_confirmed_by_id");
 
+                    b.Property<Guid?>("PurchaseRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("purchase_request_id");
+
                     b.Property<DateTime?>("ReceiptGeneratedAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("receipt_generated_at");

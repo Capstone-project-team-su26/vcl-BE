@@ -207,11 +207,56 @@ namespace VCL_BLL.Services
                 .OrderByDescending(q => q.CreatedAt)
                 .FirstOrDefault();
 
+            // Đơn sinh từ mua hộ: lấy thêm mã yêu cầu, người mua (Sale) và người duyệt nhập kho (OM)
+            var isPurchase = string.Equals(order.OrderType, "PURCHASE", StringComparison.OrdinalIgnoreCase);
+            PurchaseRequest? purchaseRequest = null;
+            User? purchasedBy = null;
+            User? approvedBy = null;
+
+            if (isPurchase && order.PurchaseRequestId.HasValue)
+            {
+                var allUsers = await _unitOfWork.Repository<User>().GetAllAsync();
+
+                purchaseRequest = await _unitOfWork.Repository<PurchaseRequest>()
+                    .GetByIdAsync(order.PurchaseRequestId.Value);
+
+                var history = (await _unitOfWork.Repository<PurchaseRequestHistory>().GetAllAsync())
+                    .Where(h => h.PurchaseRequestId == order.PurchaseRequestId.Value)
+                    .ToList();
+
+                // Người mua hàng = Sale. Ưu tiên người lập báo giá; đơn chưa qua báo giá thì lấy
+                // người đã bấm "xác nhận mua hàng" — cả hai đều là Sale thực hiện mua giúp khách.
+                var purchaseQuotation = (await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync())
+                    .Where(q => q.PurchaseRequestId == order.PurchaseRequestId.Value)
+                    .OrderByDescending(q => q.CreatedAt)
+                    .FirstOrDefault();
+
+                var purchasedById = purchaseQuotation?.CreatedBy
+                    ?? history
+                        .Where(h => string.Equals(h.ToStatus, "PURCHASED", StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(h => h.CreatedAt)
+                        .Select(h => h.ChangedBy)
+                        .FirstOrDefault(id => id.HasValue);
+
+                if (purchasedById.HasValue)
+                    purchasedBy = allUsers.FirstOrDefault(u => u.Id == purchasedById.Value);
+
+                // Người duyệt nhập kho = OM ở dòng lịch sử chuyển sang STORED
+                var storedEntry = history
+                    .Where(h => string.Equals(h.ToStatus, "STORED", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(h => h.CreatedAt)
+                    .FirstOrDefault();
+                if (storedEntry?.ChangedBy != null)
+                    approvedBy = allUsers.FirstOrDefault(u => u.Id == storedEntry.ChangedBy.Value);
+            }
+
             Warehouse? warehouse = null;
-            if (quotation?.WarehouseId != null)
+            // Ký gửi lấy kho từ báo giá; mua hộ lấy kho Sale đã chọn lúc xác nhận mua hàng.
+            var warehouseId = quotation?.WarehouseId ?? purchaseRequest?.ExpectedWarehouseId;
+            if (warehouseId != null)
             {
                 warehouse = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
-                    .FirstOrDefault(w => w.Id == quotation.WarehouseId.Value);
+                    .FirstOrDefault(w => w.Id == warehouseId.Value);
             }
 
             var fees = quotation == null
@@ -251,6 +296,22 @@ namespace VCL_BLL.Services
                 paidAmount = payments
                     .Where(p => IsSettledPayment(p.PaymentStatus))
                     .Sum(p => p.Amount ?? 0m);
+            }
+
+            // Mua hộ thanh toán qua bảng riêng PURCHASE_PAYMENTS, không đi qua Invoice/Payment.
+            DateTime? purchasePaidAt = null;
+            if (isPurchase && order.PurchaseRequestId.HasValue)
+            {
+                var purchasePayments = (await _unitOfWork.Repository<PurchasePayment>().GetAllAsync())
+                    .Where(p => p.PurchaseRequestId == order.PurchaseRequestId.Value)
+                    .ToList();
+
+                var settled = purchasePayments
+                    .Where(p => string.Equals(p.Status, "PAID", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                paidAmount = settled.Sum(p => p.Amount);
+                purchasePaidAt = settled.Max(p => p.PaidAt ?? p.CreatedAt);
             }
 
             User? preparedBy = null;
@@ -314,6 +375,11 @@ namespace VCL_BLL.Services
                 Items = items,
                 Quotation = quotation,
                 Warehouse = warehouse,
+                IsPurchase = isPurchase,
+                PurchaseCode = purchaseRequest?.PurchaseCode,
+                PurchasePaidAt = purchasePaidAt,
+                PurchasedBy = purchasedBy,
+                ApprovedBy = approvedBy,
                 Payment = payment,
                 PreparedBy = preparedBy,
                 DomesticFee = domesticFee,
@@ -344,7 +410,17 @@ namespace VCL_BLL.Services
                 {
                     try
                     {
-                        downloaded.Add(await httpClient.GetByteArrayAsync(url));
+                        var bytes = await httpClient.GetByteArrayAsync(url);
+
+                        // URL trả 200 nhưng không phải ảnh (trang HTML, trang lỗi...) vẫn tải về được;
+                        // để lọt tới lúc vẽ thì QuestPDF ném "Cannot decode the provided image" và hỏng cả phiếu.
+                        if (!LooksLikeImage(bytes))
+                        {
+                            Console.WriteLine($"RECEIPT IMAGE SKIPPED, NOT AN IMAGE ({url})");
+                            continue;
+                        }
+
+                        downloaded.Add(bytes);
                     }
                     catch (Exception ex)
                     {
@@ -359,6 +435,29 @@ namespace VCL_BLL.Services
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Nhận diện ảnh qua magic bytes (JPEG, PNG, GIF, BMP, WEBP) — đủ để loại HTML và trang lỗi
+        /// mà không phải thêm thư viện giải mã ảnh.
+        /// </summary>
+        private static bool LooksLikeImage(byte[] bytes)
+        {
+            if (bytes.Length < 12) return false;
+
+            // JPEG: FF D8 FF
+            if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true;
+            // PNG: 89 50 4E 47
+            if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true;
+            // GIF: "GIF8"
+            if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true;
+            // BMP: "BM"
+            if (bytes[0] == 0x42 && bytes[1] == 0x4D) return true;
+            // WEBP: "RIFF"…"WEBP"
+            if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+                && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) return true;
+
+            return false;
         }
 
         private static IEnumerable<string> SplitImageUrls(string? raw)
@@ -559,13 +658,22 @@ namespace VCL_BLL.Services
                     {
                         // Tách cố định 2 dòng; để một dòng dài thì QuestPDF tự ngắt ở chỗ xấu.
                         c.Item().AlignRight().Text("PHIẾU XÁC NHẬN").Bold().FontSize(20).FontColor(Head);
-                        c.Item().AlignRight().Text("KÝ GỬI NHẬP KHO").Bold().FontSize(20).FontColor(Head);
+                        c.Item().AlignRight().Text(data.IsPurchase ? "MUA HỘ NHẬP KHO" : "KÝ GỬI NHẬP KHO")
+                            .Bold().FontSize(20).FontColor(Head);
                         c.Item().AlignRight().Text("(Chứng từ giao kho đối chiếu)").FontSize(10).FontColor(Muted);
                         c.Item().PaddingTop(5).AlignRight().Text(t =>
                         {
-                            t.Span("Mã ký gửi: ").FontSize(9).FontColor(Muted);
+                            t.Span(data.IsPurchase ? "Mã đơn kho: " : "Mã ký gửi: ").FontSize(9).FontColor(Muted);
                             t.Span(data.Order.ConsignmentCode ?? "—").Bold().FontSize(11);
                         });
+                        if (data.IsPurchase)
+                        {
+                            c.Item().AlignRight().Text(t =>
+                            {
+                                t.Span("Mã mua hộ: ").FontSize(9).FontColor(Muted);
+                                t.Span(data.PurchaseCode ?? "—").Bold().FontSize(11);
+                            });
+                        }
                         c.Item().AlignRight().Text(t =>
                         {
                             t.Span("Ngày lập: ").FontSize(9).FontColor(Muted);
@@ -624,14 +732,17 @@ namespace VCL_BLL.Services
                         Field(x, "Tuyến hàng", order.Route);
                         Field(x, "Xác nhận thanh toán", FormatDateTime(data.PaymentConfirmedAt));
                         Field(x, "Yêu cầu kiểm hàng", order.RequiresInspection ? "Có" : "Không");
-                        Field(x, "Tổng trọng lượng", $"{FormatNumber(totalWeight)} kg");
+                        if (!data.IsPurchase)
+                            Field(x, "Tổng trọng lượng", $"{FormatNumber(totalWeight)} kg");
                     });
                     row.ConstantItem(12);
                     row.RelativeItem().Column(x =>
                     {
-                        Field(x, "Tổng thể tích", $"{FormatInteger(order.TotalVolume ?? 0m)} cm³");
+                        if (!data.IsPurchase)
+                            Field(x, "Tổng thể tích", $"{FormatInteger(order.TotalVolume ?? 0m)} cm³");
                         Field(x, "Tổng số kiện", $"{packageCount} kiện");
-                        Field(x, "Kho nhập", data.Warehouse?.WarehouseName ?? "Chưa chọn kho ở báo giá");
+                        Field(x, "Kho nhập", data.Warehouse?.WarehouseName
+                            ?? (data.IsPurchase ? "Chưa chọn kho nhận hàng" : "Chưa chọn kho ở báo giá"));
                         Field(x, "Mã kho", data.Warehouse?.WarehouseCode);
                     });
                 });
@@ -702,17 +813,28 @@ namespace VCL_BLL.Services
                                 rr.RelativeItem().Column(a =>
                                 {
                                     Field(a, "Số lượng", $"{item.Quantity ?? 0} sản phẩm");
-                                    Field(a, "Trọng lượng", $"{FormatNumber(item.Weight ?? 0m)} kg");
-                                    Field(a, "Kích thước", $"{FormatNumber(item.Length ?? 0m)} × {FormatNumber(item.Width ?? 0m)} × {FormatNumber(item.Height ?? 0m)} cm");
-                                    Field(a, "DIM", $"{FormatNumber(GetVolumetricWeight(item))} kg");
+
+                                    // Mua hộ: khách chỉ gửi link sản phẩm, không khai cân nặng/kích thước.
+                                    // Số đo thật do kho cân đo lúc check-in, in ở dòng "Thực nhận" bên dưới.
+                                    if (!data.IsPurchase)
+                                    {
+                                        Field(a, "Trọng lượng", $"{FormatNumber(item.Weight ?? 0m)} kg");
+                                        Field(a, "Kích thước", $"{FormatDimensions(item.Length, item.Width, item.Height)} cm");
+                                        Field(a, "DIM", $"{FormatNumber(GetVolumetricWeight(item))} kg");
+                                    }
                                 });
                                 rr.ConstantItem(10);
                                 rr.RelativeItem().Column(a =>
                                 {
                                     Field(a, "Giá trị khai báo", FormatCurrency(item.DeclaredValue ?? 0m));
                                     Field(a, "Mã vận đơn nội địa", item.DomesticTrackingCode);
-                                    Field(a, "Cấu hình đóng gói", GetPackageConfigName(data, item));
-                                    Field(a, "Phí đóng gói", FormatCurrency(GetPackageFee(data, item)));
+
+                                    // Mua hộ không chọn thùng đóng gói; khoản tương ứng là phí dịch vụ mua hộ.
+                                    if (!data.IsPurchase)
+                                    {
+                                        Field(a, "Cấu hình đóng gói", GetPackageConfigName(data, item));
+                                        Field(a, "Phí đóng gói", FormatCurrency(GetPackageFee(data, item)));
+                                    }
                                 });
                             });
                         });
@@ -738,7 +860,7 @@ namespace VCL_BLL.Services
                             r.RelativeItem().Text(t =>
                             {
                                 t.Span("Kích thước thực: ").FontSize(9).FontColor(Muted);
-                                t.Span($"{FormatNumber(receivedParcel.Length ?? 0m)} × {FormatNumber(receivedParcel.Width ?? 0m)} × {FormatNumber(receivedParcel.Height ?? 0m)} cm").Bold().FontSize(9);
+                                t.Span($"{FormatDimensions(receivedParcel.Length, receivedParcel.Width, receivedParcel.Height)} cm").Bold().FontSize(9);
                             });
                             r.RelativeItem().Text(t =>
                             {
@@ -755,8 +877,14 @@ namespace VCL_BLL.Services
                 {
                     Total(r, "Tổng số kiện", $"{data.Items.Count} kiện");
                     Total(r, "Tổng sản phẩm", $"{totalQuantity}");
-                    Total(r, "Tổng trọng lượng", $"{FormatNumber(totalWeight)} kg");
-                    Total(r, "Tổng DIM", $"{FormatNumber(totalVolumetric)} kg");
+
+                    // Mua hộ chưa có số khai báo, in ra chỉ toàn số 0 gây hiểu nhầm.
+                    if (!data.IsPurchase)
+                    {
+                        Total(r, "Tổng trọng lượng", $"{FormatNumber(totalWeight)} kg");
+                        Total(r, "Tổng DIM", $"{FormatNumber(totalVolumetric)} kg");
+                    }
+
                     Total(r, "Tổng giá trị khai báo", FormatCurrency(totalDeclaredValue));
                 });
             });
@@ -848,6 +976,27 @@ namespace VCL_BLL.Services
                         x.Item().Text($"Quốc gia kho: {data.Warehouse?.Country ?? "—"}").FontSize(9).FontColor(Muted);
                     });
                 });
+
+                // Mua hộ có thêm 2 vai mà ký gửi không có: người mua giúp khách và người duyệt nhập kho.
+                if (data.IsPurchase)
+                {
+                    c.Item().PaddingTop(8).Row(row =>
+                    {
+                        row.RelativeItem().Border(0.75f).BorderColor(Line).Padding(7).Column(x =>
+                        {
+                            x.Item().Text("Người mua hàng").FontSize(9).FontColor(Muted);
+                            x.Item().Text(data.PurchasedBy?.FullName ?? "Chưa xác định").Bold().FontSize(11);
+                            x.Item().Text("Nhân viên Sale thực hiện mua hộ").FontSize(9).FontColor(Muted);
+                        });
+                        row.ConstantItem(10);
+                        row.RelativeItem().Border(0.75f).BorderColor(Line).Padding(7).Column(x =>
+                        {
+                            x.Item().Text("Người duyệt nhập kho").FontSize(9).FontColor(Muted);
+                            x.Item().Text(data.ApprovedBy?.FullName ?? "Chưa xác định").Bold().FontSize(11);
+                            x.Item().Text("Quản lý vận hành (OM)").FontSize(9).FontColor(Muted);
+                        });
+                    });
+                }
             });
         }
 
@@ -858,7 +1007,9 @@ namespace VCL_BLL.Services
                 row.RelativeItem().Column(c =>
                 {
                     c.Item().AlignCenter().Text("NGƯỜI LẬP PHIẾU").Bold().FontSize(10);
-                    c.Item().AlignCenter().Text("Sale").FontSize(9).FontColor(Muted);
+                    // Ký gửi do Sale phát hành phiếu; mua hộ do OM duyệt nhập kho mới phát hành.
+                    c.Item().AlignCenter().Text(data.IsPurchase ? "Operations Manager" : "Sale")
+                        .FontSize(9).FontColor(Muted);
                     c.Item().PaddingTop(26).AlignCenter().Text(data.PreparedBy?.FullName ?? "—").Bold().FontSize(11);
                 });
 
@@ -983,6 +1134,21 @@ namespace VCL_BLL.Services
         /// <summary>Số nguyên có phân tách nghìn — dùng cho thể tích, phần thập phân ở đây không có ý nghĩa.</summary>
         private static string FormatInteger(decimal value) => Math.Round(value, 0).ToString("N0", Vi);
 
+        /// <summary>
+        /// Bộ ba kích thước dạng "40 × 30 × 20". Số đo kho nhập thường là số nguyên nên bỏ
+        /// phần thập phân khi không cần, tránh đọc thành "40,00 × 30,00 × 20,00".
+        /// </summary>
+        private static string FormatDimensions(decimal? length, decimal? width, decimal? height)
+        {
+            static string One(decimal? value)
+            {
+                var v = Math.Round(value ?? 0m, 2);
+                return v == Math.Truncate(v) ? v.ToString("N0", Vi) : v.ToString("0.##", Vi);
+            }
+
+            return $"{One(length)} × {One(width)} × {One(height)}";
+        }
+
         private static string FormatDate(DateTime? value) => value?.ToString("dd/MM/yyyy", Vi) ?? "—";
 
         private static string FormatDateTime(DateTime? value) => value?.ToString("dd/MM/yyyy HH:mm", Vi) ?? "—";
@@ -1016,6 +1182,20 @@ namespace VCL_BLL.Services
             public List<OrderItem> Items { get; init; } = new();
             public Quotation? Quotation { get; init; }
             public Warehouse? Warehouse { get; init; }
+
+            /// <summary>Đơn sinh từ yêu cầu mua hộ — phiếu đổi tiêu đề và thêm ô người mua/người duyệt.</summary>
+            public bool IsPurchase { get; init; }
+
+            public string? PurchaseCode { get; init; }
+
+            /// <summary>Mốc thanh toán gần nhất của đơn mua hộ (bảng PURCHASE_PAYMENTS).</summary>
+            public DateTime? PurchasePaidAt { get; init; }
+
+            /// <summary>Sale đã lập báo giá mua hộ, tức người thực hiện mua giúp khách.</summary>
+            public User? PurchasedBy { get; init; }
+
+            /// <summary>OM đã duyệt cho nhập kho.</summary>
+            public User? ApprovedBy { get; init; }
             public Payment? Payment { get; init; }
             public User? PreparedBy { get; init; }
             public decimal DomesticFee { get; init; }
@@ -1034,7 +1214,7 @@ namespace VCL_BLL.Services
             /// Đơn do webhook chốt đôi khi chưa kịp ghi cột nên không được để trống trên phiếu.
             /// </summary>
             public DateTime? PaymentConfirmedAt =>
-                Order.PaymentConfirmedAt ?? Payment?.PaidAt ?? Payment?.CreatedAt;
+                Order.PaymentConfirmedAt ?? Payment?.PaidAt ?? Payment?.CreatedAt ?? PurchasePaidAt;
             public Dictionary<Guid, PackageConfiguration> PackageConfigurations { get; init; } = new();
             public Dictionary<Guid, List<byte[]>> ItemImages { get; init; } = new();
 
