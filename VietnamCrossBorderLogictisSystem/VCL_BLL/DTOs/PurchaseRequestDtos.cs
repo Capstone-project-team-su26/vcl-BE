@@ -246,10 +246,17 @@ namespace VCL_BLL.DTOs
         public string? WarehouseName { get; set; }
 
         /// <summary>
-        /// Mã đơn kho sinh ra khi OM duyệt nhập kho — nhân viên kho dùng mã này để check-in cân đo.
-        /// Chỉ có giá trị ở response của <c>approve-store</c>.
+        /// Mã đơn kho sinh ra khi duyệt nhập kho — nhân viên kho dùng mã này để check-in cân đo.
+        /// Chỉ có giá trị khi đơn chuyển sang <c>STORED</c>, qua <c>approve-store</c> hoặc
+        /// <c>confirm-purchase</c>; các bước khác trả null.
+        /// <para>
+        /// Cùng tên và cùng nghĩa với <c>orderCode</c> bên ParcelDtos — mã đơn kho không phân biệt loại.
+        /// Ở luồng mua hộ nó trùng <see cref="PurchaseCode"/>. KHÔNG đặt tên là <c>consignmentCode</c>:
+        /// đơn mua hộ không có mã ký gửi, và cột DB <c>ORDERS.consignment_code</c> chỉ là tên cũ có từ
+        /// thời hệ thống mới chỉ chạy ký gửi — không để tên cột đó lộ ra hợp đồng API.
+        /// </para>
         /// </summary>
-        public string? ConsignmentCode { get; set; }
+        public string? OrderCode { get; set; }
 
         /// <summary>Link phiếu nhập kho mua hộ (PDF), phát hành khi OM duyệt. Null nếu sinh phiếu lỗi.</summary>
         public string? ReceiptPdfUrl { get; set; }
