@@ -886,11 +886,25 @@ namespace VCL_BLL.Services
 
             // 2b. Bước duyệt nhập kho là việc của Manager/Ops, Sale không được tự đóng đơn
             var normalizedRole = userRole.Trim().ToUpperInvariant();
-            if (WarehouseApprovalStatuses.Contains(targetStatus)
-                && !WarehouseApprovalRoles.Contains(normalizedRole))
+            var isWarehouseApproval = WarehouseApprovalStatuses.Contains(targetStatus);
+            if (isWarehouseApproval && !WarehouseApprovalRoles.Contains(normalizedRole))
             {
                 throw new UnauthorizedAccessException(
                     $"Chỉ Manager/Ops được duyệt kiểm kê nhập kho (trạng thái {targetStatus}).");
+            }
+
+            // 2c. Nhập kho hai lần thì đơn sẽ có hai phiếu cho cùng một lô hàng — chặn như approve-store
+            if (isWarehouseApproval && currentStatus is "STORED" or "COMPLETED")
+                throw new ArgumentException("Đơn đã được nhập kho trước đó.");
+
+            // 2d. Bước nhập kho nay sinh đơn kho thật + phiếu, nên không cho nhảy cóc từ đầu luồng:
+            // một đơn chưa mua, chưa thanh toán mà đã có đơn kho là hàng không tồn tại trong thực tế.
+            // Ràng buộc giữ đúng bằng approve-store để hai endpoint cùng một hợp đồng.
+            if (isWarehouseApproval
+                && currentStatus is not ("WAITING_STORED" or "ARRIVED_ORIGIN_WAREHOUSE"))
+            {
+                throw new ArgumentException(
+                    $"Chỉ nhập kho khi đơn đang ở WAITING_STORED hoặc ARRIVED_ORIGIN_WAREHOUSE (hiện tại: {purchaseRequest.Status}).");
             }
 
             // 3. Kho dự kiến nhận hàng — FE gửi warehouseId, kèm destinationWarehouseId cùng giá trị
@@ -944,6 +958,20 @@ namespace VCL_BLL.Services
                 purchaseRequest.ExpectedWarehouseId = warehouse.Id;
 
             requestRepo.Update(purchaseRequest);
+
+            // FE gọi thẳng confirm-purchase cho cả bước nhập kho thay vì approve-store, nên đường này
+            // phải vật chất hoá đơn kho y hệt. Chặn 400 ở đây sẽ làm vỡ màn hình đang chạy của FE,
+            // mà vẫn không giải quyết được gốc: đơn đi lối này trước đây kẹt vĩnh viễn ở STORED.
+            if (isWarehouseApproval)
+            {
+                var (orderCode, receiptPdfUrl) = await FinalizeStoredAsync(purchaseRequest, userId);
+
+                var storedResponse = await BuildConfirmResponseAsync(purchaseRequest);
+                storedResponse.OrderCode = orderCode;
+                storedResponse.ReceiptPdfUrl = receiptPdfUrl;
+                return storedResponse;
+            }
+
             await _unitOfWork.SaveChangesAsync();
 
             return await BuildConfirmResponseAsync(purchaseRequest);
@@ -1012,18 +1040,40 @@ namespace VCL_BLL.Services
 
             requestRepo.Update(purchaseRequest);
 
-            var (consignmentCode, orderId) = await MaterializeWarehouseOrderAsync(purchaseRequest, userId);
+            var (orderCode, receiptPdfUrl) = await FinalizeStoredAsync(purchaseRequest, userId);
+
+            var response = await BuildConfirmResponseAsync(purchaseRequest);
+            response.OrderCode = orderCode;
+            response.ReceiptPdfUrl = receiptPdfUrl;
+            return response;
+        }
+
+        /// <summary>
+        /// Phần việc chung của bước nhập kho: vật chất hoá đơn kho rồi phát hành phiếu PDF.
+        /// <para>
+        /// Dùng chung cho <c>approve-store</c> và cho <c>confirm-purchase</c> khi trạng thái đích là
+        /// <c>STORED</c>. Trước đây chỉ <c>approve-store</c> làm việc này, nên đơn đi qua
+        /// <c>confirm-purchase</c> sang <c>STORED</c> mà không sinh <see cref="Order"/> nào —
+        /// kho không có đơn để check-in, không có phiếu, và không quay lại được vì
+        /// <see cref="ApproveStoreAsync"/> chặn đơn đã <c>STORED</c>.
+        /// </para>
+        /// Gọi sau khi đã cập nhật đơn nhưng trước khi trả response; hàm tự lưu để có OrderId thật.
+        /// </summary>
+        private async Task<(string? OrderCode, string? ReceiptPdfUrl)> FinalizeStoredAsync(
+            PurchaseRequest purchaseRequest, Guid actorUserId)
+        {
+            var (orderCode, orderId) = await MaterializeWarehouseOrderAsync(purchaseRequest, actorUserId);
 
             await _unitOfWork.SaveChangesAsync();
 
-            // Phiếu là chứng từ để kho đối chiếu khi nhận hàng, nên phát hành ngay khi OM duyệt.
+            // Phiếu là chứng từ để kho đối chiếu khi nhận hàng, nên phát hành ngay khi duyệt.
             // Lỗi sinh phiếu không được làm hỏng việc duyệt — Sale/OM tải lại sau vẫn được.
             string? receiptPdfUrl = null;
             if (orderId.HasValue)
             {
                 try
                 {
-                    receiptPdfUrl = await _receiptService.GenerateAndStoreReceiptAsync(orderId.Value, userId);
+                    receiptPdfUrl = await _receiptService.GenerateAndStoreReceiptAsync(orderId.Value, actorUserId);
                 }
                 catch (Exception ex)
                 {
@@ -1031,10 +1081,7 @@ namespace VCL_BLL.Services
                 }
             }
 
-            var response = await BuildConfirmResponseAsync(purchaseRequest);
-            response.ConsignmentCode = consignmentCode;
-            response.ReceiptPdfUrl = receiptPdfUrl;
-            return response;
+            return (orderCode, receiptPdfUrl);
         }
 
         /// <summary>
