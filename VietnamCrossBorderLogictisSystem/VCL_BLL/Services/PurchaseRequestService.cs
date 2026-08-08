@@ -34,17 +34,22 @@ namespace VCL_BLL.Services
         /// </para>
         /// Vẫn chặn <c>COMPLETED</c>: đó là trạng thái kết thúc, chỉ đặt khi đã thu đủ tiền.
         /// </summary>
+        /// <summary>
+        /// 5 bước tiến độ mua hộ. Cố tình KHÔNG có <c>COMPLETED</c>: trạng thái đó thuộc luồng
+        /// thanh toán (webhook đặt khi khách trả đủ tiền). Chốt với FE 08/08/2026 — bước nhập kho
+        /// dừng ở <c>STORED</c> để một cột không mang hai nghĩa "đã thu đủ tiền" và "đã nhập kho".
+        /// </summary>
         private static readonly string[] PurchaseProgressStatuses =
         {
             "PENDING_REVIEW", "DEPOSIT_PAID", "PAID", "PURCHASED", "SELLER_SHIPPED",
-            "ARRIVED_ORIGIN_WAREHOUSE", "WAITING_STORED", "STORED", "COMPLETED"
+            "ARRIVED_ORIGIN_WAREHOUSE", "WAITING_STORED", "STORED"
         };
 
         /// <summary>
         /// Bước duyệt kiểm kê nhập kho — chỉ Manager/Ops được đặt, Sale không.
         /// Khớp thiết kế FE: sang bước 4 thì nút bấm phía Sale ẩn đi.
         /// </summary>
-        private static readonly string[] WarehouseApprovalStatuses = { "STORED", "COMPLETED" };
+        private static readonly string[] WarehouseApprovalStatuses = { "STORED" };
 
         private static readonly string[] WarehouseApprovalRoles =
             { "ADMIN", "OPERATIONSMANAGER", "OPERATIONS", "MANAGER" };
