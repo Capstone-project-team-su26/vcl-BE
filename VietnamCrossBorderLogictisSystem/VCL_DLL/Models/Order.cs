@@ -27,6 +27,13 @@ public partial class Order
 
     public string OrderType { get; set; }
 
+    /// <summary>
+    /// Yêu cầu mua hộ đã sinh ra đơn này. Chỉ có giá trị khi <see cref="OrderType"/> = "PURCHASE" —
+    /// hàng mua hộ khi vào kho nước ngoài được vật chất hoá thành đơn để dùng chung toàn bộ
+    /// luồng kho sẵn có (check-in, put-away, tồn kho, WRO, gom lô về VN).
+    /// </summary>
+    public Guid? PurchaseRequestId { get; set; }
+
     public string Route { get; set; }
 
     public string ReceiverName { get; set; }

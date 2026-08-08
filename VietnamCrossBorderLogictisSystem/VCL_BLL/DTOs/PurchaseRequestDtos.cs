@@ -245,6 +245,15 @@ namespace VCL_BLL.DTOs
         /// <summary>Tên kho tra từ DB theo <see cref="WarehouseId"/>.</summary>
         public string? WarehouseName { get; set; }
 
+        /// <summary>
+        /// Mã đơn kho sinh ra khi OM duyệt nhập kho — nhân viên kho dùng mã này để check-in cân đo.
+        /// Chỉ có giá trị ở response của <c>approve-store</c>.
+        /// </summary>
+        public string? ConsignmentCode { get; set; }
+
+        /// <summary>Link phiếu nhập kho mua hộ (PDF), phát hành khi OM duyệt. Null nếu sinh phiếu lỗi.</summary>
+        public string? ReceiptPdfUrl { get; set; }
+
         public DateTime UpdatedAt { get; set; }
     }
 
