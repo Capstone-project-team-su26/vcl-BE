@@ -2339,6 +2339,8 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ProofImageUrls)
                 .HasMaxLength(2000)
                 .HasColumnName("proof_image_urls");
+            entity.Property(e => e.ExpectedWarehouseId)
+                .HasColumnName("expected_warehouse_id");
             entity.Property(e => e.RequiresInspection)
                 .HasColumnName("requires_inspection");
             entity.Property(e => e.RequiresQuantityCheck)

@@ -195,6 +195,24 @@ namespace VCL_BLL.DTOs
 
         [StringLength(500, ErrorMessage = "Ghi chú tối đa 500 ký tự.")]
         public string? GeneralNote { get; set; }
+
+        /// <summary>Kho dự kiến nhận hàng, Sale chọn ở bước 1.</summary>
+        public Guid? WarehouseId { get; set; }
+
+        /// <summary>FE gửi kèm cùng giá trị với <see cref="WarehouseId"/> — nhận để không phụ thuộc thứ tự field.</summary>
+        public Guid? DestinationWarehouseId { get; set; }
+
+        /// <summary>Tên kho FE gửi kèm; BE bỏ qua và tự tra theo Id để tránh lệch dữ liệu.</summary>
+        public string? WarehouseName { get; set; }
+    }
+
+    public class ApproveStoreRequestDto
+    {
+        [StringLength(500, ErrorMessage = "Ghi chú tối đa 500 ký tự.")]
+        public string? Note { get; set; }
+
+        /// <summary>Kho thực tế đã nhập hàng. Bỏ trống thì lấy kho dự kiến đã chọn trước đó.</summary>
+        public Guid? WarehouseId { get; set; }
     }
 
     public class ConfirmPurchaseResponseDto
@@ -208,6 +226,13 @@ namespace VCL_BLL.DTOs
 
         public List<string> ProofImages { get; set; } = new();
         public string? GeneralNote { get; set; }
+
+        /// <summary>Kho dự kiến nhận hàng đã lưu (null nếu chưa chọn).</summary>
+        public Guid? WarehouseId { get; set; }
+
+        /// <summary>Tên kho tra từ DB theo <see cref="WarehouseId"/>.</summary>
+        public string? WarehouseName { get; set; }
+
         public DateTime UpdatedAt { get; set; }
     }
 

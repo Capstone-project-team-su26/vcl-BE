@@ -35,7 +35,19 @@ namespace VCL_BLL.Services
         /// Vẫn chặn <c>COMPLETED</c>: đó là trạng thái kết thúc, chỉ đặt khi đã thu đủ tiền.
         /// </summary>
         private static readonly string[] PurchaseProgressStatuses =
-            { "PENDING_REVIEW", "PAID", "PURCHASED", "SELLER_SHIPPED", "ARRIVED_ORIGIN_WAREHOUSE" };
+        {
+            "PENDING_REVIEW", "DEPOSIT_PAID", "PAID", "PURCHASED", "SELLER_SHIPPED",
+            "ARRIVED_ORIGIN_WAREHOUSE", "WAITING_STORED", "STORED", "COMPLETED"
+        };
+
+        /// <summary>
+        /// Bước duyệt kiểm kê nhập kho — chỉ Manager/Ops được đặt, Sale không.
+        /// Khớp thiết kế FE: sang bước 4 thì nút bấm phía Sale ẩn đi.
+        /// </summary>
+        private static readonly string[] WarehouseApprovalStatuses = { "STORED", "COMPLETED" };
+
+        private static readonly string[] WarehouseApprovalRoles =
+            { "ADMIN", "OPERATIONSMANAGER", "OPERATIONS", "MANAGER" };
 
         /// <summary>Nhãn tiếng Việt của trạng thái yêu cầu mua hộ, dùng chung cho mọi response.</summary>
         private static readonly Dictionary<string, string> StatusDisplayNames = new(StringComparer.OrdinalIgnoreCase)
@@ -48,9 +60,12 @@ namespace VCL_BLL.Services
             ["QUOTED"] = "Đã báo giá",
             ["WAITING_PAYMENT"] = "Chờ thanh toán",
             ["PAID"] = "Đã thanh toán",
+            ["DEPOSIT_PAID"] = "Đã đặt cọc",
             ["PURCHASED"] = "Xác nhận mua hàng",
             ["SELLER_SHIPPED"] = "NCC đã phát hàng",
             ["ARRIVED_ORIGIN_WAREHOUSE"] = "Đã về kho nước ngoài",
+            ["WAITING_STORED"] = "Chờ nhập kho",
+            ["STORED"] = "Đã nhập kho",
             ["WAITING_FINAL_PAYMENT"] = "Chờ thanh toán cuối",
             ["COMPLETED"] = "Hoàn tất nghiệp vụ",
             ["CANCELLED"] = "Đã hủy"
@@ -836,6 +851,24 @@ namespace VCL_BLL.Services
                     $"Hợp lệ: {string.Join(", ", PurchaseProgressStatuses)}.");
             }
 
+            // 2b. Bước duyệt nhập kho là việc của Manager/Ops, Sale không được tự đóng đơn
+            var normalizedRole = userRole.Trim().ToUpperInvariant();
+            if (WarehouseApprovalStatuses.Contains(targetStatus)
+                && !WarehouseApprovalRoles.Contains(normalizedRole))
+            {
+                throw new UnauthorizedAccessException(
+                    $"Chỉ Manager/Ops được duyệt kiểm kê nhập kho (trạng thái {targetStatus}).");
+            }
+
+            // 3. Kho dự kiến nhận hàng — FE gửi warehouseId, kèm destinationWarehouseId cùng giá trị
+            var warehouseId = request.WarehouseId ?? request.DestinationWarehouseId;
+            Warehouse? warehouse = null;
+            if (warehouseId.HasValue)
+            {
+                warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(warehouseId.Value)
+                    ?? throw new NotFoundException($"Không tìm thấy kho với ID {warehouseId.Value}");
+            }
+
             // 3. Validate ảnh bằng chứng ở phía server, không tin số client gửi
             var proofImages = (request.ProofImages ?? new List<string>())
                 .Where(u => !string.IsNullOrWhiteSpace(u))
@@ -872,9 +905,87 @@ namespace VCL_BLL.Services
                 purchaseRequest.ProofImageUrls = string.Join(ListSeparator, proofImages);
             if (!string.IsNullOrWhiteSpace(request.GeneralNote))
                 purchaseRequest.GeneralNote = request.GeneralNote.Trim();
+            if (warehouse != null)
+                purchaseRequest.ExpectedWarehouseId = warehouse.Id;
 
             requestRepo.Update(purchaseRequest);
             await _unitOfWork.SaveChangesAsync();
+
+            return await BuildConfirmResponseAsync(purchaseRequest);
+        }
+
+        /// <summary>
+        /// Manager/Ops duyệt kiểm kê và nhập kho chính thức (bước 5).
+        /// Tách khỏi <see cref="ConfirmPurchaseAsync"/> để phân quyền rõ ràng: Sale đẩy đơn tới
+        /// WAITING_STORED rồi dừng, kho duyệt xong mới sang STORED.
+        /// </summary>
+        public async Task<ConfirmPurchaseResponseDto> ApproveStoreAsync(
+            Guid requestId, Guid userId, string userRole, ApproveStoreRequestDto request)
+        {
+            request ??= new ApproveStoreRequestDto();
+
+            var normalizedRole = (userRole ?? string.Empty).Trim().ToUpperInvariant();
+            if (!WarehouseApprovalRoles.Contains(normalizedRole))
+                throw new UnauthorizedAccessException("Chỉ Manager/Ops được duyệt kiểm kê nhập kho.");
+
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+
+            var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (currentStatus is "CANCELLED" or "REJECTED")
+                throw new ArgumentException($"Không thể duyệt nhập kho do đơn đang ở trạng thái {purchaseRequest.Status}.");
+
+            if (currentStatus is "STORED" or "COMPLETED")
+                throw new ArgumentException("Đơn đã được nhập kho trước đó.");
+
+            // Phải qua bước kho báo hàng tới thì mới duyệt được
+            if (currentStatus != "WAITING_STORED" && currentStatus != "ARRIVED_ORIGIN_WAREHOUSE")
+            {
+                throw new ArgumentException(
+                    $"Chỉ duyệt nhập kho khi đơn đang ở WAITING_STORED hoặc ARRIVED_ORIGIN_WAREHOUSE (hiện tại: {purchaseRequest.Status}).");
+            }
+
+            var warehouseId = request.WarehouseId ?? purchaseRequest.ExpectedWarehouseId;
+            Warehouse? warehouse = null;
+            if (warehouseId.HasValue)
+            {
+                warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(warehouseId.Value)
+                    ?? throw new NotFoundException($"Không tìm thấy kho với ID {warehouseId.Value}");
+            }
+
+            var actor = (await _unitOfWork.Repository<User>().GetAllAsync())
+                .FirstOrDefault(u => u.Id == userId);
+
+            await _unitOfWork.Repository<PurchaseRequestHistory>().AddAsync(new PurchaseRequestHistory
+            {
+                Id = Guid.NewGuid(),
+                PurchaseRequestId = requestId,
+                FromStatus = purchaseRequest.Status,
+                ToStatus = "STORED",
+                Note = request.Note?.Trim(),
+                ChangedBy = userId,
+                ChangedByName = actor?.FullName,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            purchaseRequest.Status = "STORED";
+            if (warehouse != null)
+                purchaseRequest.ExpectedWarehouseId = warehouse.Id;
+            if (!string.IsNullOrWhiteSpace(request.Note))
+                purchaseRequest.GeneralNote = request.Note.Trim();
+
+            requestRepo.Update(purchaseRequest);
+            await _unitOfWork.SaveChangesAsync();
+
+            return await BuildConfirmResponseAsync(purchaseRequest);
+        }
+
+        private async Task<ConfirmPurchaseResponseDto> BuildConfirmResponseAsync(PurchaseRequest purchaseRequest)
+        {
+            Warehouse? warehouse = purchaseRequest.ExpectedWarehouseId.HasValue
+                ? await _unitOfWork.Repository<Warehouse>().GetByIdAsync(purchaseRequest.ExpectedWarehouseId.Value)
+                : null;
 
             return new ConfirmPurchaseResponseDto
             {
@@ -884,6 +995,8 @@ namespace VCL_BLL.Services
                 StatusDisplayName = GetStatusDisplayName(purchaseRequest.Status),
                 ProofImages = SplitList(purchaseRequest.ProofImageUrls),
                 GeneralNote = purchaseRequest.GeneralNote,
+                WarehouseId = purchaseRequest.ExpectedWarehouseId,
+                WarehouseName = warehouse?.WarehouseName,
                 UpdatedAt = DateTime.UtcNow
             };
         }
