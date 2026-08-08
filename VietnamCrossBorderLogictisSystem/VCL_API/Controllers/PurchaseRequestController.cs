@@ -271,6 +271,51 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Manager/Ops duyệt kiểm kê &amp; nhập kho chính thức — bước 5 của luồng mua hộ.
+        /// Sale gọi sẽ nhận 403.
+        /// </summary>
+        [HttpPost("{requestId}/approve-store")]
+        public async Task<IActionResult> ApproveStore(Guid requestId, [FromBody] ApproveStoreRequestDto? request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { success = false, message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchaseRequestService.ApproveStoreAsync(
+                    requestId, userId, userRole, request ?? new ApproveStoreRequestDto());
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "Duyệt kiểm kê & nhập kho thành công.",
+                    data = result
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { success = false, message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { success = false, message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Nhật ký đổi trạng thái của một yêu cầu mua hộ (mới nhất trước).
         /// </summary>
         [HttpGet("{requestId}/history")]

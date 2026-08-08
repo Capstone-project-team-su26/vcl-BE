@@ -2198,6 +2198,10 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_id");
 
+                    b.Property<Guid?>("ExpectedWarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("expected_warehouse_id");
+
                     b.Property<string>("GeneralNote")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")

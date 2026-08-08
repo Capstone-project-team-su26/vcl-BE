@@ -14,6 +14,9 @@ namespace VCL_BLL.Interface
         /// <summary>Xác nhận mua hộ &amp; cập nhật tiến độ (PURCHASED / SELLER_SHIPPED / ARRIVED_ORIGIN_WAREHOUSE).</summary>
         Task<ConfirmPurchaseResponseDto> ConfirmPurchaseAsync(Guid requestId, Guid userId, string userRole, ConfirmPurchaseRequestDto request);
 
+        /// <summary>Manager/Ops duyệt kiểm kê &amp; nhập kho chính thức (bước 5). Sale không được gọi.</summary>
+        Task<ConfirmPurchaseResponseDto> ApproveStoreAsync(Guid requestId, Guid userId, string userRole, ApproveStoreRequestDto request);
+
         /// <summary>Nhật ký đổi trạng thái của một yêu cầu mua hộ, mới nhất trước.</summary>
         Task<List<PurchaseRequestHistoryItemDto>> GetPurchaseRequestHistoryAsync(Guid requestId, Guid? userId, string userRole);
 

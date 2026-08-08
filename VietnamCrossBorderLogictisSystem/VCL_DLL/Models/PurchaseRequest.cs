@@ -48,6 +48,9 @@ public partial class PurchaseRequest
     /// <summary>Ảnh bằng chứng mua hộ (hoá đơn / màn hình đã đặt hàng), nối bằng '|'. Tối đa 3 ảnh.</summary>
     public string? ProofImageUrls { get; set; }
 
+    /// <summary>Kho nước ngoài dự kiến nhận hàng, Sale chọn ở bước xác nhận mua hàng.</summary>
+    public Guid? ExpectedWarehouseId { get; set; }
+
     public virtual Customer Customer { get; set; }
 
     public virtual User User { get; set; }
