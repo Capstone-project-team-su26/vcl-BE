@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_DLL.Models;
 
 namespace VCL_BLL.Services
@@ -22,8 +23,7 @@ namespace VCL_BLL.Services
             var customer = allCustomers.FirstOrDefault(c => c.Id == order.CustomerId);
 
             // Phân quyền: staff xem mọi đơn; customer chỉ xem đơn của mình.
-            var isStaff = !string.IsNullOrWhiteSpace(role)
-                && StaffRoles.Contains(role.Trim().ToUpperInvariant());
+            var isStaff = StaffRoleHelper.IsInternalStaff(role);
             if (!isStaff)
             {
                 if (userId == null || customer == null || customer.UserId != userId)
@@ -220,8 +220,7 @@ namespace VCL_BLL.Services
 
             var query = allOrders.AsQueryable();
 
-            var isStaff = !string.IsNullOrWhiteSpace(role)
-                && StaffRoles.Contains(role.Trim().ToUpperInvariant());
+            var isStaff = StaffRoleHelper.IsInternalStaff(role);
 
             // Customer only sees their own requests, staff can see all requests
             if (!isStaff)

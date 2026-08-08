@@ -17,7 +17,8 @@ namespace VCL_BLL.Services
         private readonly IOrderService _orderService;
 
         // Các role được phép xem toàn bộ yêu cầu mua hộ cần xử lý (Staff/Sales)
-        private static readonly string[] StaffRoles = { "ADMIN", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
+        // Vai trò khai báo tập trung ở StaffRoleHelper — xem ghi chú ở đó về lý do không để mỗi
+        // service tự giữ một mảng riêng (kho từng không xem được đơn mua hộ vì lệch mảng).
 
         // Ký tự phân cách các danh sách lưu gộp trong 1 cột DB (dùng chung quy ước với ký gửi)
         private const char ListSeparator = '|';
@@ -51,8 +52,7 @@ namespace VCL_BLL.Services
         /// </summary>
         private static readonly string[] WarehouseApprovalStatuses = { "STORED" };
 
-        private static readonly string[] WarehouseApprovalRoles =
-            { "ADMIN", "OPERATIONSMANAGER", "OPERATIONS", "MANAGER" };
+        // Danh sách vai trò duyệt kho nay ở StaffRoleHelper.CanApproveWarehouseStore
 
         /// <summary>Nhãn tiếng Việt của trạng thái yêu cầu mua hộ, dùng chung cho mọi response.</summary>
         private static readonly Dictionary<string, string> StatusDisplayNames = new(StringComparer.OrdinalIgnoreCase)
@@ -562,8 +562,7 @@ namespace VCL_BLL.Services
 
             var query = allRequests.AsQueryable();
 
-            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
-                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            bool isStaff = StaffRoleHelper.IsInternalStaff(userRole);
 
             // 1. Phân quyền: Customer chỉ xem yêu cầu của chính mình, Staff/Sales xem tất cả
             if (!isStaff)
@@ -704,8 +703,7 @@ namespace VCL_BLL.Services
             var customerRepo = _unitOfWork.Repository<Customer>();
             var allCustomers = await customerRepo.GetAllAsync();
 
-            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
-                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            bool isStaff = StaffRoleHelper.IsInternalStaff(userRole);
 
             if (!isStaff)
             {
@@ -864,7 +862,7 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Nội dung xác nhận mua hộ không được để trống.");
 
             // 1. Phân quyền: chỉ Staff/Sales/Buying được cập nhật tiến độ mua hàng
-            if (string.IsNullOrWhiteSpace(userRole) || !StaffRoles.Contains(userRole.Trim().ToUpperInvariant()))
+            if (!StaffRoleHelper.CanUpdatePurchaseProgress(userRole))
                 throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được xác nhận mua hộ.");
 
             var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
@@ -885,9 +883,8 @@ namespace VCL_BLL.Services
             }
 
             // 2b. Bước duyệt nhập kho là việc của Manager/Ops, Sale không được tự đóng đơn
-            var normalizedRole = userRole.Trim().ToUpperInvariant();
             var isWarehouseApproval = WarehouseApprovalStatuses.Contains(targetStatus);
-            if (isWarehouseApproval && !WarehouseApprovalRoles.Contains(normalizedRole))
+            if (isWarehouseApproval && !StaffRoleHelper.CanApproveWarehouseStore(userRole))
             {
                 throw new UnauthorizedAccessException(
                     $"Chỉ Manager/Ops được duyệt kiểm kê nhập kho (trạng thái {targetStatus}).");
@@ -987,8 +984,7 @@ namespace VCL_BLL.Services
         {
             request ??= new ApproveStoreRequestDto();
 
-            var normalizedRole = (userRole ?? string.Empty).Trim().ToUpperInvariant();
-            if (!WarehouseApprovalRoles.Contains(normalizedRole))
+            if (!StaffRoleHelper.CanApproveWarehouseStore(userRole))
                 throw new UnauthorizedAccessException("Chỉ Manager/Ops được duyệt kiểm kê nhập kho.");
 
             var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
@@ -1196,8 +1192,7 @@ namespace VCL_BLL.Services
                 ?? throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
 
             // Customer chỉ xem lịch sử đơn của chính mình
-            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
-                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            bool isStaff = StaffRoleHelper.IsInternalStaff(userRole);
             if (!isStaff)
             {
                 var customer = (await _unitOfWork.Repository<Customer>().GetAllAsync())
@@ -1262,8 +1257,7 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Dữ liệu cập nhật không được để trống.");
 
             // 1. Phân quyền: chỉ Staff/Sales được cập nhật trạng thái
-            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
-                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            bool isStaff = StaffRoleHelper.IsInternalStaff(userRole);
             if (!isStaff)
             {
                 throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được cập nhật trạng thái yêu cầu mua hộ.");
@@ -1321,8 +1315,7 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Dữ liệu báo giá không được để trống.");
 
             // 1. Phân quyền: chỉ Staff/Sales được tạo báo giá
-            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
-                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            bool isStaff = StaffRoleHelper.IsInternalStaff(userRole);
             if (!isStaff)
             {
                 throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được tạo báo giá mua hộ.");

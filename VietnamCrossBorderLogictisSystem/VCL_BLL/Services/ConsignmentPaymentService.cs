@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
@@ -833,7 +834,7 @@ namespace VCL_BLL.Services
         }
 
         private static bool IsStaff(string userRole) =>
-            !string.IsNullOrWhiteSpace(userRole) && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            StaffRoleHelper.CanHandlePayments(userRole);
 
         // Chỉ Sale (và Admin) được xác nhận thanh toán.
         private static readonly string[] SalesRoles = { "ADMIN", "SALE", "SALES" };

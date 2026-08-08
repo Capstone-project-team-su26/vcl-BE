@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
@@ -177,7 +178,7 @@ namespace VCL_BLL.Services
             request ??= new CreatePurchaseFinalPaymentRequestDto();
 
             // 1. Phân quyền: chỉ Staff/Sales được chốt chi phí phát sinh
-            if (string.IsNullOrWhiteSpace(userRole) || !StaffRoles.Contains(userRole.Trim().ToUpperInvariant()))
+            if (!StaffRoleHelper.CanHandlePayments(userRole))
             {
                 throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được tạo thanh toán cuối cho đơn mua hộ.");
             }
@@ -379,8 +380,7 @@ namespace VCL_BLL.Services
             }
 
             // Customer chỉ được xem đơn của chính mình; Staff/Sales xem tất cả
-            bool isStaff = !string.IsNullOrWhiteSpace(userRole)
-                && StaffRoles.Contains(userRole.Trim().ToUpperInvariant());
+            bool isStaff = StaffRoleHelper.CanHandlePayments(userRole);
             if (!isStaff)
             {
                 var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
