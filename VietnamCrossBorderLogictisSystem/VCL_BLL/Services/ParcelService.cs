@@ -309,7 +309,9 @@ namespace VCL_BLL.Services
                     ParcelId = created.Parcel.Id,
                     ShippingCode = request.ShippingCode,
                     ConsignmentId = order.Id,
-                    ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                    OrderCode = order.ConsignmentCode ?? string.Empty,
+                    // Đơn mua hộ không có "mã ký gửi" — để null thay vì lặp lại mã ở field sai nghĩa.
+                    ConsignmentCode = purchaseCodeOfOrder == null ? order.ConsignmentCode : null,
                     OrderType = order.OrderType,
                     PurchaseCode = purchaseCodeOfOrder,
                     CustomerName = customer?.FullName ?? string.Empty,
@@ -354,7 +356,7 @@ namespace VCL_BLL.Services
         /// Xác định kiện khai báo ứng với lần nhận này. Có OrderItemId thì dùng đúng kiện đó,
         /// không có thì lấy kiện chưa nhận đầu tiên để giữ tương thích với client cũ.
         /// </summary>
-        private static OrderItem? ResolveOrderItem(
+        private static OrderItem ResolveOrderItem(
             Guid? orderItemId,
             List<OrderItem> orderItems,
             HashSet<Guid> receivedItemIds,
@@ -373,7 +375,13 @@ namespace VCL_BLL.Services
                 return item;
             }
 
-            return orderItems.FirstOrDefault(i => !receivedItemIds.Contains(i.Id));
+            // Hết dòng hàng chưa nhận nghĩa là kho đang nhận nhiều kiện hơn số khai báo.
+            // Trước đây trả null rồi vẫn tạo kiện kèm cảnh báo — kiện đó mồ côi, không gắn
+            // được vào đơn, không tra ra khách và không bao giờ vào được tồn kho.
+            return orderItems.FirstOrDefault(i => !receivedItemIds.Contains(i.Id))
+                ?? throw new ArgumentException(
+                    $"Đơn {consignmentCode} đã nhận đủ {orderItems.Count} kiện theo khai báo, không thể nhận thêm. " +
+                    "Nếu hàng thực tế nhiều kiện hơn, cần bổ sung dòng hàng vào đơn trước khi check-in.");
         }
 
         /// <summary>Chặn số đo phi lý trước khi ghi nhận, tránh sai số nhân lên khi tính cước.</summary>
