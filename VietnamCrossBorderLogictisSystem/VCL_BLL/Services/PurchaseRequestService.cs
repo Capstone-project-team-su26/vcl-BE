@@ -1061,7 +1061,9 @@ namespace VCL_BLL.Services
                 Id = Guid.NewGuid(),
                 CustomerId = purchaseRequest.CustomerId,
                 PurchaseRequestId = purchaseRequest.Id,
-                ConsignmentCode = await GenerateWarehouseOrderCodeAsync(),
+                // Dùng luôn mã mua hộ làm mã đơn kho. Sinh mã VCL- riêng sẽ khiến hàng mua hộ
+                // mang mã của ký gửi — sai nghĩa, và kho phải nhớ hai mã cho cùng một lô hàng.
+                ConsignmentCode = purchaseRequest.PurchaseCode,
                 ConsignmentType = purchaseRequest.ShippingOption,
                 Route = purchaseRequest.Route,
                 ReceiverName = purchaseRequest.ReceiverName,
@@ -1118,23 +1120,6 @@ namespace VCL_BLL.Services
             }
 
             return (order.ConsignmentCode, order.Id);
-        }
-
-        private async Task<string> GenerateWarehouseOrderCodeAsync()
-        {
-            var existingCodes = (await _unitOfWork.Repository<Order>().GetAllAsync())
-                .Where(o => !string.IsNullOrEmpty(o.ConsignmentCode))
-                .Select(o => o.ConsignmentCode!)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var random = new Random();
-            string code;
-            do
-            {
-                code = $"VCL-{DateTime.UtcNow:yyyyMMddHHmmss}-{random.Next(100000, 999999)}";
-            } while (existingCodes.Contains(code));
-
-            return code;
         }
 
         private async Task<ConfirmPurchaseResponseDto> BuildConfirmResponseAsync(PurchaseRequest purchaseRequest)

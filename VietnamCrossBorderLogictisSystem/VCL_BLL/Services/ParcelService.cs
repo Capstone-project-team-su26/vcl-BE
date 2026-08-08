@@ -298,6 +298,11 @@ namespace VCL_BLL.Services
                 DeclaredValue = item.DeclaredValue
             }).ToList();
 
+            // Đơn kho sinh từ mua hộ thì trả kèm mã PUR- để kho khỏi phải đối chiếu hai mã.
+            var purchaseCodeOfOrder = order.PurchaseRequestId.HasValue
+                ? (await _unitOfWork.Repository<PurchaseRequest>().GetByIdAsync(order.PurchaseRequestId.Value))?.PurchaseCode
+                : null;
+
             ParcelCheckInResponse BuildResponse((Parcel Parcel, OrderItem? Item, List<string> Warnings, decimal? WeightDifference) created) =>
                 new()
                 {
@@ -305,6 +310,8 @@ namespace VCL_BLL.Services
                     ShippingCode = request.ShippingCode,
                     ConsignmentId = order.Id,
                     ConsignmentCode = order.ConsignmentCode ?? string.Empty,
+                    OrderType = order.OrderType,
+                    PurchaseCode = purchaseCodeOfOrder,
                     CustomerName = customer?.FullName ?? string.Empty,
                     CustomerCode = customer?.CustomerCode ?? string.Empty,
                     ReceiverName = order.ReceiverName,
