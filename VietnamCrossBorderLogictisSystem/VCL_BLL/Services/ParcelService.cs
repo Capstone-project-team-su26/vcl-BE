@@ -78,14 +78,17 @@ namespace VCL_BLL.Services
             if (request == null)
                 throw new ArgumentException("Yêu cầu check-in không được để trống.");
 
-            // 1. Kiểm tra mã gửi hàng hợp lệ (bắt đầu bằng VCL-)
+            // 1. Kiểm tra mã gửi hàng: VCL- là đơn kho (ký gửi và mua hộ sau khi duyệt),
+            // PUR- là mã yêu cầu mua hộ mà nhân viên kho quen cầm.
             if (string.IsNullOrWhiteSpace(request.ShippingCode) ||
-                !request.ShippingCode.StartsWith("VCL-", StringComparison.OrdinalIgnoreCase))
+                (!request.ShippingCode.StartsWith("VCL-", StringComparison.OrdinalIgnoreCase)
+                 && !request.ShippingCode.StartsWith("PUR-", StringComparison.OrdinalIgnoreCase)))
             {
-                throw new ArgumentException("Mã gửi hàng không hợp lệ.");
+                throw new ArgumentException("Mã gửi hàng không hợp lệ. Mã hợp lệ bắt đầu bằng VCL- hoặc PUR-.");
             }
 
-            // 2. Tìm yêu cầu ký gửi
+            // 2. Tìm đơn theo mã. Ký gửi dùng mã VCL-…; hàng mua hộ sau khi OM duyệt nhập kho
+            // cũng có mã VCL-… riêng, nhưng kho quen cầm mã mua hộ PUR-… nên nhận luôn cả hai.
             var orderRepo = _unitOfWork.Repository<Order>();
             var allOrders = await orderRepo.GetAllAsync();
             var order = allOrders.FirstOrDefault(o =>
@@ -93,7 +96,20 @@ namespace VCL_BLL.Services
 
             if (order == null)
             {
-                throw new NotFoundException("Không tìm thấy yêu cầu ký gửi.");
+                var purchaseRequest = (await _unitOfWork.Repository<PurchaseRequest>().GetAllAsync())
+                    .FirstOrDefault(p => string.Equals(p.PurchaseCode, request.ShippingCode, StringComparison.OrdinalIgnoreCase));
+
+                if (purchaseRequest != null)
+                {
+                    order = allOrders.FirstOrDefault(o => o.PurchaseRequestId == purchaseRequest.Id)
+                        ?? throw new ArgumentException(
+                            $"Đơn mua hộ {purchaseRequest.PurchaseCode} chưa được OM duyệt nhập kho nên chưa có đơn kho để check-in.");
+                }
+            }
+
+            if (order == null)
+            {
+                throw new NotFoundException("Không tìm thấy đơn hàng theo mã đã nhập.");
             }
 
             // 3. Cho phép check-in với các đơn đã chốt báo giá / đặt cọc hoặc đã duyệt
