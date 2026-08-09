@@ -433,9 +433,9 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
                         ColumnIndex = binLayout?.ColumnIndex,
                         Status = binLayout?.Status ?? (bin.IsActive ? "ACTIVE" : "INACTIVE"),
                         CurrentVolume = bin.CurrentVolume,
-                        MaxVolume = bin.MaxVolume,
+                        MaxVolume = bin.MaxVolume ?? 500000m,
                         CurrentWeight = currentWeight,
-                        MaxWeight = bin.MaxWeight
+                        MaxWeight = bin.MaxWeight ?? 100m
                     };
 
                     shelfDto.Bins.Add(binDto);
@@ -525,7 +525,7 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
 
                 dto.CurrentItemCount = binParcels.Count + binInventories.Sum(i => i.Quantity);
                 dto.CurrentWeight = binParcels.Sum(p => p.ActualWeight ?? 0m);
-                dto.MaxWeight = bin.MaxWeight;
+                dto.MaxWeight = bin.MaxWeight ?? 100m;
                 dto.ParcelIds = binParcels.Select(p => p.Id).ToList();
                 dto.InventoryIds = binInventories.Select(i => i.Id).ToList();
 

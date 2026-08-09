@@ -336,8 +336,8 @@ namespace VCL_BLL.Services
                     ZoneName = zone?.ZoneName ?? string.Empty,
                     WarehouseId = warehouseId,
                     WarehouseName = warehouse.WarehouseName ?? string.Empty,
-                    MaxVolume = bin.MaxVolume,
-                    MaxWeight = bin.MaxWeight,
+                    MaxVolume = bin.MaxVolume ?? 500000m,
+                    MaxWeight = bin.MaxWeight ?? 100m,
                     IsActive = bin.IsActive,
                     Note = bin.Note ?? string.Empty
                 });
@@ -462,8 +462,8 @@ namespace VCL_BLL.Services
                 WarehouseId = warehouseId,
                 ShelfId = shelf.Id,
                 BinCode = request.BinCode,
-                MaxVolume = request.MaxVolume,
-                MaxWeight = request.MaxWeight,
+                MaxVolume = request.MaxVolume ?? 500000m,
+                MaxWeight = request.MaxWeight ?? 100m,
                 IsActive = request.IsActive,
                 Note = request.Note
             };
@@ -481,8 +481,8 @@ namespace VCL_BLL.Services
                 ZoneName = zone.ZoneName,
                 WarehouseId = warehouseId,
                 WarehouseName = warehouse.WarehouseName,
-                MaxVolume = newBin.MaxVolume,
-                MaxWeight = newBin.MaxWeight,
+                MaxVolume = newBin.MaxVolume ?? 500000m,
+                MaxWeight = newBin.MaxWeight ?? 100m,
                 IsActive = newBin.IsActive,
                 Note = newBin.Note ?? string.Empty
             };
