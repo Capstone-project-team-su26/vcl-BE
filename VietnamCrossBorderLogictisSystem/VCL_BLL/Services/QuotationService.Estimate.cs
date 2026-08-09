@@ -400,7 +400,10 @@ namespace VCL_BLL.Services
 
             serviceFee = baseServiceFee + totalSurcharges + totalPackageFees;
 
-            var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now, activeRules);
+            decimal domesticShippingFee = isConsignment ? baseServiceFee : 0m;
+            decimal taxableServiceFee = Math.Max(0m, serviceFee - domesticShippingFee);
+
+            var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, taxableServiceFee, now, activeRules);
             decimal vatAmount = taxResult.VatAmount;
             decimal importTax = taxResult.ImportTax;
             taxAndDuty = importTax + vatAmount;

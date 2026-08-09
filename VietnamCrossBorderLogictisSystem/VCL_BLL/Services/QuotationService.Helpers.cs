@@ -337,10 +337,11 @@ namespace VCL_BLL.Services
             return result;
         }
 
+        /// <summary>Calculates import tax and VAT for quotation items based on freight charge and taxable service fee (excluding domestic shipping fee).</summary>
         private async Task<(decimal ImportTax, decimal VatAmount, List<QuotationFee> TaxFees)> CalculateTaxesAsync(
             List<OrderItem> orderItems,
             decimal estimatedFreightCharge,
-            decimal serviceFee,
+            decimal taxableServiceFee,
             DateTime now,
             IEnumerable<PricingRule>? activeRules = null)
         {
@@ -391,7 +392,7 @@ namespace VCL_BLL.Services
             }
 
             var vatRatePercent = GetVatRatePercent(activeRules);
-            decimal vatAmount = Math.Round((estimatedFreightCharge + serviceFee) * (vatRatePercent / 100m), 0);
+            decimal vatAmount = Math.Round((estimatedFreightCharge + taxableServiceFee) * (vatRatePercent / 100m), 0);
             if (vatAmount > 0)
             {
                 taxFees.Add(new QuotationFee

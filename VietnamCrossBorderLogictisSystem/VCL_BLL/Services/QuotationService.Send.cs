@@ -255,7 +255,8 @@ namespace VCL_BLL.Services
 
             if (vatAmount == 0m && importTax == 0m)
             {
-                var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, serviceFee, now, activeRules);
+                decimal taxableServiceFee = isConsignment ? Math.Max(0m, serviceFee - domesticShippingFee) : serviceFee;
+                var taxResult = await CalculateTaxesAsync(orderItems, estimatedFreightCharge, taxableServiceFee, now, activeRules);
                 vatAmount = taxResult.VatAmount;
                 importTax = taxResult.ImportTax;
                 quotationFees.AddRange(taxResult.TaxFees);
