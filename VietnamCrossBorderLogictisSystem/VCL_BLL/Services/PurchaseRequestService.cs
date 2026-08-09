@@ -755,6 +755,12 @@ namespace VCL_BLL.Services
                 ? await _unitOfWork.Repository<Warehouse>().GetByIdAsync(request.ExpectedWarehouseId.Value)
                 : null;
 
+            // Đơn kho chỉ tồn tại sau khi duyệt nhập kho; lấy để trả kèm mã đơn và phiếu PDF,
+            // nhờ đó khách và Sale tra lại phiếu bất cứ lúc nào thay vì chỉ thấy đúng một lần
+            // ở response của bước duyệt.
+            var warehouseOrder = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                .FirstOrDefault(o => o.PurchaseRequestId == request.Id);
+
             // 4.1 Lấy báo giá liên quan nếu có
             PurchaseQuotationResponseDto? quotationDto = null;
             var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
@@ -849,6 +855,9 @@ namespace VCL_BLL.Services
                 WarehouseId = request.ExpectedWarehouseId,
                 WarehouseName = expectedWarehouse?.WarehouseName,
                 ProofImages = SplitList(request.ProofImageUrls),
+                OrderCode = warehouseOrder?.ConsignmentCode,
+                ReceiptPdfUrl = warehouseOrder?.ReceiptPdfUrl,
+                ReceiptGeneratedAt = warehouseOrder?.ReceiptGeneratedAt,
                 TotalQuantity = relatedItems.Sum(i => i.Quantity),
                 Items = itemDtos,
                 Quotation = quotationDto
@@ -955,6 +964,7 @@ namespace VCL_BLL.Services
                 purchaseRequest.ExpectedWarehouseId = warehouse.Id;
 
             requestRepo.Update(purchaseRequest);
+            await NotifyCustomerAsync(purchaseRequest, targetStatus, currentStatus);
 
             // FE gọi thẳng confirm-purchase cho cả bước nhập kho thay vì approve-store, nên đường này
             // phải vật chất hoá đơn kho y hệt. Chặn 400 ở đây sẽ làm vỡ màn hình đang chạy của FE,
@@ -1035,6 +1045,7 @@ namespace VCL_BLL.Services
                 purchaseRequest.GeneralNote = request.Note.Trim();
 
             requestRepo.Update(purchaseRequest);
+            await NotifyCustomerAsync(purchaseRequest, "STORED", currentStatus);
 
             var (orderCode, receiptPdfUrl) = await FinalizeStoredAsync(purchaseRequest, userId);
 
@@ -1163,6 +1174,70 @@ namespace VCL_BLL.Services
             }
 
             return (order.ConsignmentCode, order.Id);
+        }
+
+        /// <summary>
+        /// Mốc khách hàng cần được báo, kèm nội dung thông báo. Cố ý KHÔNG báo mọi bước:
+        /// các trạng thái nội bộ (PENDING_REVIEW, PAID, ARRIVED_ORIGIN_WAREHOUSE, WAITING_STORED)
+        /// là việc vận hành giữa Sale và kho, báo hết chỉ làm phiền khách.
+        /// </summary>
+        private static readonly Dictionary<string, (string Title, string Content)> CustomerNotifications =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["PURCHASED"] = ("Đơn mua hộ đã được đặt hàng",
+                    "Yêu cầu mua hộ (Mã: {0}) đã được đặt hàng thành công với người bán."),
+                ["SELLER_SHIPPED"] = ("Người bán đã giao hàng",
+                    "Người bán đã giao hàng cho yêu cầu mua hộ (Mã: {0}). Hàng đang trên đường về kho."),
+                ["STORED"] = ("Hàng mua hộ đã nhập kho",
+                    "Hàng của yêu cầu mua hộ (Mã: {0}) đã nhập kho. Bạn có thể xem phiếu nhập kho trong chi tiết đơn."),
+                ["NEED_MORE_INFO"] = ("Yêu cầu mua hộ cần bổ sung thông tin",
+                    "Yêu cầu mua hộ (Mã: {0}) cần bạn bổ sung thông tin."),
+                ["REJECTED"] = ("Yêu cầu mua hộ bị từ chối",
+                    "Yêu cầu mua hộ (Mã: {0}) đã bị từ chối."),
+            };
+
+        /// <summary>
+        /// Bắn thông báo cho khách khi đơn sang mốc đáng quan tâm, theo đúng cách luồng ký gửi đang làm
+        /// (xem <c>OrderService.Workflow.cs</c>). Chỉ ghi vào UnitOfWork; hàm gọi chịu trách nhiệm lưu.
+        /// <para>
+        /// Không bắn khi trạng thái không đổi, để bấm lại nút không sinh thông báo trùng.
+        /// Lỗi tra khách không được làm hỏng việc cập nhật đơn — thiếu thông báo còn hơn kẹt nghiệp vụ.
+        /// </para>
+        /// </summary>
+        private async Task NotifyCustomerAsync(
+            PurchaseRequest purchaseRequest, string targetStatus, string? previousStatus, string? reason = null)
+        {
+            if (string.Equals(targetStatus, previousStatus, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (!CustomerNotifications.TryGetValue(targetStatus, out var template))
+                return;
+
+            try
+            {
+                var customer = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                    .FirstOrDefault(c => c.Id == purchaseRequest.CustomerId);
+                if (customer == null)
+                    return;
+
+                var content = string.Format(template.Content, purchaseRequest.PurchaseCode ?? purchaseRequest.Id.ToString());
+                if (!string.IsNullOrWhiteSpace(reason))
+                    content += $" Lý do: {reason}";
+
+                await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = customer.UserId,
+                    Title = template.Title,
+                    Content = content,
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"CREATE PURCHASE NOTIFICATION ERROR ({purchaseRequest.Id}): {ex.Message}");
+            }
         }
 
         private async Task<ConfirmPurchaseResponseDto> BuildConfirmResponseAsync(PurchaseRequest purchaseRequest)
@@ -1297,6 +1372,7 @@ namespace VCL_BLL.Services
             purchaseRequest.Status = targetStatus;
             purchaseRequest.Reason = needsReason ? request.Reason : null;
             requestRepo.Update(purchaseRequest);
+            await NotifyCustomerAsync(purchaseRequest, targetStatus, currentStatus, purchaseRequest.Reason);
             await _unitOfWork.SaveChangesAsync();
 
             return new UpdatePurchaseRequestStatusResponseDto
