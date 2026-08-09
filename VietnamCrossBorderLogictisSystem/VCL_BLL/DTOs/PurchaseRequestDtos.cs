@@ -187,6 +187,25 @@ namespace VCL_BLL.DTOs
         /// <summary>Ảnh bằng chứng mua hộ đã tải lên (hoá đơn / màn hình đã đặt hàng).</summary>
         public List<string> ProofImages { get; set; } = new();
 
+        /// <summary>
+        /// Mã đơn kho sinh khi duyệt nhập kho (`PUR-…`). Null nếu đơn chưa được nhập kho.
+        /// Cùng nghĩa với <c>orderCode</c> ở các API kho.
+        /// </summary>
+        public string? OrderCode { get; set; }
+
+        /// <summary>
+        /// Link phiếu nhập kho (PDF). Null nếu đơn chưa nhập kho hoặc sinh phiếu lỗi.
+        /// <para>
+        /// Có ở đây để phiếu tra lại được bất cứ lúc nào. Trước đây link chỉ xuất hiện đúng một lần
+        /// trong response của bước duyệt nhập kho — FE không lưu lại thì coi như mất, dù file vẫn còn.
+        /// Link ổn định, sinh lại phiếu cũng không đổi URL.
+        /// </para>
+        /// </summary>
+        public string? ReceiptPdfUrl { get; set; }
+
+        /// <summary>Thời điểm phát hành phiếu. Null nếu chưa có phiếu.</summary>
+        public DateTime? ReceiptGeneratedAt { get; set; }
+
         public int TotalQuantity { get; set; }
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
         public PurchaseQuotationResponseDto? Quotation { get; set; }
