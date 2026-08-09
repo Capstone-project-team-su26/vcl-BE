@@ -237,6 +237,14 @@ namespace VCL_BLL.DTOs
         public string? WarehouseName { get; set; }
     }
 
+    /// <summary>Lý do khách từ chối báo giá mua hộ. Bắt buộc — Sale cần biết vì sao để chỉnh giá.</summary>
+    public class RejectPurchaseQuotationRequestDto
+    {
+        [Required(ErrorMessage = "Vui lòng nhập lý do từ chối báo giá.")]
+        [StringLength(500, ErrorMessage = "Lý do tối đa 500 ký tự.")]
+        public string RejectionReason { get; set; } = string.Empty;
+    }
+
     public class ApproveStoreRequestDto
     {
         [StringLength(500, ErrorMessage = "Ghi chú tối đa 500 ký tự.")]

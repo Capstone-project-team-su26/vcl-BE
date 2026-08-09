@@ -63,6 +63,8 @@ namespace VCL_BLL.Services
             ["NEED_MORE_INFO"] = "Cần bổ sung thông tin",
             ["REJECTED"] = "Đã từ chối",
             ["QUOTED"] = "Đã báo giá",
+            // Khách từ chối BÁO GIÁ — khác REJECTED là Sale từ chối cả YÊU CẦU.
+            ["QUOTATION_REJECTED"] = "Đã từ chối báo giá",
             ["WAITING_PAYMENT"] = "Chờ thanh toán",
             ["PAID"] = "Đã thanh toán",
             ["DEPOSIT_PAID"] = "Đã đặt cọc",
@@ -1174,6 +1176,94 @@ namespace VCL_BLL.Services
             }
 
             return (order.ConsignmentCode, order.Id);
+        }
+
+        /// <summary>
+        /// Khách từ chối báo giá mua hộ.
+        /// <para>
+        /// Luồng ký gửi có sẵn <c>PUT /api/quotations/{id}/reject</c>, nhưng nó thao tác trên bảng
+        /// QUOTATIONS của ký gửi nên gọi bằng id báo giá mua hộ chỉ ra 404. Khách vì thế không có
+        /// đường nào từ chối báo giá mua hộ — chỉ có đường đồng ý và trả tiền.
+        /// </para>
+        /// Chỉ từ chối được khi đơn đang ở <c>QUOTED</c>/<c>WAITING_PAYMENT</c> và chưa phát sinh
+        /// thanh toán nào; đã trả tiền thì phải đi đường huỷ đơn/hoàn tiền, không phải từ chối báo giá.
+        /// </summary>
+        public async Task<UpdatePurchaseRequestStatusResponseDto> RejectPurchaseQuotationAsync(
+            Guid requestId, Guid? userId, string userRole, string? rejectionReason)
+        {
+            var reason = rejectionReason?.Trim();
+            if (string.IsNullOrWhiteSpace(reason))
+                throw new ArgumentException("Vui lòng nhập lý do từ chối báo giá.");
+
+            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseRequest = await requestRepo.GetByIdAsync(requestId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
+
+            // Khách chỉ từ chối báo giá của chính mình; nhân viên nội bộ từ chối hộ được.
+            if (!StaffRoleHelper.IsInternalStaff(userRole))
+            {
+                var customer = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                    .FirstOrDefault(c => c.UserId == userId);
+                if (customer == null || purchaseRequest.CustomerId != customer.Id)
+                    throw new UnauthorizedAccessException("Bạn không có quyền từ chối báo giá của đơn này.");
+            }
+
+            var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (currentStatus is not ("QUOTED" or "WAITING_PAYMENT"))
+            {
+                throw new ArgumentException(
+                    $"Chỉ từ chối được báo giá khi đơn đang ở QUOTED hoặc WAITING_PAYMENT (hiện tại: {purchaseRequest.Status}).");
+            }
+
+            // Đã có tiền vào thì không cho từ chối âm thầm — dữ liệu thanh toán sẽ mồ côi.
+            var hasPayment = (await _unitOfWork.Repository<PurchasePayment>().GetAllAsync())
+                .Any(p => p.PurchaseRequestId == requestId
+                          && !string.Equals(p.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase)
+                          && !string.Equals(p.Status, "FAILED", StringComparison.OrdinalIgnoreCase));
+            if (hasPayment)
+                throw new ArgumentException("Đơn đã phát sinh thanh toán, không thể từ chối báo giá. Vui lòng liên hệ CSKH để huỷ đơn.");
+
+            var quotation = (await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync())
+                .Where(q => q.PurchaseRequestId == requestId)
+                .OrderByDescending(q => q.CreatedAt ?? DateTime.MinValue)
+                .FirstOrDefault();
+
+            if (quotation != null)
+            {
+                quotation.Status = "REJECTED";
+                quotation.Note = string.IsNullOrWhiteSpace(quotation.Note)
+                    ? $"Khách từ chối: {reason}"
+                    : $"{quotation.Note} | Khách từ chối: {reason}";
+                _unitOfWork.Repository<PurchaseQuotation>().Update(quotation);
+            }
+
+            var actor = (await _unitOfWork.Repository<User>().GetAllAsync())
+                .FirstOrDefault(u => u.Id == userId);
+
+            await _unitOfWork.Repository<PurchaseRequestHistory>().AddAsync(new PurchaseRequestHistory
+            {
+                Id = Guid.NewGuid(),
+                PurchaseRequestId = requestId,
+                FromStatus = purchaseRequest.Status,
+                ToStatus = "QUOTATION_REJECTED",
+                Note = reason,
+                ChangedBy = userId,
+                ChangedByName = actor?.FullName,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            purchaseRequest.Status = "QUOTATION_REJECTED";
+            purchaseRequest.Reason = reason;
+            requestRepo.Update(purchaseRequest);
+            await _unitOfWork.SaveChangesAsync();
+
+            return new UpdatePurchaseRequestStatusResponseDto
+            {
+                PurchaseRequestId = purchaseRequest.Id,
+                PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
+                Status = purchaseRequest.Status,
+                Reason = purchaseRequest.Reason
+            };
         }
 
         /// <summary>
