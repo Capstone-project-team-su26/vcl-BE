@@ -223,6 +223,50 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Khách từ chối báo giá mua hộ. Đối xứng với <c>PUT /api/quotations/{id}/reject</c> của ký gửi —
+        /// endpoint đó chỉ tra bảng QUOTATIONS nên gọi bằng id mua hộ sẽ ra 404.
+        /// </summary>
+        /// <remarks>
+        /// Chỉ dùng được khi đơn ở <c>QUOTED</c>/<c>WAITING_PAYMENT</c> và chưa phát sinh thanh toán.
+        /// Đơn sang <c>QUOTATION_REJECTED</c>, báo giá mới nhất sang <c>REJECTED</c>.
+        /// </remarks>
+        [HttpPut("{requestId}/quotation/reject")]
+        public async Task<IActionResult> RejectQuotation(Guid requestId, [FromBody] RejectPurchaseQuotationRequestDto? request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            Guid? userId = Guid.TryParse(userIdClaim, out var parsed) ? parsed : null;
+            if (userId == null)
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _purchaseRequestService.RejectPurchaseQuotationAsync(
+                    requestId, userId, userRole, request?.RejectionReason);
+                return Ok(new { success = true, message = "Đã từ chối báo giá mua hộ.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { success = false, message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { success = false, message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Xác nhận mua hộ &amp; cập nhật tiến độ đơn mua hàng.
         /// Nhận PURCHASED, SELLER_SHIPPED hoặc ARRIVED_ORIGIN_WAREHOUSE, kèm tối đa 3 ảnh bằng chứng.
         /// </summary>

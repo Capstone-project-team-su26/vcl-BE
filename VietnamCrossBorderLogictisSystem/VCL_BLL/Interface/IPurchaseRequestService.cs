@@ -11,6 +11,11 @@ namespace VCL_BLL.Interface
         Task<PaginatedResponse<PurchaseRequestListItemDto>> GetPurchaseRequestsAsync(Guid? userId, string userRole, int pageNumber, int pageSize, string? status, string? searchKeyword);
         Task<PurchaseRequestDetailResponseDto> GetPurchaseRequestDetailAsync(Guid requestId, Guid? userId, string userRole);
         Task<UpdatePurchaseRequestStatusResponseDto> UpdatePurchaseRequestStatusAsync(Guid requestId, Guid userId, string userRole, UpdatePurchaseRequestStatusRequestDto request);
+        /// <summary>
+        /// Khách từ chối báo giá mua hộ (đối xứng với <c>PUT /api/quotations/{id}/reject</c> bên ký gửi).
+        /// </summary>
+        Task<UpdatePurchaseRequestStatusResponseDto> RejectPurchaseQuotationAsync(Guid requestId, Guid? userId, string userRole, string? rejectionReason);
+
         /// <summary>Xác nhận mua hộ &amp; cập nhật tiến độ (PURCHASED / SELLER_SHIPPED / ARRIVED_ORIGIN_WAREHOUSE).</summary>
         Task<ConfirmPurchaseResponseDto> ConfirmPurchaseAsync(Guid requestId, Guid userId, string userRole, ConfirmPurchaseRequestDto request);
 
