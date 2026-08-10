@@ -45,6 +45,13 @@ namespace VCL_BLL.Services
         // Đơn mua hàng phải tới bước này thì mới được chốt chi phí phát sinh
         private const string PurchaseOrderReadyForFinal = "WAITING_WAREHOUSE_RECEIVE";
 
+        /// <summary>
+        /// Trạng thái của chính yêu cầu mua hộ cho phép chốt chi phí phát sinh — hàng đã vào kho.
+        /// Dùng khi luồng không đi qua thực thể PurchaseOrder.
+        /// </summary>
+        private static readonly HashSet<string> RequestStatusesReadyForFinal =
+            new(StringComparer.OrdinalIgnoreCase) { "STORED", "DELIVERED", "CUSTOMER_CONFIRMED" };
+
         public PurchasePaymentService(
             IUnitOfWork unitOfWork,
             IPayOsService payOsService,
@@ -225,16 +232,27 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Đơn mua hộ đã có một đợt thanh toán cuối đang chờ khách thanh toán.");
             }
 
-            // 5. Điều kiện trigger: đơn mua hàng đã tới bước chờ kho nhận
+            // 5. Điều kiện trigger: hàng đã về tới kho.
+            // Có hai cách theo dõi tiến độ mua song song trong hệ thống:
+            //   - PURCHASE_ORDERS.status (PURCHASE_ORDER_CREATED → ... → WAITING_WAREHOUSE_RECEIVE)
+            //   - PURCHASE_REQUESTS.status (… → WAITING_STORED → STORED) do PUT .../confirm-purchase đặt
+            // Luồng đang chạy thật chỉ dùng cách thứ hai — không nơi nào trong luồng tạo PurchaseOrder,
+            // nên chỉ canh WAITING_WAREHOUSE_RECEIVE thì thanh toán cuối vĩnh viễn không mở được.
+            // Chấp nhận cả hai để không phá đường cũ mà đường đang dùng vẫn đi được.
             var purchaseOrders = (await _unitOfWork.Repository<PurchaseOrder>().GetAllAsync())
                 .Where(o => o.PurchaseRequestId == requestId
                     && !string.Equals(o.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            if (!purchaseOrders.Any(o => string.Equals(o.Status, PurchaseOrderReadyForFinal, StringComparison.OrdinalIgnoreCase)))
+            bool purchaseOrderReady = purchaseOrders.Any(o =>
+                string.Equals(o.Status, PurchaseOrderReadyForFinal, StringComparison.OrdinalIgnoreCase));
+            bool requestStored = RequestStatusesReadyForFinal.Contains(currentStatus);
+
+            if (!purchaseOrderReady && !requestStored)
             {
                 throw new ArgumentException(
-                    $"Chưa thể tạo thanh toán cuối: đơn mua hàng chưa ở trạng thái {PurchaseOrderReadyForFinal}.");
+                    "Chưa thể tạo thanh toán cuối: hàng chưa về tới kho. "
+                    + $"Trạng thái đơn mua hộ hiện tại: {purchaseRequest.Status}.");
             }
 
             // 6. Lấy báo giá đã được khách xác nhận
