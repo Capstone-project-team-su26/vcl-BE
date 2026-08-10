@@ -20,6 +20,7 @@ namespace VCL_BLL.Services
         private readonly ISePayService _sePayService;
         private readonly IConfiguration _configuration;
         private readonly ILogger<ConsignmentPaymentService> _logger;
+        private readonly IStorageFeeService _storageFeeService;
 
         // Role nội bộ được tạo thanh toán cuối / xem lịch sử thanh toán.
         private static readonly string[] StaffRoles =
@@ -40,13 +41,15 @@ namespace VCL_BLL.Services
             IPayOsService payOsService,
             ISePayService sePayService,
             IConfiguration configuration,
-            ILogger<ConsignmentPaymentService> logger)
+            ILogger<ConsignmentPaymentService> logger,
+            IStorageFeeService storageFeeService)
         {
             _unitOfWork = unitOfWork;
             _payOsService = payOsService;
             _sePayService = sePayService;
             _configuration = configuration;
             _logger = logger;
+            _storageFeeService = storageFeeService;
         }
 
         // ---------------------------------------------------------------------
@@ -296,12 +299,18 @@ namespace VCL_BLL.Services
             if (order == null)
                 throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
 
-            // Điều kiện trigger: đơn phải có kiện đã về kho đích (RECEIVED_AT_DESTINATION)
+            // Điều kiện trigger: đơn phải có kiện đã về kho đích.
+            // Kiện vừa nhận thì ở RECEIVED_AT_DESTINATION, nhưng kho VN quét xong và xếp vào ô kệ
+            // là kiện chuyển sang STORED — chỉ nhận mỗi RECEIVED_AT_DESTINATION thì đi đúng quy
+            // trình lại không tạo được thanh toán cuối. Nên xét cả vị trí thực tế của kiện.
             var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
             var orderParcels = allParcels.Where(p => p.ConsignmentId == orderId).ToList();
-            bool anyReceivedAtDestination = orderParcels.Any(p =>
-                string.Equals(p.PackageStatus, ParcelReceivedAtDestination, StringComparison.OrdinalIgnoreCase));
-            if (!anyReceivedAtDestination)
+            var destinationBinIds = await GetDestinationBinIdsAsync();
+
+            bool anyAtDestination = orderParcels.Any(p =>
+                string.Equals(p.PackageStatus, ParcelReceivedAtDestination, StringComparison.OrdinalIgnoreCase)
+                || (p.BinId.HasValue && destinationBinIds.Contains(p.BinId.Value)));
+            if (!anyAtDestination)
                 throw new ArgumentException("Chưa thể tạo thanh toán cuối: đơn chưa có kiện hàng về đến kho đích.");
 
             // Lấy hóa đơn của đơn (qua báo giá của đơn)
@@ -320,18 +329,45 @@ namespace VCL_BLL.Services
             // Không cho trùng đợt cuối
             if (allOrderPayments.Any(p => IsInstallment(p, "FINAL_PAYMENT") && IsPaid(p)))
                 throw new ArgumentException("Đơn hàng đã hoàn tất thanh toán cuối.");
-            if (allOrderPayments.Any(p => IsInstallment(p, "FINAL_PAYMENT") &&
-                    string.Equals(p.PaymentStatus, "PENDING", StringComparison.OrdinalIgnoreCase)))
-                throw new ArgumentException("Đơn hàng đã có một đợt thanh toán cuối đang chờ thanh toán.");
+            // Phí lưu kho chạy theo ngày nên số tiền thay đổi theo thời điểm chốt. Còn đợt cuối
+            // nào đang chờ thì huỷ đi rồi phát hành lại, đúng như quy tắc "huỷ giao dịch cũ
+            // tính lại" — khách không bao giờ phải trả một con số đã lỗi thời.
+            var paymentRepoForReissue = _unitOfWork.Repository<Payment>();
+            var stalePending = allOrderPayments
+                .Where(p => IsInstallment(p, "FINAL_PAYMENT")
+                            && string.Equals(p.PaymentStatus, "PENDING", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var stale in stalePending)
+            {
+                stale.PaymentStatus = "CANCELLED";
+                paymentRepoForReissue.Update(stale);
+                _logger.LogInformation(
+                    "Huỷ đợt thanh toán cuối cũ {PaymentId} của đơn {OrderId} để phát hành lại với số tiền mới.",
+                    stale.Id, orderId);
+            }
 
             // Ghi nhận chi phí phát sinh (InvoiceItem) + cập nhật tổng bill
             var invoiceItemRepo = _unitOfWork.Repository<InvoiceItem>();
+            var existingItems = (await invoiceItemRepo.GetAllAsync())
+                .Where(i => i.InvoiceId == invoice.Id)
+                .ToList();
+
             decimal extrasTotal = 0m;
             foreach (var fee in request.ExtraFees ?? new List<ExtraFeeLineDto>())
             {
                 if (fee.Amount <= 0m) continue;
-                extrasTotal += fee.Amount;
                 var desc = string.IsNullOrWhiteSpace(fee.Note) ? fee.Name : $"{fee.Name} - {fee.Note}";
+
+                // Phát hành lại đợt cuối mà gửi kèm đúng khoản phí cũ thì không cộng lần hai.
+                if (existingItems.Any(i => string.Equals(i.FeeType, "EXTRA", StringComparison.OrdinalIgnoreCase)
+                                           && string.Equals(i.Description, desc, StringComparison.OrdinalIgnoreCase)
+                                           && i.Amount == fee.Amount))
+                {
+                    continue;
+                }
+
+                extrasTotal += fee.Amount;
                 await invoiceItemRepo.AddAsync(new InvoiceItem
                 {
                     Id = Guid.NewGuid(),
@@ -344,6 +380,10 @@ namespace VCL_BLL.Services
                     Description = desc
                 });
             }
+
+            // Phí lưu kho tại kho đích: hệ thống tự tính, không bắt nhân viên nhập tay.
+            var storageDelta = await ApplyStorageFeeAsync(orderId, invoice, existingItems, invoiceItemRepo);
+            extrasTotal += storageDelta;
 
             var originalTotal = invoice.TotalAmount ?? 0m;
             var newGrandTotal = originalTotal + extrasTotal;
@@ -476,6 +516,57 @@ namespace VCL_BLL.Services
         // ---------------------------------------------------------------------
         // Lịch sử thanh toán của đơn
         // ---------------------------------------------------------------------
+        /// <summary>
+        /// Đưa phí lưu kho vào hoá đơn dưới dạng một dòng duy nhất và trả về phần chênh so với
+        /// lần chốt trước. Dùng upsert thay vì cộng thêm dòng mới để phát hành lại đợt cuối
+        /// nhiều lần cũng không nhân đôi tiền của khách.
+        /// </summary>
+        private async Task<decimal> ApplyStorageFeeAsync(
+            Guid orderId,
+            Invoice invoice,
+            List<InvoiceItem> existingItems,
+            IGenericRepository<InvoiceItem> invoiceItemRepo)
+        {
+            var storage = await _storageFeeService.CalculateForOrderAsync(orderId);
+
+            var existing = existingItems.FirstOrDefault(i =>
+                string.Equals(i.FeeType, "STORAGE", StringComparison.OrdinalIgnoreCase));
+            var previousAmount = existing?.Amount ?? 0m;
+
+            if (storage.TotalAmount <= 0m)
+            {
+                return existing == null ? 0m : -previousAmount;
+            }
+
+            var chargeableDays = storage.Parcels.Sum(p => p.ChargeableDays);
+            var description =
+                $"Phí lưu kho tại kho đích — {chargeableDays} ngày tính phí "
+                + $"({storage.UnitPrice:#,##0}đ/kiện/ngày, miễn phí {storage.FreeDays} ngày đầu)";
+
+            if (existing == null)
+            {
+                await invoiceItemRepo.AddAsync(new InvoiceItem
+                {
+                    Id = Guid.NewGuid(),
+                    InvoiceId = invoice.Id,
+                    FeeType = "STORAGE",
+                    ReferenceType = "ORDER",
+                    ReferenceId = orderId,
+                    Amount = storage.TotalAmount,
+                    Currency = storage.Currency,
+                    Description = description
+                });
+            }
+            else
+            {
+                existing.Amount = storage.TotalAmount;
+                existing.Description = description;
+                invoiceItemRepo.Update(existing);
+            }
+
+            return storage.TotalAmount - previousAmount;
+        }
+
         public async Task<OrderPaymentsResponse> GetOrderPaymentsAsync(Guid orderId, Guid userId, string userRole)
         {
             var orderRepo = _unitOfWork.Repository<Order>();
@@ -798,6 +889,20 @@ namespace VCL_BLL.Services
         // ---------------------------------------------------------------------
 
         /// <summary>Lấy hóa đơn (mới nhất) của đơn + toàn bộ payment thuộc hóa đơn đó.</summary>
+        /// <summary>Các ô kệ thuộc kho đích — dùng để biết kiện đã thực sự về VN chưa.</summary>
+        private async Task<HashSet<Guid>> GetDestinationBinIdsAsync()
+        {
+            var destinationWarehouseIds = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                .Where(w => string.Equals(w.WarehouseType?.Trim(), "DESTINATION", StringComparison.OrdinalIgnoreCase))
+                .Select(w => w.Id)
+                .ToHashSet();
+
+            return (await _unitOfWork.Repository<Bin>().GetAllAsync())
+                .Where(b => b.WarehouseId.HasValue && destinationWarehouseIds.Contains(b.WarehouseId.Value))
+                .Select(b => b.Id)
+                .ToHashSet();
+        }
+
         private async Task<(Invoice invoice, List<Payment> payments)> GetOrderInvoiceAndPaymentsAsync(Guid orderId)
         {
             var quotations = (await _unitOfWork.Repository<Quotation>().GetAllAsync())

@@ -21,6 +21,12 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Phương thức vận chuyển (nếu có), VD: Sea, Air.</summary>
         public string? ShippingMethod { get; set; }
+
+        /// <summary>
+        /// Ảnh/scan tờ khai thông quan giao kèm lô cho đơn vị vận chuyển thứ ba.
+        /// Mỗi lần bàn giao chỉ có một tờ, dù lô gồm nhiều phiếu xuất kho hay chỉ một kiện lẻ.
+        /// </summary>
+        public List<string>? CustomsDocumentUrls { get; set; }
     }
 
     public class InternationalShipmentWroDto

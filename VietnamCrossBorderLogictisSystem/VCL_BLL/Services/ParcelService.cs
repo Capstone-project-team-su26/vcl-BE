@@ -858,7 +858,23 @@ namespace VCL_BLL.Services
 
                 var inventoryRepo = _unitOfWork.Repository<Inventory>();
                 var allInventories = await inventoryRepo.GetAllAsync();
-                var existingInventory = allInventories.FirstOrDefault(i => i.ParcelId == parcel.Id);
+
+                // Tồn kho gắn với ĐÚNG ô kệ đang xếp vào, không phải "kiện này từng có tồn kho
+                // ở đâu đó". Kiện đi kho nguồn → kho đích luôn để lại dòng cũ trỏ về ô kệ bên
+                // kho nguồn (dòng RELEASED của phần đã xuất, và cả dòng AVAILABLE của phần chưa
+                // xuất hết). Hỏi chung chung theo ParcelId thì gặp mấy dòng đó rồi kết luận
+                // "có rồi", nên put-away ở kho đích lặng lẽ bỏ qua bước tạo tồn kho: hàng về VN
+                // không vào sổ và cũng không lên được phiếu xuất kho.
+                var existingInventory = allInventories.FirstOrDefault(i =>
+                    i.ParcelId == parcel.Id
+                    && i.BinId == bin.Id
+                    && !string.Equals(i.Status, "RELEASED", StringComparison.OrdinalIgnoreCase));
+
+                // Giữ tham chiếu để ghi nhật ký ngay bên dưới. Trước đây đoạn dưới tra lại
+                // tồn kho bằng GetAllAsync, mà dòng vừa AddAsync chưa SaveChanges nên truy vấn
+                // không thấy — kết quả là nhật ký NHẬP kho chưa từng được ghi lần nào, sổ vận
+                // động chỉ có mỗi chiều xuất.
+                var inventoryForParcel = existingInventory;
 
                 if (existingInventory == null)
                 {
@@ -887,17 +903,19 @@ namespace VCL_BLL.Services
                     };
 
                     await inventoryRepo.AddAsync(newInventory);
+                    inventoryForParcel = newInventory;
                 }
 
-                // Chuyển trạng thái đơn sang WAREHOUSE_RECEIVED khi đã hoàn tất put-away và có inventory
-                order.Status = "WAREHOUSE_RECEIVED";
+                // Chuyển trạng thái đơn khi đã hoàn tất put-away và có inventory.
+                // Kho đích phải dùng mã riêng: nếu vẫn đặt WAREHOUSE_RECEIVED thì đơn đã đi
+                // hết chặng quốc tế bị kéo ngược về trạng thái của kho nguồn.
+                var isDestinationWarehouse = string.Equals(
+                    warehouse.WarehouseType?.Trim(), "DESTINATION", StringComparison.OrdinalIgnoreCase);
+                order.Status = isDestinationWarehouse ? "AT_DESTINATION_WAREHOUSE" : "WAREHOUSE_RECEIVED";
                 orderRepo.Update(order);
 
-                var inventoryForParcel = (await inventoryRepo.GetAllAsync())
-                    .FirstOrDefault(i => i.ParcelId == parcel.Id);
-
-                // Nhật ký nhập kho. Trước đây chỉ điều chuyển nội bộ mới được ghi nên
-                // sổ vận động không dựng lại được lịch sử hàng vào/ra.
+                // Nhật ký nhập kho. Mốc thời gian ở đây cũng là mốc bắt đầu tính phí lưu kho
+                // tại kho đích, nên thiếu dòng này là phí lưu kho mất căn cứ.
                 if (inventoryForParcel != null)
                 {
                     await _unitOfWork.Repository<InventoryMovement>().AddAsync(new InventoryMovement

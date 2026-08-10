@@ -92,11 +92,15 @@ namespace VCL_BLL.Services
                 .Distinct()
                 .ToList();
 
-            var customsDocs = wroRequests
-                .Where(w => !string.IsNullOrWhiteSpace(w.CustomsDocumentUrls))
-                .SelectMany(w => w.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries))
-                .Distinct()
-                .ToList();
+            // Tờ khai của chính lô là nguồn đúng — mỗi lần bàn giao một tờ. Lô cũ chưa có thì
+            // vẫn gom từ các phiếu xuất kho để dữ liệu trước đây không biến mất khỏi màn hình.
+            var customsDocs = !string.IsNullOrWhiteSpace(shipment.CustomsDocumentUrls)
+                ? shipment.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList()
+                : wroRequests
+                    .Where(w => !string.IsNullOrWhiteSpace(w.CustomsDocumentUrls))
+                    .SelectMany(w => w.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries))
+                    .Distinct()
+                    .ToList();
 
             return new InternationalShipmentResponseDto
             {
@@ -221,10 +225,16 @@ namespace VCL_BLL.Services
                     throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {wroId}");
                 }
 
-                // Chỉ nhận yêu cầu đã RELEASED
-                if (!string.Equals(wro.Status, "RELEASED", StringComparison.OrdinalIgnoreCase))
+                // Nhận yêu cầu đã xuất kho xong: RELEASED (do /complete đặt) hoặc HANDED_OVER
+                // (do /handover đặt sau đó). Trước đây chỉ chấp nhận RELEASED, mà bàn giao cho nhà xe
+                // lại ghi đè sang HANDED_OVER — đi đúng thứ tự nghiệp vụ là không bao giờ tạo được lô,
+                // hàng đứng vĩnh viễn ở kho nguồn.
+                var eligible = new[] { "RELEASED", "HANDED_OVER" };
+                if (!eligible.Contains(wro.Status?.Trim().ToUpperInvariant()))
                 {
-                    throw new ArgumentException($"Yêu cầu xuất kho {wro.WroCode ?? wroId.ToString()} chưa đủ điều kiện (phải ở trạng thái RELEASED).");
+                    throw new ArgumentException(
+                        $"Yêu cầu xuất kho {wro.WroCode ?? wroId.ToString()} chưa đủ điều kiện " +
+                        $"(phải đã xuất kho xong — RELEASED hoặc HANDED_OVER; hiện tại: {wro.Status}).");
                 }
 
                 // Không cho gán cùng một yêu cầu xuất kho vào nhiều lô vận chuyển
@@ -342,7 +352,11 @@ namespace VCL_BLL.Services
                 CarrierId = request.CarrierId,
                 ShippingMethod = request.ShippingMethod,
                 TotalPackages = totalPackages,
-                TotalWeight = totalWeight
+                TotalWeight = totalWeight,
+                // Tờ khai thông quan thuộc về lần bàn giao, không thuộc từng phiếu xuất kho.
+                CustomsDocumentUrls = request.CustomsDocumentUrls is { Count: > 0 }
+                    ? string.Join(';', request.CustomsDocumentUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+                    : null
             };
             await _unitOfWork.Repository<Shipment>().AddAsync(shipment);
 
@@ -543,9 +557,15 @@ namespace VCL_BLL.Services
             {
                 throw new ArgumentException("Lô vận chuyển này đã được xác nhận đến kho đích trước đó.");
             }
-            if (currentStatus != "IN_TRANSIT")
+            // Khớp đúng bảng AllowedTransitions ở trên: ARRIVED_DESTINATION vào được từ IN_TRANSIT
+            // hoặc CUSTOMS_IMPORT_PENDING. Trước đây chỉ nhận IN_TRANSIT, nên lô nào đi đúng vòng
+            // đời có chặng thông quan nhập là không xác nhận tới kho được — kẹt vĩnh viễn.
+            var arrivableFrom = new[] { "IN_TRANSIT", "CUSTOMS_IMPORT_PENDING" };
+            if (!arrivableFrom.Contains(currentStatus))
             {
-                throw new ArgumentException($"Lô chưa đủ điều kiện xác nhận đến kho đích (phải đang IN_TRANSIT, hiện tại: {shipment.Status}).");
+                throw new ArgumentException(
+                    $"Lô chưa đủ điều kiện xác nhận đến kho đích (phải đang IN_TRANSIT hoặc " +
+                    $"CUSTOMS_IMPORT_PENDING, hiện tại: {shipment.Status}).");
             }
 
             var now = DateTime.UtcNow;

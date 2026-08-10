@@ -92,6 +92,35 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Nhân viên kho bấm đồng bộ trạng thái vận đơn với GoShip.
+        /// </summary>
+        /// <remarks>
+        /// Sandbox GoShip không bắn webhook nên đây là đường duy nhất để biết hàng đã tới đâu.
+        /// Vận đơn phải được tạo qua <c>POST /api/goship/orders</c> kèm <c>orderId</c> thì mới
+        /// có bản ghi trong hệ thống để đồng bộ.
+        /// </remarks>
+        [HttpPost("shipments/{trackingCode}/sync")]
+        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,Sale,SALE")]
+        public async Task<IActionResult> SyncShipmentStatus(string trackingCode, [FromQuery] string? token = null)
+        {
+            try
+            {
+                var effectiveToken = !string.IsNullOrEmpty(token) ? token : _configuration["GoshipSettings:Token"];
+                if (string.IsNullOrEmpty(effectiveToken))
+                {
+                    return BadRequest(new { message = "Chưa cấu hình Goship Access Token trong hệ thống." });
+                }
+
+                var result = await _goshipService.SyncShipmentStatusAsync(trackingCode, effectiveToken);
+                return Ok(new { message = "Đồng bộ trạng thái vận đơn GoShip thành công.", data = result });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Webhook tiếp nhận tự động cập nhật trạng thái đơn từ GoShip Express.
         /// </summary>
         [HttpPost("webhook")]

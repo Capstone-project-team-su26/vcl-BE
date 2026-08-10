@@ -922,6 +922,14 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("receipt_generated_by_id");
             entity.Property(e => e.ReceiptPublicKey)
                 .HasColumnName("receipt_public_key");
+            entity.Property(e => e.DeliveredAt)
+                .HasColumnName("delivered_at");
+            entity.Property(e => e.CustomerConfirmedAt)
+                .HasColumnName("customer_confirmed_at");
+            entity.Property(e => e.CompletedAt)
+                .HasColumnName("completed_at");
+            entity.Property(e => e.CompletedById)
+                .HasColumnName("completed_by_id");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
@@ -1463,6 +1471,8 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.TotalWeight)
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("total_weight");
+            entity.Property(e => e.CustomsDocumentUrls)
+                .HasColumnName("customs_document_urls");
 
             entity.HasOne(d => d.Carrier).WithMany(p => p.Shipments)
                 .HasForeignKey(d => d.CarrierId)
