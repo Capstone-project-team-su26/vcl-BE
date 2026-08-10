@@ -334,6 +334,10 @@ namespace VCL_BLL.Services
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
             var allOrderItems = await orderItemRepo.GetAllAsync();
 
+            // Kệ và khu để dựng đủ đường dẫn vị trí "khu / kệ / ô" cho nhân viên đi lấy hàng.
+            var allShelves = await _unitOfWork.Repository<Shelf>().GetAllAsync();
+            var allZones = await _unitOfWork.Repository<WarehouseZone>().GetAllAsync();
+
             var itemsDetail = new List<WroDetailItemDto>();
             string warehouseName = "";
             int totalQuantity = 0;
@@ -344,6 +348,8 @@ namespace VCL_BLL.Services
                 string productName = "";
                 string packageCode = "";
                 string binCode = "";
+                string itemShelfCode = "";
+                string itemZoneName = "";
 
                 if (inventory != null)
                 {
@@ -364,6 +370,20 @@ namespace VCL_BLL.Services
                     {
                         binCode = bin.BinCode ?? string.Empty;
 
+                        // Kệ và khu chứa ô này. DTO có sẵn hai trường nhưng trước đây không nơi nào
+                        // gán, nên màn hình soạn hàng luôn thấy rỗng dù ô kệ khai báo đầy đủ.
+                        if (bin.ShelfId.HasValue)
+                        {
+                            var shelf = allShelves.FirstOrDefault(s => s.Id == bin.ShelfId.Value);
+                            itemShelfCode = shelf?.ShelfCode ?? string.Empty;
+
+                            if (shelf?.ZoneId != null)
+                            {
+                                var zone = allZones.FirstOrDefault(z => z.Id == shelf.ZoneId.Value);
+                                itemZoneName = zone?.ZoneName ?? string.Empty;
+                            }
+                        }
+
                         if (string.IsNullOrEmpty(warehouseName))
                         {
                             var whId = bin.WarehouseId;
@@ -383,7 +403,9 @@ namespace VCL_BLL.Services
                     Quantity = item.Quantity,
                     PackageCode = packageCode,
                     ProductName = productName,
-                    BinCode = binCode
+                    BinCode = binCode,
+                    ShelfCode = itemShelfCode,
+                    ZoneName = itemZoneName
                 });
 
                 totalQuantity += item.Quantity;
@@ -462,7 +484,14 @@ namespace VCL_BLL.Services
                 DeliveryAddress = deliveryAddress,
                 ReceiverAddress = deliveryAddress,
                 Status = wroRequest.Status ?? string.Empty,
-                ShelfCode = wroRequest.ShelfCode,
+                // Người tạo phiếu không bắt buộc nhập kệ. Bỏ trống thì suy ra từ ô kệ của
+                // hàng trong phiếu, thay vì trả null cho màn hình.
+                ShelfCode = !string.IsNullOrWhiteSpace(wroRequest.ShelfCode)
+                    ? wroRequest.ShelfCode
+                    : string.Join(", ", itemsDetail
+                        .Select(i => i.ShelfCode)
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Distinct()),
                 CarrierId = wroRequest.CarrierId,
                 CarrierName = carrierName,
                 ShippingRouteId = wroRequest.ShippingRouteId,
