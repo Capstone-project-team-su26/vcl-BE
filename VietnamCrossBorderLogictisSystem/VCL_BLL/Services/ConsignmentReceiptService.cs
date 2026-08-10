@@ -483,6 +483,16 @@ namespace VCL_BLL.Services
             return false;
         }
 
+        /// <summary>
+        /// Tách danh sách ảnh đã lưu gộp trong cột <c>reference_url</c>.
+        /// <para>
+        /// Hệ thống lưu bằng dấu <c>|</c> (xem <see cref="ConsignmentItemRequest.SplitReferenceUrls"/>),
+        /// nhưng bản tách riêng ở đây trước đây chỉ cắt theo <c>, ; \n</c> nên hai URL nối bằng <c>|</c>
+        /// bị coi là MỘT địa chỉ, tải về hỏng rồi bị bỏ qua trong khối catch — phiếu mất sạch ảnh mà
+        /// không báo lỗi. Đơn một ảnh vẫn chạy nên lỗi này ẩn rất lâu.
+        /// </para>
+        /// Nay tách theo cùng quy ước với chỗ lưu, cộng thêm <c>, ; \n</c> để đỡ dữ liệu cũ nếu có.
+        /// </summary>
         private static IEnumerable<string> SplitImageUrls(string? raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
@@ -491,7 +501,7 @@ namespace VCL_BLL.Services
             }
 
             return raw
-                .Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Split(new[] { '|', ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(u => u.Trim())
                 .Where(u => u.StartsWith("http", StringComparison.OrdinalIgnoreCase));
         }
