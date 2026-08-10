@@ -37,6 +37,16 @@ public partial class Shipment
 
     public decimal? TotalWeight { get; set; }
 
+    /// <summary>
+    /// Tờ khai thông quan giao kèm lô cho đơn vị vận chuyển thứ ba, phân tách bằng dấu chấm phẩy.
+    /// <para>
+    /// Mỗi lần bàn giao chỉ có MỘT tờ, dù lô gồm nhiều phiếu xuất kho hay chỉ một kiện lẻ —
+    /// nên chứng từ thuộc về lô, không thuộc về từng phiếu. Trước đây hệ thống gom từ
+    /// <c>WroRequest.CustomsDocumentUrls</c> nên lô năm phiếu thì chờ năm bộ chứng từ.
+    /// </para>
+    /// </summary>
+    public string CustomsDocumentUrls { get; set; }
+
     public virtual ICollection<ShipmentWroRequest> ShipmentWroRequests { get; set; } = new List<ShipmentWroRequest>();
 
     public virtual ICollection<ShipmentParcel> ShipmentParcels { get; set; } = new List<ShipmentParcel>();

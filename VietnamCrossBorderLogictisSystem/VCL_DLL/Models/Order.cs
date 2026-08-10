@@ -72,6 +72,21 @@ public partial class Order
     /// </summary>
     public Guid? ReceiptPublicKey { get; set; }
 
+    /// <summary>
+    /// Thời điểm hãng giao nội địa báo đã giao xong toàn bộ kiện. Mốc này bắt đầu đếm thời hạn
+    /// chờ khách xác nhận; hết hạn thì OM được quyền xác nhận thay.
+    /// </summary>
+    public DateTime? DeliveredAt { get; set; }
+
+    /// <summary>Thời điểm khách bấm xác nhận đã nhận hàng.</summary>
+    public DateTime? CustomerConfirmedAt { get; set; }
+
+    /// <summary>Thời điểm OM chốt đơn hoàn thành.</summary>
+    public DateTime? CompletedAt { get; set; }
+
+    /// <summary>OM đã chốt đơn hoàn thành. Dùng cho phiếu và đối soát.</summary>
+    public Guid? CompletedById { get; set; }
+
     public virtual Company Company { get; set; }
 
     public virtual Customer Customer { get; set; }

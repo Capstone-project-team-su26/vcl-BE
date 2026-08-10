@@ -1133,6 +1133,14 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("company_id");
 
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid?>("CompletedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("completed_by_id");
+
                     b.Property<string>("ConsignmentCode")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
@@ -1153,9 +1161,17 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("created_by_id");
 
+                    b.Property<DateTime?>("CustomerConfirmedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("customer_confirmed_at");
+
                     b.Property<Guid?>("CustomerId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_id");
+
+                    b.Property<DateTime?>("DeliveredAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("delivered_at");
 
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)")
@@ -2834,6 +2850,10 @@ namespace VCL_DLL.Migrations
                     b.Property<Guid?>("ConsignmentId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("consignment_id");
+
+                    b.Property<string>("CustomsDocumentUrls")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("customs_document_urls");
 
                     b.Property<DateTime?>("DeliveredAt")
                         .HasColumnType("datetime2")

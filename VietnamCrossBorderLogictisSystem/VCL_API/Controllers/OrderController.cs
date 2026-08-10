@@ -181,6 +181,97 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Khách xác nhận đã nhận đủ hàng (bước 10 của luồng ký gửi).
+        /// </summary>
+        /// <remarks>
+        /// Chỉ gọi được khi hãng giao nội địa đã báo giao xong (đơn ở <c>DELIVERED</c>).
+        /// Xác nhận xong đơn sang <c>CUSTOMER_CONFIRMED</c>, chờ OM chốt hoàn thành.
+        /// </remarks>
+        [HttpPut("consignments/{orderId}/customer-confirm")]
+        [Authorize(Roles = "Customer")]
+        [ProducesResponseType(typeof(OrderClosingResponseDto), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> ConfirmReceivedByCustomer(Guid orderId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            try
+            {
+                var result = await _orderService.ConfirmReceivedByCustomerAsync(orderId, userId);
+                return Ok(new { message = "Đã ghi nhận xác nhận nhận hàng của khách.", data = result });
+            }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// OM chốt đơn hoàn thành (bước 11 — bước cuối của luồng ký gửi).
+        /// </summary>
+        /// <remarks>
+        /// Cần khách xác nhận trước. Khách không bấm gì thì sau 1 ngày kể từ lúc giao xong,
+        /// OM được chốt thay.
+        /// </remarks>
+        [HttpPut("consignments/{orderId}/complete")]
+        [Authorize(Roles = "Admin,OperationsManager,Operations,Administrator,Manager")]
+        [ProducesResponseType(typeof(OrderClosingResponseDto), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> CompleteConsignment(Guid orderId, [FromBody] CompleteConsignmentRequestDto? request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _orderService.CompleteConsignmentAsync(orderId, userId, userRole, request);
+                return Ok(new { message = "Đơn hàng đã hoàn thành.", data = result });
+            }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Sale từ chối đơn vì khách quá hạn không thanh toán đợt cuối. Tiền cọc không hoàn lại.
+        /// </summary>
+        /// <remarks>
+        /// Giao dịch cọc giữ nguyên trạng thái đã thanh toán vì tiền đã thực sự về tài khoản;
+        /// đợt cuối đang treo (nếu có) sẽ bị huỷ để khách không quét mã trả sau khi đơn đã đóng.
+        /// </remarks>
+        [HttpPut("consignments/{orderId}/reject-unpaid")]
+        [Authorize(Roles = "Admin,Administrator,Sale,Sales,Staff,OperationsManager,Operations")]
+        [ProducesResponseType(typeof(OrderClosingResponseDto), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> RejectUnpaidConsignment(Guid orderId, [FromBody] RejectUnpaidConsignmentRequestDto? request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _orderService.RejectUnpaidConsignmentAsync(orderId, userId, userRole, request);
+                return Ok(new { message = "Đã từ chối đơn do quá hạn thanh toán.", data = result });
+            }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
         /// Staff cập nhật trạng thái yêu cầu ký gửi
         /// </summary>
         /// <param name="orderId">ID của yêu cầu ký gửi</param>

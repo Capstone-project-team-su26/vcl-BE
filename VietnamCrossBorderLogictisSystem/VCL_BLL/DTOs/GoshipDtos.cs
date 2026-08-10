@@ -89,12 +89,33 @@ namespace VCL_BLL.DTOs
     {
         [JsonPropertyName("shipment")]
         public GoshipOrderShipment Shipment { get; set; } = new GoshipOrderShipment();
+
+        /// <summary>
+        /// Đơn ký gửi/mua hộ trong hệ thống. Có id này thì BE tự điền tên, số điện thoại và
+        /// địa chỉ người nhận từ đơn, đồng thời lưu vận đơn nội địa để về sau đồng bộ được
+        /// trạng thái. Bỏ trống thì chỉ gọi sang GoShip rồi thôi, không lưu gì.
+        /// </summary>
+        [JsonPropertyName("orderId")]
+        public Guid? OrderId { get; set; }
+
+        /// <summary>
+        /// Các kiện đem giao. Bỏ trống thì lấy toàn bộ kiện của đơn.
+        /// </summary>
+        [JsonPropertyName("parcelIds")]
+        public List<Guid>? ParcelIds { get; set; }
     }
 
     public class GoshipOrderShipment
     {
         [JsonPropertyName("rate")]
         public string Rate { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Mã đơn của mình gửi sang GoShip. GoShip cho tra ngược vận đơn bằng chính giá trị này
+        /// (<c>GET /shipments/search?code=</c>) nên đây là sợi dây nối hai hệ thống.
+        /// </summary>
+        [JsonPropertyName("order_id")]
+        public string? OrderId { get; set; }
 
         [JsonPropertyName("address_from")]
         public GoshipAddressFull AddressFrom { get; set; } = new GoshipAddressFull();
@@ -164,6 +185,30 @@ namespace VCL_BLL.DTOs
 
         [JsonPropertyName("fee")]
         public decimal Fee { get; set; }
+    }
+
+    /// <summary>
+    /// Kết quả một lần kho bấm đồng bộ trạng thái với GoShip.
+    /// </summary>
+    public class GoshipSyncResultDto
+    {
+        public string TrackingCode { get; set; } = string.Empty;
+
+        /// <summary>Mã trạng thái GoShip trả về (900–919, 1000).</summary>
+        public int StatusCode { get; set; }
+
+        /// <summary>Nguyên văn mô tả trạng thái của GoShip.</summary>
+        public string StatusText { get; set; } = string.Empty;
+
+        /// <summary>Trạng thái kiện hàng trong hệ thống sau khi đồng bộ.</summary>
+        public string PackageStatus { get; set; } = string.Empty;
+
+        /// <summary>Trạng thái đơn hàng sau khi đồng bộ, null nếu đơn không đổi.</summary>
+        public string? OrderStatus { get; set; }
+
+        public int UpdatedParcels { get; set; }
+
+        public DateTime SyncedAt { get; set; }
     }
 
     public class GoshipWebhookPayload

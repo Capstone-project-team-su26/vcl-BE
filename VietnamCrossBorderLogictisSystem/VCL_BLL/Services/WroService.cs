@@ -813,7 +813,10 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Yêu cầu xuất kho này đã hoàn tất xuất kho trước đó.");
             }
 
-            var validStatuses = new[] { "PICKED", "PACKING" };
+            // PACKING do xác nhận soạn hàng đặt, PACKED do bước cập nhật đóng gói đặt.
+            // Thiếu PACKED ở đây nên đơn nào đã khai đóng gói là không hoàn tất xuất kho được:
+            // tồn kho không bị trừ, kiện không rời ô kệ, hàng đã đi rồi mà sổ sách vẫn còn.
+            var validStatuses = new[] { "PICKED", "PACKING", "PACKED" };
             if (!validStatuses.Any(s => string.Equals(s, wroRequest.Status, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new ArgumentException($"Yêu cầu xuất kho chưa đủ điều kiện xuất kho. Trạng thái hiện tại: {wroRequest.Status}");
@@ -1197,9 +1200,20 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
             }
 
+            // Đơn vị vận chuyển phải có thật. Trước đây tra không thấy vẫn gán id vào WRO rồi lưu,
+            // nên DB chặn bằng khoá ngoại FK_WRO_CARRIER và API trả 500 không rõ nguyên nhân.
+            // Hỏng cả luồng: bàn giao là bước đưa WRO sang RELEASED, không qua được thì không tạo
+            // được lô quốc tế, hàng đứng lại ở kho nguồn.
+            if (request.CarrierId == Guid.Empty)
+            {
+                throw new ArgumentException("Vui lòng chọn đơn vị vận chuyển trước khi bàn giao.");
+            }
+
             var carrierRepo = _unitOfWork.Repository<Carrier>();
-            var carrier = await carrierRepo.GetByIdAsync(request.CarrierId);
-            string carrierName = carrier?.CarrierName ?? "Đơn vị vận chuyển";
+            var carrier = await carrierRepo.GetByIdAsync(request.CarrierId)
+                ?? throw new NotFoundException($"Không tìm thấy đơn vị vận chuyển với ID {request.CarrierId}.");
+
+            string carrierName = carrier.CarrierName ?? "Đơn vị vận chuyển";
 
             var now = DateTime.UtcNow;
             wroRequest.CarrierId = request.CarrierId;

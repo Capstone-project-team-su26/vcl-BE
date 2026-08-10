@@ -14,10 +14,37 @@ namespace VCL_API.Controllers
     public class OrderPaymentController : ControllerBase
     {
         private readonly IConsignmentPaymentService _consignmentPaymentService;
+        private readonly IStorageFeeService _storageFeeService;
 
-        public OrderPaymentController(IConsignmentPaymentService consignmentPaymentService)
+        public OrderPaymentController(
+            IConsignmentPaymentService consignmentPaymentService,
+            IStorageFeeService storageFeeService)
         {
             _consignmentPaymentService = consignmentPaymentService;
+            _storageFeeService = storageFeeService;
+        }
+
+        /// <summary>
+        /// Xem trước phí lưu kho tại kho đích của một đơn, kèm chi tiết từng kiện.
+        /// </summary>
+        /// <remarks>
+        /// Miễn phí 7 ngày đầu kể từ lúc kiện được xếp vào ô kệ ở kho đích; sau đó tính theo
+        /// kiện/ngày với đơn giá lấy từ SERVICE_PRICINGS (<c>ServiceType = STORAGE</c>).
+        /// Ngừng đếm khi kiện được lấy ra khỏi ô kệ để đóng gói giao đi.
+        /// Endpoint này chỉ đọc — số tiền chỉ thực sự vào hoá đơn khi tạo thanh toán cuối.
+        /// </remarks>
+        [HttpGet("api/orders/{orderId}/storage-fee")]
+        [ProducesResponseType(typeof(StorageFeeDto), 200)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetStorageFee(Guid orderId)
+        {
+            try
+            {
+                var result = await _storageFeeService.CalculateForOrderAsync(orderId);
+                return Ok(new { message = "Lấy phí lưu kho thành công.", data = result });
+            }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         }
 
         /// <summary>

@@ -19,6 +19,19 @@ namespace VCL_BLL.Interface
         List<ConsignmentStatusDto> GetConsignmentStatuses();
         Task<PublicTrackingResponse> TrackConsignmentByCodeAsync(string code);
 
+        /// <summary>Khách xác nhận đã nhận đủ hàng. Chỉ gọi được khi đơn ở DELIVERED.</summary>
+        Task<OrderClosingResponseDto> ConfirmReceivedByCustomerAsync(Guid orderId, Guid userId);
+
+        /// <summary>
+        /// OM chốt đơn hoàn thành. Cần khách xác nhận trước, hoặc đã quá thời hạn chờ khách.
+        /// </summary>
+        Task<OrderClosingResponseDto> CompleteConsignmentAsync(
+            Guid orderId, Guid userId, string userRole, CompleteConsignmentRequestDto? request);
+
+        /// <summary>Sale từ chối đơn vì khách quá hạn không trả đợt cuối; tiền cọc không hoàn.</summary>
+        Task<OrderClosingResponseDto> RejectUnpaidConsignmentAsync(
+            Guid orderId, Guid userId, string userRole, RejectUnpaidConsignmentRequestDto? request);
+
         /// <summary>
         /// Quy đổi các cờ dịch vụ phụ (kiểm hàng / đóng gói / thùng gỗ / bảo hiểm) sang ID các PricingRule
         /// đang active tương ứng. Dùng chung cho ký gửi và mua hộ để một cờ luôn khớp cùng một quy định giá.

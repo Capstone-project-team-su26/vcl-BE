@@ -88,7 +88,11 @@ namespace VCL_BLL.Services
 
             var canonicalRoute = NormalizeRoute(requestedRoute);
 
-            var servicePricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
+            // Chỉ các dòng giá là phương án vận chuyển mới được khách chọn; phí lưu kho cũng
+            // nằm trong bảng này nhưng không phải một cách gửi hàng.
+            var servicePricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync())
+                .Where(p => !p.IsDeleted && ServicePricingHelper.IsShippingOption(p.ServiceType))
+                .ToList();
             var matchedPricing = servicePricings.FirstOrDefault(p =>
                 p.ServiceType != null && p.ServiceType.Equals(requestedShippingOption, StringComparison.OrdinalIgnoreCase)
                 && (

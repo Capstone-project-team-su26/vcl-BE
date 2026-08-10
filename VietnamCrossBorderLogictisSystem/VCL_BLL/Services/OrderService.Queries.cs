@@ -386,7 +386,18 @@ namespace VCL_BLL.Services
                 new() { Code = "PENDING_REVIEW", Label = "Chờ duyệt" },
                 new() { Code = "QUOTATION_SENT", Label = "Đã gửi báo giá" },
                 new() { Code = "APPROVED", Label = "Đã duyệt" },
+                new() { Code = "QUOTATION_CONFIRMED", Label = "Khách đã chốt báo giá" },
+                new() { Code = "DEPOSIT_PAID", Label = "Đã đặt cọc" },
+                new() { Code = "CHECKED_IN", Label = "Đã nhập kho" },
+                new() { Code = "WAREHOUSE_RECEIVED", Label = "Đã lưu kho" },
+                new() { Code = "IN_TRANSIT", Label = "Đang vận chuyển" },
+                new() { Code = "AT_DESTINATION_WAREHOUSE", Label = "Đã lưu kho tại kho đích" },
+                new() { Code = "WAITING_FINAL_PAYMENT", Label = "Chờ thanh toán cuối" },
+                new() { Code = "DELIVERED", Label = "Đã giao tới khách" },
+                new() { Code = "CUSTOMER_CONFIRMED", Label = "Khách đã xác nhận nhận hàng" },
+                new() { Code = "CANCELLED_FORFEITED", Label = "Huỷ do quá hạn thanh toán, mất cọc" },
                 new() { Code = "REJECTED", Label = "Đã từ chối" },
+                new() { Code = "QUOTATION_REJECTED", Label = "Báo giá bị từ chối" },
                 new() { Code = "CANCELLED", Label = "Đã hủy" },
                 new() { Code = "COMPLETED", Label = "Hoàn tất" }
             };
@@ -455,6 +466,7 @@ namespace VCL_BLL.Services
                 .ToList();
 
             var routes = pricings
+                .Where(p => ServicePricingHelper.IsShippingOption(p.ServiceType))
                 .Where(p => !string.IsNullOrWhiteSpace(p.OriginCountry) && !string.IsNullOrWhiteSpace(p.DestinationCountry))
                 .Select(p => MapRouteToDisplayName($"{p.OriginCountry}-{p.DestinationCountry}"))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -472,7 +484,7 @@ namespace VCL_BLL.Services
         public async Task<List<string>> GetShippingOptionsAsync(string? route)
         {
             var pricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
-            var query = pricings.Where(p => !string.IsNullOrWhiteSpace(p.ServiceType));
+            var query = pricings.Where(p => ServicePricingHelper.IsShippingOption(p.ServiceType));
 
             if (!string.IsNullOrWhiteSpace(route))
             {
