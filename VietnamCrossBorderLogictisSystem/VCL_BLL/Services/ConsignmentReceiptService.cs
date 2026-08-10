@@ -106,6 +106,14 @@ namespace VCL_BLL.Services
             ["MOMO"] = "MoMo"
         };
 
+        /// <summary>Đợt thu tiền của đơn mua hộ — khách trả cọc trước, tất toán sau.</summary>
+        private static readonly Dictionary<string, string> PaymentInstallmentLabels = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DEPOSIT"] = "Đặt cọc (đợt 1)",
+            ["FINAL_PAYMENT"] = "Tất toán (đợt 2)",
+            ["FULL"] = "Thanh toán toàn bộ"
+        };
+
         private static readonly Dictionary<string, string> PaymentStatusLabels = new(StringComparer.OrdinalIgnoreCase)
         {
             ["PAID"] = "Đã thanh toán",
@@ -212,6 +220,8 @@ namespace VCL_BLL.Services
             PurchaseRequest? purchaseRequest = null;
             User? purchasedBy = null;
             User? approvedBy = null;
+            PurchaseQuotation? purchaseQuotationForReceipt = null;
+            PurchasePayment? latestPurchasePayment = null;
 
             if (isPurchase && order.PurchaseRequestId.HasValue)
             {
@@ -226,12 +236,12 @@ namespace VCL_BLL.Services
 
                 // Người mua hàng = Sale. Ưu tiên người lập báo giá; đơn chưa qua báo giá thì lấy
                 // người đã bấm "xác nhận mua hàng" — cả hai đều là Sale thực hiện mua giúp khách.
-                var purchaseQuotation = (await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync())
+                purchaseQuotationForReceipt = (await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync())
                     .Where(q => q.PurchaseRequestId == order.PurchaseRequestId.Value)
                     .OrderByDescending(q => q.CreatedAt)
                     .FirstOrDefault();
 
-                var purchasedById = purchaseQuotation?.CreatedBy
+                var purchasedById = purchaseQuotationForReceipt?.CreatedBy
                     ?? history
                         .Where(h => string.Equals(h.ToStatus, "PURCHASED", StringComparison.OrdinalIgnoreCase))
                         .OrderBy(h => h.CreatedAt)
@@ -259,11 +269,16 @@ namespace VCL_BLL.Services
                     .FirstOrDefault(w => w.Id == warehouseId.Value);
             }
 
-            var fees = quotation == null
-                ? new List<QuotationFee>()
-                : (await _unitOfWork.Repository<QuotationFee>().GetAllAsync())
-                    .Where(f => f.QuotationId == quotation.Id)
-                    .ToList();
+            // Phụ phí của mua hộ gắn vào PURCHASE_QUOTATIONS, của ký gửi gắn vào QUOTATIONS —
+            // lọc nhầm cột thì phiếu mua hộ mất sạch phụ phí.
+            var allFees = await _unitOfWork.Repository<QuotationFee>().GetAllAsync();
+            var fees = isPurchase
+                ? (purchaseQuotationForReceipt == null
+                    ? new List<QuotationFee>()
+                    : allFees.Where(f => f.PurchaseQuotationId == purchaseQuotationForReceipt.Id).ToList())
+                : (quotation == null
+                    ? new List<QuotationFee>()
+                    : allFees.Where(f => f.QuotationId == quotation.Id).ToList());
 
             var domesticFee = fees
                 .Where(f => string.Equals(f.FeeType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase))
@@ -312,6 +327,12 @@ namespace VCL_BLL.Services
 
                 paidAmount = settled.Sum(p => p.Amount);
                 purchasePaidAt = settled.Max(p => p.PaidAt ?? p.CreatedAt);
+
+                // Giao dịch gần nhất để in mã GD / phương thức / trạng thái. Ưu tiên giao dịch đã
+                // thành công; chưa có thì lấy giao dịch mới nhất để khách còn thấy đang chờ trả.
+                latestPurchasePayment = (settled.Any() ? settled : purchasePayments)
+                    .OrderByDescending(p => p.PaidAt ?? p.CreatedAt)
+                    .FirstOrDefault();
             }
 
             User? preparedBy = null;
@@ -378,6 +399,8 @@ namespace VCL_BLL.Services
                 IsPurchase = isPurchase,
                 PurchaseCode = purchaseRequest?.PurchaseCode,
                 PurchasePaidAt = purchasePaidAt,
+                PurchaseQuotation = purchaseQuotationForReceipt,
+                PurchasePayment = latestPurchasePayment,
                 PurchasedBy = purchasedBy,
                 ApprovedBy = approvedBy,
                 Payment = payment,
@@ -460,6 +483,16 @@ namespace VCL_BLL.Services
             return false;
         }
 
+        /// <summary>
+        /// Tách danh sách ảnh đã lưu gộp trong cột <c>reference_url</c>.
+        /// <para>
+        /// Hệ thống lưu bằng dấu <c>|</c> (xem <see cref="ConsignmentItemRequest.SplitReferenceUrls"/>),
+        /// nhưng bản tách riêng ở đây trước đây chỉ cắt theo <c>, ; \n</c> nên hai URL nối bằng <c>|</c>
+        /// bị coi là MỘT địa chỉ, tải về hỏng rồi bị bỏ qua trong khối catch — phiếu mất sạch ảnh mà
+        /// không báo lỗi. Đơn một ảnh vẫn chạy nên lỗi này ẩn rất lâu.
+        /// </para>
+        /// Nay tách theo cùng quy ước với chỗ lưu, cộng thêm <c>, ; \n</c> để đỡ dữ liệu cũ nếu có.
+        /// </summary>
         private static IEnumerable<string> SplitImageUrls(string? raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
@@ -468,7 +501,7 @@ namespace VCL_BLL.Services
             }
 
             return raw
-                .Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Split(new[] { '|', ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(u => u.Trim())
                 .Where(u => u.StartsWith("http", StringComparison.OrdinalIgnoreCase));
         }
@@ -581,10 +614,11 @@ namespace VCL_BLL.Services
             var totalWeight = order.TotalWeight ?? data.Items.Sum(i => i.Weight ?? 0m);
             var totalVolumetric = data.Items.Sum(GetVolumetricWeight);
 
-            var freight = quotation?.EstimatedFreightCharge ?? 0m;
-            var serviceFee = Math.Max(0m, (quotation?.ServiceFee ?? 0m) - data.DomesticFee);
-            var tax = quotation?.TaxAndDuty ?? 0m;
-            var total = freight + (quotation?.ServiceFee ?? 0m) + tax;
+            // Nguồn số tiền tự chọn theo loại đơn — xem các thuộc tính trong ReceiptData.
+            var freight = data.FreightCharge;
+            var serviceFee = data.ServiceCharge;
+            var tax = data.TaxCharge;
+            var total = data.TotalAmount;
 
             var paidAmount = data.PaidAmount;
             var remaining = Math.Max(0m, total - paidAmount);
@@ -908,10 +942,19 @@ namespace VCL_BLL.Services
                     row.RelativeItem().Border(0.75f).BorderColor(Line).Padding(7).Column(x =>
                     {
                         x.Item().PaddingBottom(4).Text("Chi tiết báo giá").Bold().FontSize(10);
-                        Field(x, "Trạng thái báo giá", MapLabel(QuotationStatusLabels, data.Quotation?.Status));
+                        Field(x, "Trạng thái báo giá", MapLabel(QuotationStatusLabels, data.QuotationStatus));
+
+                        // Mua hộ: tiền hàng là khoản lớn nhất, thiếu nó thì tổng báo giá không giải thích được.
+                        if (data.IsPurchase)
+                            Field(x, "Tiền hàng", FormatCurrency(data.ProductsSubtotal));
+
                         Field(x, "Phí vận chuyển quốc tế", FormatCurrency(freight));
-                        Field(x, "Phí vận chuyển nội địa", FormatCurrency(data.DomesticFee));
-                        Field(x, "Phí dịch vụ", FormatCurrency(serviceFee));
+
+                        // Ký gửi mới tách phí nội địa; mua hộ gộp trong phí vận chuyển của báo giá.
+                        if (!data.IsPurchase)
+                            Field(x, "Phí vận chuyển nội địa", FormatCurrency(data.DomesticFee));
+
+                        Field(x, data.IsPurchase ? "Phí dịch vụ mua hộ" : "Phí dịch vụ", FormatCurrency(serviceFee));
                         // Phụ phí đã được cộng vào ServiceFee, nên in thụt vào dưới dạng diễn giải
                         // thay vì dòng phí riêng — tránh người đọc cộng thêm lần nữa.
                         foreach (var surcharge in data.Surcharges)
@@ -937,10 +980,15 @@ namespace VCL_BLL.Services
                     row.RelativeItem().Border(0.75f).BorderColor(Line).Padding(7).Column(x =>
                     {
                         x.Item().PaddingBottom(4).Text("Giao dịch thanh toán").Bold().FontSize(10);
-                        Field(x, "Mã giao dịch", data.Payment?.TransactionCode);
-                        Field(x, "Phương thức", MapLabel(PaymentMethodLabels, data.Payment?.PaymentMethod));
-                        Field(x, "Trạng thái", MapLabel(PaymentStatusLabels, data.Payment?.PaymentStatus));
-                        Field(x, "Thời gian", FormatDateTime(data.Payment?.PaidAt ?? data.Payment?.CreatedAt));
+                        Field(x, "Mã giao dịch", data.PaymentTransactionCode);
+                        Field(x, "Phương thức", MapLabel(PaymentMethodLabels, data.PaymentMethod));
+                        Field(x, "Trạng thái", MapLabel(PaymentStatusLabels, data.PaymentStatus));
+
+                        // Mua hộ thu hai đợt, không nói rõ đợt nào thì khách tưởng bị thu thiếu.
+                        if (data.IsPurchase)
+                            Field(x, "Đợt thanh toán", MapLabel(PaymentInstallmentLabels, data.PaymentInstallment));
+
+                        Field(x, "Thời gian", FormatDateTime(data.PaymentAt));
                         Field(x, "Đã thanh toán", FormatCurrency(paidAmount));
                         x.Item().PaddingTop(4).BorderTop(0.5f).BorderColor(Line).PaddingTop(4).Text(t =>
                         {
@@ -1191,6 +1239,16 @@ namespace VCL_BLL.Services
             /// <summary>Mốc thanh toán gần nhất của đơn mua hộ (bảng PURCHASE_PAYMENTS).</summary>
             public DateTime? PurchasePaidAt { get; init; }
 
+            /// <summary>
+            /// Báo giá mua hộ. Mục "BÁO GIÁ VÀ THANH TOÁN" trước đây chỉ đọc <see cref="Quotation"/>
+            /// của ký gửi, mà đơn mua hộ không có dòng nào trong bảng đó — nên mọi số tiền in ra 0
+            /// và trạng thái báo giá để trống, dù báo giá đã được khách chấp nhận.
+            /// </summary>
+            public PurchaseQuotation? PurchaseQuotation { get; init; }
+
+            /// <summary>Giao dịch mua hộ gần nhất, để in mã GD / phương thức / trạng thái.</summary>
+            public PurchasePayment? PurchasePayment { get; init; }
+
             /// <summary>Sale đã lập báo giá mua hộ, tức người thực hiện mua giúp khách.</summary>
             public User? PurchasedBy { get; init; }
 
@@ -1215,6 +1273,46 @@ namespace VCL_BLL.Services
             /// </summary>
             public DateTime? PaymentConfirmedAt =>
                 Order.PaymentConfirmedAt ?? Payment?.PaidAt ?? Payment?.CreatedAt ?? PurchasePaidAt;
+
+            // ----- Các số tiền dùng chung cho mục IV, tự chọn nguồn theo loại đơn -----
+
+            /// <summary>Trạng thái báo giá, lấy đúng bảng theo loại đơn.</summary>
+            public string? QuotationStatus => IsPurchase ? PurchaseQuotation?.Status : Quotation?.Status;
+
+            /// <summary>Tiền hàng — chỉ mua hộ mới có (ký gửi khách tự mua).</summary>
+            public decimal ProductsSubtotal => IsPurchase ? PurchaseQuotation?.ProductsSubtotal ?? 0m : 0m;
+
+            /// <summary>Cước quốc tế: ký gửi lấy cước ước tính, mua hộ lấy phí vận chuyển của báo giá.</summary>
+            public decimal FreightCharge => IsPurchase
+                ? PurchaseQuotation?.ShippingFee ?? 0m
+                : Quotation?.EstimatedFreightCharge ?? 0m;
+
+            /// <summary>Phí dịch vụ: ký gửi trừ phần nội địa ra cho khỏi tính hai lần; mua hộ là phí mua hộ.</summary>
+            public decimal ServiceCharge => IsPurchase
+                ? PurchaseQuotation?.PurchaseFee ?? 0m
+                : Math.Max(0m, (Quotation?.ServiceFee ?? 0m) - DomesticFee);
+
+            public decimal TaxCharge => IsPurchase
+                ? (PurchaseQuotation?.Vat ?? 0m) + (PurchaseQuotation?.ImportTax ?? 0m)
+                : Quotation?.TaxAndDuty ?? 0m;
+
+            /// <summary>
+            /// Tổng báo giá. Mua hộ lấy thẳng <c>TotalAmount</c> đã chốt thay vì cộng lại các phần,
+            /// để con số trên phiếu luôn khớp số khách đã nhìn thấy lúc xác nhận.
+            /// </summary>
+            public decimal TotalAmount => IsPurchase
+                ? PurchaseQuotation?.TotalAmount ?? 0m
+                : FreightCharge + (Quotation?.ServiceFee ?? 0m) + TaxCharge;
+
+            public string? PaymentTransactionCode => IsPurchase ? PurchasePayment?.TransactionCode : Payment?.TransactionCode;
+            public string? PaymentMethod => IsPurchase ? PurchasePayment?.PaymentMethod : Payment?.PaymentMethod;
+            public string? PaymentStatus => IsPurchase ? PurchasePayment?.Status : Payment?.PaymentStatus;
+            public DateTime? PaymentAt => IsPurchase
+                ? PurchasePayment?.PaidAt ?? PurchasePayment?.CreatedAt
+                : Payment?.PaidAt ?? Payment?.CreatedAt;
+
+            /// <summary>Đợt thanh toán của mua hộ (đặt cọc / tất toán) — khách trả làm hai lần.</summary>
+            public string? PaymentInstallment => IsPurchase ? PurchasePayment?.PaymentType : null;
             public Dictionary<Guid, PackageConfiguration> PackageConfigurations { get; init; } = new();
             public Dictionary<Guid, List<byte[]>> ItemImages { get; init; } = new();
 
