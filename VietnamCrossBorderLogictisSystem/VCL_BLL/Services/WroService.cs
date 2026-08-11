@@ -156,11 +156,10 @@ namespace VCL_BLL.Services
                 initialDeliveryAddress = customer.Address ?? string.Empty;
             }
 
-            string? customsDocUrlsStr = request.CustomsDocumentUrls != null && request.CustomsDocumentUrls.Any()
-                ? string.Join(";", request.CustomsDocumentUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
-                : null;
-
             var wroCode = $"WRO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
+
+            // Lúc tạo phiếu chưa biết đi hãng nào nên không gán CarrierId ở đây; hãng và tuyến
+            // được chốt ở bước gán tuyến (PUT .../shipping-route) hoặc bàn giao (POST .../handover).
             var wroRequest = new WroRequest
             {
                 Id = Guid.NewGuid(),
@@ -170,9 +169,7 @@ namespace VCL_BLL.Services
                 ReceiverName = initialReceiverName,
                 ReceiverPhone = initialReceiverPhone,
                 DeliveryAddress = initialDeliveryAddress,
-                CarrierId = request.CarrierId,
                 ShelfCode = request.ShelfCode,
-                CustomsDocumentUrls = customsDocUrlsStr,
                 Status = "RELEASE_PENDING",
                 CreatedAt = DateTime.UtcNow
             };
@@ -244,19 +241,8 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            string carrierName = string.Empty;
-            if (wroRequest.CarrierId.HasValue)
-            {
-                var carrierRepo = _unitOfWork.Repository<Carrier>();
-                var carrier = await carrierRepo.GetByIdAsync(wroRequest.CarrierId.Value);
-                carrierName = carrier?.CarrierName ?? string.Empty;
-            }
-
-            var customsUrlsList = !string.IsNullOrWhiteSpace(wroRequest.CustomsDocumentUrls)
-                ? wroRequest.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList()
-                : new List<string>();
-
-            // 5. Trả về thông tin WRO kết quả
+            // 5. Trả về thông tin WRO kết quả. Hãng vận chuyển và chứng từ hải quan giữ nguyên
+            // giá trị mặc định rỗng: phiếu vừa tạo chưa gán hãng, chờ bước gán tuyến / bàn giao.
             return new WroResponseDto
             {
                 WroId = wroRequest.Id,
@@ -268,9 +254,6 @@ namespace VCL_BLL.Services
                 ReceiverAddress = wroRequest.DeliveryAddress,
                 Status = wroRequest.Status,
                 ShelfCode = wroRequest.ShelfCode,
-                CarrierId = wroRequest.CarrierId,
-                CarrierName = carrierName,
-                CustomsDocumentUrls = customsUrlsList,
                 CreatedAt = wroRequest.CreatedAt ?? DateTime.UtcNow,
                 Items = resultItems
             };
@@ -334,6 +317,10 @@ namespace VCL_BLL.Services
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
             var allOrderItems = await orderItemRepo.GetAllAsync();
 
+            // Kệ và khu để dựng đủ đường dẫn vị trí "khu / kệ / ô" cho nhân viên đi lấy hàng.
+            var allShelves = await _unitOfWork.Repository<Shelf>().GetAllAsync();
+            var allZones = await _unitOfWork.Repository<WarehouseZone>().GetAllAsync();
+
             var itemsDetail = new List<WroDetailItemDto>();
             string warehouseName = "";
             int totalQuantity = 0;
@@ -344,6 +331,8 @@ namespace VCL_BLL.Services
                 string productName = "";
                 string packageCode = "";
                 string binCode = "";
+                string itemShelfCode = "";
+                string itemZoneName = "";
 
                 if (inventory != null)
                 {
@@ -364,6 +353,20 @@ namespace VCL_BLL.Services
                     {
                         binCode = bin.BinCode ?? string.Empty;
 
+                        // Kệ và khu chứa ô này. DTO có sẵn hai trường nhưng trước đây không nơi nào
+                        // gán, nên màn hình soạn hàng luôn thấy rỗng dù ô kệ khai báo đầy đủ.
+                        if (bin.ShelfId.HasValue)
+                        {
+                            var shelf = allShelves.FirstOrDefault(s => s.Id == bin.ShelfId.Value);
+                            itemShelfCode = shelf?.ShelfCode ?? string.Empty;
+
+                            if (shelf?.ZoneId != null)
+                            {
+                                var zone = allZones.FirstOrDefault(z => z.Id == shelf.ZoneId.Value);
+                                itemZoneName = zone?.ZoneName ?? string.Empty;
+                            }
+                        }
+
                         if (string.IsNullOrEmpty(warehouseName))
                         {
                             var whId = bin.WarehouseId;
@@ -383,7 +386,9 @@ namespace VCL_BLL.Services
                     Quantity = item.Quantity,
                     PackageCode = packageCode,
                     ProductName = productName,
-                    BinCode = binCode
+                    BinCode = binCode,
+                    ShelfCode = itemShelfCode,
+                    ZoneName = itemZoneName
                 });
 
                 totalQuantity += item.Quantity;
@@ -462,7 +467,14 @@ namespace VCL_BLL.Services
                 DeliveryAddress = deliveryAddress,
                 ReceiverAddress = deliveryAddress,
                 Status = wroRequest.Status ?? string.Empty,
-                ShelfCode = wroRequest.ShelfCode,
+                // Người tạo phiếu không bắt buộc nhập kệ. Bỏ trống thì suy ra từ ô kệ của
+                // hàng trong phiếu, thay vì trả null cho màn hình.
+                ShelfCode = !string.IsNullOrWhiteSpace(wroRequest.ShelfCode)
+                    ? wroRequest.ShelfCode
+                    : string.Join(", ", itemsDetail
+                        .Select(i => i.ShelfCode)
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Distinct()),
                 CarrierId = wroRequest.CarrierId,
                 CarrierName = carrierName,
                 ShippingRouteId = wroRequest.ShippingRouteId,

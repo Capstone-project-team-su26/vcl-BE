@@ -51,6 +51,11 @@ namespace VCL_API.Controllers
         /// <summary>
         /// Tạo yêu cầu xuất kho từ tồn kho khả dụng (WRO)
         /// </summary>
+        /// <remarks>
+        /// Chỉ khai hàng và người nhận. Đơn vị vận chuyển gán ở
+        /// PUT /api/warehouse-release-requests/{requestId}/shipping-route hoặc lúc bàn giao;
+        /// chứng từ thông quan do bên vận chuyển thứ ba lo, kho không upload ở bước này.
+        /// </remarks>
         [HttpPost]
 
         public async Task<IActionResult> CreateWroRequest([FromBody] CreateWroRequestDto request)

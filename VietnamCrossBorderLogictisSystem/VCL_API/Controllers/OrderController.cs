@@ -331,10 +331,10 @@ namespace VCL_API.Controllers
         {
             try
             {
-                var actorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                Guid? actorUserId = Guid.TryParse(actorIdClaim, out var parsedActorId) ? parsedActorId : null;
-
-                var (content, fileName) = await _consignmentReceiptService.BuildReceiptPdfAsync(orderId, actorUserId);
+                // Không truyền user đang đăng nhập vào đây: người lập phiếu là người đã phát hành
+                // phiếu, đọc từ đơn. Truyền người đang xem thì kho tải phiếu về sẽ thấy tên mình
+                // ở ô người lập, lệch với bản khách và kho nhận qua link công khai.
+                var (content, fileName) = await _consignmentReceiptService.GetReceiptByOrderIdAsync(orderId);
                 return File(content, "application/pdf", fileName);
             }
             catch (NotFoundException ex)

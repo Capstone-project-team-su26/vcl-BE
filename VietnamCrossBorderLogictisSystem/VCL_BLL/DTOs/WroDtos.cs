@@ -13,13 +13,15 @@ namespace VCL_BLL.DTOs
         public int Quantity { get; set; }
     }
 
+    /// <summary>
+    /// Tạo phiếu xuất kho. Chỉ khai hàng và người nhận — đơn vị vận chuyển, phí vận chuyển và
+    /// chứng từ hải quan KHÔNG nhận ở đây: hãng vận chuyển gán ở bước gán tuyến / bàn giao, còn
+    /// thông quan do bên vận chuyển thứ ba lo nên kho không upload chứng từ.
+    /// </summary>
     public class CreateWroRequestDto
     {
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
-        public Guid? CarrierId { get; set; }
-        public decimal? ShippingFee { get; set; }
-        public List<string>? CustomsDocumentUrls { get; set; }
         public string? ReceiverName { get; set; }
         public string? ReceiverPhone { get; set; }
         public string? ReceiverAddress { get; set; }
