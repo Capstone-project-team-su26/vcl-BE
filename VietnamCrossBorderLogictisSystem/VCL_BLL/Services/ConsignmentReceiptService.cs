@@ -178,6 +178,21 @@ namespace VCL_BLL.Services
             return order.ReceiptPdfUrl;
         }
 
+        /// <summary>
+        /// Người lập phiếu là người đã phát hành phiếu, đọc từ đơn — KHÔNG lấy người đang mở xem.
+        /// Trước đây chỗ tải phiếu có token truyền thẳng user đang đăng nhập vào, nên kho mở phiếu
+        /// ra thì ô "NGƯỜI LẬP PHIẾU" và tên file đổi thành tên nhân viên kho thay vì tên Sale đã
+        /// lập, trong khi cùng đơn đó mở bằng link công khai lại đúng — hai bản khác nhau của cùng
+        /// một chứng từ.
+        /// </summary>
+        public async Task<(byte[] Content, string FileName)> GetReceiptByOrderIdAsync(Guid orderId)
+        {
+            var order = await _unitOfWork.Repository<Order>().GetByIdAsync(orderId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
+
+            return await BuildReceiptPdfAsync(order.Id, order.ReceiptGeneratedById);
+        }
+
         public async Task<(byte[] Content, string FileName)> GetReceiptByPublicKeyAsync(Guid publicKey)
         {
             var order = (await _unitOfWork.Repository<Order>().GetAllAsync())
