@@ -53,6 +53,12 @@ public partial class WroRequest
 
     public string CustomsDocumentUrls { get; set; }
 
+    public string ExportType { get; set; }
+
+    public string PackingNotes { get; set; }
+
+    public string PackagingPhotos { get; set; }
+
     public virtual Carrier Carrier { get; set; }
 
     public virtual ShippingRoute ShippingRoute { get; set; }

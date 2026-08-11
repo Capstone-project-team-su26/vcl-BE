@@ -14,11 +14,24 @@ namespace VCL_BLL.DTOs
     }
 
     /// <summary>
-    /// Tạo phiếu xuất kho. Chỉ khai hàng và người nhận — đơn vị vận chuyển, phí vận chuyển và
-    /// chứng từ hải quan KHÔNG nhận ở đây: hãng vận chuyển gán ở bước gán tuyến / bàn giao, còn
-    /// thông quan do bên vận chuyển thứ ba lo nên kho không upload chứng từ.
+    /// TH1: DTO Tạo phiếu xuất kho lẻ theo Đơn hàng (Hỏa tốc, lẻ, 1 đơn riêng biệt).
     /// </summary>
-    public class CreateWroRequestDto
+    public class CreateSingleWroRequestDto
+    {
+        [Required(ErrorMessage = "Vui lòng chọn đơn hàng cần xuất kho.")]
+        public Guid OrderId { get; set; }
+
+        public string? ShelfCode { get; set; }
+        public string? ExportReason { get; set; }
+        public string? ReceiverName { get; set; }
+        public string? ReceiverPhone { get; set; }
+        public string? ReceiverAddress { get; set; }
+    }
+
+    /// <summary>
+    /// TH2: DTO Tạo phiếu xuất kho gom lô (Nhiều kiện của nhiều đơn hàng khác nhau).
+    /// </summary>
+    public class CreateBatchWroRequestDto
     {
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
@@ -26,8 +39,29 @@ namespace VCL_BLL.DTOs
         public string? ReceiverPhone { get; set; }
         public string? ReceiverAddress { get; set; }
 
-        [Required]
-        [MinLength(1, ErrorMessage = "Danh sách xuất kho phải có ít nhất một mặt hàng.")]
+        [Required(ErrorMessage = "Danh sách kiện hàng gom lô không được để trống.")]
+        [MinLength(1, ErrorMessage = "Danh sách kiện hàng gom lô phải có ít nhất một kiện/mặt hàng.")]
+        public List<CreateWroRequestItemDto> Items { get; set; } = new();
+    }
+
+    /// <summary>
+    /// DTO tổng cho phiếu xuất kho (TH1: Lẻ theo OrderId hoặc TH2: Gom lô theo danh sách Items).
+    /// </summary>
+    public class CreateWroRequestDto
+    {
+        /// <summary>ID đơn hàng nếu xuất kho lẻ cho 1 đơn (TH1 - hỏa tốc, lẻ)</summary>
+        public Guid? OrderId { get; set; }
+
+        /// <summary>Loại xuất kho: "SINGLE" (phiếu lẻ theo đơn) hoặc "BATCH" (gom lô nhiều đơn)</summary>
+        public string? ExportType { get; set; }
+
+        public string? ShelfCode { get; set; }
+        public string? ExportReason { get; set; }
+        public string? ReceiverName { get; set; }
+        public string? ReceiverPhone { get; set; }
+        public string? ReceiverAddress { get; set; }
+
+        /// <summary>Danh sách mặt hàng xuất kho (Bắt buộc với TH2 - Gom lô; Tùy chọn với TH1 nếu đã truyền OrderId)</summary>
         public List<CreateWroRequestItemDto> Items { get; set; } = new();
     }
 
@@ -37,6 +71,9 @@ namespace VCL_BLL.DTOs
         public Guid InventoryId { get; set; }
         public int Quantity { get; set; }
         public string PackageCode { get; set; } = string.Empty;
+        public Guid? OrderId { get; set; }
+        public string OrderCode { get; set; } = string.Empty;
+        public string ConsignmentType { get; set; } = string.Empty;
     }
 
     public class WroResponseDto
@@ -44,12 +81,17 @@ namespace VCL_BLL.DTOs
         public Guid WroId { get; set; }
         public string WroCode { get; set; } = string.Empty;
 
+        /// <summary>Loại xuất kho ("SINGLE" hoặc "BATCH").</summary>
+        public string ExportType { get; set; } = string.Empty;
+
         /// <summary>Mã vạch xuất kho quét khi bàn giao (VD: EXP-20260731-9348).</summary>
         public string ExportBarcode => !string.IsNullOrWhiteSpace(WroCode)
             ? WroCode.Replace("WRO-", "EXP-", StringComparison.OrdinalIgnoreCase)
             : string.Empty;
 
         public Guid? CustomerId { get; set; }
+        public Guid? OrderId { get; set; }
+        public string OrderCode { get; set; } = string.Empty;
         public string ReceiverName { get; set; } = string.Empty;
         public string ReceiverPhone { get; set; } = string.Empty;
         public string DeliveryAddress { get; set; } = string.Empty;
@@ -73,6 +115,9 @@ namespace VCL_BLL.DTOs
         public string ShippingRoute { get; set; } = string.Empty;
         public decimal? ShippingFee { get; set; }
         public List<string> CustomsDocumentUrls { get; set; } = new();
+        public bool IsCustomsCleared => CustomsDocumentUrls != null && CustomsDocumentUrls.Any();
+        public string CustomsStatus => IsCustomsCleared ? "CUSTOMS_CLEARED" : "CUSTOMS_PENDING";
+        public string CustomsStatusText => IsCustomsCleared ? "Đã thông quan" : "Chờ thông quan";
         public DateTime CreatedAt { get; set; }
         public List<WroItemResponseDto> Items { get; set; } = new();
     }
@@ -82,17 +127,25 @@ namespace VCL_BLL.DTOs
         public Guid ItemId { get; set; }
         public Guid InventoryId { get; set; }
         public int Quantity { get; set; }
+        public Guid? OrderId { get; set; }
+        public string OrderCode { get; set; } = string.Empty;
+        public string ConsignmentType { get; set; } = string.Empty;
         public string PackageCode { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public string ZoneName { get; set; } = string.Empty;
         public string BinCode { get; set; } = string.Empty;
         public string ShelfCode { get; set; } = string.Empty;
+        public decimal? ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
     }
 
     public class WroDetailResponseDto
     {
         public Guid WroId { get; set; }
         public string WroCode { get; set; } = string.Empty;
+        public string ExportType { get; set; } = string.Empty;
 
         /// <summary>Mã vạch xuất kho quét khi bàn giao (VD: EXP-20260731-9348).</summary>
         public string ExportBarcode => !string.IsNullOrWhiteSpace(WroCode)
@@ -104,6 +157,8 @@ namespace VCL_BLL.DTOs
         public string WarehouseName { get; set; } = string.Empty;
         public Guid? CustomerId { get; set; }
         public string CustomerName { get; set; } = string.Empty;
+        public Guid? OrderId { get; set; }
+        public string OrderCode { get; set; } = string.Empty;
         public string ReceiverName { get; set; } = string.Empty;
         public string ReceiverPhone { get; set; } = string.Empty;
         public string DeliveryAddress { get; set; } = string.Empty;
@@ -132,6 +187,11 @@ namespace VCL_BLL.DTOs
         public DateTime? HandoverAt { get; set; }
         public decimal? ShippingFee { get; set; }
         public List<string> CustomsDocumentUrls { get; set; } = new();
+        public bool IsCustomsCleared => CustomsDocumentUrls != null && CustomsDocumentUrls.Any();
+        public string CustomsStatus => IsCustomsCleared ? "CUSTOMS_CLEARED" : "CUSTOMS_PENDING";
+        public string CustomsStatusText => IsCustomsCleared ? "Đã thông quan" : "Chờ thông quan";
+        public List<string> PackagingPhotos { get; set; } = new();
+        public string? PackingNotes { get; set; }
         public string? Note { get; set; }
         public DateTime CreatedAt { get; set; }
         public int TotalQuantity { get; set; }
@@ -158,6 +218,9 @@ namespace VCL_BLL.DTOs
     {
         public Guid ItemId { get; set; }
         public Guid InventoryId { get; set; }
+        public Guid? OrderId { get; set; }
+        public string OrderCode { get; set; } = string.Empty;
+        public string ConsignmentType { get; set; } = string.Empty;
         public string PackageCode { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public string BinCode { get; set; } = string.Empty;
@@ -172,6 +235,15 @@ namespace VCL_BLL.DTOs
         public string WroCode { get; set; } = string.Empty;
         public Guid? CustomerId { get; set; }
         public string CustomerName { get; set; } = string.Empty;
+        public string ReceiverName { get; set; } = string.Empty;
+        public string ReceiverPhone { get; set; } = string.Empty;
+        public string DeliveryAddress { get; set; } = string.Empty;
+        public string ReceiverAddress { get; set; } = string.Empty;
+
+        public string ConsigneeName => ReceiverName;
+        public string ConsigneePhone => ReceiverPhone;
+        public string ConsigneeAddress => !string.IsNullOrWhiteSpace(ReceiverAddress) ? ReceiverAddress : DeliveryAddress;
+
         public string Status { get; set; } = string.Empty;
         public Guid CreatedBy { get; set; }
         public string CreatedByName { get; set; } = string.Empty;
@@ -217,6 +289,12 @@ namespace VCL_BLL.DTOs
         public Guid? ShippingRouteId { get; set; }
         public string ShippingRoute { get; set; } = string.Empty;
         public int? EstimatedDeliveryDays { get; set; }
+        public string? DriverName { get; set; }
+        public string? DriverPhone { get; set; }
+        public string? VehicleNumber { get; set; }
+        public string? TrackingNumber { get; set; }
+        public string? HandoverNotes { get; set; }
+        public List<string>? CustomsDocumentUrls { get; set; }
         public string? Note { get; set; }
     }
 

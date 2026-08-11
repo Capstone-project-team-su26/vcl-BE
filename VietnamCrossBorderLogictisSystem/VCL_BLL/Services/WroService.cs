@@ -19,10 +19,92 @@ namespace VCL_BLL.Services
             _unitOfWork = unitOfWork;
         }
 
+        public async Task<WroResponseDto> CreateSingleWroRequestAsync(Guid userId, string userRole, CreateSingleWroRequestDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Yêu cầu xuất kho lẻ không được để trống.");
+            if (request.OrderId == Guid.Empty)
+                throw new ArgumentException("Vui lòng chọn đơn hàng cần xuất kho.");
+
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(request.OrderId);
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {request.OrderId}");
+
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+            var orderInventories = allInventories
+                .Where(i => i.OrderId == request.OrderId && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0)
+                .ToList();
+
+            if (!orderInventories.Any())
+            {
+                throw new ArgumentException($"Đơn hàng {order.ConsignmentCode ?? request.OrderId.ToString()} không có hàng tồn kho khả dụng để xuất.");
+            }
+
+            var fullRequest = new CreateWroRequestDto
+            {
+                OrderId = request.OrderId,
+                ExportType = "SINGLE",
+                ShelfCode = request.ShelfCode,
+                ExportReason = request.ExportReason,
+                ReceiverName = !string.IsNullOrWhiteSpace(request.ReceiverName) ? request.ReceiverName : order.ReceiverName,
+                ReceiverPhone = !string.IsNullOrWhiteSpace(request.ReceiverPhone) ? request.ReceiverPhone : order.ReceiverPhone,
+                ReceiverAddress = !string.IsNullOrWhiteSpace(request.ReceiverAddress) ? request.ReceiverAddress : order.ReceiverAddress,
+                Items = orderInventories.Select(inv => new CreateWroRequestItemDto
+                {
+                    InventoryId = inv.Id,
+                    Quantity = inv.Quantity
+                }).ToList()
+            };
+
+            return await CreateWroRequestAsync(userId, userRole, fullRequest);
+        }
+
+        public async Task<WroResponseDto> CreateBatchWroRequestAsync(Guid userId, string userRole, CreateBatchWroRequestDto request)
+        {
+            if (request == null)
+                throw new ArgumentException("Yêu cầu xuất kho gom lô không được để trống.");
+
+            var fullRequest = new CreateWroRequestDto
+            {
+                ExportType = "BATCH",
+                ShelfCode = request.ShelfCode,
+                ExportReason = request.ExportReason,
+                ReceiverName = request.ReceiverName,
+                ReceiverPhone = request.ReceiverPhone,
+                ReceiverAddress = request.ReceiverAddress,
+                Items = request.Items
+            };
+
+            return await CreateWroRequestAsync(userId, userRole, fullRequest);
+        }
+
         public async Task<WroResponseDto> CreateWroRequestAsync(Guid userId, string userRole, CreateWroRequestDto request)
         {
             if (request == null)
                 throw new ArgumentException("Yêu cầu xuất kho không được để trống.");
+
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var orderRepo = _unitOfWork.Repository<Order>();
+
+            // Nếu truyền OrderId mà chưa chọn Items -> Tự động gom toàn bộ tồn kho AVAILABLE của đơn đó
+            if (request.OrderId.HasValue && request.OrderId.Value != Guid.Empty && (request.Items == null || !request.Items.Any()))
+            {
+                var allInv = await inventoryRepo.GetAllAsync();
+                var orderInv = allInv.Where(i => i.OrderId == request.OrderId.Value && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0).ToList();
+                if (!orderInv.Any())
+                {
+                    throw new ArgumentException($"Đơn hàng ID {request.OrderId.Value} không có hàng tồn kho khả dụng để xuất.");
+                }
+
+                request.Items = orderInv.Select(i => new CreateWroRequestItemDto { InventoryId = i.Id, Quantity = i.Quantity }).ToList();
+            }
+
+            if (request.Items == null || !request.Items.Any())
+            {
+                throw new ArgumentException("Danh sách xuất kho phải có ít nhất một mặt hàng hoặc chọn 1 đơn hàng.");
+            }
 
             // 1. Phân quyền và tìm Customer ID nếu là Customer
             Customer? customer = null;
@@ -39,7 +121,6 @@ namespace VCL_BLL.Services
             }
 
             // 2. Kiểm tra tính hợp lệ của từng Inventory item (Validate phase)
-            var inventoryRepo = _unitOfWork.Repository<Inventory>();
             var binRepo = _unitOfWork.Repository<Bin>();
             var warehouseRepo = _unitOfWork.Repository<Warehouse>();
 
@@ -109,7 +190,6 @@ namespace VCL_BLL.Services
             }
 
             // Kiểm tra thông tin người nhận của các đơn hàng chứa kiện
-            var orderRepo = _unitOfWork.Repository<Order>();
             var orderReceivers = new List<(string Name, string Phone, string Address)>();
 
             foreach (var item in request.Items)
@@ -157,15 +237,17 @@ namespace VCL_BLL.Services
             }
 
             var wroCode = $"WRO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
+            string exportType = !string.IsNullOrWhiteSpace(request.ExportType)
+                ? request.ExportType.Trim().ToUpperInvariant()
+                : (request.OrderId.HasValue ? "SINGLE" : "BATCH");
 
-            // Lúc tạo phiếu chưa biết đi hãng nào nên không gán CarrierId ở đây; hãng và tuyến
-            // được chốt ở bước gán tuyến (PUT .../shipping-route) hoặc bàn giao (POST .../handover).
             var wroRequest = new WroRequest
             {
                 Id = Guid.NewGuid(),
                 UserId = userId,
                 CustomerId = targetCustomerId,
                 WroCode = wroCode,
+                ExportType = exportType,
                 ReceiverName = initialReceiverName,
                 ReceiverPhone = initialReceiverPhone,
                 DeliveryAddress = initialDeliveryAddress,
@@ -181,6 +263,7 @@ namespace VCL_BLL.Services
             var wroItemRepo = _unitOfWork.Repository<WroItem>();
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var resultItems = new List<WroItemResponseDto>();
+            var allOrders = await orderRepo.GetAllAsync();
 
             foreach (var item in request.Items)
             {
@@ -189,18 +272,15 @@ namespace VCL_BLL.Services
 
                 if (inventory!.Quantity == item.Quantity)
                 {
-                    // Chuyển trực tiếp bản ghi hiện tại sang RESERVED (tránh tạo dòng AVAILABLE quantity = 0 zombie)
                     inventory.Status = "RESERVED";
                     inventoryRepo.Update(inventory);
                     targetInventoryId = inventory.Id;
                 }
                 else
                 {
-                    // Trừ số lượng khỏi bản ghi AVAILABLE hiện tại (vẫn còn quantity > 0)
                     inventory.Quantity -= item.Quantity;
                     inventoryRepo.Update(inventory);
 
-                    // Tạo bản ghi RESERVED riêng cho phần xuất
                     var reservedInventory = new Inventory
                     {
                         Id = Guid.NewGuid(),
@@ -227,28 +307,35 @@ namespace VCL_BLL.Services
                 };
                 await wroItemRepo.AddAsync(wroItem);
 
-                // Lấy thông tin mã kiện hàng để trả về response
+                // Lấy thông tin mã kiện hàng & đơn hàng để trả về response
                 var parcel = await parcelRepo.GetByIdAsync(inventory.ParcelId);
                 var packageCode = parcel?.PackageCode ?? string.Empty;
+                var order = allOrders.FirstOrDefault(o => o.Id == inventory.OrderId);
 
                 resultItems.Add(new WroItemResponseDto
                 {
                     ItemId = wroItem.Id,
                     InventoryId = targetInventoryId,
                     Quantity = wroItem.Quantity,
-                    PackageCode = packageCode
+                    PackageCode = packageCode,
+                    OrderId = inventory.OrderId,
+                    OrderCode = order?.ConsignmentCode ?? string.Empty,
+                    ConsignmentType = order?.ConsignmentType ?? order?.OrderType ?? "KÝ GỬI"
                 });
             }
 
             await _unitOfWork.SaveChangesAsync();
 
-            // 5. Trả về thông tin WRO kết quả. Hãng vận chuyển và chứng từ hải quan giữ nguyên
-            // giá trị mặc định rỗng: phiếu vừa tạo chưa gán hãng, chờ bước gán tuyến / bàn giao.
+            var mainOrder = allOrders.FirstOrDefault(o => request.OrderId.HasValue && o.Id == request.OrderId.Value);
+
             return new WroResponseDto
             {
                 WroId = wroRequest.Id,
                 WroCode = wroRequest.WroCode,
+                ExportType = wroRequest.ExportType,
                 CustomerId = wroRequest.CustomerId,
+                OrderId = request.OrderId ?? resultItems.FirstOrDefault(i => i.OrderId.HasValue && i.OrderId != Guid.Empty)?.OrderId,
+                OrderCode = mainOrder?.ConsignmentCode ?? resultItems.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i.OrderCode))?.OrderCode ?? string.Empty,
                 ReceiverName = wroRequest.ReceiverName,
                 ReceiverPhone = wroRequest.ReceiverPhone,
                 DeliveryAddress = wroRequest.DeliveryAddress,
@@ -316,10 +403,12 @@ namespace VCL_BLL.Services
             var warehouseRepo = _unitOfWork.Repository<Warehouse>();
             var allWarehouses = await warehouseRepo.GetAllAsync();
 
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var allOrders = await orderRepo.GetAllAsync();
+
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
             var allOrderItems = await orderItemRepo.GetAllAsync();
 
-            // Kệ và khu để dựng đủ đường dẫn vị trí "khu / kệ / ô" cho nhân viên đi lấy hàng.
             var allShelves = await _unitOfWork.Repository<Shelf>().GetAllAsync();
             var allZones = await _unitOfWork.Repository<WarehouseZone>().GetAllAsync();
 
@@ -335,9 +424,27 @@ namespace VCL_BLL.Services
                 string binCode = "";
                 string itemShelfCode = "";
                 string itemZoneName = "";
+                Guid? itemOrderId = null;
+                string itemOrderCode = "";
+                string itemConsignmentType = "";
+                decimal? actualWeight = null;
+                decimal? length = null;
+                decimal? width = null;
+                decimal? height = null;
 
                 if (inventory != null)
                 {
+                    if (inventory.OrderId != Guid.Empty)
+                    {
+                        itemOrderId = inventory.OrderId;
+                        var order = allOrders.FirstOrDefault(o => o.Id == inventory.OrderId);
+                        if (order != null)
+                        {
+                            itemOrderCode = order.ConsignmentCode ?? string.Empty;
+                            itemConsignmentType = order.ConsignmentType ?? order.OrderType ?? "KÝ GỬI";
+                        }
+                    }
+
                     // Lấy tên mặt hàng từ OrderItem tương ứng của Inventory
                     if (inventory.OrderItemId.HasValue)
                     {
@@ -347,7 +454,25 @@ namespace VCL_BLL.Services
 
                     // Lấy mã kiện hàng Parcel tương ứng
                     var parcel = allParcels.FirstOrDefault(p => p.Id == inventory.ParcelId);
-                    packageCode = parcel?.PackageCode ?? string.Empty;
+                    if (parcel != null)
+                    {
+                        packageCode = parcel.PackageCode ?? string.Empty;
+                        actualWeight = parcel.ActualWeight;
+                        length = parcel.Length;
+                        width = parcel.Width;
+                        height = parcel.Height;
+
+                        if (!itemOrderId.HasValue && parcel.ConsignmentId.HasValue)
+                        {
+                            itemOrderId = parcel.ConsignmentId.Value;
+                            var order = allOrders.FirstOrDefault(o => o.Id == parcel.ConsignmentId.Value);
+                            if (order != null)
+                            {
+                                itemOrderCode = order.ConsignmentCode ?? string.Empty;
+                                itemConsignmentType = order.ConsignmentType ?? order.OrderType ?? "KÝ GỬI";
+                            }
+                        }
+                    }
 
                     // Lấy mã vị trí Bin và tên kho hàng Warehouse
                     var bin = allBins.FirstOrDefault(b => b.Id == inventory.BinId);
@@ -355,8 +480,6 @@ namespace VCL_BLL.Services
                     {
                         binCode = bin.BinCode ?? string.Empty;
 
-                        // Kệ và khu chứa ô này. DTO có sẵn hai trường nhưng trước đây không nơi nào
-                        // gán, nên màn hình soạn hàng luôn thấy rỗng dù ô kệ khai báo đầy đủ.
                         if (bin.ShelfId.HasValue)
                         {
                             var shelf = allShelves.FirstOrDefault(s => s.Id == bin.ShelfId.Value);
@@ -386,11 +509,18 @@ namespace VCL_BLL.Services
                     ItemId = item.Id,
                     InventoryId = item.InventoryId,
                     Quantity = item.Quantity,
+                    OrderId = itemOrderId,
+                    OrderCode = itemOrderCode,
+                    ConsignmentType = string.IsNullOrWhiteSpace(itemConsignmentType) ? "KÝ GỬI" : itemConsignmentType,
                     PackageCode = packageCode,
                     ProductName = productName,
                     BinCode = binCode,
                     ShelfCode = itemShelfCode,
-                    ZoneName = itemZoneName
+                    ZoneName = itemZoneName,
+                    ActualWeight = actualWeight,
+                    Length = length,
+                    Width = width,
+                    Height = height
                 });
 
                 totalQuantity += item.Quantity;
@@ -402,9 +532,6 @@ namespace VCL_BLL.Services
 
             if (string.IsNullOrWhiteSpace(receiverName) || string.IsNullOrWhiteSpace(receiverPhone) || string.IsNullOrWhiteSpace(deliveryAddress))
             {
-                var orderRepo = _unitOfWork.Repository<Order>();
-                var allOrders = await orderRepo.GetAllAsync();
-
                 foreach (var item in relatedWroItems)
                 {
                     var inventory = allInventories.FirstOrDefault(inv => inv.Id == item.InventoryId);
@@ -455,22 +582,29 @@ namespace VCL_BLL.Services
                 ? wroRequest.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList()
                 : new List<string>();
 
+            var packagingPhotosList = !string.IsNullOrWhiteSpace(wroRequest.PackagingPhotos)
+                ? wroRequest.PackagingPhotos.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList()
+                : new List<string>();
+
+            var firstItemOrder = itemsDetail.FirstOrDefault(i => i.OrderId.HasValue);
+
             return new WroDetailResponseDto
             {
                 WroId = wroRequest.Id,
                 WroCode = wroRequest.WroCode,
+                ExportType = wroRequest.ExportType ?? "SINGLE",
                 CreatedByName = createdByName,
                 CreatedByUserRole = createdByUserRole,
                 WarehouseName = warehouseName,
                 CustomerId = wroRequest.CustomerId,
                 CustomerName = customerName,
+                OrderId = firstItemOrder?.OrderId,
+                OrderCode = firstItemOrder?.OrderCode ?? string.Empty,
                 ReceiverName = receiverName,
                 ReceiverPhone = receiverPhone,
                 DeliveryAddress = deliveryAddress,
                 ReceiverAddress = deliveryAddress,
                 Status = wroRequest.Status ?? string.Empty,
-                // Người tạo phiếu không bắt buộc nhập kệ. Bỏ trống thì suy ra từ ô kệ của
-                // hàng trong phiếu, thay vì trả null cho màn hình.
                 ShelfCode = !string.IsNullOrWhiteSpace(wroRequest.ShelfCode)
                     ? wroRequest.ShelfCode
                     : string.Join(", ", itemsDetail
@@ -483,6 +617,8 @@ namespace VCL_BLL.Services
                 ShippingRouteId = wroRequest.ShippingRouteId,
                 ShippingRoute = shippingRouteName,
                 CustomsDocumentUrls = customsUrlsListDetail,
+                PackagingPhotos = packagingPhotosList,
+                PackingNotes = wroRequest.PackingNotes,
                 DriverName = wroRequest.DriverName,
                 DriverPhone = wroRequest.DriverPhone,
                 VehicleNumber = wroRequest.VehicleNumber,
@@ -726,6 +862,9 @@ namespace VCL_BLL.Services
             var allParcels = await parcelRepo.GetAllAsync();
             var allOrderItems = await orderItemRepo.GetAllAsync();
 
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var allOrders = await orderRepo.GetAllAsync();
+
             foreach (var item in relatedWroItems)
             {
                 var inventory = await inventoryRepo.GetByIdAsync(item.InventoryId);
@@ -733,9 +872,23 @@ namespace VCL_BLL.Services
                 string shelfCode = string.Empty;
                 string packageCode = string.Empty;
                 string productName = string.Empty;
+                Guid? itemOrderId = null;
+                string itemOrderCode = string.Empty;
+                string itemConsignmentType = string.Empty;
 
                 if (inventory != null)
                 {
+                    if (inventory.OrderId != Guid.Empty)
+                    {
+                        itemOrderId = inventory.OrderId;
+                        var order = allOrders.FirstOrDefault(o => o.Id == inventory.OrderId);
+                        if (order != null)
+                        {
+                            itemOrderCode = order.ConsignmentCode ?? string.Empty;
+                            itemConsignmentType = order.ConsignmentType ?? order.OrderType ?? "KÝ GỬI";
+                        }
+                    }
+
                     if (inventory.BinId != Guid.Empty)
                     {
                         var bin = allBins.FirstOrDefault(b => b.Id == inventory.BinId);
@@ -756,6 +909,16 @@ namespace VCL_BLL.Services
                         if (parcel != null)
                         {
                             packageCode = parcel.PackageCode ?? string.Empty;
+                            if (!itemOrderId.HasValue && parcel.ConsignmentId.HasValue)
+                            {
+                                itemOrderId = parcel.ConsignmentId.Value;
+                                var order = allOrders.FirstOrDefault(o => o.Id == parcel.ConsignmentId.Value);
+                                if (order != null)
+                                {
+                                    itemOrderCode = order.ConsignmentCode ?? string.Empty;
+                                    itemConsignmentType = order.ConsignmentType ?? order.OrderType ?? "KÝ GỬI";
+                                }
+                            }
                         }
                     }
 
@@ -773,6 +936,9 @@ namespace VCL_BLL.Services
                 {
                     ItemId = item.Id,
                     InventoryId = item.InventoryId,
+                    OrderId = itemOrderId,
+                    OrderCode = itemOrderCode,
+                    ConsignmentType = string.IsNullOrWhiteSpace(itemConsignmentType) ? "KÝ GỬI" : itemConsignmentType,
                     PackageCode = packageCode,
                     ProductName = productName,
                     BinCode = binCode,
@@ -788,6 +954,10 @@ namespace VCL_BLL.Services
                 WroCode = wroRequest.WroCode,
                 CustomerId = wroRequest.CustomerId,
                 CustomerName = customerName,
+                ReceiverName = wroRequest.ReceiverName ?? string.Empty,
+                ReceiverPhone = wroRequest.ReceiverPhone ?? string.Empty,
+                DeliveryAddress = wroRequest.DeliveryAddress ?? string.Empty,
+                ReceiverAddress = wroRequest.DeliveryAddress ?? string.Empty,
                 Status = pickingList.Status,
                 CreatedBy = pickingList.CreatedBy,
                 CreatedByName = createdByName,
@@ -1141,6 +1311,16 @@ namespace VCL_BLL.Services
                 wroRequest.ShippingRouteId = resolvedRouteId.Value;
             }
 
+            if (!string.IsNullOrWhiteSpace(request.DriverName)) wroRequest.DriverName = request.DriverName;
+            if (!string.IsNullOrWhiteSpace(request.DriverPhone)) wroRequest.DriverPhone = request.DriverPhone;
+            if (!string.IsNullOrWhiteSpace(request.VehicleNumber)) wroRequest.VehicleNumber = request.VehicleNumber;
+            if (!string.IsNullOrWhiteSpace(request.TrackingNumber)) wroRequest.TrackingNumber = request.TrackingNumber;
+            if (!string.IsNullOrWhiteSpace(request.HandoverNotes)) wroRequest.HandoverNotes = request.HandoverNotes;
+            if (request.CustomsDocumentUrls != null && request.CustomsDocumentUrls.Any())
+            {
+                wroRequest.CustomsDocumentUrls = string.Join(";", request.CustomsDocumentUrls);
+            }
+
             // Tự động chuyển trạng thái sang IN_TRANSIT nếu WRO đang ở các bước bàn giao / hoàn tất đóng gói
             var currentStatus = wroRequest.Status?.Trim().ToUpperInvariant() ?? "";
             var allowedStatusesForInTransit = new[] { "HANDED_OVER", "RELEASED", "PACKED", "IN_TRANSIT" };
@@ -1181,6 +1361,12 @@ namespace VCL_BLL.Services
             }
 
             wroRequest.Status = "PACKED";
+            wroRequest.PackingNotes = request.PackingNotes;
+            if (request.PackagingPhotos != null && request.PackagingPhotos.Any())
+            {
+                wroRequest.PackagingPhotos = string.Join(";", request.PackagingPhotos);
+            }
+
             wroRepo.Update(wroRequest);
             await _unitOfWork.SaveChangesAsync();
 

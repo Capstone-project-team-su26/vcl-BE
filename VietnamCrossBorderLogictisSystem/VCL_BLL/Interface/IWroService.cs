@@ -6,6 +6,8 @@ namespace VCL_BLL.Interface
 {
     public interface IWroService
     {
+        Task<WroResponseDto> CreateSingleWroRequestAsync(Guid userId, string userRole, CreateSingleWroRequestDto request);
+        Task<WroResponseDto> CreateBatchWroRequestAsync(Guid userId, string userRole, CreateBatchWroRequestDto request);
         Task<WroResponseDto> CreateWroRequestAsync(Guid userId, string userRole, CreateWroRequestDto request);
         Task<PagedWroListResponseDto> GetWroRequestsAsync(Guid userId, string role, GetWroListRequestDto request);
         Task<WroDetailResponseDto> GetWroRequestDetailAsync(Guid requestId, Guid userId, string role);

@@ -49,15 +49,93 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Tạo yêu cầu xuất kho từ tồn kho khả dụng (WRO)
+        /// TH1: Tạo phiếu yêu cầu xuất kho lẻ đi theo Đơn hàng (Hỏa tốc, lẻ, 1 đơn riêng biệt).
         /// </summary>
-        /// <remarks>
-        /// Chỉ khai hàng và người nhận. Đơn vị vận chuyển gán ở
-        /// PUT /api/warehouse-release-requests/{requestId}/shipping-route hoặc lúc bàn giao;
-        /// chứng từ thông quan do bên vận chuyển thứ ba lo, kho không upload ở bước này.
-        /// </remarks>
-        [HttpPost]
+        [HttpPost("single")]
+        public async Task<IActionResult> CreateSingleWroRequest([FromBody] CreateSingleWroRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _wroService.CreateSingleWroRequestAsync(userId, userRole, request);
+                return Created(string.Empty, new { message = "Tạo yêu cầu xuất kho lẻ thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// TH2: Tạo phiếu yêu cầu xuất kho gom lô (nhiều kiện của nhiều đơn hàng khác nhau).
+        /// </summary>
+        [HttpPost("batch")]
+        public async Task<IActionResult> CreateBatchWroRequest([FromBody] CreateBatchWroRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _wroService.CreateBatchWroRequestAsync(userId, userRole, request);
+                return Created(string.Empty, new { message = "Tạo yêu cầu xuất kho gom lô thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Tạo yêu cầu xuất kho linh hoạt từ tồn kho khả dụng (WRO)
+        /// </summary>
+        [HttpPost]
         public async Task<IActionResult> CreateWroRequest([FromBody] CreateWroRequestDto request)
         {
             if (!ModelState.IsValid)
