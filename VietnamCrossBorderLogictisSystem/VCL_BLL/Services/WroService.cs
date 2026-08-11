@@ -156,11 +156,10 @@ namespace VCL_BLL.Services
                 initialDeliveryAddress = customer.Address ?? string.Empty;
             }
 
-            string? customsDocUrlsStr = request.CustomsDocumentUrls != null && request.CustomsDocumentUrls.Any()
-                ? string.Join(";", request.CustomsDocumentUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
-                : null;
-
             var wroCode = $"WRO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
+
+            // Lúc tạo phiếu chưa biết đi hãng nào nên không gán CarrierId ở đây; hãng và tuyến
+            // được chốt ở bước gán tuyến (PUT .../shipping-route) hoặc bàn giao (POST .../handover).
             var wroRequest = new WroRequest
             {
                 Id = Guid.NewGuid(),
@@ -170,9 +169,7 @@ namespace VCL_BLL.Services
                 ReceiverName = initialReceiverName,
                 ReceiverPhone = initialReceiverPhone,
                 DeliveryAddress = initialDeliveryAddress,
-                CarrierId = request.CarrierId,
                 ShelfCode = request.ShelfCode,
-                CustomsDocumentUrls = customsDocUrlsStr,
                 Status = "RELEASE_PENDING",
                 CreatedAt = DateTime.UtcNow
             };
@@ -244,19 +241,8 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            string carrierName = string.Empty;
-            if (wroRequest.CarrierId.HasValue)
-            {
-                var carrierRepo = _unitOfWork.Repository<Carrier>();
-                var carrier = await carrierRepo.GetByIdAsync(wroRequest.CarrierId.Value);
-                carrierName = carrier?.CarrierName ?? string.Empty;
-            }
-
-            var customsUrlsList = !string.IsNullOrWhiteSpace(wroRequest.CustomsDocumentUrls)
-                ? wroRequest.CustomsDocumentUrls.Split(';', StringSplitOptions.RemoveEmptyEntries).ToList()
-                : new List<string>();
-
-            // 5. Trả về thông tin WRO kết quả
+            // 5. Trả về thông tin WRO kết quả. Hãng vận chuyển và chứng từ hải quan giữ nguyên
+            // giá trị mặc định rỗng: phiếu vừa tạo chưa gán hãng, chờ bước gán tuyến / bàn giao.
             return new WroResponseDto
             {
                 WroId = wroRequest.Id,
@@ -268,9 +254,6 @@ namespace VCL_BLL.Services
                 ReceiverAddress = wroRequest.DeliveryAddress,
                 Status = wroRequest.Status,
                 ShelfCode = wroRequest.ShelfCode,
-                CarrierId = wroRequest.CarrierId,
-                CarrierName = carrierName,
-                CustomsDocumentUrls = customsUrlsList,
                 CreatedAt = wroRequest.CreatedAt ?? DateTime.UtcNow,
                 Items = resultItems
             };
