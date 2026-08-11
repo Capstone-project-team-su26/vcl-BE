@@ -15,6 +15,8 @@ public partial class WroRequest
 
     public string ShelfCode { get; set; }
 
+    public string ExportReason { get; set; }
+
     public string WroCode { get; set; }
 
     public string ReceiverName { get; set; }

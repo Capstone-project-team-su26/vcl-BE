@@ -170,6 +170,7 @@ namespace VCL_BLL.Services
                 ReceiverPhone = initialReceiverPhone,
                 DeliveryAddress = initialDeliveryAddress,
                 ShelfCode = request.ShelfCode,
+                ExportReason = request.ExportReason?.Trim(),
                 Status = "RELEASE_PENDING",
                 CreatedAt = DateTime.UtcNow
             };
@@ -254,6 +255,7 @@ namespace VCL_BLL.Services
                 ReceiverAddress = wroRequest.DeliveryAddress,
                 Status = wroRequest.Status,
                 ShelfCode = wroRequest.ShelfCode,
+                ExportReason = wroRequest.ExportReason,
                 CreatedAt = wroRequest.CreatedAt ?? DateTime.UtcNow,
                 Items = resultItems
             };
@@ -475,6 +477,7 @@ namespace VCL_BLL.Services
                         .Select(i => i.ShelfCode)
                         .Where(s => !string.IsNullOrWhiteSpace(s))
                         .Distinct()),
+                ExportReason = wroRequest.ExportReason,
                 CarrierId = wroRequest.CarrierId,
                 CarrierName = carrierName,
                 ShippingRouteId = wroRequest.ShippingRouteId,

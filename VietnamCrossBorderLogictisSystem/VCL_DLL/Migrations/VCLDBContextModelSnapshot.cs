@@ -3892,6 +3892,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("driver_phone");
 
+                    b.Property<string>("ExportReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("export_reason");
+
                     b.Property<DateTime?>("HandoverAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("handover_at");

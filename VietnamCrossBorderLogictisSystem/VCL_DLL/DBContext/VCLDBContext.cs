@@ -2009,6 +2009,10 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ShelfCode)
                 .HasMaxLength(100)
                 .HasColumnName("shelf_code");
+            // Lý do xuất kho do người lập phiếu nhập, giữ lại để đối chiếu khi kiểm kê.
+            entity.Property(e => e.ExportReason)
+                .HasMaxLength(500)
+                .HasColumnName("export_reason");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
