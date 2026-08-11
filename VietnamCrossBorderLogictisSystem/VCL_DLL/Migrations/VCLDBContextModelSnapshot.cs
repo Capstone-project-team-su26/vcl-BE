@@ -3897,6 +3897,9 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("export_reason");
 
+                    b.Property<string>("ExportType")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("HandoverAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("handover_at");
@@ -3905,6 +3908,12 @@ namespace VCL_DLL.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("handover_notes");
+
+                    b.Property<string>("PackagingPhotos")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PackingNotes")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ReceiverName")
                         .HasMaxLength(255)
