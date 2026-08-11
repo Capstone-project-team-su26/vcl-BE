@@ -387,5 +387,245 @@ namespace VCL_API.Controllers
 
             return Ok(new { message = "Reset WRO test data successfully." });
         }
+
+        [HttpGet("seed-orders")]
+        public async Task<IActionResult> SeedOrders()
+        {
+            var userRepo = _unitOfWork.Repository<User>();
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var purchaseReqRepo = _unitOfWork.Repository<PurchaseRequest>();
+            var purchaseReqItemRepo = _unitOfWork.Repository<PurchaseRequestItem>();
+
+            var allCustomers = await customerRepo.GetAllAsync();
+            var customer = allCustomers.FirstOrDefault();
+            if (customer == null)
+            {
+                await SeedCustomer();
+                allCustomers = await customerRepo.GetAllAsync();
+                customer = allCustomers.FirstOrDefault();
+            }
+
+            if (customer == null)
+            {
+                return BadRequest("Không thể khởi tạo khách hàng mẫu.");
+            }
+
+            var now = DateTime.UtcNow;
+            var createdOrders = new System.Collections.Generic.List<object>();
+
+            // 1. Tạo Đơn Ký Gửi 1 (CONSIGNMENT) - Trạng thái: DÃ DUYỆT (APPROVED)
+            var kgOrder1Id = Guid.NewGuid();
+            var kgOrder1Code = $"KG-{now:yyyyMMdd}-1001";
+            var kgOrder1 = new Order
+            {
+                Id = kgOrder1Id,
+                CustomerId = customer.Id,
+                ConsignmentCode = kgOrder1Code,
+                ConsignmentType = "KY_GUI",
+                OrderType = "CONSIGNMENT",
+                Status = "APPROVED",
+                Route = "CN-VN",
+                ReceiverName = customer.FullName ?? "Nguyễn Văn A",
+                ReceiverPhone = customer.Phone ?? "0987654321",
+                ReceiverAddress = customer.Address ?? "123 Nguyễn Huệ, Q.1, TP.HCM",
+                TotalWeight = 5.5m,
+                TotalVolume = 0.02m,
+                CreatedAt = now.AddHours(-5)
+            };
+            await orderRepo.AddAsync(kgOrder1);
+
+            var kgItem1 = new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                OrderId = kgOrder1Id,
+                ProductName = "Quần áo thời trang mẫu A",
+                Sku = "CLOTH-001",
+                Quantity = 10,
+                Weight = 2.5m,
+                DeclaredValue = 500000m,
+                DomesticTrackingCode = "TRACK-CN-8801",
+                CreatedAt = now.AddHours(-5)
+            };
+            var kgItem2 = new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                OrderId = kgOrder1Id,
+                ProductName = "Giày thể thao Nam",
+                Sku = "SHOES-002",
+                Quantity = 5,
+                Weight = 3.0m,
+                DeclaredValue = 1200000m,
+                DomesticTrackingCode = "TRACK-CN-8802",
+                CreatedAt = now.AddHours(-5)
+            };
+            await orderItemRepo.AddAsync(kgItem1);
+            await orderItemRepo.AddAsync(kgItem2);
+
+            var kgParcel1 = new Parcel
+            {
+                Id = Guid.NewGuid(),
+                ConsignmentId = kgOrder1Id,
+                OrderItemId = kgItem1.Id,
+                PackageCode = $"PKG-{now:yyyyMMdd}-001",
+                ActualWeight = 2.5m,
+                VolumetricWeight = 2.0m,
+                ChargeableWeight = 2.5m,
+                PackageStatus = "PENDING_CHECKIN"
+            };
+            var kgParcel2 = new Parcel
+            {
+                Id = Guid.NewGuid(),
+                ConsignmentId = kgOrder1Id,
+                OrderItemId = kgItem2.Id,
+                PackageCode = $"PKG-{now:yyyyMMdd}-002",
+                ActualWeight = 3.0m,
+                VolumetricWeight = 2.8m,
+                ChargeableWeight = 3.0m,
+                PackageStatus = "PENDING_CHECKIN"
+            };
+            await parcelRepo.AddAsync(kgParcel1);
+            await parcelRepo.AddAsync(kgParcel2);
+            createdOrders.Add(new { code = kgOrder1Code, type = "CONSIGNMENT", status = "APPROVED", items = 2 });
+
+            // 2. Tạo Đơn Ký Gửi 2 (CONSIGNMENT) - Trạng thái: ĐÃ VÀO KHO (IN_WAREHOUSE)
+            var kgOrder2Id = Guid.NewGuid();
+            var kgOrder2Code = $"KG-{now:yyyyMMdd}-1002";
+            var kgOrder2 = new Order
+            {
+                Id = kgOrder2Id,
+                CustomerId = customer.Id,
+                ConsignmentCode = kgOrder2Code,
+                ConsignmentType = "KY_GUI",
+                OrderType = "CONSIGNMENT",
+                Status = "IN_WAREHOUSE",
+                Route = "JP-VN",
+                ReceiverName = customer.FullName ?? "Nguyễn Văn A",
+                ReceiverPhone = customer.Phone ?? "0987654321",
+                ReceiverAddress = customer.Address ?? "123 Nguyễn Huệ, Q.1, TP.HCM",
+                TotalWeight = 1.2m,
+                TotalVolume = 0.008m,
+                CreatedAt = now.AddDays(-1)
+            };
+            await orderRepo.AddAsync(kgOrder2);
+
+            var kgItem3 = new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                OrderId = kgOrder2Id,
+                ProductName = "Mỹ phẩm Nhật Bản SK-II",
+                Sku = "COSM-JP-001",
+                Quantity = 3,
+                Weight = 1.2m,
+                DeclaredValue = 3500000m,
+                DomesticTrackingCode = "TRACK-JP-9901",
+                CreatedAt = now.AddDays(-1)
+            };
+            await orderItemRepo.AddAsync(kgItem3);
+
+            var kgParcel3 = new Parcel
+            {
+                Id = Guid.NewGuid(),
+                ConsignmentId = kgOrder2Id,
+                OrderItemId = kgItem3.Id,
+                PackageCode = $"PKG-{now:yyyyMMdd}-003",
+                ActualWeight = 1.2m,
+                VolumetricWeight = 1.0m,
+                ChargeableWeight = 1.2m,
+                PackageStatus = "IN_WAREHOUSE",
+                CheckInTime = now.AddHours(-10)
+            };
+            await parcelRepo.AddAsync(kgParcel3);
+            createdOrders.Add(new { code = kgOrder2Code, type = "CONSIGNMENT", status = "IN_WAREHOUSE", items = 1 });
+
+            // 3. Tạo Yêu Cầu Mua Hộ + Đơn Mua Hộ (PURCHASE)
+            var prId = Guid.NewGuid();
+            var prCode = $"PR-{now:yyyyMMdd}-2001";
+            var purchaseReq = new PurchaseRequest
+            {
+                Id = prId,
+                CustomerId = customer.Id,
+                UserId = customer.UserId,
+                PurchaseCode = prCode,
+                Route = "CN-VN",
+                ShippingOption = "STANDARD",
+                ReceiverName = customer.FullName ?? "Nguyễn Văn A",
+                ReceiverPhone = customer.Phone ?? "0987654321",
+                ReceiverAddress = customer.Address ?? "123 Nguyễn Huệ, Q.1, TP.HCM",
+                Status = "APPROVED",
+                CreatedAt = now.AddDays(-2)
+            };
+            await purchaseReqRepo.AddAsync(purchaseReq);
+
+            var prItem1 = new PurchaseRequestItem
+            {
+                Id = Guid.NewGuid(),
+                PurchaseRequestId = prId,
+                ProductName = "Tai nghe Bluetooth Wireless Pro",
+                ProductLink = "https://item.taobao.com/item.htm?id=61002345",
+                SourceWebsite = "Taobao",
+                Quantity = 2
+            };
+            await purchaseReqItemRepo.AddAsync(prItem1);
+
+            var mhOrderId = Guid.NewGuid();
+            var mhOrderCode = $"MH-{now:yyyyMMdd}-2001";
+            var mhOrder = new Order
+            {
+                Id = mhOrderId,
+                CustomerId = customer.Id,
+                PurchaseRequestId = prId,
+                ConsignmentCode = mhOrderCode,
+                ConsignmentType = "MUA_HO",
+                OrderType = "PURCHASE",
+                Status = "APPROVED",
+                Route = "CN-VN",
+                ReceiverName = customer.FullName ?? "Nguyễn Văn A",
+                ReceiverPhone = customer.Phone ?? "0987654321",
+                ReceiverAddress = customer.Address ?? "123 Nguyễn Huệ, Q.1, TP.HCM",
+                TotalWeight = 0.8m,
+                CreatedAt = now.AddDays(-2)
+            };
+            await orderRepo.AddAsync(mhOrder);
+
+            var mhItem1 = new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                OrderId = mhOrderId,
+                ProductName = "Tai nghe Bluetooth Wireless Pro",
+                Sku = "EAR-001",
+                Quantity = 2,
+                Weight = 0.8m,
+                DeclaredValue = 1050000m,
+                CreatedAt = now.AddDays(-2)
+            };
+            await orderItemRepo.AddAsync(mhItem1);
+
+            var mhParcel = new Parcel
+            {
+                Id = Guid.NewGuid(),
+                ConsignmentId = mhOrderId,
+                OrderItemId = mhItem1.Id,
+                PackageCode = $"PKG-{now:yyyyMMdd}-004",
+                ActualWeight = 0.8m,
+                VolumetricWeight = 0.6m,
+                ChargeableWeight = 0.8m,
+                PackageStatus = "PENDING_CHECKIN"
+            };
+            await parcelRepo.AddAsync(mhParcel);
+            createdOrders.Add(new { code = mhOrderCode, type = "PURCHASE", status = "APPROVED", items = 1 });
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return Ok(new
+            {
+                message = "Tạo các đơn ký gửi và mua hộ mẫu thành công!",
+                customer = customer.FullName,
+                email = customer.Email,
+                orders = createdOrders
+            });
+        }
     }
 }
