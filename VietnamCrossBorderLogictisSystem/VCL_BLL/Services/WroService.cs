@@ -23,28 +23,41 @@ namespace VCL_BLL.Services
         {
             if (request == null)
                 throw new ArgumentException("Yêu cầu xuất kho lẻ không được để trống.");
-            if (request.OrderId == Guid.Empty)
-                throw new ArgumentException("Vui lòng chọn đơn hàng cần xuất kho.");
+
+            var targetId = request.OrderId.HasValue && request.OrderId.Value != Guid.Empty
+                ? request.OrderId.Value
+                : (request.PurchaseRequestId.HasValue ? request.PurchaseRequestId.Value : Guid.Empty);
+
+            if (targetId == Guid.Empty)
+                throw new ArgumentException("Vui lòng chọn đơn hàng (OrderId) hoặc yêu cầu mua hộ (PurchaseRequestId) cần xuất kho.");
 
             var orderRepo = _unitOfWork.Repository<Order>();
-            var order = await orderRepo.GetByIdAsync(request.OrderId);
+            var order = await orderRepo.GetByIdAsync(targetId);
+
+            // Nếu truyền PurchaseRequestId hoặc OrderId không tìm thấy trực tiếpOrder.Id, tìm Order có Order.PurchaseRequestId = targetId
             if (order == null)
-                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {request.OrderId}");
+            {
+                var allOrders = await orderRepo.GetAllAsync();
+                order = allOrders.FirstOrDefault(o => o.PurchaseRequestId == targetId);
+            }
+
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng hoặc yêu cầu mua hộ tương ứng với ID: {targetId}");
 
             var inventoryRepo = _unitOfWork.Repository<Inventory>();
             var allInventories = await inventoryRepo.GetAllAsync();
             var orderInventories = allInventories
-                .Where(i => i.OrderId == request.OrderId && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0)
+                .Where(i => i.OrderId == order.Id && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0)
                 .ToList();
 
             if (!orderInventories.Any())
             {
-                throw new ArgumentException($"Đơn hàng {order.ConsignmentCode ?? request.OrderId.ToString()} không có hàng tồn kho khả dụng để xuất.");
+                throw new ArgumentException($"Đơn hàng {order.ConsignmentCode ?? targetId.ToString()} không có hàng tồn kho khả dụng để xuất.");
             }
 
             var fullRequest = new CreateWroRequestDto
             {
-                OrderId = request.OrderId,
+                OrderId = order.Id,
                 ExportType = "SINGLE",
                 ShelfCode = request.ShelfCode,
                 ExportReason = request.ExportReason,
@@ -66,6 +79,62 @@ namespace VCL_BLL.Services
             if (request == null)
                 throw new ArgumentException("Yêu cầu xuất kho gom lô không được để trống.");
 
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+            var allOrders = await orderRepo.GetAllAsync();
+
+            var combinedItems = new List<CreateWroRequestItemDto>();
+            if (request.Items != null && request.Items.Any())
+            {
+                combinedItems.AddRange(request.Items);
+            }
+
+            // Gom tất cả hàng tồn kho AVAILABLE từ danh sách OrderIds nếu có
+            if (request.OrderIds != null && request.OrderIds.Any())
+            {
+                foreach (var orderId in request.OrderIds)
+                {
+                    var matchedOrder = allOrders.FirstOrDefault(o => o.Id == orderId || o.PurchaseRequestId == orderId);
+                    if (matchedOrder != null)
+                    {
+                        var orderInvs = allInventories.Where(i => i.OrderId == matchedOrder.Id && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0);
+                        foreach (var inv in orderInvs)
+                        {
+                            if (!combinedItems.Any(ci => ci.InventoryId == inv.Id))
+                            {
+                                combinedItems.Add(new CreateWroRequestItemDto { InventoryId = inv.Id, Quantity = inv.Quantity });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Gom tất cả hàng tồn kho AVAILABLE từ danh sách PurchaseRequestIds nếu có
+            if (request.PurchaseRequestIds != null && request.PurchaseRequestIds.Any())
+            {
+                foreach (var prId in request.PurchaseRequestIds)
+                {
+                    var matchedOrder = allOrders.FirstOrDefault(o => o.PurchaseRequestId == prId || o.Id == prId);
+                    if (matchedOrder != null)
+                    {
+                        var orderInvs = allInventories.Where(i => i.OrderId == matchedOrder.Id && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0);
+                        foreach (var inv in orderInvs)
+                        {
+                            if (!combinedItems.Any(ci => ci.InventoryId == inv.Id))
+                            {
+                                combinedItems.Add(new CreateWroRequestItemDto { InventoryId = inv.Id, Quantity = inv.Quantity });
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!combinedItems.Any())
+            {
+                throw new ArgumentException("Danh sách xuất kho gom lô phải có ít nhất một kiện/mặt hàng hoặc chọn ít nhất một đơn hàng.");
+            }
+
             var fullRequest = new CreateWroRequestDto
             {
                 ExportType = "BATCH",
@@ -74,7 +143,7 @@ namespace VCL_BLL.Services
                 ReceiverName = request.ReceiverName,
                 ReceiverPhone = request.ReceiverPhone,
                 ReceiverAddress = request.ReceiverAddress,
-                Items = request.Items
+                Items = combinedItems
             };
 
             return await CreateWroRequestAsync(userId, userRole, fullRequest);

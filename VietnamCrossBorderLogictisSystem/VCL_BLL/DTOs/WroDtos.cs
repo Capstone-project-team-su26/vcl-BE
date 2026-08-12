@@ -15,11 +15,12 @@ namespace VCL_BLL.DTOs
 
     /// <summary>
     /// TH1: DTO Tạo phiếu xuất kho lẻ theo Đơn hàng (Hỏa tốc, lẻ, 1 đơn riêng biệt).
+    /// Hỗ trợ truyền OrderId (Đơn ký gửi / Đơn mua hộ) HOẶC PurchaseRequestId (Yêu cầu mua hộ).
     /// </summary>
     public class CreateSingleWroRequestDto
     {
-        [Required(ErrorMessage = "Vui lòng chọn đơn hàng cần xuất kho.")]
-        public Guid OrderId { get; set; }
+        public Guid? OrderId { get; set; }
+        public Guid? PurchaseRequestId { get; set; }
 
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
@@ -30,6 +31,7 @@ namespace VCL_BLL.DTOs
 
     /// <summary>
     /// TH2: DTO Tạo phiếu xuất kho gom lô (Nhiều kiện của nhiều đơn hàng khác nhau).
+    /// Hỗ trợ gom theo danh sách Items (lẻ từng kiện) HOẶC danh sách OrderIds / PurchaseRequestIds.
     /// </summary>
     public class CreateBatchWroRequestDto
     {
@@ -39,9 +41,14 @@ namespace VCL_BLL.DTOs
         public string? ReceiverPhone { get; set; }
         public string? ReceiverAddress { get; set; }
 
-        [Required(ErrorMessage = "Danh sách kiện hàng gom lô không được để trống.")]
-        [MinLength(1, ErrorMessage = "Danh sách kiện hàng gom lô phải có ít nhất một kiện/mặt hàng.")]
+        /// <summary>Danh sách tồn kho xuất lẻ từng kiện/mặt hàng.</summary>
         public List<CreateWroRequestItemDto> Items { get; set; } = new();
+
+        /// <summary>Danh sách ID Đơn hàng (Order.Id) muốn gom toàn bộ tồn kho.</summary>
+        public List<Guid>? OrderIds { get; set; }
+
+        /// <summary>Danh sách ID Yêu cầu mua hộ (PurchaseRequest.Id) muốn gom toàn bộ tồn kho.</summary>
+        public List<Guid>? PurchaseRequestIds { get; set; }
     }
 
     /// <summary>

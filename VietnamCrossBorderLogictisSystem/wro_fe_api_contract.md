@@ -114,9 +114,12 @@ Cho phép khách hàng hoặc nhân viên tạo phiếu xuất hỏa tốc cho t
 * **Authorization**: All Roles (`Customer`, `WarehouseStaff`, `Staff`, `OperationsManager`, `Admin`)
 
 #### Request Body
+> **Lưu ý cho FE**: FE có thể truyền `orderId` (ID của Đơn ký gửi/Mua hộ) HOẶC `purchaseRequestId` (ID của Yêu cầu mua hộ). Backend sẽ tự động truy vết và gom toàn bộ tồn kho tương ứng!
+
 ```json
 {
   "orderId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "purchaseRequestId": null,
   "shelfCode": "Shelf 1",
   "exportReason": "Xuất kho hỏa tốc giao gấp cho khách hàng",
   "receiverName": "Trung Đình",
@@ -171,6 +174,11 @@ Cho phép gom nhiều kiện hàng lẻ từ các đơn Ký gửi & Mua hộ kh�
 * **Authorization**: `WarehouseStaff`, `Staff`, `OperationsManager`, `Operations`, `Admin`
 
 #### Request Body
+> **Lưu ý cho FE**: TH2 cho phép linh hoạt gom lô theo 3 cách (hoặc kết hợp cả 3):
+> 1. Truyền mảng `items`: Gom lẻ từng kiện/tồn kho (`inventoryId`).
+> 2. Truyền mảng `orderIds`: Gom toàn bộ tồn kho thuộc các Đơn hàng (Ký gửi / Mua hộ).
+> 3. Truyền mảng `purchaseRequestIds`: Gom toàn bộ tồn kho thuộc các Yêu cầu mua hộ.
+
 ```json
 {
   "shelfCode": "LOT-B102",
@@ -179,8 +187,13 @@ Cho phép gom nhiều kiện hàng lẻ từ các đơn Ký gửi & Mua hộ kh�
   "receiverPhone": "0988888888",
   "receiverAddress": "Kho Đích Tân Sơn Nhất, Phường 2, Quận Tân Bình, TP.HCM",
   "items": [
-    { "inventoryId": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "quantity": 1 },
-    { "inventoryId": "4bb96f75-6828-5673-c4gd-3d074f77bfb7", "quantity": 2 }
+    { "inventoryId": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "quantity": 1 }
+  ],
+  "orderIds": [
+    "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+  ],
+  "purchaseRequestIds": [
+    "5c9803b9-1234-4567-89ab-cdef01234567"
   ]
 }
 ```
