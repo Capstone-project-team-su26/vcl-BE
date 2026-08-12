@@ -1427,6 +1427,26 @@ namespace VCL_BLL.Services
             wroRequest.Status = "HANDED_OVER";
 
             wroRepo.Update(wroRequest);
+
+            // Đảm bảo tồn kho Inventory và kiện hàng Parcel đều chuyển sang RELEASED và nhả khỏi ô kệ khi bàn giao cho hãng
+            var wroItemRepo = _unitOfWork.Repository<WroItem>();
+            var allWroItems = await wroItemRepo.GetAllAsync();
+            var relatedWroItems = allWroItems.Where(wi => wi.WroRequestId == requestId).ToList();
+
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+
+            foreach (var wroItem in relatedWroItems)
+            {
+                var inv = await inventoryRepo.GetByIdAsync(wroItem.InventoryId);
+                if (inv != null && !string.Equals(inv.Status, "RELEASED", StringComparison.OrdinalIgnoreCase))
+                {
+                    inv.Status = "RELEASED";
+                    inventoryRepo.Update(inv);
+                    await ReleaseParcelFromBinAsync(inv, inventoryRepo, allInventories);
+                }
+            }
+
             await _unitOfWork.SaveChangesAsync();
 
             return new ReleaseHandoverResponseDto
