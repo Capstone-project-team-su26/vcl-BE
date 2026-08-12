@@ -54,8 +54,9 @@ namespace VCL_BLL.Services
                 return result;
             }
 
-            // Ô kệ nào thuộc kho đích — chỉ kho đích mới tính phí lưu, kho nguồn thì không.
-            var destinationBinIds = await GetDestinationBinIdsAsync();
+            // Phí lưu kho tính ở CẢ HAI KHO (nguồn quốc tế + đích VN) nên không lọc theo kho
+            // nữa; chỉ cần biết mỗi ô kệ thuộc kho nào để hiện chi tiết từng chặng cho khách.
+            var binWarehouses = await GetBinWarehouseMapAsync();
 
             var parcelIds = parcels.Select(p => p.Id).ToHashSet();
             var movements = (await _unitOfWork.Repository<InventoryMovement>().GetAllAsync())
@@ -73,20 +74,41 @@ namespace VCL_BLL.Services
                     PackageCode = parcel.PackageCode ?? string.Empty
                 };
 
-                var (storedAt, releasedAt) = ResolveStoragePeriod(parcel, movements, destinationBinIds);
-                line.StoredAt = storedAt;
-                line.ReleasedAt = releasedAt;
-
-                if (storedAt.HasValue)
+                foreach (var stay in ResolveStorageStays(parcel, movements))
                 {
-                    var until = releasedAt ?? now;
-                    var elapsed = until - storedAt.Value;
+                    var until = stay.ReleasedAt ?? now;
+                    var elapsed = until - stay.StoredAt;
 
-                    // Làm tròn lên theo ngày: nằm sang ngày thứ tám là tính một ngày phí.
-                    line.StoredDays = elapsed <= TimeSpan.Zero
-                        ? 0
-                        : (int)Math.Ceiling(elapsed.TotalDays);
+                    // Làm tròn lên theo ngày, TỪNG CHẶNG một. Cộng thời lượng thô rồi mới làm
+                    // tròn thì tổng lệch với các con số hiện trên màn hình, khách nhìn thấy
+                    // "10 ngày + 2 ngày = 13 ngày" là mất tin ngay.
+                    var days = elapsed <= TimeSpan.Zero ? 0 : (int)Math.Ceiling(elapsed.TotalDays);
 
+                    var knownWarehouse = binWarehouses.TryGetValue(stay.BinId, out var warehouse);
+
+                    line.Legs.Add(new StorageFeeLegDto
+                    {
+                        WarehouseId = knownWarehouse ? warehouse.Id : null,
+                        WarehouseName = knownWarehouse ? warehouse.Name : string.Empty,
+                        WarehouseType = knownWarehouse ? warehouse.Type : string.Empty,
+                        StoredAt = stay.StoredAt,
+                        ReleasedAt = stay.ReleasedAt,
+                        Days = days
+                    });
+                }
+
+                if (line.Legs.Count > 0)
+                {
+                    line.StoredAt = line.Legs.Min(l => l.StoredAt);
+
+                    // Còn chặng nào chưa đóng thì kiện vẫn đang nằm kho, đồng hồ chưa dừng.
+                    line.ReleasedAt = line.Legs.Any(l => l.ReleasedAt == null)
+                        ? null
+                        : line.Legs.Max(l => l.ReleasedAt);
+
+                    line.StoredDays = line.Legs.Sum(l => l.Days);
+
+                    // Miễn phí trừ MỘT LẦN trên tổng cả hành trình, không phải mỗi kho một lần.
                     line.ChargeableDays = Math.Max(0, line.StoredDays - freeDays);
                     line.Amount = Math.Round(line.ChargeableDays * unitPrice, 0);
                 }
@@ -104,52 +126,74 @@ namespace VCL_BLL.Services
             return result;
         }
 
-        /// <summary>
-        /// Khoảng thời gian kiện nằm ở kho đích: từ lần cất vào ô kệ kho đích gần nhất
-        /// đến lần lấy ra kế tiếp. Chưa lấy ra thì trả null để bên gọi tính tới hiện tại.
-        /// </summary>
-        private static (DateTime? StoredAt, DateTime? ReleasedAt) ResolveStoragePeriod(
-            Parcel parcel, List<InventoryMovement> movements, HashSet<Guid> destinationBinIds)
+        /// <summary>Một lượt kiện nằm trong kho, dùng nội bộ khi dựng các chặng.</summary>
+        private sealed class StorageStay
         {
-            var forParcel = movements.Where(m => m.ParcelId == parcel.Id).ToList();
-
-            var inbound = forParcel
-                .Where(m => destinationBinIds.Contains(m.ToBinId)
-                            && !string.Equals(m.MovementType, "OUTBOUND", StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(m => m.MovedAt)
-                .FirstOrDefault();
-
-            if (inbound == null)
-            {
-                // Chưa có nhật ký nhập kho đích. Kiện đang nằm trong ô kệ kho đích thì vẫn tính
-                // được bằng PutAwayTime — trường hợp dữ liệu cũ không có movement.
-                if (parcel.BinId.HasValue && destinationBinIds.Contains(parcel.BinId.Value) && parcel.PutAwayTime.HasValue)
-                {
-                    return (parcel.PutAwayTime, null);
-                }
-                return (null, null);
-            }
-
-            var outbound = forParcel
-                .Where(m => string.Equals(m.MovementType, "OUTBOUND", StringComparison.OrdinalIgnoreCase)
-                            && m.MovedAt > inbound.MovedAt)
-                .OrderBy(m => m.MovedAt)
-                .FirstOrDefault();
-
-            return (inbound.MovedAt, outbound?.MovedAt);
+            public Guid BinId { get; set; }
+            public DateTime StoredAt { get; set; }
+            public DateTime? ReleasedAt { get; set; }
         }
 
-        private async Task<HashSet<Guid>> GetDestinationBinIdsAsync()
+        /// <summary>
+        /// Mọi lượt kiện nằm kho trên toàn hành trình, theo thứ tự thời gian. Kiện đi trọn
+        /// đường có hai lượt: nằm kho nguồn chờ gom lô, rồi nằm kho đích chờ giao (nếu có nhập
+        /// kho — luồng giao thẳng thì không có lượt thứ hai).
+        ///
+        /// Điều chuyển nội bộ (RELOCATION) chỉ đổi ô kệ chứ kiện vẫn nằm trong kho, nên KHÔNG
+        /// mở lượt mới — mở mới ở đây là tính phí chồng lên chính khoảng thời gian đó.
+        /// </summary>
+        private static List<StorageStay> ResolveStorageStays(Parcel parcel, List<InventoryMovement> movements)
         {
-            var destinationWarehouseIds = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
-                .Where(w => string.Equals(w.WarehouseType?.Trim(), "DESTINATION", StringComparison.OrdinalIgnoreCase))
-                .Select(w => w.Id)
-                .ToHashSet();
+            var stays = new List<StorageStay>();
 
-            return (await _unitOfWork.Repository<Bin>().GetAllAsync())
-                .Where(b => b.WarehouseId.HasValue && destinationWarehouseIds.Contains(b.WarehouseId.Value))
-                .Select(b => b.Id)
-                .ToHashSet();
+            StorageStay? open = null;
+            foreach (var movement in movements.Where(m => m.ParcelId == parcel.Id).OrderBy(m => m.MovedAt))
+            {
+                if (string.Equals(movement.MovementType, "OUTBOUND", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (open != null)
+                    {
+                        open.ReleasedAt = movement.MovedAt;
+                        stays.Add(open);
+                        open = null;
+                    }
+                    continue;
+                }
+
+                open ??= new StorageStay { BinId = movement.ToBinId, StoredAt = movement.MovedAt };
+            }
+
+            // Lượt chưa đóng: kiện còn nằm trong kho, bên gọi tính tới hiện tại.
+            if (open != null)
+            {
+                stays.Add(open);
+            }
+
+            // Dữ liệu cũ không có nhật ký nhưng kiện đang nằm trong ô kệ thì vẫn tính được.
+            if (stays.Count == 0 && parcel.BinId.HasValue && parcel.PutAwayTime.HasValue)
+            {
+                stays.Add(new StorageStay { BinId = parcel.BinId.Value, StoredAt = parcel.PutAwayTime.Value });
+            }
+
+            return stays;
+        }
+
+        /// <summary>Ô kệ thuộc kho nào — để hiện tên kho trên từng chặng lưu kho.</summary>
+        private async Task<Dictionary<Guid, (Guid Id, string Name, string Type)>> GetBinWarehouseMapAsync()
+        {
+            var warehouses = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                .ToDictionary(w => w.Id);
+
+            var map = new Dictionary<Guid, (Guid, string, string)>();
+            foreach (var bin in await _unitOfWork.Repository<Bin>().GetAllAsync())
+            {
+                if (bin.WarehouseId.HasValue && warehouses.TryGetValue(bin.WarehouseId.Value, out var warehouse))
+                {
+                    map[bin.Id] = (warehouse.Id, warehouse.WarehouseName ?? string.Empty, warehouse.WarehouseType?.Trim() ?? string.Empty);
+                }
+            }
+
+            return map;
         }
 
         /// <summary>
@@ -184,11 +228,11 @@ namespace VCL_BLL.Services
 
             if (result.Parcels.All(p => p.StoredAt == null))
             {
-                return "Chưa có kiện nào được xếp vào ô kệ tại kho đích nên chưa tính phí lưu kho.";
+                return "Chưa có kiện nào được xếp vào ô kệ nên chưa tính phí lưu kho.";
             }
 
             var longest = result.Parcels.Max(p => p.StoredDays);
-            return $"Kiện lưu lâu nhất mới {longest} ngày, còn trong {freeDays} ngày miễn phí.";
+            return $"Kiện lưu lâu nhất mới {longest} ngày (cộng cả hành trình), còn trong {freeDays} ngày miễn phí.";
         }
     }
 }

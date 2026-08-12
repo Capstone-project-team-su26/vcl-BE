@@ -1473,6 +1473,9 @@ public partial class VCLDBContext : DbContext
                 .HasColumnName("total_weight");
             entity.Property(e => e.CustomsDocumentUrls)
                 .HasColumnName("customs_document_urls");
+            entity.Property(e => e.CarrierTrackingCode)
+                .HasMaxLength(100)
+                .HasColumnName("carrier_tracking_code");
 
             entity.HasOne(d => d.Carrier).WithMany(p => p.Shipments)
                 .HasForeignKey(d => d.CarrierId)

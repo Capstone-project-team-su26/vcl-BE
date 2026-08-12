@@ -14,8 +14,15 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
 
-        // Chỉ Staff hoặc Operations được tạo/cập nhật lô vận chuyển quốc tế
+        // Chỉ Staff hoặc Operations được tạo lô vận chuyển quốc tế
         private static readonly string[] AllowedRoles = { "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
+
+        // Cập nhật hành trình lô (trạng thái + xác nhận đến kho đích): thêm cả Sale.
+        // Anh Hoàng chốt 11/08 — bên thứ 3 vận chuyển có trang quản lý riêng, sale vào đó xem
+        // lô đi tới đâu / thông quan ra sao rồi gõ tay vào hệ thống mình; "vấn đề cho khách xem
+        // thì để sale xử lý". Sale không tạo được lô mới, chỉ cập nhật hành trình lô đã có.
+        private static readonly string[] TrackingUpdateRoles =
+            { "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
 
         // Nhận kiện tại kho đích: thêm cả Warehouse Staff
         private static readonly string[] ReceivingRoles = { "WAREHOUSESTAFF", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
@@ -115,6 +122,7 @@ namespace VCL_BLL.Services
                 ShippingMethod = shipment.ShippingMethod,
                 ShippingRouteId = routeId,
                 ShippingRouteName = route?.RouteName ?? route?.RouteCode,
+                CarrierTrackingCode = shipment.CarrierTrackingCode,
                 TotalPackages = shipment.TotalPackages ?? parcels.Count,
                 TotalWeight = shipment.TotalWeight ?? parcels.Sum(p => p.Weight ?? 0m),
                 Status = shipment.Status ?? string.Empty,
@@ -466,10 +474,10 @@ namespace VCL_BLL.Services
 
             // 1. Phân quyền
             bool allowed = !string.IsNullOrWhiteSpace(userRole)
-                && AllowedRoles.Contains(userRole.Trim().ToUpperInvariant());
+                && TrackingUpdateRoles.Contains(userRole.Trim().ToUpperInvariant());
             if (!allowed)
             {
-                throw new UnauthorizedAccessException("Chỉ Staff hoặc Operations được cập nhật trạng thái lô vận chuyển.");
+                throw new UnauthorizedAccessException("Chỉ Sale, Staff hoặc Operations được cập nhật trạng thái lô vận chuyển.");
             }
 
             // 2. Tìm lô vận chuyển (404 nếu không có)
@@ -502,6 +510,15 @@ namespace VCL_BLL.Services
             shipment.Status = targetStatus;
             if (targetStatus == "IN_TRANSIT") shipment.ShippedAt = now;
             if (targetStatus == "ARRIVED_DESTINATION") shipment.DeliveredAt = now;
+
+            // Mã vận đơn bên đối tác: sale nhập tay, thường chỉ có từ lúc lô bắt đầu đi. Bỏ
+            // trống thì giữ nguyên mã cũ — lần cập nhật trạng thái sau không được xoá mất mã
+            // mà sale đã nhập, vì đó là thứ duy nhất tra được lô trên trang của đối tác.
+            if (!string.IsNullOrWhiteSpace(request.CarrierTrackingCode))
+            {
+                shipment.CarrierTrackingCode = request.CarrierTrackingCode.Trim();
+            }
+
             shipmentRepo.Update(shipment);
 
             // 5. Lưu lịch sử cập nhật (Tracking)
@@ -527,6 +544,7 @@ namespace VCL_BLL.Services
                 Status = shipment.Status,
                 StatusTab = MapStatusToTab(shipment.Status),
                 Note = request.Note,
+                CarrierTrackingCode = shipment.CarrierTrackingCode,
                 UpdatedAt = now,
                 UpdatedByName = user?.FullName ?? string.Empty
             };
@@ -537,10 +555,10 @@ namespace VCL_BLL.Services
         {
             // 1. Phân quyền
             bool allowed = !string.IsNullOrWhiteSpace(userRole)
-                && AllowedRoles.Contains(userRole.Trim().ToUpperInvariant());
+                && TrackingUpdateRoles.Contains(userRole.Trim().ToUpperInvariant());
             if (!allowed)
             {
-                throw new UnauthorizedAccessException("Chỉ Staff hoặc Operations được xác nhận lô đến kho đích.");
+                throw new UnauthorizedAccessException("Chỉ Sale, Staff hoặc Operations được xác nhận lô đến kho đích.");
             }
 
             // 2. Tìm lô (404)

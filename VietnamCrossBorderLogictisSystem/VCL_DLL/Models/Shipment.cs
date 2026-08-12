@@ -47,6 +47,16 @@ public partial class Shipment
     /// </summary>
     public string CustomsDocumentUrls { get; set; }
 
+    /// <summary>
+    /// Mã vận đơn / số container do đơn vị vận chuyển thứ ba cấp cho lô này.
+    /// <para>
+    /// Sale nhập tay khi cập nhật hành trình lô: đây là mã dùng để tra cứu lô trên trang quản
+    /// lý của bên đối tác. Giai đoạn hiện tại chưa nối API của họ nên hoàn toàn nhập thủ công;
+    /// khi nào nối được thì chính mã này là khoá để khớp lô giữa hai hệ thống.
+    /// </para>
+    /// </summary>
+    public string CarrierTrackingCode { get; set; }
+
     public virtual ICollection<ShipmentWroRequest> ShipmentWroRequests { get; set; } = new List<ShipmentWroRequest>();
 
     public virtual ICollection<ShipmentParcel> ShipmentParcels { get; set; } = new List<ShipmentParcel>();
