@@ -49,6 +49,13 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Ghi chú vận chuyển (nếu có).</summary>
         public string? Note { get; set; }
+
+        /// <summary>
+        /// Mã vận đơn / số container bên đối tác cấp cho lô. Sale nhập tay khi theo dõi lô trên
+        /// trang quản lý của họ. Bỏ trống thì giữ nguyên mã đã lưu, không xoá mất.
+        /// </summary>
+        [MaxLength(100, ErrorMessage = "Mã vận đơn đối tác tối đa 100 ký tự.")]
+        public string? CarrierTrackingCode { get; set; }
     }
 
     public class UpdateInternationalShipmentStatusResponseDto
@@ -65,6 +72,10 @@ namespace VCL_BLL.DTOs
         public string StatusTab { get; set; } = string.Empty;
 
         public string? Note { get; set; }
+
+        /// <summary>Mã vận đơn / số container bên đối tác, sau khi cập nhật.</summary>
+        public string? CarrierTrackingCode { get; set; }
+
         public DateTime UpdatedAt { get; set; }
         public string UpdatedByName { get; set; } = string.Empty;
     }
@@ -138,6 +149,12 @@ namespace VCL_BLL.DTOs
         /// <summary>Tuyến vận chuyển, suy từ các WRO thành phần (mọi WRO trong lô đều cùng tuyến).</summary>
         public Guid? ShippingRouteId { get; set; }
         public string? ShippingRouteName { get; set; }
+
+        /// <summary>
+        /// Mã vận đơn / số container bên đối tác cấp. Sale dùng mã này tra cứu lô trên trang
+        /// quản lý của họ, nên FE nên hiện rõ ở màn chi tiết lô và cho copy nhanh.
+        /// </summary>
+        public string? CarrierTrackingCode { get; set; }
 
         public DateTime? ShippedAt { get; set; }
         public DateTime? DeliveredAt { get; set; }

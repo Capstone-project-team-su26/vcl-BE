@@ -32,6 +32,11 @@ namespace VCL_BLL.Services
         // Trạng thái kiện đã về kho đích - điều kiện cho phép tạo thanh toán cuối.
         private const string ParcelReceivedAtDestination = "RECEIVED_AT_DESTINATION";
 
+        // Sale xác nhận lô đã về kho VN (PUT /international-shipments/{id}/arrive) thì kiện dừng ở
+        // ARRIVED_DESTINATION, chưa qua bước kho mở lô nhận kiện. Anh Hoàng chốt 11/08: chính mốc
+        // sale bấm là mốc gọi khách tất toán phần còn lại, nên mốc này phải mở được thanh toán cuối.
+        private const string ParcelArrivedAtDestination = "ARRIVED_DESTINATION";
+
         // Thanh toán offline (chuyển khoản tay): chờ Sales đối soát chứng từ rồi mới xác nhận.
         private const string PaymentMethodOffline = "OFFLINE";
         private const string PendingReconciliation = "PENDING_RECONCILIATION";
@@ -299,16 +304,19 @@ namespace VCL_BLL.Services
             if (order == null)
                 throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
 
-            // Điều kiện trigger: đơn phải có kiện đã về kho đích.
-            // Kiện vừa nhận thì ở RECEIVED_AT_DESTINATION, nhưng kho VN quét xong và xếp vào ô kệ
-            // là kiện chuyển sang STORED — chỉ nhận mỗi RECEIVED_AT_DESTINATION thì đi đúng quy
-            // trình lại không tạo được thanh toán cuối. Nên xét cả vị trí thực tế của kiện.
+            // Điều kiện trigger: đơn phải có kiện đã về kho đích. Kiện đi qua ba mốc và mốc nào
+            // cũng là "đã về tới VN", nên phải nhận cả ba, nếu không thì đi đúng quy trình lại
+            // không tạo được thanh toán cuối:
+            //   ARRIVED_DESTINATION  - sale xác nhận lô về kho VN (mốc gọi khách tất toán)
+            //   RECEIVED_AT_DESTINATION - kho mở lô, nhận từng kiện
+            //   nằm trong ô kệ kho đích - kho quét xếp kệ xong (luồng có nhập kho)
             var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
             var orderParcels = allParcels.Where(p => p.ConsignmentId == orderId).ToList();
             var destinationBinIds = await GetDestinationBinIdsAsync();
 
             bool anyAtDestination = orderParcels.Any(p =>
-                string.Equals(p.PackageStatus, ParcelReceivedAtDestination, StringComparison.OrdinalIgnoreCase)
+                string.Equals(p.PackageStatus, ParcelArrivedAtDestination, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(p.PackageStatus, ParcelReceivedAtDestination, StringComparison.OrdinalIgnoreCase)
                 || (p.BinId.HasValue && destinationBinIds.Contains(p.BinId.Value)));
             if (!anyAtDestination)
                 throw new ArgumentException("Chưa thể tạo thanh toán cuối: đơn chưa có kiện hàng về đến kho đích.");
