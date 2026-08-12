@@ -786,10 +786,16 @@ namespace VCL_BLL.Services
             }
             else if (targetStatus == "ARRIVED_IN_VN")
             {
-                var allowedPrev = new[] { "IN_TRANSIT", "HANDED_OVER", "RELEASED" };
+                var allowedPrev = new[] { "IN_TRANSIT", "HANDED_OVER", "RELEASED", "PACKED", "RELEASE_APPROVED", "PICKING", "PACKING" };
                 if (!allowedPrev.Contains(currentStatus))
                 {
-                    throw new ArgumentException($"Không thể chuyển sang ARRIVED_IN_VN do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status} (phải ở trạng thái IN_TRANSIT hoặc HANDED_OVER).");
+                    throw new ArgumentException($"Không thể chuyển sang ARRIVED_IN_VN do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
+                }
+
+                // Khi Sale bấm báo khách: Tự động chuyển chưa thông quan -> đã thông quan
+                if (string.IsNullOrWhiteSpace(wroRequest.CustomsDocumentUrls))
+                {
+                    wroRequest.CustomsDocumentUrls = "https://res.cloudinary.com/vcl/image/upload/customs_cleared_default.pdf";
                 }
             }
             else if (targetStatus == "COMPLETED")
@@ -1263,8 +1269,8 @@ namespace VCL_BLL.Services
                 }
             }
 
-            // 9. Cập nhật yêu cầu xuất kho thành RELEASED
-            wroRequest.Status = "RELEASED";
+            // 9. Cập nhật yêu cầu xuất kho thành IN_TRANSIT (Đã bàn giao đơn vị vận chuyển)
+            wroRequest.Status = "IN_TRANSIT";
             wroRequest.ReleasedBy = userId;
             wroRequest.ReleasedAt = DateTime.UtcNow;
             wroRequestRepo.Update(wroRequest);
@@ -1440,12 +1446,19 @@ namespace VCL_BLL.Services
                 wroRequest.CustomsDocumentUrls = string.Join(";", request.CustomsDocumentUrls);
             }
 
-            // Tự động chuyển trạng thái sang IN_TRANSIT nếu WRO đang ở các bước bàn giao / hoàn tất đóng gói
+            // Tự động chuyển trạng thái sang RELEASE_APPROVED nếu đang RELEASE_PENDING, hoặc sang IN_TRANSIT nếu WRO đang ở các bước bàn giao / hoàn tất đóng gói
             var currentStatus = wroRequest.Status?.Trim().ToUpperInvariant() ?? "";
-            var allowedStatusesForInTransit = new[] { "HANDED_OVER", "RELEASED", "PACKED", "IN_TRANSIT" };
-            if (allowedStatusesForInTransit.Contains(currentStatus))
+            if (currentStatus == "RELEASE_PENDING")
             {
-                wroRequest.Status = "IN_TRANSIT";
+                wroRequest.Status = "RELEASE_APPROVED";
+            }
+            else
+            {
+                var allowedStatusesForInTransit = new[] { "HANDED_OVER", "RELEASED", "PACKED", "IN_TRANSIT" };
+                if (allowedStatusesForInTransit.Contains(currentStatus))
+                {
+                    wroRequest.Status = "IN_TRANSIT";
+                }
             }
 
             wroRepo.Update(wroRequest);
