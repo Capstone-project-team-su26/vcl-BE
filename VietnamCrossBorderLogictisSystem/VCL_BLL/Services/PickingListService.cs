@@ -56,6 +56,16 @@ namespace VCL_BLL.Services
             var allPickingItems = await pickingItemRepo.GetAllAsync();
             var relatedPickingItems = allPickingItems.Where(pi => pi.PickingListId == pickingListId).ToList();
 
+            // Nếu request.Items rỗng hoặc null -> mặc định xác nhận lấy ĐÚNG & ĐỦ TẤT CẢ HÀNG trong phiếu picking này
+            if (request.Items == null || !request.Items.Any())
+            {
+                request.Items = relatedPickingItems.Select(pi => new ConfirmPickingItemDto
+                {
+                    InventoryId = pi.InventoryId,
+                    Quantity = pi.Quantity
+                }).ToList();
+            }
+
             // 5. Kiểm tra danh sách Inventory IDs trong request có hợp lệ không
             var pickingInventoryIds = relatedPickingItems.Select(pi => pi.InventoryId).ToHashSet();
             foreach (var reqItem in request.Items)
@@ -379,6 +389,40 @@ namespace VCL_BLL.Services
                 IsItemCompleted = request.ScannedQuantity >= itemToScan.Quantity,
                 IsPickingListCompleted = false
             };
+        }
+
+        public async Task<ConfirmPickingResponseDto> ConfirmPickingListByRequestIdAsync(
+            Guid requestId,
+            Guid userId,
+            string role,
+            ConfirmPickingRequestDto request)
+        {
+            var pickingListRepo = _unitOfWork.Repository<PickingList>();
+            var allPickingLists = await pickingListRepo.GetAllAsync();
+            var pickingList = allPickingLists.FirstOrDefault(p => p.WroRequestId == requestId);
+
+            if (pickingList == null)
+            {
+                var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
+                var wroRequest = await wroRequestRepo.GetByIdAsync(requestId);
+                if (wroRequest == null)
+                {
+                    throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
+                }
+
+                // Nếu chưa tạo phiếu picking nhưng WRO đã được duyệt hoặc đang trong luồng xuất kho, tự động tạo phiếu picking
+                if (string.Equals(wroRequest.Status, "RELEASE_APPROVED", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(wroRequest.Status, "PICKING", StringComparison.OrdinalIgnoreCase))
+                {
+                    var wroService = new WroService(_unitOfWork);
+                    var pickingListDto = await wroService.CreatePickingListAsync(requestId, userId, role);
+                    return await ConfirmPickingListAsync(pickingListDto.PickingListId, userId, role, request);
+                }
+
+                throw new NotFoundException($"Không tìm thấy phiếu picking nào cho yêu cầu xuất kho ID {requestId}");
+            }
+
+            return await ConfirmPickingListAsync(pickingList.Id, userId, role, request);
         }
     }
 }

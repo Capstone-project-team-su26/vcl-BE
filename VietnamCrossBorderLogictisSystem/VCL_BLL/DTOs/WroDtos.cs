@@ -15,11 +15,12 @@ namespace VCL_BLL.DTOs
 
     /// <summary>
     /// TH1: DTO Tạo phiếu xuất kho lẻ theo Đơn hàng (Hỏa tốc, lẻ, 1 đơn riêng biệt).
+    /// Hỗ trợ truyền OrderId (Đơn ký gửi / Đơn mua hộ) HOẶC PurchaseRequestId (Yêu cầu mua hộ).
     /// </summary>
     public class CreateSingleWroRequestDto
     {
-        [Required(ErrorMessage = "Vui lòng chọn đơn hàng cần xuất kho.")]
-        public Guid OrderId { get; set; }
+        public Guid? OrderId { get; set; }
+        public Guid? PurchaseRequestId { get; set; }
 
         public string? ShelfCode { get; set; }
         public string? ExportReason { get; set; }
@@ -30,6 +31,7 @@ namespace VCL_BLL.DTOs
 
     /// <summary>
     /// TH2: DTO Tạo phiếu xuất kho gom lô (Nhiều kiện của nhiều đơn hàng khác nhau).
+    /// Hỗ trợ gom theo danh sách Items (lẻ từng kiện) HOẶC danh sách OrderIds / PurchaseRequestIds.
     /// </summary>
     public class CreateBatchWroRequestDto
     {
@@ -39,9 +41,14 @@ namespace VCL_BLL.DTOs
         public string? ReceiverPhone { get; set; }
         public string? ReceiverAddress { get; set; }
 
-        [Required(ErrorMessage = "Danh sách kiện hàng gom lô không được để trống.")]
-        [MinLength(1, ErrorMessage = "Danh sách kiện hàng gom lô phải có ít nhất một kiện/mặt hàng.")]
+        /// <summary>Danh sách tồn kho xuất lẻ từng kiện/mặt hàng.</summary>
         public List<CreateWroRequestItemDto> Items { get; set; } = new();
+
+        /// <summary>Danh sách ID Đơn hàng (Order.Id) muốn gom toàn bộ tồn kho.</summary>
+        public List<Guid>? OrderIds { get; set; }
+
+        /// <summary>Danh sách ID Yêu cầu mua hộ (PurchaseRequest.Id) muốn gom toàn bộ tồn kho.</summary>
+        public List<Guid>? PurchaseRequestIds { get; set; }
     }
 
     /// <summary>
@@ -115,7 +122,10 @@ namespace VCL_BLL.DTOs
         public string ShippingRoute { get; set; } = string.Empty;
         public decimal? ShippingFee { get; set; }
         public List<string> CustomsDocumentUrls { get; set; } = new();
-        public bool IsCustomsCleared => CustomsDocumentUrls != null && CustomsDocumentUrls.Any();
+        public bool IsCustomsCleared => string.Equals(Status, "ARRIVED_IN_VN", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "ARRIVED_VN", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "DELIVERED", StringComparison.OrdinalIgnoreCase);
         public string CustomsStatus => IsCustomsCleared ? "CUSTOMS_CLEARED" : "CUSTOMS_PENDING";
         public string CustomsStatusText => IsCustomsCleared ? "Đã thông quan" : "Chờ thông quan";
         public DateTime CreatedAt { get; set; }
@@ -155,6 +165,8 @@ namespace VCL_BLL.DTOs
         public string CreatedByName { get; set; } = string.Empty;
         public string CreatedByUserRole { get; set; } = string.Empty;
         public string WarehouseName { get; set; } = string.Empty;
+        public string WarehouseAddress { get; set; } = string.Empty;
+        public string WarehouseContactPhone { get; set; } = string.Empty;
         public Guid? CustomerId { get; set; }
         public string CustomerName { get; set; } = string.Empty;
         public Guid? OrderId { get; set; }
@@ -187,7 +199,10 @@ namespace VCL_BLL.DTOs
         public DateTime? HandoverAt { get; set; }
         public decimal? ShippingFee { get; set; }
         public List<string> CustomsDocumentUrls { get; set; } = new();
-        public bool IsCustomsCleared => CustomsDocumentUrls != null && CustomsDocumentUrls.Any();
+        public bool IsCustomsCleared => string.Equals(Status, "ARRIVED_IN_VN", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "ARRIVED_VN", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "DELIVERED", StringComparison.OrdinalIgnoreCase);
         public string CustomsStatus => IsCustomsCleared ? "CUSTOMS_CLEARED" : "CUSTOMS_PENDING";
         public string CustomsStatusText => IsCustomsCleared ? "Đã thông quan" : "Chờ thông quan";
         public List<string> PackagingPhotos { get; set; } = new();
@@ -308,6 +323,12 @@ namespace VCL_BLL.DTOs
         public Guid? ShippingRouteId { get; set; }
         public string ShippingRoute { get; set; } = string.Empty;
         public string Note { get; set; } = string.Empty;
+        public bool IsCustomsCleared => string.Equals(Status, "ARRIVED_IN_VN", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "ARRIVED_VN", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(Status, "DELIVERED", StringComparison.OrdinalIgnoreCase);
+        public string CustomsStatus => IsCustomsCleared ? "CUSTOMS_CLEARED" : "CUSTOMS_PENDING";
+        public string CustomsStatusText => IsCustomsCleared ? "Đã thông quan" : "Chờ thông quan";
     }
 
     public class UpdatePackingDetailsRequestDto
@@ -410,6 +431,7 @@ namespace VCL_BLL.DTOs
     public class GetWroListRequestDto
     {
         public string? Status { get; set; }
+        public string? ExportType { get; set; }
         public string? SearchTerm { get; set; }
         public int PageIndex { get; set; } = 1;
         public int PageSize { get; set; } = 10;

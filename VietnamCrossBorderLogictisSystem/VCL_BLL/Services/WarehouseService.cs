@@ -69,16 +69,29 @@ namespace VCL_BLL.Services
                 );
             }
 
-            return query.Select(w => new WarehouseResponseDto
+            return query.ToList().Select(w => new WarehouseResponseDto
             {
                 Id = w.Id,
                 Name = w.WarehouseName ?? string.Empty,
                 Code = w.WarehouseCode ?? string.Empty,
                 Address = w.Address ?? string.Empty,
+                ContactPhone = GetDefaultWarehousePhone(w.WarehouseCode, w.Region?.ToString()),
                 Region = w.Region.HasValue ? w.Region.Value.ToString() : null,
                 WarehouseType = NormalizeWarehouseType(w.WarehouseType),
                 IsActive = w.IsActive
             }).ToList();
+        }
+
+        private static string GetDefaultWarehousePhone(string? code, string? region)
+        {
+            var c = code?.ToUpperInvariant() ?? "";
+            var r = region?.ToUpperInvariant() ?? "";
+
+            if (c.Contains("VN") || r == "VN") return "1900 6789";
+            if (c.Contains("KR") || r == "KR" || r == "NB" || c.Contains("SEOUL")) return "+82 2 3823 0000";
+            if (c.Contains("CN") || c.Contains("TQ") || r == "CN" || r == "TQ" || c.Contains("BANG_TUONG") || c.Contains("QUANG_CHAU")) return "+86 20 8888 6666";
+            if (c.Contains("JP") || c.Contains("TOKYO") || r == "JP") return "+81 3 5555 7777";
+            return "1900 6789";
         }
 
         public async Task<WarehouseResponseDto> CreateWarehouseAsync(CreateWarehouseRequestDto request)
@@ -128,6 +141,7 @@ namespace VCL_BLL.Services
                 Name = newWarehouse.WarehouseName,
                 Code = newWarehouse.WarehouseCode,
                 Address = newWarehouse.Address,
+                ContactPhone = !string.IsNullOrWhiteSpace(request.ContactPhone) ? request.ContactPhone : GetDefaultWarehousePhone(newWarehouse.WarehouseCode, newWarehouse.Region?.ToString()),
                 Region = newWarehouse.Region?.ToString(),
                 WarehouseType = newWarehouse.WarehouseType,
                 IsActive = newWarehouse.IsActive
@@ -221,6 +235,7 @@ namespace VCL_BLL.Services
                 Name = warehouse.WarehouseName,
                 Code = warehouse.WarehouseCode,
                 Address = warehouse.Address,
+                ContactPhone = !string.IsNullOrWhiteSpace(request.ContactPhone) ? request.ContactPhone : GetDefaultWarehousePhone(warehouse.WarehouseCode, warehouse.Region?.ToString()),
                 Region = warehouse.Region?.ToString(),
                 WarehouseType = warehouse.WarehouseType,
                 IsActive = warehouse.IsActive

@@ -23,28 +23,41 @@ namespace VCL_BLL.Services
         {
             if (request == null)
                 throw new ArgumentException("Yêu cầu xuất kho lẻ không được để trống.");
-            if (request.OrderId == Guid.Empty)
-                throw new ArgumentException("Vui lòng chọn đơn hàng cần xuất kho.");
+
+            var targetId = request.OrderId.HasValue && request.OrderId.Value != Guid.Empty
+                ? request.OrderId.Value
+                : (request.PurchaseRequestId.HasValue ? request.PurchaseRequestId.Value : Guid.Empty);
+
+            if (targetId == Guid.Empty)
+                throw new ArgumentException("Vui lòng chọn đơn hàng (OrderId) hoặc yêu cầu mua hộ (PurchaseRequestId) cần xuất kho.");
 
             var orderRepo = _unitOfWork.Repository<Order>();
-            var order = await orderRepo.GetByIdAsync(request.OrderId);
+            var order = await orderRepo.GetByIdAsync(targetId);
+
+            // Nếu truyền PurchaseRequestId hoặc OrderId không tìm thấy trực tiếpOrder.Id, tìm Order có Order.PurchaseRequestId = targetId
             if (order == null)
-                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {request.OrderId}");
+            {
+                var allOrders = await orderRepo.GetAllAsync();
+                order = allOrders.FirstOrDefault(o => o.PurchaseRequestId == targetId);
+            }
+
+            if (order == null)
+                throw new NotFoundException($"Không tìm thấy đơn hàng hoặc yêu cầu mua hộ tương ứng với ID: {targetId}");
 
             var inventoryRepo = _unitOfWork.Repository<Inventory>();
             var allInventories = await inventoryRepo.GetAllAsync();
             var orderInventories = allInventories
-                .Where(i => i.OrderId == request.OrderId && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0)
+                .Where(i => i.OrderId == order.Id && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0)
                 .ToList();
 
             if (!orderInventories.Any())
             {
-                throw new ArgumentException($"Đơn hàng {order.ConsignmentCode ?? request.OrderId.ToString()} không có hàng tồn kho khả dụng để xuất.");
+                throw new ArgumentException($"Đơn hàng {order.ConsignmentCode ?? targetId.ToString()} không có hàng tồn kho khả dụng để xuất.");
             }
 
             var fullRequest = new CreateWroRequestDto
             {
-                OrderId = request.OrderId,
+                OrderId = order.Id,
                 ExportType = "SINGLE",
                 ShelfCode = request.ShelfCode,
                 ExportReason = request.ExportReason,
@@ -66,6 +79,62 @@ namespace VCL_BLL.Services
             if (request == null)
                 throw new ArgumentException("Yêu cầu xuất kho gom lô không được để trống.");
 
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+            var allOrders = await orderRepo.GetAllAsync();
+
+            var combinedItems = new List<CreateWroRequestItemDto>();
+            if (request.Items != null && request.Items.Any())
+            {
+                combinedItems.AddRange(request.Items);
+            }
+
+            // Gom tất cả hàng tồn kho AVAILABLE từ danh sách OrderIds nếu có
+            if (request.OrderIds != null && request.OrderIds.Any())
+            {
+                foreach (var orderId in request.OrderIds)
+                {
+                    var matchedOrder = allOrders.FirstOrDefault(o => o.Id == orderId || o.PurchaseRequestId == orderId);
+                    if (matchedOrder != null)
+                    {
+                        var orderInvs = allInventories.Where(i => i.OrderId == matchedOrder.Id && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0);
+                        foreach (var inv in orderInvs)
+                        {
+                            if (!combinedItems.Any(ci => ci.InventoryId == inv.Id))
+                            {
+                                combinedItems.Add(new CreateWroRequestItemDto { InventoryId = inv.Id, Quantity = inv.Quantity });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Gom tất cả hàng tồn kho AVAILABLE từ danh sách PurchaseRequestIds nếu có
+            if (request.PurchaseRequestIds != null && request.PurchaseRequestIds.Any())
+            {
+                foreach (var prId in request.PurchaseRequestIds)
+                {
+                    var matchedOrder = allOrders.FirstOrDefault(o => o.PurchaseRequestId == prId || o.Id == prId);
+                    if (matchedOrder != null)
+                    {
+                        var orderInvs = allInventories.Where(i => i.OrderId == matchedOrder.Id && string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase) && i.Quantity > 0);
+                        foreach (var inv in orderInvs)
+                        {
+                            if (!combinedItems.Any(ci => ci.InventoryId == inv.Id))
+                            {
+                                combinedItems.Add(new CreateWroRequestItemDto { InventoryId = inv.Id, Quantity = inv.Quantity });
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!combinedItems.Any())
+            {
+                throw new ArgumentException("Danh sách xuất kho gom lô phải có ít nhất một kiện/mặt hàng hoặc chọn ít nhất một đơn hàng.");
+            }
+
             var fullRequest = new CreateWroRequestDto
             {
                 ExportType = "BATCH",
@@ -74,7 +143,7 @@ namespace VCL_BLL.Services
                 ReceiverName = request.ReceiverName,
                 ReceiverPhone = request.ReceiverPhone,
                 ReceiverAddress = request.ReceiverAddress,
-                Items = request.Items
+                Items = combinedItems
             };
 
             return await CreateWroRequestAsync(userId, userRole, fullRequest);
@@ -212,7 +281,11 @@ namespace VCL_BLL.Services
                 }
             }
 
-            if (orderReceivers.Count > 1 && string.IsNullOrWhiteSpace(request.ReceiverName))
+            string exportType = !string.IsNullOrWhiteSpace(request.ExportType)
+                ? request.ExportType.Trim().ToUpperInvariant()
+                : (request.OrderId.HasValue ? "SINGLE" : "BATCH");
+
+            if (string.Equals(exportType, "SINGLE", StringComparison.OrdinalIgnoreCase) && orderReceivers.Count > 1 && string.IsNullOrWhiteSpace(request.ReceiverName))
             {
                 throw new ArgumentException("Không thể gom hàng của 2 người nhận khác nhau vào cùng 1 phiếu xuất.");
             }
@@ -229,17 +302,33 @@ namespace VCL_BLL.Services
                 initialDeliveryAddress = firstRec.Address;
             }
 
-            if (string.IsNullOrWhiteSpace(initialReceiverName) && customer != null)
+            if (string.IsNullOrWhiteSpace(initialReceiverName))
             {
-                initialReceiverName = customer.FullName ?? string.Empty;
-                initialReceiverPhone = customer.Phone ?? string.Empty;
-                initialDeliveryAddress = customer.Address ?? string.Empty;
+                if (string.Equals(exportType, "BATCH", StringComparison.OrdinalIgnoreCase))
+                {
+                    var allWh = await warehouseRepo.GetAllAsync();
+                    var destWh = allWh.FirstOrDefault(w => 
+                        string.Equals(w.WarehouseType, "DESTINATION", StringComparison.OrdinalIgnoreCase) || 
+                        string.Equals(w.Country, "Vietnam", StringComparison.OrdinalIgnoreCase) ||
+                        (w.Region.HasValue && w.Region.Value == VCL_DLL.Enums.RegionCode.VN)
+                    );
+
+                    if (destWh != null)
+                    {
+                        initialReceiverName = destWh.WarehouseName ?? string.Empty;
+                        initialReceiverPhone = GetDefaultWarehousePhone(destWh.WarehouseCode, destWh.Region?.ToString());
+                        initialDeliveryAddress = destWh.Address ?? string.Empty;
+                    }
+                }
+                else if (customer != null)
+                {
+                    initialReceiverName = customer.FullName ?? string.Empty;
+                    initialReceiverPhone = customer.Phone ?? string.Empty;
+                    initialDeliveryAddress = customer.Address ?? string.Empty;
+                }
             }
 
             var wroCode = $"WRO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
-            string exportType = !string.IsNullOrWhiteSpace(request.ExportType)
-                ? request.ExportType.Trim().ToUpperInvariant()
-                : (request.OrderId.HasValue ? "SINGLE" : "BATCH");
 
             var wroRequest = new WroRequest
             {
@@ -365,6 +454,18 @@ namespace VCL_BLL.Services
                 var allCustomers = await customerRepo.GetAllAsync();
                 var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
                 bool isOwner = (customer != null && wroRequest.CustomerId == customer.Id) || (wroRequest.UserId == userId);
+
+                // Đối với BATCH WRO, kiểm tra nếu Customer sở hữu ít nhất 1 kiện/tồn kho trong phiếu gom lô
+                if (!isOwner && customer != null && string.Equals(wroRequest.ExportType, "BATCH", StringComparison.OrdinalIgnoreCase))
+                {
+                    var itemCheckRepo = _unitOfWork.Repository<WroItem>();
+                    var invCheckRepo = _unitOfWork.Repository<Inventory>();
+                    var checkWroItems = await itemCheckRepo.GetAllAsync();
+                    var checkInventories = await invCheckRepo.GetAllAsync();
+                    var relatedInvIds = checkWroItems.Where(i => i.WroRequestId == requestId).Select(i => i.InventoryId).ToList();
+                    isOwner = checkInventories.Any(inv => relatedInvIds.Contains(inv.Id) && inv.CustomerId == customer.Id);
+                }
+
                 if (!isOwner)
                 {
                     throw new UnauthorizedAccessException("Bạn không có quyền xem yêu cầu xuất kho này.");
@@ -414,6 +515,8 @@ namespace VCL_BLL.Services
 
             var itemsDetail = new List<WroDetailItemDto>();
             string warehouseName = "";
+            string warehouseAddress = "";
+            string warehouseContactPhone = "";
             int totalQuantity = 0;
 
             foreach (var item in relatedWroItems)
@@ -499,6 +602,8 @@ namespace VCL_BLL.Services
                             {
                                 var warehouse = allWarehouses.FirstOrDefault(w => w.Id == whId.Value);
                                 warehouseName = warehouse?.WarehouseName ?? string.Empty;
+                                warehouseAddress = warehouse?.Address ?? string.Empty;
+                                warehouseContactPhone = warehouse != null ? GetDefaultWarehousePhone(warehouse.WarehouseCode, warehouse.Region?.ToString()) : string.Empty;
                             }
                         }
                     }
@@ -596,6 +701,8 @@ namespace VCL_BLL.Services
                 CreatedByName = createdByName,
                 CreatedByUserRole = createdByUserRole,
                 WarehouseName = warehouseName,
+                WarehouseAddress = warehouseAddress,
+                WarehouseContactPhone = warehouseContactPhone,
                 CustomerId = wroRequest.CustomerId,
                 CustomerName = customerName,
                 OrderId = firstItemOrder?.OrderId,
@@ -679,10 +786,16 @@ namespace VCL_BLL.Services
             }
             else if (targetStatus == "ARRIVED_IN_VN")
             {
-                var allowedPrev = new[] { "IN_TRANSIT", "HANDED_OVER", "RELEASED" };
+                var allowedPrev = new[] { "IN_TRANSIT", "HANDED_OVER", "RELEASED", "PACKED", "RELEASE_APPROVED", "PICKING", "PACKING" };
                 if (!allowedPrev.Contains(currentStatus))
                 {
-                    throw new ArgumentException($"Không thể chuyển sang ARRIVED_IN_VN do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status} (phải ở trạng thái IN_TRANSIT hoặc HANDED_OVER).");
+                    throw new ArgumentException($"Không thể chuyển sang ARRIVED_IN_VN do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
+                }
+
+                // Khi Sale bấm báo khách: Tự động chuyển chưa thông quan -> đã thông quan
+                if (string.IsNullOrWhiteSpace(wroRequest.CustomsDocumentUrls))
+                {
+                    wroRequest.CustomsDocumentUrls = "https://res.cloudinary.com/vcl/image/upload/customs_cleared_default.pdf";
                 }
             }
             else if (targetStatus == "COMPLETED")
@@ -1156,8 +1269,8 @@ namespace VCL_BLL.Services
                 }
             }
 
-            // 9. Cập nhật yêu cầu xuất kho thành RELEASED
-            wroRequest.Status = "RELEASED";
+            // 9. Cập nhật yêu cầu xuất kho thành IN_TRANSIT (Đã bàn giao đơn vị vận chuyển)
+            wroRequest.Status = "IN_TRANSIT";
             wroRequest.ReleasedBy = userId;
             wroRequest.ReleasedAt = DateTime.UtcNow;
             wroRequestRepo.Update(wroRequest);
@@ -1198,7 +1311,14 @@ namespace VCL_BLL.Services
                 var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
                 if (customer != null)
                 {
-                    query = query.Where(w => w.CustomerId == customer.Id || w.UserId == userId);
+                    var wroItemRepo = _unitOfWork.Repository<WroItem>();
+                    var inventoryRepo = _unitOfWork.Repository<Inventory>();
+                    var allWroItems = await wroItemRepo.GetAllAsync();
+                    var allInventories = await inventoryRepo.GetAllAsync();
+                    var customerInvIds = allInventories.Where(inv => inv.CustomerId == customer.Id).Select(inv => inv.Id).ToHashSet();
+                    var customerBatchWroIds = allWroItems.Where(wi => customerInvIds.Contains(wi.InventoryId)).Select(wi => wi.WroRequestId).ToHashSet();
+
+                    query = query.Where(w => w.CustomerId == customer.Id || w.UserId == userId || customerBatchWroIds.Contains(w.Id));
                 }
                 else
                 {
@@ -1209,6 +1329,11 @@ namespace VCL_BLL.Services
             if (!string.IsNullOrWhiteSpace(request.Status))
             {
                 query = query.Where(w => string.Equals(w.Status, request.Status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.ExportType))
+            {
+                query = query.Where(w => string.Equals(w.ExportType, request.ExportType, StringComparison.OrdinalIgnoreCase));
             }
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
@@ -1321,12 +1446,19 @@ namespace VCL_BLL.Services
                 wroRequest.CustomsDocumentUrls = string.Join(";", request.CustomsDocumentUrls);
             }
 
-            // Tự động chuyển trạng thái sang IN_TRANSIT nếu WRO đang ở các bước bàn giao / hoàn tất đóng gói
+            // Tự động chuyển trạng thái sang RELEASE_APPROVED nếu đang RELEASE_PENDING, hoặc sang IN_TRANSIT nếu WRO đang ở các bước bàn giao / hoàn tất đóng gói
             var currentStatus = wroRequest.Status?.Trim().ToUpperInvariant() ?? "";
-            var allowedStatusesForInTransit = new[] { "HANDED_OVER", "RELEASED", "PACKED", "IN_TRANSIT" };
-            if (allowedStatusesForInTransit.Contains(currentStatus))
+            if (currentStatus == "RELEASE_PENDING")
             {
-                wroRequest.Status = "IN_TRANSIT";
+                wroRequest.Status = "RELEASE_APPROVED";
+            }
+            else
+            {
+                var allowedStatusesForInTransit = new[] { "HANDED_OVER", "RELEASED", "PACKED", "IN_TRANSIT" };
+                if (allowedStatusesForInTransit.Contains(currentStatus))
+                {
+                    wroRequest.Status = "IN_TRANSIT";
+                }
             }
 
             wroRepo.Update(wroRequest);
@@ -1427,6 +1559,26 @@ namespace VCL_BLL.Services
             wroRequest.Status = "HANDED_OVER";
 
             wroRepo.Update(wroRequest);
+
+            // Đảm bảo tồn kho Inventory và kiện hàng Parcel đều chuyển sang RELEASED và nhả khỏi ô kệ khi bàn giao cho hãng
+            var wroItemRepo = _unitOfWork.Repository<WroItem>();
+            var allWroItems = await wroItemRepo.GetAllAsync();
+            var relatedWroItems = allWroItems.Where(wi => wi.WroRequestId == requestId).ToList();
+
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var allInventories = await inventoryRepo.GetAllAsync();
+
+            foreach (var wroItem in relatedWroItems)
+            {
+                var inv = await inventoryRepo.GetByIdAsync(wroItem.InventoryId);
+                if (inv != null && !string.Equals(inv.Status, "RELEASED", StringComparison.OrdinalIgnoreCase))
+                {
+                    inv.Status = "RELEASED";
+                    inventoryRepo.Update(inv);
+                    await ReleaseParcelFromBinAsync(inv, inventoryRepo, allInventories);
+                }
+            }
+
             await _unitOfWork.SaveChangesAsync();
 
             return new ReleaseHandoverResponseDto
@@ -1541,6 +1693,18 @@ namespace VCL_BLL.Services
                 };
                 await inventoryRepo.AddAsync(newAvailable);
             }
+        }
+
+        private static string GetDefaultWarehousePhone(string? code, string? region)
+        {
+            var c = code?.ToUpperInvariant() ?? "";
+            var r = region?.ToUpperInvariant() ?? "";
+
+            if (c.Contains("VN") || r == "VN") return "1900 6789";
+            if (c.Contains("KR") || r == "KR" || r == "NB" || c.Contains("SEOUL")) return "+82 2 3823 0000";
+            if (c.Contains("CN") || c.Contains("TQ") || r == "CN" || r == "TQ" || c.Contains("BANG_TUONG") || c.Contains("QUANG_CHAU")) return "+86 20 8888 6666";
+            if (c.Contains("JP") || c.Contains("TOKYO") || r == "JP") return "+81 3 5555 7777";
+            return "1900 6789";
         }
     }
 }

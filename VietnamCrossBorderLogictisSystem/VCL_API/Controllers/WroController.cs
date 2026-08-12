@@ -17,10 +17,12 @@ namespace VCL_API.Controllers
     public class WroController : ControllerBase
     {
         private readonly IWroService _wroService;
+        private readonly IPickingListService _pickingListService;
 
-        public WroController(IWroService wroService)
+        public WroController(IWroService wroService, IPickingListService pickingListService)
         {
             _wroService = wroService;
+            _pickingListService = pickingListService;
         }
 
         /// <summary>
@@ -271,6 +273,88 @@ namespace VCL_API.Controllers
             {
                 var result = await _wroService.CreatePickingListAsync(requestId, userId, userRole);
                 return StatusCode(201, new { message = "Tạo phiếu picking thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Xác nhận lấy đúng & đủ hàng khỏi vị trí ô kệ kho theo ID yêu cầu xuất kho (WRO)
+        /// </summary>
+        [HttpPut("{requestId}/confirm-picking")]
+        [Authorize(Roles = "WarehouseStaff,Staff,OperationsManager,Operations,Admin")]
+        public async Task<IActionResult> ConfirmPickingByRequestId(Guid requestId, [FromBody] ConfirmPickingRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _pickingListService.ConfirmPickingListByRequestIdAsync(requestId, userId, userRole, request);
+                return Ok(new { message = "Xác nhận lấy đúng & đủ hàng thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Nút bấm dành cho bên Sale: Báo cho khách hàng, đồng thời chuyển trạng thái chưa thông quan -> đã thông quan và status -> Hàng về Việt Nam (ARRIVED_IN_VN)
+        /// </summary>
+        [HttpPost("{requestId}/notify-customer")]
+        [Authorize(Roles = "Sale,WarehouseStaff,Staff,OperationsManager,Operations,Admin")]
+        public async Task<IActionResult> NotifyCustomerAndArrivedVN(Guid requestId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var requestDto = new UpdateWroStatusRequestDto { Status = "ARRIVED_IN_VN" };
+                var result = await _wroService.UpdateWroStatusAsync(requestId, userId, userRole, requestDto);
+                return Ok(new { message = "Đã báo khách thành công. Trạng thái đã chuyển sang Hàng về VN và Đã thông quan.", data = result });
             }
             catch (UnauthorizedAccessException ex)
             {
