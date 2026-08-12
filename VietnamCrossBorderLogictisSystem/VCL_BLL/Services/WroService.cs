@@ -281,7 +281,11 @@ namespace VCL_BLL.Services
                 }
             }
 
-            if (orderReceivers.Count > 1 && string.IsNullOrWhiteSpace(request.ReceiverName))
+            string exportType = !string.IsNullOrWhiteSpace(request.ExportType)
+                ? request.ExportType.Trim().ToUpperInvariant()
+                : (request.OrderId.HasValue ? "SINGLE" : "BATCH");
+
+            if (string.Equals(exportType, "SINGLE", StringComparison.OrdinalIgnoreCase) && orderReceivers.Count > 1 && string.IsNullOrWhiteSpace(request.ReceiverName))
             {
                 throw new ArgumentException("Không thể gom hàng của 2 người nhận khác nhau vào cùng 1 phiếu xuất.");
             }
@@ -298,17 +302,23 @@ namespace VCL_BLL.Services
                 initialDeliveryAddress = firstRec.Address;
             }
 
-            if (string.IsNullOrWhiteSpace(initialReceiverName) && customer != null)
+            if (string.IsNullOrWhiteSpace(initialReceiverName))
             {
-                initialReceiverName = customer.FullName ?? string.Empty;
-                initialReceiverPhone = customer.Phone ?? string.Empty;
-                initialDeliveryAddress = customer.Address ?? string.Empty;
+                if (string.Equals(exportType, "BATCH", StringComparison.OrdinalIgnoreCase))
+                {
+                    initialReceiverName = "Kho Đích Tân Sơn Nhất - Cty VCL VN";
+                    initialReceiverPhone = "0988888888";
+                    initialDeliveryAddress = "Kho Đích Tân Sơn Nhất, Phường 2, Quận Tân Bình, TP.HCM";
+                }
+                else if (customer != null)
+                {
+                    initialReceiverName = customer.FullName ?? string.Empty;
+                    initialReceiverPhone = customer.Phone ?? string.Empty;
+                    initialDeliveryAddress = customer.Address ?? string.Empty;
+                }
             }
 
             var wroCode = $"WRO-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
-            string exportType = !string.IsNullOrWhiteSpace(request.ExportType)
-                ? request.ExportType.Trim().ToUpperInvariant()
-                : (request.OrderId.HasValue ? "SINGLE" : "BATCH");
 
             var wroRequest = new WroRequest
             {
@@ -434,6 +444,18 @@ namespace VCL_BLL.Services
                 var allCustomers = await customerRepo.GetAllAsync();
                 var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
                 bool isOwner = (customer != null && wroRequest.CustomerId == customer.Id) || (wroRequest.UserId == userId);
+
+                // Đối với BATCH WRO, kiểm tra nếu Customer sở hữu ít nhất 1 kiện/tồn kho trong phiếu gom lô
+                if (!isOwner && customer != null && string.Equals(wroRequest.ExportType, "BATCH", StringComparison.OrdinalIgnoreCase))
+                {
+                    var itemCheckRepo = _unitOfWork.Repository<WroItem>();
+                    var invCheckRepo = _unitOfWork.Repository<Inventory>();
+                    var checkWroItems = await itemCheckRepo.GetAllAsync();
+                    var checkInventories = await invCheckRepo.GetAllAsync();
+                    var relatedInvIds = checkWroItems.Where(i => i.WroRequestId == requestId).Select(i => i.InventoryId).ToList();
+                    isOwner = checkInventories.Any(inv => relatedInvIds.Contains(inv.Id) && inv.CustomerId == customer.Id);
+                }
+
                 if (!isOwner)
                 {
                     throw new UnauthorizedAccessException("Bạn không có quyền xem yêu cầu xuất kho này.");
@@ -483,6 +505,8 @@ namespace VCL_BLL.Services
 
             var itemsDetail = new List<WroDetailItemDto>();
             string warehouseName = "";
+            string warehouseAddress = "";
+            string warehouseContactPhone = "";
             int totalQuantity = 0;
 
             foreach (var item in relatedWroItems)
@@ -568,6 +592,8 @@ namespace VCL_BLL.Services
                             {
                                 var warehouse = allWarehouses.FirstOrDefault(w => w.Id == whId.Value);
                                 warehouseName = warehouse?.WarehouseName ?? string.Empty;
+                                warehouseAddress = warehouse?.Address ?? string.Empty;
+                                warehouseContactPhone = warehouse != null ? GetDefaultWarehousePhone(warehouse.WarehouseCode, warehouse.Region?.ToString()) : string.Empty;
                             }
                         }
                     }
@@ -665,6 +691,8 @@ namespace VCL_BLL.Services
                 CreatedByName = createdByName,
                 CreatedByUserRole = createdByUserRole,
                 WarehouseName = warehouseName,
+                WarehouseAddress = warehouseAddress,
+                WarehouseContactPhone = warehouseContactPhone,
                 CustomerId = wroRequest.CustomerId,
                 CustomerName = customerName,
                 OrderId = firstItemOrder?.OrderId,
@@ -1267,7 +1295,14 @@ namespace VCL_BLL.Services
                 var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
                 if (customer != null)
                 {
-                    query = query.Where(w => w.CustomerId == customer.Id || w.UserId == userId);
+                    var wroItemRepo = _unitOfWork.Repository<WroItem>();
+                    var inventoryRepo = _unitOfWork.Repository<Inventory>();
+                    var allWroItems = await wroItemRepo.GetAllAsync();
+                    var allInventories = await inventoryRepo.GetAllAsync();
+                    var customerInvIds = allInventories.Where(inv => inv.CustomerId == customer.Id).Select(inv => inv.Id).ToHashSet();
+                    var customerBatchWroIds = allWroItems.Where(wi => customerInvIds.Contains(wi.InventoryId)).Select(wi => wi.WroRequestId).ToHashSet();
+
+                    query = query.Where(w => w.CustomerId == customer.Id || w.UserId == userId || customerBatchWroIds.Contains(w.Id));
                 }
                 else
                 {
@@ -1278,6 +1313,11 @@ namespace VCL_BLL.Services
             if (!string.IsNullOrWhiteSpace(request.Status))
             {
                 query = query.Where(w => string.Equals(w.Status, request.Status, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.ExportType))
+            {
+                query = query.Where(w => string.Equals(w.ExportType, request.ExportType, StringComparison.OrdinalIgnoreCase));
             }
 
             if (!string.IsNullOrWhiteSpace(request.SearchTerm))
@@ -1630,6 +1670,18 @@ namespace VCL_BLL.Services
                 };
                 await inventoryRepo.AddAsync(newAvailable);
             }
+        }
+
+        private static string GetDefaultWarehousePhone(string? code, string? region)
+        {
+            var c = code?.ToUpperInvariant() ?? "";
+            var r = region?.ToUpperInvariant() ?? "";
+
+            if (c.Contains("VN") || r == "VN") return "1900 6789";
+            if (c.Contains("KR") || r == "KR" || r == "NB" || c.Contains("SEOUL")) return "+82 2 3823 0000";
+            if (c.Contains("CN") || c.Contains("TQ") || r == "CN" || r == "TQ" || c.Contains("BANG_TUONG") || c.Contains("QUANG_CHAU")) return "+86 20 8888 6666";
+            if (c.Contains("JP") || c.Contains("TOKYO") || r == "JP") return "+81 3 5555 7777";
+            return "1900 6789";
         }
     }
 }

@@ -162,6 +162,8 @@ namespace VCL_BLL.DTOs
         public string CreatedByName { get; set; } = string.Empty;
         public string CreatedByUserRole { get; set; } = string.Empty;
         public string WarehouseName { get; set; } = string.Empty;
+        public string WarehouseAddress { get; set; } = string.Empty;
+        public string WarehouseContactPhone { get; set; } = string.Empty;
         public Guid? CustomerId { get; set; }
         public string CustomerName { get; set; } = string.Empty;
         public Guid? OrderId { get; set; }
@@ -417,6 +419,7 @@ namespace VCL_BLL.DTOs
     public class GetWroListRequestDto
     {
         public string? Status { get; set; }
+        public string? ExportType { get; set; }
         public string? SearchTerm { get; set; }
         public int PageIndex { get; set; } = 1;
         public int PageSize { get; set; } = 10;
