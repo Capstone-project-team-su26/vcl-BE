@@ -306,9 +306,19 @@ namespace VCL_BLL.Services
             {
                 if (string.Equals(exportType, "BATCH", StringComparison.OrdinalIgnoreCase))
                 {
-                    initialReceiverName = "Kho Đích Tân Sơn Nhất - Cty VCL VN";
-                    initialReceiverPhone = "0988888888";
-                    initialDeliveryAddress = "Kho Đích Tân Sơn Nhất, Phường 2, Quận Tân Bình, TP.HCM";
+                    var allWh = await warehouseRepo.GetAllAsync();
+                    var destWh = allWh.FirstOrDefault(w => 
+                        string.Equals(w.WarehouseType, "DESTINATION", StringComparison.OrdinalIgnoreCase) || 
+                        string.Equals(w.Country, "Vietnam", StringComparison.OrdinalIgnoreCase) ||
+                        (w.Region.HasValue && w.Region.Value == VCL_DLL.Enums.RegionCode.VN)
+                    );
+
+                    if (destWh != null)
+                    {
+                        initialReceiverName = destWh.WarehouseName ?? string.Empty;
+                        initialReceiverPhone = GetDefaultWarehousePhone(destWh.WarehouseCode, destWh.Region?.ToString());
+                        initialDeliveryAddress = destWh.Address ?? string.Empty;
+                    }
                 }
                 else if (customer != null)
                 {
