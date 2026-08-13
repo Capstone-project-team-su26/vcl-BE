@@ -5,6 +5,20 @@ namespace VCL_BLL.DTOs
 {
     public record LoginRequest(string Email, string Password);
 
+    /// <summary>
+    /// Đăng nhập bằng Google. FE lấy ID token từ Google rồi gửi lên đây.
+    /// <para>
+    /// Chỉ nhận ID token chứ không nhận email — email do client gửi thì ai cũng khai được bất kỳ
+    /// địa chỉ nào và chiếm tài khoản người khác. Backend tự đọc email ra từ token sau khi đã
+    /// kiểm chữ ký của Google.
+    /// </para>
+    /// </summary>
+    public class GoogleLoginRequest
+    {
+        [Required(ErrorMessage = "Thiếu Google ID token.")]
+        public string IdToken { get; set; } = string.Empty;
+    }
+
     public class CustomerRegisterRequest
     {
         [Required, StringLength(255)]
