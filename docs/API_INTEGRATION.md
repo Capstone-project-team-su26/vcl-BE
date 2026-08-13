@@ -202,6 +202,10 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `POST` | `/api/additional-service-fees` | Admin | Tạo mới cấu hình phí dịch vụ bổ sung |
 | `PUT` | `/api/additional-service-fees/{id}` | Admin | Cập nhật cấu hình phí dịch vụ bổ sung |
 | `DELETE` | `/api/additional-service-fees/{id}` | Admin | Xóa cấu hình phí dịch vụ bổ sung |
+| `POST` | `/api/ai/customer/extract-order-intent` | Đã đăng nhập | AI Agent trích xuất tự động thông tin tạo đơn Ký gửi (CONSIGNMENT) hoặc Mua hộ (PURCHASE) |
+| `POST` | `/api/ai/sales/order-status-query` | Admin/Sale/Staff | AI hỗ trợ Sales tra cứu tình trạng đơn hàng & gợi ý bước xử lý tiếp theo |
+| `POST` | `/api/ai/warehouse/putaway-suggestions` | Đã đăng nhập | AI gợi ý vị trí xếp kho (Bin Putaway) phù hợp cho kiện hàng |
+
 
 
 ## 4. Đăng ký khách hàng
@@ -6470,3 +6474,79 @@ Hàng tồn của các kiện gốc được dồn thành **một dòng duy nh�
 `operation` nhận `SPLIT` hoặc `MERGE`. Với `MERGE`, `parent` là kiện mới sau khi gộp còn `children` là các kiện gốc đã bị gộp.
 
 > **Migration:** cột `parent_parcel_id` được thêm bởi migration `AddParentParcelId`.
+
+## 49. AI Agent APIs
+
+### 49.1. Trích xuất tự động thông tin tạo đơn Ký gửi & Mua hộ
+
+```http
+POST /api/ai/customer/extract-order-intent
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "message": "Order giúp mình 3 cái bàn phím cơ link https://detail.tmall.com/item.htm?id=9999 giá 200 Tệ màu Đen ship về HCM"
+}
+```
+
+**Phân quyền:** Authenticated Users (Customer, Staff, Sales, Admin).
+
+**Response 200 OK:**
+```json
+{
+  "message": "Trích xuất thông tin tạo đơn bằng AI thành công.",
+  "data": {
+    "orderType": "PURCHASE",
+    "confidenceScore": 0.95,
+    "explanation": "AI phát hiện yêu cầu Mua hộ qua link sản phẩm Tmall với số lượng 3 và đơn giá 200 Tệ.",
+    "chinaTrackingCode": null,
+    "declaredValueCny": null,
+    "shippingRoute": "CN-VN-ROAD",
+    "destinationWarehouse": null,
+    "productLink": "https://detail.tmall.com/item.htm?id=9999",
+    "variant": "Màu Đen",
+    "quantity": 3,
+    "unitPriceCny": 200,
+    "productName": "Bàn phím cơ",
+    "category": "Electronics",
+    "receiverName": null,
+    "receiverPhone": null,
+    "receiverAddress": "HCM",
+    "note": null,
+    "extractedItems": [],
+    "warnings": []
+  }
+}
+```
+
+*Lưu ý:* Chi tiết hợp đồng API dành cho FE xem tại file `docs/ai_customer_order_intent_fe_contract.md`.
+
+### 49.2. AI hỗ trợ Sales tra cứu tình trạng đơn hàng
+
+```http
+POST /api/ai/sales/order-status-query
+Authorization: Bearer {salesToken}
+Content-Type: application/json
+
+{
+  "message": "Kiểm tra tình trạng đơn hàng CS-20260812-001 của khách hàng Nam"
+}
+```
+
+**Phân quyền:** Admin, Sale, Staff, OperationsManager.
+
+### 49.3. AI gợi ý vị trí xếp kho (Putaway Suggestions)
+
+```http
+POST /api/ai/warehouse/putaway-suggestions
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "parcelId": "bfe85f64-...",
+  "warehouseId": "ffe85f64-..."
+}
+```
+
+**Phân quyền:** Authenticated Users.
+
