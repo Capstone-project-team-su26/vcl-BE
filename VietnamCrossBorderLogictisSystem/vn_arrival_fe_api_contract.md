@@ -90,7 +90,8 @@ MANIFESTED → CUSTOMS_EXPORT_PENDING → IN_TRANSIT → CUSTOMS_IMPORT_PENDING 
 | `ARRIVED_DESTINATION` | Lô đã về VN, kho **chưa** mở lô đếm |
 | `RECEIVED_AT_DESTINATION` | Kho đã mở lô, xác nhận kiện có mặt |
 | `STORED` | Đã nhập kho VN, đang nằm trên ô kệ |
-| `AWAITING_PICKUP` · `PICKING_UP` · `DELIVERED` | Trạng thái giao hàng, do webhook cập nhật |
+| `AWAITING_PICKUP` | Đã đặt giao, chờ shipper tới lấy. BE đặt ngay lúc bấm đặt giao, không đợi webhook |
+| `PICKING_UP` · `DELIVERED` | Trạng thái giao hàng, do webhook bên giao hàng cập nhật |
 
 ### 2.3. Hướng xử lý kiện (`destinationHandling`)
 
@@ -550,9 +551,14 @@ Từ chối bắt buộc `rejectionReason`.
 {}
 ```
 
-Phiếu phải đang `DELIVERY_APPROVED`. Thành công thì: gọi bên giao hàng, lưu mã vận đơn, **nhả ô kệ và dừng tính phí lưu kho** cho kiện lấy từ kệ, phiếu sang `DELIVERY_DISPATCHED`.
+Phiếu phải đang `DELIVERY_APPROVED`. Thành công thì hệ thống làm bốn việc: gọi bên giao hàng, lưu mã vận đơn lên phiếu, **nhả ô kệ + ghi nhật ký xuất kho** cho kiện lấy từ kệ (đây là mốc **dừng tính phí lưu kho VN**), và đánh dấu mọi kiện sang `AWAITING_PICKUP`.
 
-> **Trạng thái hiện tại**: bước này **chưa chạy được** vì chưa có token GoShip. API trả `400` kèm *"Không gọi được đơn vị giao hàng. Kiểm tra token GoShip đã cấu hình chưa..."*. Phiếu **giữ nguyên** `DELIVERY_APPROVED`, bấm lại được sau khi có token.
+> **Trạng thái hiện tại — đọc kỹ chỗ này:**
+> Token GoShip **đã có trên server** (nằm trong GitHub Secrets, được bơm vào lúc deploy). Nên bước này **sẽ chạy bình thường trên môi trường đã deploy**.
+>
+> Chỉ có **máy local của BE là chưa test được**, vì secret trên GitHub không đọc ngược ra được. Ở local, API trả `400` kèm *"Không gọi được đơn vị giao hàng. Kiểm tra token GoShip đã cấu hình chưa..."*
+>
+> **Phong cứ dựng màn bình thường, không phải chờ gì.** Khi thất bại thì phiếu **giữ nguyên** `DELIVERY_APPROVED` và ô kệ không bị nhả — bấm lại được, không sợ hỏng dữ liệu.
 
 ### 8.4. `GET /api/delivery-requests/{id}`
 
@@ -662,7 +668,7 @@ Trong `vietnamWarehouseStore.js`, lời gọi `confirmDestinationReceiving` nằ
 `carrierTrackingCode`, `dispatchedAt`, `rejectionReason`, `scheduledDate` — cứ ẩn dòng đó đi thay vì hiện chữ "null".
 
 **5. `binCode` đi ngược chiều các trường khác.**
-Nó **có** giá trị khi kiện nằm kệ, và **thành null** sau khi đặt giao (vì ô kệ được nhả). Đừng dùng `binCode != null` để quyết định hiện cột ô kệ — dùng `pickSource` hoặc `hasShelfPick`, hai cái đó không đổi theo thời gian.
+Nó **có** giá trị khi kiện nằm kệ, và **thành null** sau khi đặt giao (vì ô kệ được nhả). Cùng lúc đó `packageStatus` đổi từ `STORED` sang `AWAITING_PICKUP`. Đừng dùng `binCode != null` để quyết định hiện cột ô kệ — dùng `pickSource` hoặc `hasShelfPick`, hai cái đó không đổi theo thời gian.
 
 **6. `POST /api/goship/orders` là cửa sau.**
 API cũ này vẫn gọi thẳng được và **bỏ qua bước OM duyệt**. Sau khi dựng xong màn ở mục 8, đừng dùng nó nữa — mọi đơn giao phải đi qua yêu cầu giao hàng.
@@ -676,9 +682,10 @@ API cũ này vẫn gọi thẳng được và **bỏ qua bước OM duyệt**. S
 
 | Việc | Ảnh hưởng tới FE |
 | :--- | :--- |
-| **Token GoShip** chưa có | Bước 8.3 chưa chạy được. Dựng màn trước, có token là chạy |
-| **Thu phí lưu kho phát sinh của nhánh gửi lại kho** | Khách đã tất toán mà kiện còn nằm kệ thì ngày lưu kho mới phát sinh chưa có đường thu. Đang chờ chốt nghiệp vụ |
-| Cho kho **up ảnh lúc mở lô** | Đề xuất, chưa duyệt |
+| **Bước đặt giao chưa chạy thử ở local** | Token GoShip đã có trên server nên môi trường deploy chạy được. **Không chặn FE**, cứ dựng màn |
+| **Thu phí lưu kho phát sinh của nhánh gửi lại kho** | Khách đã tất toán mà kiện còn nằm kệ thì ngày lưu kho mới phát sinh chưa có đường thu. **Đang chờ anh Hoàng chốt** dời mốc tất toán hay thu thêm một đợt. Chưa dựng màn thu phí này vội |
+| Cho kho **up ảnh lúc mở lô** | Đề xuất, chưa ai duyệt. Chưa làm |
+| **Huỷ lô / gỡ kiện khỏi lô** | Chưa có API. Tick nhầm kiện lúc gom lô thì hiện chưa sửa được — cần chốt có làm không |
 
 ---
 
