@@ -88,4 +88,31 @@ public class AiController : ControllerBase
             return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// AI Agent trích xuất tự động thông tin tạo đơn Ký gửi (CONSIGNMENT) hoặc Mua hộ (PURCHASE) từ tin nhắn của Khách hàng
+    /// </summary>
+    [HttpPost("customer/extract-order-intent")]
+    public async Task<IActionResult> ExtractCustomerOrderIntent([FromBody] CustomerOrderIntentRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            var result = await _aiService.ExtractCustomerOrderIntentAsync(request);
+            return Ok(new { message = "Trích xuất thông tin tạo đơn bằng AI thành công.", data = result });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+        }
+    }
 }
+

@@ -108,3 +108,57 @@ public class SalesQueryParcelSummaryDto
     public string LocalTrackingCode { get; set; } = string.Empty;
     public decimal WeightKg { get; set; }
 }
+
+public class CustomerOrderIntentRequest
+{
+    [Required(ErrorMessage = "Nội dung câu hỏi/yêu cầu (message) không được để trống.")]
+    public string Message { get; set; } = string.Empty;
+
+    public Guid? CustomerId { get; set; }
+    public string? PreferredShippingRoute { get; set; }
+}
+
+public class ExtractOrderIntentResponseDto
+{
+    /// <summary>
+    /// CONSIGNMENT (Ký gửi) hoặc PURCHASE (Mua hộ)
+    /// </summary>
+    public string OrderType { get; set; } = "CONSIGNMENT";
+
+    public decimal ConfidenceScore { get; set; } = 0.85m;
+    public string Explanation { get; set; } = string.Empty;
+
+    // --- Thông tin Ký gửi (CONSIGNMENT) ---
+    public string? ChinaTrackingCode { get; set; }
+    public decimal? DeclaredValueCny { get; set; }
+    public string? ShippingRoute { get; set; }
+    public string? DestinationWarehouse { get; set; }
+
+    // --- Thông tin Mua hộ (PURCHASE) ---
+    public string? ProductLink { get; set; }
+    public string? Variant { get; set; }
+    public int? Quantity { get; set; }
+    public decimal? UnitPriceCny { get; set; }
+
+    // --- Thông tin hàng hoá & người nhận chung ---
+    public string ProductName { get; set; } = string.Empty;
+    public string? Category { get; set; }
+    public string? ReceiverName { get; set; }
+    public string? ReceiverPhone { get; set; }
+    public string? ReceiverAddress { get; set; }
+    public string? Note { get; set; }
+
+    public List<ExtractedOrderItemDto> ExtractedItems { get; set; } = new();
+    public List<string> Warnings { get; set; } = new();
+}
+
+public class ExtractedOrderItemDto
+{
+    public string ProductName { get; set; } = string.Empty;
+    public string? ProductLink { get; set; }
+    public string? Variant { get; set; }
+    public int Quantity { get; set; } = 1;
+    public decimal? UnitPriceCny { get; set; }
+    public string? ChinaTrackingCode { get; set; }
+}
+
