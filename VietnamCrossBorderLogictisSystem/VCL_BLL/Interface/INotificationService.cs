@@ -20,5 +20,8 @@ namespace VCL_BLL.Interface
 
         /// <summary>Đánh dấu tất cả đã đọc; trả về số thông báo vừa đổi.</summary>
         Task<int> MarkAllAsReadAsync(Guid userId);
+
+        /// <summary>Tạo thông báo mới cho người dùng.</summary>
+        Task CreateNotificationAsync(Guid userId, string title, string content);
     }
 }

@@ -243,6 +243,23 @@ namespace VCL_BLL.Services
             order.Status = "WAITING_DEPOSIT";
             orderRepo.Update(order);
 
+            try
+            {
+                await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    Title = "Khởi tạo thanh toán cọc",
+                    Content = $"Khởi tạo khoản cọc {depositAmount:#,##0}đ cho đơn ký gửi {consignmentCode} thành công.",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi tạo thông báo cọc cho đơn {ConsignmentCode}", consignmentCode);
+            }
+
             await _unitOfWork.SaveChangesAsync();
 
             return new ConfirmQuotationPaymentResponse
@@ -501,6 +518,31 @@ namespace VCL_BLL.Services
             order.Status = "WAITING_FINAL_PAYMENT";
             orderRepo.Update(order);
 
+            if (order.CustomerId.HasValue)
+            {
+                try
+                {
+                    var cust = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                        .FirstOrDefault(c => c.Id == order.CustomerId.Value);
+                    if (cust != null && cust.UserId != Guid.Empty)
+                    {
+                        await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = cust.UserId,
+                            Title = "Thông báo thanh toán đợt cuối",
+                            Content = $"Đơn ký gửi {consignmentCode} đã sẵn sàng cho thanh toán đợt cuối ({finalAmount:#,##0}đ). Vui lòng hoàn tất thanh toán.",
+                            IsRead = false,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Lỗi tạo thông báo thanh toán đợt cuối cho đơn {ConsignmentCode}", consignmentCode);
+                }
+            }
+
             await _unitOfWork.SaveChangesAsync();
 
             return new CreateFinalPaymentResponse
@@ -678,6 +720,31 @@ namespace VCL_BLL.Services
             order.PaymentConfirmationNote = request.ConfirmationNote;
             order.Status = "PAYMENT_CONFIRMED";
             orderRepo.Update(order);
+
+            if (order.CustomerId.HasValue)
+            {
+                try
+                {
+                    var cust = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                        .FirstOrDefault(c => c.Id == order.CustomerId.Value);
+                    if (cust != null && cust.UserId != Guid.Empty)
+                    {
+                        await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = cust.UserId,
+                            Title = "Xác nhận thanh toán thành công",
+                            Content = $"Khoản thanh toán cho đơn ký gửi {order.ConsignmentCode ?? order.Id.ToString()} đã được Sale xác nhận thành công.",
+                            IsRead = false,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Lỗi tạo thông báo xác nhận thanh toán cho đơn {ConsignmentCode}", order.ConsignmentCode);
+                }
+            }
 
             await _unitOfWork.SaveChangesAsync();
 

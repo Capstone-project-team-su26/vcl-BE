@@ -17,4 +17,11 @@ namespace VCL_BLL.DTOs
         public PaginatedResponse<NotificationDto> Page { get; set; } = new();
         public int UnreadCount { get; set; }
     }
+
+    public class CreateNotificationRequestDto
+    {
+        public Guid UserId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+    }
 }
