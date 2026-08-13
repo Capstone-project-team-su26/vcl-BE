@@ -1,9 +1,9 @@
 # 📦 CONTRACT API — LUỒNG HÀNG VỀ TỚI KHO VN (FE + MOBILE)
 
 > **Dự án**: Vietnam Cross Border Logistics System (`vcl-BE`)
-> **Phạm vi**: từ lúc gom phiếu xuất kho thành lô → hàng về VN → khách tất toán → giao tận nhà
+> **Phạm vi**: từ lúc kho quốc tế gom kiện thành lô → hàng về VN → khách tất toán → giao tận nhà
 > **Commit**: `d46f76b1` · `b5d64421` · `2c60f33b` · `6ee03d95`
-> **Ngày**: 13/08/2026
+> **Ngày**: 14/08/2026 *(bản 13/08 ghi OM gom lô — đã sửa, xem mục 3)*
 > **Nối tiếp**: `wro_fe_api_contract.md` (module xuất kho) — doc này bắt đầu từ chỗ doc đó kết thúc
 
 Mọi ví dụ trong đây là **request/response thật** chạy trên server, không phải mẫu bịa.
@@ -14,24 +14,25 @@ Mọi ví dụ trong đây là **request/response thật** chạy trên server, 
 
 1. [Sơ đồ luồng](#1-sơ-đồ-luồng)
 2. [Bảng trạng thái](#2-bảng-trạng-thái)
-3. [Giai đoạn 1 — OM gom phiếu thành lô](#3-giai-đoạn-1--om-gom-phiếu-thành-lô)
+3. [Giai đoạn 1 — Kho Quốc tế gom kiện thành lô](#3-giai-đoạn-1--kho-quốc-tế-gom-kiện-thành-lô)
 4. [Giai đoạn 2 — Sale theo dõi hành trình](#4-giai-đoạn-2--sale-theo-dõi-hành-trình)
 5. [Giai đoạn 3 — Lô về VN, khách tất toán](#5-giai-đoạn-3--lô-về-vn-khách-tất-toán)
 6. [Giai đoạn 4 — Kho mở lô, kiểm kiện, phân loại](#6-giai-đoạn-4--kho-mở-lô-kiểm-kiện-phân-loại)
 7. [Giai đoạn 5 — Nhập kho VN (nhánh khách gửi lại)](#7-giai-đoạn-5--nhập-kho-vn-nhánh-khách-gửi-lại)
 8. [Giai đoạn 6 — Yêu cầu giao hàng](#8-giai-đoạn-6--yêu-cầu-giao-hàng)
 9. [Màn hình cần dựng](#9-màn-hình-cần-dựng)
-10. [Sáu điểm dễ sai](#10-sáu-điểm-dễ-sai)
+10. [Tám điểm dễ sai](#10-tám-điểm-dễ-sai)
 
 ---
 
 ## 1. SƠ ĐỒ LUỒNG
 
 ```
-[Phiếu xuất kho đã bàn giao]  ← kết thúc của wro_fe_api_contract.md
+[POST /warehouse-release-requests/{id}/handover]  ← bước cuối của wro_fe_api_contract.md
+   phiếu xuất kho sang HANDED_OVER, hàng rời kho nguồn
         │
         ▼
-① OM GOM KIỆN THÀNH LÔ           POST /api/international-shipments
+① KHO QUỐC TẾ GOM KIỆN THÀNH LÔ  POST /api/international-shipments
    (đơn vị gom là KIỆN, không phải phiếu — xem mục 3)
         │
         ▼
@@ -114,14 +115,70 @@ hoặc `DELIVERY_REJECTED` (Bị từ chối)
 
 ---
 
-## 3. GIAI ĐOẠN 1 — OM GOM KIỆN THÀNH LÔ
+## 3. GIAI ĐOẠN 1 — KHO QUỐC TẾ GOM KIỆN THÀNH LÔ
 
 > ⚠️ **Đơn vị gom lô là KIỆN HÀNG, không phải phiếu xuất kho.**
 > Lô là một container thật và container có sức chứa. Một phiếu 5 kiện mà xe chỉ còn chỗ cho 3 thì gửi 3 kiện chuyến này, 2 kiện chuyến sau. Vì vậy **một phiếu có thể nằm ở nhiều lô** — đó là chuyện đúng, không phải lỗi dữ liệu. Ngược lại, **một kiện chỉ nằm đúng một lô**.
 
-### `POST /api/international-shipments`
+### 3.0. Ai gom lô — và nó khác gì phiếu gom lô của module xuất kho
 
-**Quyền**: Staff · OperationsManager · Admin (**không** có Sale)
+**Người gom lô là NHÂN VIÊN KHO QUỐC TẾ.** Phong xác nhận 14/08, và đúng nghiệp vụ: người đang
+đứng cạnh container mới biết còn chỗ cho mấy kiện. Bản doc 13/08 ghi "OM gom lô" là **sai**, đã sửa
+cả doc lẫn code (`InternationalShipmentService.ConsolidationRoles`).
+
+**Hai chữ "lô" trong hệ thống — đừng nhầm:**
+
+| | **Phiếu xuất kho gom lô** (WRO `BATCH`) | **Lô vận chuyển quốc tế** (Shipment) |
+| :--- | :--- | :--- |
+| Bảng | `WRO_REQUESTS` | `SHIPMENTS` |
+| Mã | `WRO-...` | `INTL-...` |
+| Tạo bằng | `POST /warehouse-release-requests/batch` | `POST /api/international-shipments` |
+| Trả lời câu hỏi | *Lần này lấy những kiện nào xuống khỏi kệ?* | *Chuyến container này chở những kiện nào về VN?* |
+| Xảy ra lúc | **Trước** khi nhặt hàng | **Sau** khi đã bàn giao (`HANDED_OVER`) |
+| Mã vận đơn | `trackingNumber` — chặng kho → cảng/sân bay, gắn tài xế + biển số | `carrierTrackingCode` — mã 3PL / số container |
+| Ai làm | Kho quốc tế | Kho quốc tế |
+
+Hai cái **không thay thế nhau**. Phiếu xuất kho là giấy tờ của kho; lô vận chuyển là manifest của
+chuyến hàng thật. Một phiếu tách được ra nhiều lô (xe hết chỗ) và một lô gom được nhiều phiếu
+(chuyến hôm nay chở hàng của mấy lần xuất kho) — nên không dựng được quan hệ 1-1 giữa chúng.
+
+**Chỗ nối giữa hai module** — 9 bước của `wro_fe_api_contract.md` kết thúc ở bước 8:
+
+```
+… bước 7  PUT  /warehouse-release-requests/{id}/complete    → RELEASED   (nhả ô kệ, dừng phí lưu kho)
+   bước 8  POST /warehouse-release-requests/{id}/handover    → HANDED_OVER (giao tài xế, rời kho)
+   ─────────────────────── doc này bắt đầu từ đây ───────────────────────
+   bước 9  POST /api/international-shipments                 → MANIFESTED  (xếp kiện lên container)
+```
+
+Bước 9 trong sơ đồ cũ ghi *"Hàng đi chặng quốc tế"* mà không kèm API nào — đó chính là chỗ đứt, và
+`POST /api/international-shipments` là mắt xích lấp vào. Không có lô thì mọi API từ mục 4 trở đi
+không có `{id}` để gọi, kiện nằm mãi ở `RELEASED`, khách không tất toán được.
+
+**Toàn bộ endpoint WRO mà kho quốc tế dùng trước bước này** (chi tiết ở `wro_fe_api_contract.md`):
+
+| Endpoint | Việc |
+| :--- | :--- |
+| `POST /warehouse-release-requests/single` | TH1 — phiếu lẻ đi theo 1 đơn (hoả tốc) |
+| `POST /warehouse-release-requests/batch` | TH2 — phiếu gom nhiều kiện của nhiều đơn |
+| `PUT /{id}/status` | Duyệt / từ chối phiếu |
+| `PUT /{id}/shipping-route` | Gán ĐVVC, tài xế, chuyến bay/tàu, upload hải quan |
+| `POST /{id}/picking-list` · `PUT /{id}/confirm-picking` | Kho nhặt hàng theo ô kệ |
+| `PUT /{id}/packing` | Cân đo, up ảnh đóng gói |
+| `PUT /{id}/complete` | Hoàn tất xuất kho — **nhả ô kệ, dừng phí lưu kho kho nguồn** |
+| `POST /{id}/handover` | Bàn giao tài xế → `HANDED_OVER` |
+| `POST /{id}/notify-customer` | ⚠️ Nút cũ, xem cảnh báo dưới |
+
+> ⚠️ **`POST /warehouse-release-requests/{id}/notify-customer` nay là nút thừa.**
+> Nó lật phiếu sang `ARRIVED_IN_VN` ở **cấp phiếu**, nhưng không đụng vào `packageStatus` của kiện
+> nào cả — mà kiện mới là thứ mở cổng thanh toán cuối và mở luồng giao hàng. Việc báo hàng về VN
+> chuyển hẳn sang `PUT /international-shipments/{id}/arrive` ở **cấp lô** (mục 5.1). Bấm nút cũ chỉ
+> đổi nhãn trên màn hình, luồng phía sau vẫn tắc.
+
+### 3.1. `POST /api/international-shipments`
+
+**Quyền**: **WarehouseStaff** (kho quốc tế — người thao tác chính) · Staff · OperationsManager · Admin
+(**không** có Sale — sale chỉ theo dõi hành trình ở mục 4)
 
 **Request — cách chính, chọn đích danh kiện**
 ```json
@@ -157,8 +214,14 @@ Phải có ít nhất một trong hai. Truyền `parcelIds` thì `wroRequestIds`
 - Mọi kiện trong lô phải **cùng tuyến vận chuyển**
 - Mọi kiện phải **cùng kho xuất** — suy từ vị trí thật của chính những kiện đã chọn
 
+Gọi bằng tài khoản Sale hoặc Customer → `403`
+*"Chỉ nhân viên Kho Quốc tế (hoặc Staff, Operations) được gom kiện thành lô vận chuyển quốc tế."*
+
 **Lấy id kiện ở đâu để tick?**
-`GET /api/warehouse-release-requests/{id}` — mỗi dòng trong `items[]` nay trả kèm **`parcelId`**, cùng `packageCode`, `orderCode`, `binCode`, `actualWeight`. Đủ để dựng bảng cho OM tick và cộng dồn cân nặng xem đã đầy xe chưa.
+`GET /api/warehouse-release-requests/{id}` — mỗi dòng trong `items[]` nay trả kèm **`parcelId`**, cùng `packageCode`, `orderCode`, `binCode`, `actualWeight`. Đủ để dựng bảng cho kho tick và cộng dồn cân nặng xem đã đầy xe chưa.
+
+Lọc phiếu đã bàn giao để lấy kiện chờ gom:
+`GET /api/warehouse-release-requests?status=HANDED_OVER&pageIndex=1&pageSize=20`
 
 ---
 
@@ -630,7 +693,7 @@ Mã trạng thái: `900`/`901` chờ lấy · `902` đang lấy · `905` giao th
 
 | Vai | Màn | API chính |
 | :--- | :--- | :--- |
-| OM | **Gom KIỆN thành lô** — bảng kiện chờ gom, tick từng kiện, cộng dồn cân nặng | `GET /warehouse-release-requests/{id}` lấy `parcelId` · `POST /international-shipments` |
+| **Kho Quốc tế** | **Gom KIỆN thành lô** — bảng kiện chờ gom, tick từng kiện, cộng dồn cân nặng *(không phải màn của OM)* | `GET /warehouse-release-requests?status=HANDED_OVER` · `GET /warehouse-release-requests/{id}` lấy `parcelId` · `POST /international-shipments` |
 | Sale | Danh sách lô theo 5 tab | `GET /international-shipments?statusTab=` |
 | Sale | Chi tiết lô + timeline + ô nhập mã đối tác | `GET /{id}` · `PUT /{id}/status` |
 | Sale | Nút xác nhận lô về VN **+ popup xem trước** | `PUT /{id}/arrive` |
@@ -650,7 +713,7 @@ Mã trạng thái: `900`/`901` chờ lấy · `902` đang lấy · `905` giao th
 
 ---
 
-## 10. SÁU ĐIỂM DỄ SAI
+## 10. TÁM ĐIỂM DỄ SAI
 
 **1. `mapShipment` đang cắt mất dữ liệu mới.**
 Trong `consolidationWorkflowService.js`, hàm này chỉ giữ 3 trường mỗi kiện:
@@ -673,8 +736,13 @@ Nó **có** giá trị khi kiện nằm kệ, và **thành null** sau khi đặt
 **6. `POST /api/goship/orders` là cửa sau.**
 API cũ này vẫn gọi thẳng được và **bỏ qua bước OM duyệt**. Sau khi dựng xong màn ở mục 8, đừng dùng nó nữa — mọi đơn giao phải đi qua yêu cầu giao hàng.
 
-**7. Màn gom lô hiện đang chọn nhầm đơn vị.**
-`OperationsShipmentsPage.jsx` đang cho tick **WRO** (`selectedWroIds`) rồi gửi `wroRequestIds`. Đơn vị đúng là **kiện** — xem mục 3. Đường cũ vẫn chạy nên không gãy ngay, nhưng cách đó không xếp được hàng lên container có sức chứa: một phiếu 5 kiện mà xe còn chỗ cho 3 thì không tách được.
+**7. Màn gom lô đang sai cả đơn vị lẫn vai.**
+`OperationsShipmentsPage.jsx` đang cho tick **WRO** (`selectedWroIds`) rồi gửi `wroRequestIds`. Hai chỗ cần đổi:
+- **Đơn vị**: phải tick **kiện** (`parcelIds`) — xem mục 3. Đường cũ vẫn chạy nên không gãy ngay, nhưng cách đó không xếp được hàng lên container có sức chứa: một phiếu 5 kiện mà xe còn chỗ cho 3 thì không tách được.
+- **Vai**: màn này thuộc **nhân viên Kho Quốc tế**, không phải OM. Tên file `Operations...` là do hiểu nhầm hồi doc 13/08. BE đã mở quyền `WarehouseStaff` cho `POST /international-shipments` từ 14/08 — tài khoản kho gọi được ngay, không phải chờ gì.
+
+**8. Đừng dùng `notify-customer` để báo hàng về VN.**
+`POST /warehouse-release-requests/{id}/notify-customer` chỉ đổi trạng thái **phiếu**, không đụng `packageStatus` của kiện — mà kiện mới là thứ mở cổng thanh toán cuối. Dùng `PUT /international-shipments/{id}/arrive` (mục 5.1). Chi tiết ở mục 3.0.
 
 ---
 
@@ -689,4 +757,5 @@ API cũ này vẫn gọi thẳng được và **bỏ qua bước OM duyệt**. S
 
 ---
 
-*Tài liệu do BE (Trọng) viết ngày 13/08/2026. Mọi ví dụ là request/response thật đã chạy qua server.*
+*Tài liệu do BE (Trọng) viết ngày 13/08/2026, sửa 14/08/2026 theo phản hồi của Phong (người gom lô
+là nhân viên Kho Quốc tế, không phải OM). Mọi ví dụ là request/response thật đã chạy qua server.*

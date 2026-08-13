@@ -74,7 +74,7 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Staff/Operations tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED
+        /// Nhân viên Kho Quốc tế (hoặc Staff/Operations) gom KIỆN đã bàn giao thành lô vận chuyển quốc tế
         /// </summary>
         [HttpPost]
         public async Task<IActionResult> CreateInternationalShipment([FromBody] CreateInternationalShipmentDto request)

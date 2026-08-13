@@ -171,7 +171,7 @@ Trong Swagger, hộp **Authorize** chỉ cần nhập token, không nhập từ 
 | `GET` | `/api/orders/consignments/shipping-options` | Public | Danh sách phương án vận chuyển cho dropdown FE (lọc theo `?route=`) |
 | `GET` | `/api/orders/consignments/statuses` | Public | Danh sách toàn bộ trạng thái yêu cầu ký gửi (code + label) |
 | `GET` | `/api/product-types` | Public | Danh sách loại hàng (productType) cho dropdown FE |
-| `POST` | `/api/international-shipments` | Staff / Operations | Tạo lô vận chuyển quốc tế từ các yêu cầu xuất kho đã RELEASED |
+| `POST` | `/api/international-shipments` | WarehouseStaff / Staff / Operations | Nhân viên Kho Quốc tế gom KIỆN đã bàn giao thành lô vận chuyển quốc tế |
 | `PUT` | `/api/international-shipments/{shipmentId}/status` | Staff / Operations | Cập nhật trạng thái lô vận chuyển quốc tế (MANIFESTED → IN_TRANSIT → ARRIVED_DESTINATION) |
 | `PUT` | `/api/international-shipments/{shipmentId}/arrive` | Staff / Operations | Xác nhận lô đến kho đích (cập nhật lô + kiện sang ARRIVED_DESTINATION) |
 | `PUT` | `/api/international-shipments/{shipmentId}/destination-receiving` | WarehouseStaff / Staff / Operations | Xác nhận nhận kiện tại kho đích (kiện sang RECEIVED_AT_DESTINATION) |
@@ -4465,7 +4465,7 @@ Authorization: Bearer {accessToken}
 
 ## 31. Tạo lô vận chuyển quốc tế (International Shipment)
 
-Staff/Operations gom các yêu cầu xuất kho (WRO) đã `RELEASED` vào một lô vận chuyển quốc tế. Hệ thống gom danh sách kiện (Parcel) từ các WRO, tính tổng số kiện + tổng cân nặng, và tạo lô ở trạng thái `CREATED`.
+Nhân viên Kho Quốc tế (hoặc Staff/Operations) gom KIỆN đã bàn giao vào một lô vận chuyển quốc tế. Đơn vị gom là **kiện** (`parcelIds`) — truyền `wroRequestIds` là cách cũ, hiểu thành "lấy trọn kiện của mấy phiếu đó". Hệ thống tính tổng số kiện + tổng cân nặng và tạo lô ở trạng thái `MANIFESTED`.
 
 ```http
 POST /api/international-shipments
@@ -4520,20 +4520,20 @@ Content-Type: application/json
 ```
 
 **Lưu ý nghiệp vụ:**
-- Chỉ nhận WRO đã `RELEASED`; WRO chưa đủ điều kiện → `400`.
-- Một WRO chỉ được thuộc **một** lô vận chuyển (ràng buộc unique) — gán lại vào lô khác trả `400`.
-- Danh sách kiện được gom tự động từ các WRO (WroItem → Inventory → Parcel), distinct.
+- Phiếu xuất kho đứng sau kiện phải đã xuất kho xong: `RELEASED`, `HANDED_OVER` hoặc `IN_TRANSIT`.
+- **Một KIỆN chỉ thuộc một lô.** Ngược lại, **một PHIẾU được nằm ở nhiều lô** — container có sức chứa, phiếu 5 kiện mà xe còn chỗ cho 3 thì 2 kiện đi chuyến sau.
+- Mọi kiện trong lô phải cùng tuyến vận chuyển và cùng kho xuất (suy từ vị trí thật của kiện).
 - `totalPackages` = số kiện; `totalWeight` = tổng cân nặng thực tế (ActualWeight, fallback ChargeableWeight).
-- Trạng thái lô ban đầu luôn là `CREATED`.
+- Trạng thái lô ban đầu luôn là `MANIFESTED` (tab `PREPARING`).
 
 **Response lỗi:**
 
 | Status | Trường hợp | Message |
 |---|---|---|
-| `400` | Danh sách WRO rỗng | `"Phải chọn ít nhất một yêu cầu xuất kho."` |
-| `400` | WRO chưa RELEASED | `"Yêu cầu xuất kho {code} chưa đủ điều kiện (phải ở trạng thái RELEASED)."` |
-| `400` | WRO đã thuộc lô khác | `"Yêu cầu xuất kho {code} đã thuộc một lô vận chuyển khác."` |
-| `403` | Không phải Staff/Operations | `"Chỉ Staff hoặc Operations được tạo lô vận chuyển quốc tế."` |
+| `400` | Không chọn kiện lẫn phiếu | `"Phải chọn ít nhất một kiện hàng (parcelIds) hoặc một yêu cầu xuất kho (wroRequestIds)."` |
+| `400` | Phiếu chưa xuất kho xong | `"Kiện {code} chưa nằm trong phiếu xuất kho nào, chưa gom lô được."` |
+| `400` | Kiện đã thuộc lô khác | `"Kiện {code} đã thuộc một lô vận chuyển khác."` |
+| `403` | Không phải kho / Staff / Operations | `"Chỉ nhân viên Kho Quốc tế (hoặc Staff, Operations) được gom kiện thành lô vận chuyển quốc tế."` |
 | `404` | Không tìm thấy WRO/kho/carrier | `"Không tìm thấy yêu cầu xuất kho với ID {id}"` |
 
 **TypeScript interface:**
