@@ -7,4 +7,5 @@ public interface IAiService
 {
     Task<PutawaySuggestionResponseDto> GetPutawaySuggestionsAsync(PutawaySuggestionRequest request);
     Task<SalesOrderStatusQueryResponse> QuerySalesOrderStatusAsync(SalesOrderStatusQueryRequest request);
+    Task<ExtractOrderIntentResponseDto> ExtractCustomerOrderIntentAsync(CustomerOrderIntentRequest request);
 }

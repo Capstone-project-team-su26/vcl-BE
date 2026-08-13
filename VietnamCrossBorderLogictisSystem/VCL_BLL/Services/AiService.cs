@@ -820,4 +820,230 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
 
         return response;
     }
+
+    public async Task<ExtractOrderIntentResponseDto> ExtractCustomerOrderIntentAsync(CustomerOrderIntentRequest request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Message))
+        {
+            throw new ArgumentException("Nội dung tin nhắn yêu cầu (message) không được để trống.");
+        }
+
+        var message = request.Message.Trim();
+
+        Customer? customer = null;
+        if (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty)
+        {
+            var customerRepo = _unitOfWork.Repository<Customer>();
+            customer = await customerRepo.GetByIdAsync(request.CustomerId.Value);
+        }
+
+        try
+        {
+            var result = await CallOpenRouterForOrderIntentAsync(message, customer, request.PreferredShippingRoute);
+            if (result != null && (!string.IsNullOrWhiteSpace(result.ProductName) || !string.IsNullOrWhiteSpace(result.ChinaTrackingCode) || !string.IsNullOrWhiteSpace(result.ProductLink)))
+            {
+                if (customer != null)
+                {
+                    result.ReceiverName = string.IsNullOrWhiteSpace(result.ReceiverName) ? customer.FullName : result.ReceiverName;
+                    result.ReceiverPhone = string.IsNullOrWhiteSpace(result.ReceiverPhone) ? customer.Phone : result.ReceiverPhone;
+                }
+                return result;
+            }
+        }
+        catch (Exception)
+        {
+            // Silent catch for fallback
+        }
+
+        var fallbackResult = BuildFallbackOrderIntent(message, customer, request.PreferredShippingRoute);
+        fallbackResult.Warnings.Add("OpenRouter AI phản hồi không khả dụng. Đã tự động bóc tách dữ liệu theo bộ quy tắc Heuristic.");
+        return fallbackResult;
+    }
+
+    private async Task<ExtractOrderIntentResponseDto?> CallOpenRouterForOrderIntentAsync(
+        string message,
+        Customer? customer,
+        string? preferredRoute)
+    {
+        var apiKey = _configuration["OpenRouterSettings:ApiKey"] 
+            ?? Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+        var model = _configuration["OpenRouterSettings:Model"] ?? "google/gemini-2.0-flash-exp:free";
+        var baseUrl = _configuration["OpenRouterSettings:BaseUrl"] ?? "https://openrouter.ai/api/v1/chat/completions";
+
+        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_"))
+        {
+            return null;
+        }
+
+        string systemInstruction = @"Bạn là AI Agent Trợ lý Đặt hàng Logistics Xuyên biên giới Trung - Việt (VCL Logistics AI Assistant).
+Nhiệm vụ của bạn là phân tích câu văn, tin nhắn của khách hàng và tự động bóc tách dữ liệu thành thông tin tạo đơn chuẩn hoá theo 2 LOẠI ĐƠN NGHIỆP VỤ:
+
+1. ĐƠN KÝ GỬI (CONSIGNMENT):
+   - Dấu hiệu: Khách cung cấp Mã vận đơn nội địa Trung Quốc (Mã tracking TQ dạng chữ/số như SF..., YT..., 78..., ST..., ZTO...), hoặc có các từ khoá 'ký gửi', 'gửi về kho TQ', 'mã tracking', 'mã vận đơn'.
+   - Trường cần bóc tách: orderType = 'CONSIGNMENT', chinaTrackingCode, declaredValueCny, shippingRoute ('CN-VN-ROAD' hoặc 'CN-VN-AIR'), destinationWarehouse.
+
+2. ĐƠN MUA HỘ (PURCHASE):
+   - Dấu hiệu: Khách gửi Link sản phẩm (Taobao, 1688, Tmall, JD, Pinduoduo) hoặc các từ khoá 'mua hộ', 'order giúp', 'mua từ link', 'tìm hàng'.
+   - Trường cần bóc tách: orderType = 'PURCHASE', productLink, variant (màu sắc/size), quantity, unitPriceCny.
+
+3. THÔNG TIN CHUNG CẦN TRÍCH XUẤT:
+   - productName: Tên sản phẩm chính (tiếng Việt hoặc tiếng Trung).
+   - receiverName, receiverPhone, receiverAddress: Thông tin người nhận tại Việt Nam nếu khách có nhắc tới.
+   - explanation: Tóm tắt 1-2 câu ngắn gọn bằng tiếng Việt giải thích AI đã hiểu yêu cầu của khách như thế nào.
+
+BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
+{
+  ""orderType"": ""CONSIGNMENT"",
+  ""confidenceScore"": 0.95,
+  ""explanation"": ""AI nhận diện khách hàng muốn tạo đơn Ký gửi với mã vận đơn TQ YT789654321..."",
+  ""chinaTrackingCode"": ""YT789654321"",
+  ""declaredValueCny"": 500,
+  ""shippingRoute"": ""CN-VN-ROAD"",
+  ""destinationWarehouse"": ""Kho Hà Nội"",
+  ""productLink"": null,
+  ""variant"": null,
+  ""quantity"": 1,
+  ""unitPriceCny"": null,
+  ""productName"": ""Mỹ phẩm"",
+  ""category"": ""Cosmetics"",
+  ""receiverName"": ""Trần Văn A"",
+  ""receiverPhone"": ""0987654321"",
+  ""receiverAddress"": ""123 Nguyễn Trãi, Hà Nội"",
+  ""note"": ""Giao giờ hành chính""
+}";
+
+        var promptPayload = new
+        {
+            CustomerMessage = message,
+            CustomerProfile = customer != null ? new { customer.FullName, customer.Phone } : null,
+            PreferredShippingRoute = preferredRoute
+        };
+
+        var requestBody = new
+        {
+            model = model,
+            messages = new object[]
+            {
+                new { role = "system", content = systemInstruction },
+                new { role = "user", content = $"Dữ liệu yêu cầu của khách hàng:\n{JsonSerializer.Serialize(promptPayload)}" }
+            },
+            response_format = new { type = "json_object" },
+            temperature = 0.1
+        };
+
+        var requestMessage = new HttpRequestMessage(HttpMethod.Post, baseUrl)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
+        };
+
+        requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        requestMessage.Headers.TryAddWithoutValidation("HTTP-Referer", "https://logictic.site");
+        requestMessage.Headers.TryAddWithoutValidation("X-Title", "VCL System");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        HttpResponseMessage httpResponse = await _httpClient.SendAsync(requestMessage, cts.Token);
+
+        if (!httpResponse.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var responseString = await httpResponse.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(responseString);
+
+        if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var textContent = choices[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString();
+
+        if (string.IsNullOrWhiteSpace(textContent))
+        {
+            return null;
+        }
+
+        var result = JsonSerializer.Deserialize<ExtractOrderIntentResponseDto>(
+            textContent,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        return result;
+    }
+
+    private static ExtractOrderIntentResponseDto BuildFallbackOrderIntent(
+        string message,
+        Customer? customer,
+        string? preferredRoute)
+    {
+        var dto = new ExtractOrderIntentResponseDto
+        {
+            ReceiverName = customer?.FullName,
+            ReceiverPhone = customer?.Phone,
+            ShippingRoute = preferredRoute ?? "CN-VN-ROAD"
+        };
+
+        // Regex phát hiện Link sản phẩm (Taobao, 1688, Tmall...)
+        var urlMatch = System.Text.RegularExpressions.Regex.Match(
+            message,
+            @"(https?://[^\s]+(taobao|1688|tmall|jd|pinduoduo)[^\s]*|https?://[^\s]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // Regex phát hiện Mã vận đơn TQ (VD: SF123456789, YT987654321, 78654321...)
+        var trackingMatch = System.Text.RegularExpressions.Regex.Match(
+            message,
+            @"\b(SF|YT|ST|ZTO|J&T|78\d|33\d)[A-Za-z0-9]{8,18}\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        // Regex phát hiện Số điện thoại
+        var phoneMatch = System.Text.RegularExpressions.Regex.Match(
+            message,
+            @"\b(0[3|5|7|8|9][0-9]{8})\b");
+
+        if (phoneMatch.Success)
+        {
+            dto.ReceiverPhone = phoneMatch.Value;
+        }
+
+        // Regex phát hiện Số lượng
+        var qtyMatch = System.Text.RegularExpressions.Regex.Match(
+            message,
+            @"(\d+)\s*(cái|chiếc|bộ|hộp|sp|món|item|kg|kiện)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (qtyMatch.Success && int.TryParse(qtyMatch.Groups[1].Value, out int qty))
+        {
+            dto.Quantity = qty;
+        }
+
+        // Regex phát hiện Giá tiền CNY (Tệ)
+        var priceMatch = System.Text.RegularExpressions.Regex.Match(
+            message,
+            @"(\d+(\.\d+)?)\s*(tệ|cny|yüan|¥)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (priceMatch.Success && decimal.TryParse(priceMatch.Groups[1].Value, out decimal price))
+        {
+            dto.UnitPriceCny = price;
+            dto.DeclaredValueCny = price;
+        }
+
+        if (urlMatch.Success || message.Contains("mua hộ", StringComparison.OrdinalIgnoreCase) || message.Contains("order", StringComparison.OrdinalIgnoreCase))
+        {
+            dto.OrderType = "PURCHASE";
+            dto.ProductLink = urlMatch.Success ? urlMatch.Value : null;
+            dto.ProductName = "Sản phẩm mua hộ từ " + (dto.ProductLink != null ? "link web" : "yêu cầu khách");
+            dto.Explanation = "Hệ thống tự động phát hiện yêu cầu Mua hộ qua link sản phẩm/từ khoá mua hộ.";
+        }
+        else
+        {
+            dto.OrderType = "CONSIGNMENT";
+            dto.ChinaTrackingCode = trackingMatch.Success ? trackingMatch.Value : null;
+            dto.ProductName = "Hàng ký gửi " + (dto.ChinaTrackingCode != null ? $"({dto.ChinaTrackingCode})" : "");
+            dto.Explanation = "Hệ thống tự động phát hiện yêu cầu Ký gửi dựa trên mã vận đơn TQ/từ khoá ký gửi.";
+        }
+
+        return dto;
+    }
 }
+
