@@ -101,6 +101,36 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Đăng nhập bằng Google. FE lấy ID token từ Google rồi gửi lên đây.
+        /// Email chưa có tài khoản thì hệ thống tự tạo tài khoản khách hàng, không cần OTP.
+        /// </summary>
+        [HttpPost("google")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginRequest request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            try
+            {
+                var response = await _authService.GoogleLoginAsync(request);
+                return Ok(response);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Chưa cấu hình ClientId — lỗi phía mình, không phải người dùng gõ sai.
+                return StatusCode(500, new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Yêu cầu quên mật khẩu — gửi token đặt lại mật khẩu qua email.
         /// </summary>
         [HttpPost("forgot-password")]
