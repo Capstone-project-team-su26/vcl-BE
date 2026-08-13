@@ -56,6 +56,7 @@ namespace VCL_API.Injection
             services.AddScoped<IConsignmentPaymentService, ConsignmentPaymentService>();
             services.AddScoped<IStorageFeeService, StorageFeeService>();
             services.AddScoped<IWarehouseInboundService, WarehouseInboundService>();
+            services.AddScoped<IDeliveryRequestService, DeliveryRequestService>();
             services.AddScoped<IAdminFinanceService, AdminFinanceService>();
             services.AddScoped<IProductTypeService, ProductTypeService>();
             services.AddScoped<ISupplierService, SupplierService>();

@@ -155,6 +155,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<WarehouseInboundItem> WarehouseInboundItems { get; set; }
 
+    public virtual DbSet<DeliveryRequest> DeliveryRequests { get; set; }
+
+    public virtual DbSet<DeliveryRequestItem> DeliveryRequestItems { get; set; }
+
     public virtual DbSet<WarehouseReceivingNote> WarehouseReceivingNotes { get; set; }
 
     public virtual DbSet<WarehouseReceivingNoteItem> WarehouseReceivingNoteItems { get; set; }
@@ -2539,6 +2543,61 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.ParcelId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_WIN_ITEM_PARCEL");
+        });
+
+        modelBuilder.Entity<DeliveryRequest>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_DELIVERY_REQUESTS");
+            entity.ToTable("DELIVERY_REQUESTS");
+            entity.Property(e => e.Id).HasColumnName("id").HasDefaultValueSql("(newid())");
+            entity.Property(e => e.DeliveryCode).HasMaxLength(50).HasColumnName("delivery_code");
+            entity.Property(e => e.OrderId).HasColumnName("order_id");
+            entity.Property(e => e.Status).HasMaxLength(30).HasColumnName("status");
+            entity.Property(e => e.ReceiverName).HasMaxLength(150).HasColumnName("receiver_name");
+            entity.Property(e => e.ReceiverPhone).HasMaxLength(30).HasColumnName("receiver_phone");
+            entity.Property(e => e.AddressDetail).HasMaxLength(300).HasColumnName("address_detail");
+            entity.Property(e => e.Province).HasMaxLength(100).HasColumnName("province");
+            entity.Property(e => e.District).HasMaxLength(100).HasColumnName("district");
+            entity.Property(e => e.Ward).HasMaxLength(100).HasColumnName("ward");
+            entity.Property(e => e.ScheduledDate).HasColumnName("scheduled_date");
+            // Mấy cột này lúc lập phiếu chưa có gì: ghi chú tuỳ khách, mã vận đơn và giờ bàn
+            // giao chỉ có sau khi kho đặt giao, lý do từ chối chỉ có khi OM từ chối.
+            entity.Property(e => e.Note).HasMaxLength(500).IsRequired(false).HasColumnName("note");
+            entity.Property(e => e.CarrierTrackingCode).HasMaxLength(100).IsRequired(false).HasColumnName("carrier_tracking_code");
+            entity.Property(e => e.DispatchedAt).HasColumnName("dispatched_at");
+            entity.Property(e => e.CreatedBy).HasColumnName("created_by");
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.ApprovedBy).HasColumnName("approved_by");
+            entity.Property(e => e.ApprovedAt).HasColumnName("approved_at");
+            entity.Property(e => e.RejectionReason).HasMaxLength(500).IsRequired(false).HasColumnName("rejection_reason");
+
+            entity.HasOne(d => d.Order)
+                .WithMany()
+                .HasForeignKey(d => d.OrderId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_DELIVERY_ORDER");
+        });
+
+        modelBuilder.Entity<DeliveryRequestItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_DELIVERY_REQUEST_ITEMS");
+            entity.ToTable("DELIVERY_REQUEST_ITEMS");
+            entity.Property(e => e.Id).HasColumnName("id").HasDefaultValueSql("(newid())");
+            entity.Property(e => e.DeliveryRequestId).HasColumnName("delivery_request_id");
+            entity.Property(e => e.ParcelId).HasColumnName("parcel_id");
+            entity.Property(e => e.PickSource).HasMaxLength(30).IsRequired(false).HasColumnName("pick_source");
+
+            entity.HasOne(d => d.DeliveryRequest)
+                .WithMany(p => p.Items)
+                .HasForeignKey(d => d.DeliveryRequestId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_DELIVERY_ITEM_REQUEST");
+
+            entity.HasOne(d => d.Parcel)
+                .WithMany()
+                .HasForeignKey(d => d.ParcelId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_DELIVERY_ITEM_PARCEL");
         });
 
         modelBuilder.Entity<Conversation>(entity =>
