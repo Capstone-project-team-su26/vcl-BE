@@ -3577,6 +3577,96 @@ namespace VCL_DLL.Migrations
                     b.ToTable("WAREHOUSES", (string)null);
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseInboundItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<Guid>("InboundRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("inbound_request_id");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parcel_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_WAREHOUSE_INBOUND_ITEMS");
+
+                    b.HasIndex("InboundRequestId");
+
+                    b.HasIndex("ParcelId");
+
+                    b.ToTable("WAREHOUSE_INBOUND_ITEMS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseInboundRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("approved_at");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("approved_by");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("InboundCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("inbound_code");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<Guid?>("ShipmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("shipment_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("WarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_WAREHOUSE_INBOUND_REQUESTS");
+
+                    b.HasIndex("ShipmentId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("WAREHOUSE_INBOUND_REQUESTS", (string)null);
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.WarehouseLocationLayout", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4772,6 +4862,43 @@ namespace VCL_DLL.Migrations
                     b.Navigation("Shipment");
                 });
 
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseInboundItem", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.WarehouseInboundRequest", "InboundRequest")
+                        .WithMany("Items")
+                        .HasForeignKey("InboundRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_WIN_ITEM_REQUEST");
+
+                    b.HasOne("VCL_DLL.Models.Parcel", "Parcel")
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .IsRequired()
+                        .HasConstraintName("FK_WIN_ITEM_PARCEL");
+
+                    b.Navigation("InboundRequest");
+
+                    b.Navigation("Parcel");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseInboundRequest", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Shipment", "Shipment")
+                        .WithMany()
+                        .HasForeignKey("ShipmentId")
+                        .HasConstraintName("FK_WIN_SHIPMENT");
+
+                    b.HasOne("VCL_DLL.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .HasConstraintName("FK_WIN_WAREHOUSE");
+
+                    b.Navigation("Shipment");
+
+                    b.Navigation("Warehouse");
+                });
+
             modelBuilder.Entity("VCL_DLL.Models.WarehouseLocationLayout", b =>
                 {
                     b.HasOne("VCL_DLL.Models.Bin", "Bin")
@@ -5078,6 +5205,11 @@ namespace VCL_DLL.Migrations
                     b.Navigation("ShipmentOriginWarehouses");
 
                     b.Navigation("WarehouseZones");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.WarehouseInboundRequest", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.WarehouseZone", b =>

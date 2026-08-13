@@ -151,6 +151,10 @@ public partial class VCLDBContext : DbContext
 
     public virtual DbSet<PickingItem> PickingItems { get; set; }
 
+    public virtual DbSet<WarehouseInboundRequest> WarehouseInboundRequests { get; set; }
+
+    public virtual DbSet<WarehouseInboundItem> WarehouseInboundItems { get; set; }
+
     public virtual DbSet<WarehouseReceivingNote> WarehouseReceivingNotes { get; set; }
 
     public virtual DbSet<WarehouseReceivingNoteItem> WarehouseReceivingNoteItems { get; set; }
@@ -2482,6 +2486,59 @@ public partial class VCLDBContext : DbContext
                 .HasForeignKey(d => d.InventoryId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_PICKING_ITEM_INVENTORY");
+        });
+
+        modelBuilder.Entity<WarehouseInboundRequest>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_WAREHOUSE_INBOUND_REQUESTS");
+            entity.ToTable("WAREHOUSE_INBOUND_REQUESTS");
+            entity.Property(e => e.Id).HasColumnName("id").HasDefaultValueSql("(newid())");
+            entity.Property(e => e.InboundCode).HasMaxLength(50).HasColumnName("inbound_code");
+            entity.Property(e => e.ShipmentId).HasColumnName("shipment_id");
+            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.Status).HasMaxLength(30).HasColumnName("status");
+            // Ghi chú và lý do từ chối đều là tuỳ chọn: phiếu bình thường không có ghi chú, và
+            // phiếu được duyệt thì không có lý do từ chối. Không khai rõ thì EF suy ra NOT NULL
+            // từ kiểu string, lập phiếu là gãy ngay.
+            entity.Property(e => e.Note).HasMaxLength(500).IsRequired(false).HasColumnName("note");
+            entity.Property(e => e.CreatedBy).HasColumnName("created_by");
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.ApprovedBy).HasColumnName("approved_by");
+            entity.Property(e => e.ApprovedAt).HasColumnName("approved_at");
+            entity.Property(e => e.RejectionReason).HasMaxLength(500).IsRequired(false).HasColumnName("rejection_reason");
+
+            entity.HasOne(d => d.Shipment)
+                .WithMany()
+                .HasForeignKey(d => d.ShipmentId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WIN_SHIPMENT");
+
+            entity.HasOne(d => d.Warehouse)
+                .WithMany()
+                .HasForeignKey(d => d.WarehouseId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WIN_WAREHOUSE");
+        });
+
+        modelBuilder.Entity<WarehouseInboundItem>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PK_WAREHOUSE_INBOUND_ITEMS");
+            entity.ToTable("WAREHOUSE_INBOUND_ITEMS");
+            entity.Property(e => e.Id).HasColumnName("id").HasDefaultValueSql("(newid())");
+            entity.Property(e => e.InboundRequestId).HasColumnName("inbound_request_id");
+            entity.Property(e => e.ParcelId).HasColumnName("parcel_id");
+
+            entity.HasOne(d => d.InboundRequest)
+                .WithMany(p => p.Items)
+                .HasForeignKey(d => d.InboundRequestId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_WIN_ITEM_REQUEST");
+
+            entity.HasOne(d => d.Parcel)
+                .WithMany()
+                .HasForeignKey(d => d.ParcelId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_WIN_ITEM_PARCEL");
         });
 
         modelBuilder.Entity<Conversation>(entity =>
