@@ -14,8 +14,13 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
 
-        // Chỉ Staff hoặc Operations được tạo lô vận chuyển quốc tế
-        private static readonly string[] AllowedRoles = { "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
+        // Gom kiện thành lô vận chuyển quốc tế.
+        // Phong xác nhận 14/08: người gom lô là NHÂN VIÊN KHO QUỐC TẾ, không phải OM. Đúng nghiệp
+        // vụ — người đang đứng cạnh container mới biết còn chỗ cho mấy kiện, OM ngồi văn phòng
+        // không xếp hàng lên xe được. OM/Staff/Admin vẫn giữ quyền để hỗ trợ khi kho vướng.
+        // Sale KHÔNG có trong danh sách này: sale chỉ theo dõi hành trình lô đã có.
+        private static readonly string[] ConsolidationRoles =
+            { "WAREHOUSESTAFF", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
 
         // Cập nhật hành trình lô (trạng thái + xác nhận đến kho đích): thêm cả Sale.
         // Anh Hoàng chốt 11/08 — bên thứ 3 vận chuyển có trang quản lý riêng, sale vào đó xem
@@ -251,10 +256,11 @@ namespace VCL_BLL.Services
 
             // 1. Phân quyền
             bool allowed = !string.IsNullOrWhiteSpace(userRole)
-                && AllowedRoles.Contains(userRole.Trim().ToUpperInvariant());
+                && ConsolidationRoles.Contains(userRole.Trim().ToUpperInvariant());
             if (!allowed)
             {
-                throw new UnauthorizedAccessException("Chỉ Staff hoặc Operations được tạo lô vận chuyển quốc tế.");
+                throw new UnauthorizedAccessException(
+                    "Chỉ nhân viên Kho Quốc tế (hoặc Staff, Operations) được gom kiện thành lô vận chuyển quốc tế.");
             }
 
             // 2. Xác định danh sách KIỆN vào lô.
