@@ -357,6 +357,26 @@ namespace VCL_BLL.Services
             order.TotalVolume = totalVolumeCm3 > 0m ? totalVolumeCm3 : order.TotalVolume;
             orderRepo.Update(order);
 
+            if (customer != null && customer.UserId != Guid.Empty)
+            {
+                try
+                {
+                    await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = customer.UserId,
+                        Title = "Đơn hàng đã có báo giá mới",
+                        Content = $"Đơn hàng ký gửi {order.ConsignmentCode ?? order.Id.ToString()} đã được tạo báo giá. Vui lòng kiểm tra và xác nhận thanh toán.",
+                        IsRead = false,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"CREATE QUOTATION NOTIFICATION ERROR ({order.Id}): {ex.Message}");
+                }
+            }
+
             await _unitOfWork.SaveChangesAsync();
 
             return new QuotationActionResponse

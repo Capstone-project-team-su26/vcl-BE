@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
 
@@ -90,6 +91,31 @@ namespace VCL_API.Controllers
                 message = $"Đã đánh dấu {updated} thông báo là đã đọc.",
                 data = new { updatedCount = updated }
             });
+        }
+
+        /// <summary>Tạo và gửi thông báo trực tiếp tới một người dùng (Dành cho Staff/Admin).</summary>
+        [HttpPost]
+        [Authorize(Roles = "Admin,Staff,Sale,Sales,OperationsManager,Operations")]
+        public async Task<IActionResult> CreateNotification([FromBody] CreateNotificationRequestDto request)
+        {
+            if (request == null || request.UserId == Guid.Empty || string.IsNullOrWhiteSpace(request.Title))
+            {
+                return BadRequest(new { success = false, message = "UserId và Title không được để trống." });
+            }
+
+            try
+            {
+                await _notificationService.CreateNotificationAsync(request.UserId, request.Title, request.Content);
+                return Ok(new { success = true, message = "Gửi thông báo thành công." });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi khi gửi thông báo: " + ex.Message });
+            }
         }
     }
 }

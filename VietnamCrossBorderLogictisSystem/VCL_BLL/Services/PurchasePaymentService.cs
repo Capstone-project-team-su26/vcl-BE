@@ -153,6 +153,23 @@ namespace VCL_BLL.Services
             purchaseRequest.Status = "WAITING_PAYMENT";
             requestRepo.Update(purchaseRequest);
 
+            try
+            {
+                await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    Title = "Khởi tạo thanh toán cọc mua hộ",
+                    Content = $"Khoản cọc {deposit.DepositAmount:#,##0}đ cho yêu cầu mua hộ (Mã: {purchaseCode}) đã được khởi tạo thành công.",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi tạo thông báo thanh toán mua hộ cho mã {PurchaseCode}", purchaseCode);
+            }
+
             await _unitOfWork.SaveChangesAsync();
 
             return new ConfirmQuotationAndPayResponseDto

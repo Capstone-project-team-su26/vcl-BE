@@ -98,5 +98,27 @@ namespace VCL_BLL.Services
             await _unitOfWork.SaveChangesAsync();
             return unread.Count;
         }
+
+        public async Task CreateNotificationAsync(Guid userId, string title, string content)
+        {
+            if (userId == Guid.Empty)
+                throw new ArgumentException("UserId không hợp lệ.");
+
+            if (string.IsNullOrWhiteSpace(title))
+                throw new ArgumentException("Tiêu đề thông báo không được để trống.");
+
+            var notification = new Notification
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Title = title.Trim(),
+                Content = content?.Trim() ?? string.Empty,
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _unitOfWork.Repository<Notification>().AddAsync(notification);
+            await _unitOfWork.SaveChangesAsync();
+        }
     }
 }

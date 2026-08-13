@@ -1284,6 +1284,8 @@ namespace VCL_BLL.Services
                     "Yêu cầu mua hộ (Mã: {0}) cần bạn bổ sung thông tin."),
                 ["REJECTED"] = ("Yêu cầu mua hộ bị từ chối",
                     "Yêu cầu mua hộ (Mã: {0}) đã bị từ chối."),
+                ["QUOTED"] = ("Yêu cầu mua hộ đã có báo giá",
+                    "Yêu cầu mua hộ (Mã: {0}) đã được tạo báo giá. Vui lòng kiểm tra và thực hiện thanh toán."),
             };
 
         /// <summary>
@@ -1763,8 +1765,10 @@ namespace VCL_BLL.Services
             }
 
             // 8. Cập nhật trạng thái yêu cầu mua hộ sang QUOTED
+            var previousStatus = purchaseRequest.Status;
             purchaseRequest.Status = "QUOTED";
             requestRepo.Update(purchaseRequest);
+            await NotifyCustomerAsync(purchaseRequest, "QUOTED", previousStatus);
 
             await _unitOfWork.SaveChangesAsync();
 
