@@ -3169,9 +3169,9 @@ namespace VCL_DLL.Migrations
                     b.HasKey("Id")
                         .HasName("PK_SHIPMENT_WRO_REQUESTS");
 
-                    b.HasIndex("ShipmentId");
+                    b.HasIndex("WroRequestId");
 
-                    b.HasIndex("WroRequestId")
+                    b.HasIndex("ShipmentId", "WroRequestId")
                         .IsUnique()
                         .HasDatabaseName("UQ_SHIPMENT_WRO_REQUEST");
 

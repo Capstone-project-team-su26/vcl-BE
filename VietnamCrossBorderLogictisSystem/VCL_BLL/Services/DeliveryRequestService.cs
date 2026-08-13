@@ -38,6 +38,10 @@ namespace VCL_BLL.Services
         private const string Stored = "STORED";
         private const string DirectDelivery = "DIRECT_DELIVERY";
 
+        // Trùng đúng giá trị mà webhook bên giao hàng dùng cho mã 900/901, để hai đường không
+        // sinh ra hai cách gọi khác nhau cho cùng một tình trạng.
+        private const string AwaitingPickup = "AWAITING_PICKUP";
+
         public DeliveryRequestService(IUnitOfWork unitOfWork, IGoshipService goshipService)
         {
             _unitOfWork = unitOfWork;
@@ -215,10 +219,10 @@ namespace VCL_BLL.Services
 
             var trackingCode = !string.IsNullOrWhiteSpace(goshipOrder?.Code) ? goshipOrder!.Code : goshipOrder?.Id;
 
-            // Kiện nhặt từ kệ phải nhả ô và ghi nhật ký xuất kho — đây là mốc DỪNG đồng hồ phí
-            // lưu kho tại kho VN. Thiếu bước này thì kiện đã đi giao rồi mà vẫn bị tính tiền
-            // nằm kho, và ô kệ mãi không trống ra.
-            await ReleaseShelfParcelsAsync(items, userId);
+            // Đánh dấu kiện đã rời kho đi giao. Kiện nhặt từ kệ còn được nhả ô và ghi nhật ký
+            // xuất kho — mốc DỪNG đồng hồ phí lưu kho tại kho VN. Thiếu bước này thì kiện đã đi
+            // giao rồi mà vẫn bị tính tiền nằm kho, và ô kệ mãi không trống ra.
+            await MarkParcelsDispatchedAsync(items, userId);
 
             var now = DateTime.UtcNow;
             delivery.Status = StatusDispatched;
@@ -331,51 +335,67 @@ namespace VCL_BLL.Services
             }
         }
 
-        /// <summary>Nhả ô kệ và ghi nhật ký xuất kho cho những kiện được nhặt trên kệ.</summary>
-        private async Task ReleaseShelfParcelsAsync(List<DeliveryRequestItem> items, Guid userId)
+        /// <summary>
+        /// Đánh dấu kiện đã rời kho đi giao: mọi kiện trong phiếu chuyển sang chờ shipper lấy,
+        /// riêng kiện nhặt trên kệ thì nhả ô và ghi nhật ký xuất kho.
+        /// <para>
+        /// Phải đặt trạng thái ngay tại đây chứ không đợi webhook bên giao hàng bắn về. Sandbox
+        /// không bắn webhook, mà thật thì cũng có độ trễ — trong khoảng đó kiện đã rời kho rồi
+        /// mà màn hình vẫn báo "đang lưu kho", nhìn vào là thấy vô lý. Webhook về sau ghi đè
+        /// bằng trạng thái thật (đang lấy hàng, đã giao...) nên không đá nhau.
+        /// </para>
+        /// </summary>
+        private async Task MarkParcelsDispatchedAsync(List<DeliveryRequestItem> items, Guid userId)
         {
+            if (items.Count == 0) return;
+
+            var allParcelIds = items.Select(i => i.ParcelId).ToHashSet();
             var shelfParcelIds = items
                 .Where(i => string.Equals(i.PickSource, PickFromShelf, StringComparison.OrdinalIgnoreCase))
                 .Select(i => i.ParcelId)
                 .ToHashSet();
 
-            if (shelfParcelIds.Count == 0) return;
-
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var binRepo = _unitOfWork.Repository<Bin>();
             var movementRepo = _unitOfWork.Repository<InventoryMovement>();
 
-            var parcels = (await parcelRepo.GetAllAsync()).Where(p => shelfParcelIds.Contains(p.Id)).ToList();
+            var parcels = (await parcelRepo.GetAllAsync()).Where(p => allParcelIds.Contains(p.Id)).ToList();
             var bins = (await binRepo.GetAllAsync()).ToDictionary(b => b.Id);
             var now = DateTime.UtcNow;
 
             foreach (var parcel in parcels)
             {
-                if (!parcel.BinId.HasValue) continue;
-                var binId = parcel.BinId.Value;
-
-                if (bins.TryGetValue(binId, out var bin))
+                // Kiện nhặt trên kệ: nhả ô kệ và ghi nhật ký xuất kho. Đây là mốc DỪNG đồng hồ
+                // phí lưu kho tại kho VN.
+                if (shelfParcelIds.Contains(parcel.Id) && parcel.BinId.HasValue)
                 {
-                    var released = (parcel.Length ?? 0m) * (parcel.Width ?? 0m) * (parcel.Height ?? 0m);
-                    var remaining = (bin.CurrentVolume ?? 0m) - released;
-                    bin.CurrentVolume = remaining < 0m ? 0m : remaining;
-                    binRepo.Update(bin);
+                    var binId = parcel.BinId.Value;
+
+                    if (bins.TryGetValue(binId, out var bin))
+                    {
+                        var released = (parcel.Length ?? 0m) * (parcel.Width ?? 0m) * (parcel.Height ?? 0m);
+                        var remaining = (bin.CurrentVolume ?? 0m) - released;
+                        bin.CurrentVolume = remaining < 0m ? 0m : remaining;
+                        binRepo.Update(bin);
+                    }
+
+                    await movementRepo.AddAsync(new InventoryMovement
+                    {
+                        Id = Guid.NewGuid(),
+                        ParcelId = parcel.Id,
+                        // Cột to_bin_id là NOT NULL nên ghi lại chính ô vừa rời đi; MovementType
+                        // OUTBOUND đã đủ để phân biệt với điều chuyển nội bộ.
+                        ToBinId = binId,
+                        MovementType = "OUTBOUND",
+                        Reason = "Xuất kho giao khách theo yêu cầu giao hàng",
+                        MovedById = userId,
+                        MovedAt = now
+                    });
+
+                    parcel.BinId = null;
                 }
 
-                await movementRepo.AddAsync(new InventoryMovement
-                {
-                    Id = Guid.NewGuid(),
-                    ParcelId = parcel.Id,
-                    // Cột to_bin_id là NOT NULL nên ghi lại chính ô vừa rời đi; MovementType
-                    // OUTBOUND đã đủ để phân biệt với điều chuyển nội bộ.
-                    ToBinId = binId,
-                    MovementType = "OUTBOUND",
-                    Reason = "Xuất kho giao khách theo yêu cầu giao hàng",
-                    MovedById = userId,
-                    MovedAt = now
-                });
-
-                parcel.BinId = null;
+                parcel.PackageStatus = AwaitingPickup;
                 parcelRepo.Update(parcel);
             }
         }

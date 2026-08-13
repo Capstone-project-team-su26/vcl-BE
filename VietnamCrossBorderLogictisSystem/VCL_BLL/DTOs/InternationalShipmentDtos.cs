@@ -6,8 +6,25 @@ namespace VCL_BLL.DTOs
 {
     public class CreateInternationalShipmentDto
     {
-        [Required]
-        [MinLength(1, ErrorMessage = "Phải chọn ít nhất một yêu cầu xuất kho.")]
+        /// <summary>
+        /// Kiện hàng đưa vào lô — đây là cách gom ĐÚNG nghiệp vụ.
+        /// <para>
+        /// Lô là một container thật và container có sức chứa, nên kiện của cùng một phiếu xuất
+        /// kho hoàn toàn có thể tách sang hai chuyến khác nhau. Truyền danh sách này là chọn
+        /// đích danh kiện nào lên chuyến này.
+        /// </para>
+        /// <para>
+        /// Bỏ trống thì hệ thống quay về lấy trọn kiện của <see cref="WroRequestIds"/> — giữ cho
+        /// màn hình cũ chọn theo phiếu không gãy.
+        /// </para>
+        /// </summary>
+        public List<Guid>? ParcelIds { get; set; }
+
+        /// <summary>
+        /// Gom trọn kiện của mấy phiếu xuất kho này. Cách gom cũ, giữ lại cho màn hình hiện tại.
+        /// Không còn bắt buộc: gửi <see cref="ParcelIds"/> thay thế cũng được, nhưng phải có ít
+        /// nhất một trong hai.
+        /// </summary>
         public List<Guid> WroRequestIds { get; set; } = new();
 
         [Required(ErrorMessage = "Kho đi không được để trống.")]

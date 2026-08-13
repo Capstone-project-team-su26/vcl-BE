@@ -1518,8 +1518,15 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.ShipmentId).HasColumnName("shipment_id");
             entity.Property(e => e.WroRequestId).HasColumnName("wro_request_id");
 
-            // Một yêu cầu xuất kho chỉ được gán vào duy nhất một lô vận chuyển
-            entity.HasIndex(e => e.WroRequestId).IsUnique().HasDatabaseName("UQ_SHIPMENT_WRO_REQUEST");
+            // Một phiếu xuất kho ĐƯỢC PHÉP nằm ở nhiều lô, vì lô là container có sức chứa: kiện
+            // của cùng một phiếu hoàn toàn có thể tách sang hai chuyến khác nhau. Ràng buộc duy
+            // nhất nay đặt trên CẶP (lô, phiếu) — vẫn chặn ghi trùng cùng một cặp, nhưng không
+            // còn khoá phần kiện còn lại của phiếu khỏi chuyến sau.
+            //
+            // Chống một KIỆN nằm ở hai lô là việc của SHIPMENT_PARCELS và chốt trong service.
+            entity.HasIndex(e => new { e.ShipmentId, e.WroRequestId })
+                .IsUnique()
+                .HasDatabaseName("UQ_SHIPMENT_WRO_REQUEST");
 
             entity.HasOne(d => d.Shipment).WithMany(p => p.ShipmentWroRequests)
                 .HasForeignKey(d => d.ShipmentId)

@@ -31,7 +31,8 @@ Mọi ví dụ trong đây là **request/response thật** chạy trên server, 
 [Phiếu xuất kho đã bàn giao]  ← kết thúc của wro_fe_api_contract.md
         │
         ▼
-① OM GOM PHIẾU THÀNH LÔ          POST /api/international-shipments
+① OM GOM KIỆN THÀNH LÔ           POST /api/international-shipments
+   (đơn vị gom là KIỆN, không phải phiếu — xem mục 3)
         │
         ▼
 ② SALE THEO DÕI HÀNH TRÌNH        PUT  /international-shipments/{id}/status
@@ -89,7 +90,8 @@ MANIFESTED → CUSTOMS_EXPORT_PENDING → IN_TRANSIT → CUSTOMS_IMPORT_PENDING 
 | `ARRIVED_DESTINATION` | Lô đã về VN, kho **chưa** mở lô đếm |
 | `RECEIVED_AT_DESTINATION` | Kho đã mở lô, xác nhận kiện có mặt |
 | `STORED` | Đã nhập kho VN, đang nằm trên ô kệ |
-| `AWAITING_PICKUP` · `PICKING_UP` · `DELIVERED` | Trạng thái giao hàng, do webhook cập nhật |
+| `AWAITING_PICKUP` | Đã đặt giao, chờ shipper tới lấy. BE đặt ngay lúc bấm đặt giao, không đợi webhook |
+| `PICKING_UP` · `DELIVERED` | Trạng thái giao hàng, do webhook bên giao hàng cập nhật |
 
 ### 2.3. Hướng xử lý kiện (`destinationHandling`)
 
@@ -112,16 +114,22 @@ hoặc `DELIVERY_REJECTED` (Bị từ chối)
 
 ---
 
-## 3. GIAI ĐOẠN 1 — OM GOM PHIẾU THÀNH LÔ
+## 3. GIAI ĐOẠN 1 — OM GOM KIỆN THÀNH LÔ
+
+> ⚠️ **Đơn vị gom lô là KIỆN HÀNG, không phải phiếu xuất kho.**
+> Lô là một container thật và container có sức chứa. Một phiếu 5 kiện mà xe chỉ còn chỗ cho 3 thì gửi 3 kiện chuyến này, 2 kiện chuyến sau. Vì vậy **một phiếu có thể nằm ở nhiều lô** — đó là chuyện đúng, không phải lỗi dữ liệu. Ngược lại, **một kiện chỉ nằm đúng một lô**.
 
 ### `POST /api/international-shipments`
 
 **Quyền**: Staff · OperationsManager · Admin (**không** có Sale)
 
-**Request**
+**Request — cách chính, chọn đích danh kiện**
 ```json
 {
-  "wroRequestIds": ["f192349e-a8f7-4b22-895b-136ebe3e292c"],
+  "parcelIds": [
+    "eba0eb49-4fec-4d6f-ba45-312b80df3592",
+    "81dde3d3-d63e-4ef0-9b10-e0ff2069bde6"
+  ],
   "originWarehouseId": "5f8a0b1c-2d3e-4f5a-6b7c-8d9e0f1a2b3c",
   "destinationWarehouseId": "df34760c-0c3e-48ad-bdd6-3a30a4ec402a",
   "carrierId": null,
@@ -130,13 +138,27 @@ hoặc `DELIVERY_REJECTED` (Bị từ chối)
 }
 ```
 
+**Request — cách cũ, gom trọn kiện của mấy phiếu** *(vẫn chạy, giữ cho màn hình hiện tại)*
+```json
+{
+  "wroRequestIds": ["f192349e-a8f7-4b22-895b-136ebe3e292c"],
+  "originWarehouseId": "...",
+  "destinationWarehouseId": "..."
+}
+```
+
+Phải có ít nhất một trong hai. Truyền `parcelIds` thì `wroRequestIds` bị bỏ qua.
+
 **Response `201`** — cấu trúc giống hệt `GET` chi tiết ở mục 4.4.
 
 **Bốn chốt chặn** (đều trả `400`):
-- Phiếu phải đã xuất kho xong: `RELEASED`, `HANDED_OVER` hoặc `IN_TRANSIT`
-- Một phiếu không được nằm trong 2 lô
-- Mọi phiếu trong lô phải **cùng tuyến vận chuyển**
-- Mọi phiếu phải **cùng kho xuất** — hệ thống suy từ vị trí thật của hàng, kho đi khai sai là báo lỗi
+- Phiếu đứng sau kiện phải đã xuất kho xong: `RELEASED`, `HANDED_OVER` hoặc `IN_TRANSIT`
+- **Một KIỆN không được nằm trong 2 lô** → `"Kiện PCL-... đã thuộc một lô vận chuyển khác."`
+- Mọi kiện trong lô phải **cùng tuyến vận chuyển**
+- Mọi kiện phải **cùng kho xuất** — suy từ vị trí thật của chính những kiện đã chọn
+
+**Lấy id kiện ở đâu để tick?**
+`GET /api/warehouse-release-requests/{id}` — mỗi dòng trong `items[]` nay trả kèm **`parcelId`**, cùng `packageCode`, `orderCode`, `binCode`, `actualWeight`. Đủ để dựng bảng cho OM tick và cộng dồn cân nặng xem đã đầy xe chưa.
 
 ---
 
@@ -529,9 +551,14 @@ Từ chối bắt buộc `rejectionReason`.
 {}
 ```
 
-Phiếu phải đang `DELIVERY_APPROVED`. Thành công thì: gọi bên giao hàng, lưu mã vận đơn, **nhả ô kệ và dừng tính phí lưu kho** cho kiện lấy từ kệ, phiếu sang `DELIVERY_DISPATCHED`.
+Phiếu phải đang `DELIVERY_APPROVED`. Thành công thì hệ thống làm bốn việc: gọi bên giao hàng, lưu mã vận đơn lên phiếu, **nhả ô kệ + ghi nhật ký xuất kho** cho kiện lấy từ kệ (đây là mốc **dừng tính phí lưu kho VN**), và đánh dấu mọi kiện sang `AWAITING_PICKUP`.
 
-> **Trạng thái hiện tại**: bước này **chưa chạy được** vì chưa có token GoShip. API trả `400` kèm *"Không gọi được đơn vị giao hàng. Kiểm tra token GoShip đã cấu hình chưa..."*. Phiếu **giữ nguyên** `DELIVERY_APPROVED`, bấm lại được sau khi có token.
+> **Trạng thái hiện tại — đọc kỹ chỗ này:**
+> Token GoShip **đã có trên server** (nằm trong GitHub Secrets, được bơm vào lúc deploy). Nên bước này **sẽ chạy bình thường trên môi trường đã deploy**.
+>
+> Chỉ có **máy local của BE là chưa test được**, vì secret trên GitHub không đọc ngược ra được. Ở local, API trả `400` kèm *"Không gọi được đơn vị giao hàng. Kiểm tra token GoShip đã cấu hình chưa..."*
+>
+> **Phong cứ dựng màn bình thường, không phải chờ gì.** Khi thất bại thì phiếu **giữ nguyên** `DELIVERY_APPROVED` và ô kệ không bị nhả — bấm lại được, không sợ hỏng dữ liệu.
 
 ### 8.4. `GET /api/delivery-requests/{id}`
 
@@ -603,7 +630,7 @@ Mã trạng thái: `900`/`901` chờ lấy · `902` đang lấy · `905` giao th
 
 | Vai | Màn | API chính |
 | :--- | :--- | :--- |
-| OM | Gom phiếu thành lô | `POST /international-shipments` |
+| OM | **Gom KIỆN thành lô** — bảng kiện chờ gom, tick từng kiện, cộng dồn cân nặng | `GET /warehouse-release-requests/{id}` lấy `parcelId` · `POST /international-shipments` |
 | Sale | Danh sách lô theo 5 tab | `GET /international-shipments?statusTab=` |
 | Sale | Chi tiết lô + timeline + ô nhập mã đối tác | `GET /{id}` · `PUT /{id}/status` |
 | Sale | Nút xác nhận lô về VN **+ popup xem trước** | `PUT /{id}/arrive` |
@@ -641,10 +668,13 @@ Trong `vietnamWarehouseStore.js`, lời gọi `confirmDestinationReceiving` nằ
 `carrierTrackingCode`, `dispatchedAt`, `rejectionReason`, `scheduledDate` — cứ ẩn dòng đó đi thay vì hiện chữ "null".
 
 **5. `binCode` đi ngược chiều các trường khác.**
-Nó **có** giá trị khi kiện nằm kệ, và **thành null** sau khi đặt giao (vì ô kệ được nhả). Đừng dùng `binCode != null` để quyết định hiện cột ô kệ — dùng `pickSource` hoặc `hasShelfPick`, hai cái đó không đổi theo thời gian.
+Nó **có** giá trị khi kiện nằm kệ, và **thành null** sau khi đặt giao (vì ô kệ được nhả). Cùng lúc đó `packageStatus` đổi từ `STORED` sang `AWAITING_PICKUP`. Đừng dùng `binCode != null` để quyết định hiện cột ô kệ — dùng `pickSource` hoặc `hasShelfPick`, hai cái đó không đổi theo thời gian.
 
 **6. `POST /api/goship/orders` là cửa sau.**
 API cũ này vẫn gọi thẳng được và **bỏ qua bước OM duyệt**. Sau khi dựng xong màn ở mục 8, đừng dùng nó nữa — mọi đơn giao phải đi qua yêu cầu giao hàng.
+
+**7. Màn gom lô hiện đang chọn nhầm đơn vị.**
+`OperationsShipmentsPage.jsx` đang cho tick **WRO** (`selectedWroIds`) rồi gửi `wroRequestIds`. Đơn vị đúng là **kiện** — xem mục 3. Đường cũ vẫn chạy nên không gãy ngay, nhưng cách đó không xếp được hàng lên container có sức chứa: một phiếu 5 kiện mà xe còn chỗ cho 3 thì không tách được.
 
 ---
 
@@ -652,9 +682,10 @@ API cũ này vẫn gọi thẳng được và **bỏ qua bước OM duyệt**. S
 
 | Việc | Ảnh hưởng tới FE |
 | :--- | :--- |
-| **Token GoShip** chưa có | Bước 8.3 chưa chạy được. Dựng màn trước, có token là chạy |
-| **Thu phí lưu kho phát sinh của nhánh gửi lại kho** | Khách đã tất toán mà kiện còn nằm kệ thì ngày lưu kho mới phát sinh chưa có đường thu. Đang chờ chốt nghiệp vụ |
-| Cho kho **up ảnh lúc mở lô** | Đề xuất, chưa duyệt |
+| **Bước đặt giao chưa chạy thử ở local** | Token GoShip đã có trên server nên môi trường deploy chạy được. **Không chặn FE**, cứ dựng màn |
+| **Thu phí lưu kho phát sinh của nhánh gửi lại kho** | Khách đã tất toán mà kiện còn nằm kệ thì ngày lưu kho mới phát sinh chưa có đường thu. **Đang chờ anh Hoàng chốt** dời mốc tất toán hay thu thêm một đợt. Chưa dựng màn thu phí này vội |
+| Cho kho **up ảnh lúc mở lô** | Đề xuất, chưa ai duyệt. Chưa làm |
+| **Huỷ lô / gỡ kiện khỏi lô** | Chưa có API. Tick nhầm kiện lúc gom lô thì hiện chưa sửa được — cần chốt có làm không |
 
 ---
 

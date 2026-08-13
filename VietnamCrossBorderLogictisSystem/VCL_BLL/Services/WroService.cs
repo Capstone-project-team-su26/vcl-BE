@@ -613,6 +613,7 @@ namespace VCL_BLL.Services
                 {
                     ItemId = item.Id,
                     InventoryId = item.InventoryId,
+                    ParcelId = inventory?.ParcelId == Guid.Empty ? null : inventory?.ParcelId,
                     Quantity = item.Quantity,
                     OrderId = itemOrderId,
                     OrderCode = itemOrderCode,
