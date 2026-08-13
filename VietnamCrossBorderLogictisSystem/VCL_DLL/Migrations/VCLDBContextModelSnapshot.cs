@@ -1443,6 +1443,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("consignment_id");
 
+                    b.Property<string>("DestinationHandling")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("destination_handling");
+
                     b.Property<decimal?>("Height")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("height");

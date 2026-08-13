@@ -47,6 +47,17 @@ public partial class Parcel
 
     public Guid? BinId { get; set; }
 
+    /// <summary>
+    /// Hướng xử lý kiện sau khi kho VN mở lô kiểm đếm: <c>DIRECT_DELIVERY</c> giao thẳng cho
+    /// khách (không nhập kho), hoặc <c>STORE_AT_VN</c> khách gửi lại kho VN chờ nhận sau.
+    /// <para>
+    /// Ý muốn là của khách, kho ghi nhận lúc kiểm đếm. Null nghĩa là kiện chưa qua bước phân
+    /// loại. Cùng một lô có kiện đi hướng này, kiện đi hướng kia nên phải lưu ở cấp kiện chứ
+    /// không phải cấp lô hay cấp đơn.
+    /// </para>
+    /// </summary>
+    public string DestinationHandling { get; set; }
+
     public Guid? PackageConfigurationId { get; set; }
 
     public virtual Order Consignment { get; set; }

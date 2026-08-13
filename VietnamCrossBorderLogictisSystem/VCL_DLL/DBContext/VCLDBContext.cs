@@ -1057,6 +1057,9 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.PutAwayTime)
                 .HasColumnName("put_away_time");
             entity.Property(e => e.BinId).HasColumnName("bin_id");
+            entity.Property(e => e.DestinationHandling)
+                .HasMaxLength(30)
+                .HasColumnName("destination_handling");
             entity.Property(e => e.PackageConfigurationId).HasColumnName("package_configuration_id");
 
             entity.HasOne(d => d.Consignment).WithMany(p => p.Parcels)

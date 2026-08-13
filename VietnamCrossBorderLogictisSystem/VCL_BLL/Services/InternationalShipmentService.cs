@@ -27,6 +27,30 @@ namespace VCL_BLL.Services
         // Nhận kiện tại kho đích: thêm cả Warehouse Staff
         private static readonly string[] ReceivingRoles = { "WAREHOUSESTAFF", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
 
+        // Hai hướng kiện có thể đi sau khi kho VN mở lô kiểm đếm.
+        private const string DirectDelivery = "DIRECT_DELIVERY";
+        private const string StoreAtVn = "STORE_AT_VN";
+
+        /// <summary>
+        /// Chuẩn hoá hướng xử lý về đúng một trong hai giá trị hợp lệ. Trả null khi bỏ trống để
+        /// bên gọi tự quyết mặc định. Gõ sai thì báo lỗi ngay chứ không lặng lẽ nhận bừa — sai
+        /// hướng là kiện đi nhầm nhánh, phát hiện ra thì hàng đã nằm sai chỗ.
+        /// </summary>
+        private static string? NormalizeHandling(string? value, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+
+            var normalized = value.Trim().ToUpperInvariant();
+            if (normalized != DirectDelivery && normalized != StoreAtVn)
+            {
+                throw new ArgumentException(
+                    $"{fieldName} không hợp lệ: '{value}'. Chỉ nhận {DirectDelivery} (giao thẳng cho khách) " +
+                    $"hoặc {StoreAtVn} (khách gửi lại kho VN).");
+            }
+
+            return normalized;
+        }
+
         public InternationalShipmentService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
@@ -104,7 +128,9 @@ namespace VCL_BLL.Services
                         OrderId = order?.Id ?? inv.OrderId,
                         OrderCode = order?.ConsignmentCode,
                         CustomerId = customerId == Guid.Empty ? null : customerId,
-                        CustomerName = customer?.FullName
+                        CustomerName = customer?.FullName,
+                        PackageStatus = parcel.PackageStatus,
+                        DestinationHandling = parcel.DestinationHandling
                     });
                 }
             }
@@ -711,11 +737,35 @@ namespace VCL_BLL.Services
             var allParcels = await parcelRepo.GetAllAsync();
             var shipmentParcels = allParcels.Where(p => shipmentParcelIds.Contains(p.Id)).ToList();
 
-            // 5. Xác định danh sách Parcel cần nhận
-            List<Parcel> targets;
-            if (request?.ParcelIds != null && request.ParcelIds.Count > 0)
+            // 5. Hướng xử lý mặc định cho lần nhận này. Không chọn gì thì hiểu là giao thẳng —
+            // gửi lại kho là ý muốn riêng của khách, phải nói ra mới có.
+            var defaultHandling = NormalizeHandling(request?.Handling, nameof(request.Handling));
+
+            // 6. Xác định danh sách Parcel cần nhận, kèm hướng xử lý của từng kiện.
+            // Ba cách gọi đều phải chạy được: items (mới, phân loại từng kiện), parcelIds (cũ,
+            // mobile đang dùng), hoặc không truyền gì (nhận cả lô).
+            var handlingByParcel = new Dictionary<Guid, string>();
+            List<Guid>? requestedIds = null;
+
+            if (request?.Items != null && request.Items.Count > 0)
             {
-                var requestedIds = request.ParcelIds.Distinct().ToList();
+                requestedIds = new List<Guid>();
+                foreach (var item in request.Items)
+                {
+                    if (handlingByParcel.ContainsKey(item.ParcelId)) continue;
+                    requestedIds.Add(item.ParcelId);
+                    handlingByParcel[item.ParcelId] =
+                        NormalizeHandling(item.Handling, nameof(item.Handling)) ?? defaultHandling ?? DirectDelivery;
+                }
+            }
+            else if (request?.ParcelIds != null && request.ParcelIds.Count > 0)
+            {
+                requestedIds = request.ParcelIds.Distinct().ToList();
+            }
+
+            List<Parcel> targets;
+            if (requestedIds != null)
+            {
                 targets = new List<Parcel>();
                 foreach (var pid in requestedIds)
                 {
@@ -743,12 +793,15 @@ namespace VCL_BLL.Services
                 }
             }
 
-            // 6. Cập nhật trạng thái Parcel + thời gian nhận
+            // 7. Cập nhật trạng thái Parcel + thời gian nhận + hướng xử lý
             var now = DateTime.UtcNow;
             foreach (var parcel in targets)
             {
                 parcel.PackageStatus = "RECEIVED_AT_DESTINATION";
                 parcel.CheckInTime = now;
+                parcel.DestinationHandling = handlingByParcel.TryGetValue(parcel.Id, out var perParcel)
+                    ? perParcel
+                    : (defaultHandling ?? DirectDelivery);
                 parcelRepo.Update(parcel);
             }
 
@@ -784,7 +837,8 @@ namespace VCL_BLL.Services
                 {
                     ParcelId = p.Id,
                     PackageCode = p.PackageCode ?? string.Empty,
-                    PackageStatus = p.PackageStatus ?? string.Empty
+                    PackageStatus = p.PackageStatus ?? string.Empty,
+                    DestinationHandling = p.DestinationHandling
                 }).ToList()
             };
         }
