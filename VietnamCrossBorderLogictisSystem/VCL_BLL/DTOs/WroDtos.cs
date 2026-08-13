@@ -136,6 +136,13 @@ namespace VCL_BLL.DTOs
     {
         public Guid ItemId { get; set; }
         public Guid InventoryId { get; set; }
+
+        /// <summary>
+        /// Mã định danh kiện hàng. Cần cho màn gom lô: lô là container có sức chứa nên người
+        /// dùng phải tick được từng kiện, mà tick thì phải có id để gửi lên.
+        /// </summary>
+        public Guid? ParcelId { get; set; }
+
         public int Quantity { get; set; }
         public Guid? OrderId { get; set; }
         public string OrderCode { get; set; } = string.Empty;

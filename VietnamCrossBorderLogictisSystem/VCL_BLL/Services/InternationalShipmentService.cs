@@ -257,17 +257,128 @@ namespace VCL_BLL.Services
                 throw new UnauthorizedAccessException("Chỉ Staff hoặc Operations được tạo lô vận chuyển quốc tế.");
             }
 
-            // 2. Validate danh sách yêu cầu xuất kho
-            if (request.WroRequestIds == null || request.WroRequestIds.Count == 0)
-            {
-                throw new ArgumentException("Phải chọn ít nhất một yêu cầu xuất kho.");
-            }
-            var wroRequestIds = request.WroRequestIds.Distinct().ToList();
-
+            // 2. Xác định danh sách KIỆN vào lô.
+            //
+            // Lô là một container thật, có sức chứa. Kiện của cùng một phiếu xuất kho hoàn toàn
+            // có thể tách sang hai chuyến khác nhau, nên đơn vị gom lô đúng là KIỆN chứ không
+            // phải phiếu. Truyền parcelIds là chọn đích danh; truyền wroRequestIds thì hiểu là
+            // lấy trọn kiện của mấy phiếu đó (giữ cho màn hình cũ không gãy).
             var wroRepo = _unitOfWork.Repository<WroRequest>();
             var shipmentWroRepo = _unitOfWork.Repository<ShipmentWroRequest>();
-            var allShipmentWros = await shipmentWroRepo.GetAllAsync();
+            var shipmentParcelRepoForCheck = _unitOfWork.Repository<ShipmentParcel>();
+            var allShipmentParcels = await shipmentParcelRepoForCheck.GetAllAsync();
 
+            var allWroItems = await _unitOfWork.Repository<WroItem>().GetAllAsync();
+            var allInventoriesForPick = await _unitOfWork.Repository<Inventory>().GetAllAsync();
+            var allParcelsForPick = (await _unitOfWork.Repository<Parcel>().GetAllAsync()).ToDictionary(p => p.Id);
+
+            // Kiện ↔ phiếu xuất kho: Parcel ← Inventory ← WroItem → WroRequest
+            var inventoryByParcel = allInventoriesForPick
+                .Where(i => i.ParcelId != Guid.Empty)
+                .GroupBy(i => i.ParcelId)
+                .ToDictionary(g => g.Key, g => g.Select(i => i.Id).ToHashSet());
+
+            // Một dòng tồn kho có thể nằm trong NHIỀU phiếu xuất kho — phiếu cũ bị từ chối rồi
+            // lập lại phiếu mới chẳng hạn. Nên gom thành danh sách, lát nữa chọn phiếu nào đang
+            // ở trạng thái đã xuất kho xong.
+            var wroIdsByInventory = allWroItems
+                .GroupBy(i => i.InventoryId)
+                .ToDictionary(g => g.Key, g => g.Select(i => i.WroRequestId).Distinct().ToList());
+
+            var pickedParcelIds = new List<Guid>();
+
+            if (request.ParcelIds != null && request.ParcelIds.Count > 0)
+            {
+                pickedParcelIds = request.ParcelIds.Distinct().ToList();
+            }
+            else if (request.WroRequestIds != null && request.WroRequestIds.Count > 0)
+            {
+                var wantedWroIds = request.WroRequestIds.Distinct().ToHashSet();
+                pickedParcelIds = allWroItems
+                    .Where(i => wantedWroIds.Contains(i.WroRequestId))
+                    .Select(i => allInventoriesForPick.FirstOrDefault(inv => inv.Id == i.InventoryId))
+                    .Where(inv => inv != null && inv.ParcelId != Guid.Empty)
+                    .Select(inv => inv!.ParcelId)
+                    .Distinct()
+                    .ToList();
+
+                if (pickedParcelIds.Count == 0)
+                {
+                    throw new ArgumentException("Các phiếu xuất kho đã chọn không có kiện hàng nào để gom lô.");
+                }
+            }
+            else
+            {
+                throw new ArgumentException("Phải chọn ít nhất một kiện hàng (parcelIds) hoặc một yêu cầu xuất kho (wroRequestIds).");
+            }
+
+            // 2a. Từng kiện: có thật, chưa thuộc lô nào, và truy được về phiếu xuất kho.
+            var wroIdsOfPickedParcels = new HashSet<Guid>();
+            foreach (var parcelId in pickedParcelIds)
+            {
+                if (!allParcelsForPick.TryGetValue(parcelId, out var parcel))
+                {
+                    throw new NotFoundException($"Không tìm thấy kiện hàng với ID {parcelId}");
+                }
+
+                // Chốt nay đặt trên KIỆN chứ không phải phiếu. Đặt trên phiếu thì phiếu nào đã
+                // tách một phần sang lô trước là phần còn lại kẹt luôn, không đi chuyến sau được.
+                if (allShipmentParcels.Any(sp => sp.ParcelId == parcelId))
+                {
+                    throw new ArgumentException(
+                        $"Kiện {parcel.PackageCode ?? parcelId.ToString()} đã thuộc một lô vận chuyển khác.");
+                }
+
+                if (!inventoryByParcel.TryGetValue(parcelId, out var inventoryIds))
+                {
+                    throw new ArgumentException(
+                        $"Kiện {parcel.PackageCode ?? parcelId.ToString()} không có bản ghi tồn kho nên không truy được về phiếu xuất kho.");
+                }
+
+                var candidateWroIds = inventoryIds
+                    .Where(invId => wroIdsByInventory.ContainsKey(invId))
+                    .SelectMany(invId => wroIdsByInventory[invId])
+                    .Distinct()
+                    .ToList();
+
+                if (candidateWroIds.Count == 0)
+                {
+                    throw new ArgumentException(
+                        $"Kiện {parcel.PackageCode ?? parcelId.ToString()} chưa nằm trong phiếu xuất kho nào, chưa gom lô được.");
+                }
+
+                // Kiện có thể dính nhiều phiếu (phiếu cũ bị từ chối, lập lại phiếu mới). Lấy
+                // phiếu đang ở trạng thái đã xuất kho xong; không có cái nào thì báo lỗi kèm
+                // trạng thái thật để người dùng biết đường xử lý.
+                Guid chosenWroId = Guid.Empty;
+                var seenStatuses = new List<string>();
+                foreach (var candidate in candidateWroIds)
+                {
+                    var candidateWro = await wroRepo.GetByIdAsync(candidate);
+                    if (candidateWro == null) continue;
+
+                    var st = candidateWro.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+                    seenStatuses.Add($"{candidateWro.WroCode}: {candidateWro.Status}");
+
+                    if (st is "RELEASED" or "HANDED_OVER" or "IN_TRANSIT")
+                    {
+                        chosenWroId = candidate;
+                        break;
+                    }
+                }
+
+                if (chosenWroId == Guid.Empty)
+                {
+                    throw new ArgumentException(
+                        $"Kiện {parcel.PackageCode ?? parcelId.ToString()} chưa có phiếu xuất kho nào đã xuất xong " +
+                        $"({string.Join(" · ", seenStatuses)}).");
+                }
+
+                wroIdsOfPickedParcels.Add(chosenWroId);
+            }
+
+            // 2b. Các phiếu đứng sau những kiện đã chọn phải đã xuất kho xong.
+            var wroRequestIds = wroIdsOfPickedParcels.ToList();
             var wroRequests = new List<WroRequest>();
             foreach (var wroId in wroRequestIds)
             {
@@ -293,12 +404,6 @@ namespace VCL_BLL.Services
                         $"(phải đã xuất kho xong — RELEASED, HANDED_OVER hoặc IN_TRANSIT; hiện tại: {wro.Status}).");
                 }
 
-                // Không cho gán cùng một yêu cầu xuất kho vào nhiều lô vận chuyển
-                if (allShipmentWros.Any(sw => sw.WroRequestId == wroId))
-                {
-                    throw new ArgumentException($"Yêu cầu xuất kho {wro.WroCode ?? wroId.ToString()} đã thuộc một lô vận chuyển khác.");
-                }
-
                 wroRequests.Add(wro);
             }
 
@@ -317,38 +422,40 @@ namespace VCL_BLL.Services
                     $"Đang có {routeIds.Count} tuyến khác nhau trong danh sách đã chọn.");
             }
 
-            var wroItemsForCheck = (await _unitOfWork.Repository<WroItem>().GetAllAsync())
-                .Where(i => wroRequestIds.Contains(i.WroRequestId))
-                .ToList();
-
-            var inventoriesForCheck = (await _unitOfWork.Repository<Inventory>().GetAllAsync())
-                .ToDictionary(i => i.Id, i => i);
-
+            // Kho xuất suy từ vị trí thật của CHÍNH những kiện đã chọn (Parcel → Inventory →
+            // Bin → Warehouse), không tính cả phiếu nữa — vì phiếu có thể còn kiện nằm ở lô khác.
             var binsForCheck = (await _unitOfWork.Repository<Bin>().GetAllAsync())
                 .ToDictionary(b => b.Id, b => b);
 
+            var inventoriesById = allInventoriesForPick.ToDictionary(i => i.Id, i => i);
+
             var sourceWarehouseIds = new HashSet<Guid>();
-            foreach (var wroItem in wroItemsForCheck)
+            foreach (var parcelId in pickedParcelIds)
             {
-                if (inventoriesForCheck.TryGetValue(wroItem.InventoryId, out var inv) &&
-                    binsForCheck.TryGetValue(inv.BinId, out var bin) &&
-                    bin.WarehouseId.HasValue)
+                if (!inventoryByParcel.TryGetValue(parcelId, out var inventoryIds)) continue;
+
+                foreach (var invId in inventoryIds)
                 {
-                    sourceWarehouseIds.Add(bin.WarehouseId.Value);
+                    if (inventoriesById.TryGetValue(invId, out var inv) &&
+                        binsForCheck.TryGetValue(inv.BinId, out var bin) &&
+                        bin.WarehouseId.HasValue)
+                    {
+                        sourceWarehouseIds.Add(bin.WarehouseId.Value);
+                    }
                 }
             }
 
             if (sourceWarehouseIds.Count > 1)
             {
                 throw new ArgumentException(
-                    "Tất cả phiếu WRO trong Lô phải cùng Kho xuất và cùng Tuyến vận chuyển! " +
+                    "Tất cả kiện hàng trong Lô phải cùng Kho xuất và cùng Tuyến vận chuyển! " +
                     $"Đang có {sourceWarehouseIds.Count} kho xuất khác nhau trong danh sách đã chọn.");
             }
 
             if (sourceWarehouseIds.Count == 1 && !sourceWarehouseIds.Contains(request.OriginWarehouseId))
             {
                 throw new ArgumentException(
-                    "Kho đi khai báo không khớp với kho đang chứa hàng của các phiếu WRO đã chọn.");
+                    "Kho đi khai báo không khớp với kho đang chứa những kiện đã chọn.");
             }
 
             // 3. Validate kho đi/kho đến
@@ -369,28 +476,13 @@ namespace VCL_BLL.Services
             }
 
             // 4. Gom danh sách Parcel từ các WRO (WroItem -> Inventory -> Parcel)
-            var wroItemRepo = _unitOfWork.Repository<WroItem>();
-            var allWroItems = await wroItemRepo.GetAllAsync();
-            var inventoryRepo = _unitOfWork.Repository<Inventory>();
-            var allInventories = await inventoryRepo.GetAllAsync();
-            var parcelRepo = _unitOfWork.Repository<Parcel>();
-            var allParcels = await parcelRepo.GetAllAsync();
+            // 4. Kiện vào lô là ĐÚNG những kiện đã chọn, không suy lại từ phiếu nữa. Suy lại từ
+            // phiếu là kéo luôn cả kiện mà người dùng cố ý bỏ ra vì container không còn chỗ.
+            var parcels = pickedParcelIds
+                .Where(id => allParcelsForPick.ContainsKey(id))
+                .Select(id => allParcelsForPick[id])
+                .ToList();
 
-            var parcelIds = new HashSet<Guid>();
-            foreach (var wro in wroRequests)
-            {
-                var items = allWroItems.Where(i => i.WroRequestId == wro.Id);
-                foreach (var item in items)
-                {
-                    var inv = allInventories.FirstOrDefault(x => x.Id == item.InventoryId);
-                    if (inv != null && inv.ParcelId != Guid.Empty)
-                    {
-                        parcelIds.Add(inv.ParcelId);
-                    }
-                }
-            }
-
-            var parcels = allParcels.Where(p => parcelIds.Contains(p.Id)).ToList();
             var totalPackages = parcels.Count;
             var totalWeight = parcels.Sum(p => p.ActualWeight ?? p.ChargeableWeight ?? 0m);
 
