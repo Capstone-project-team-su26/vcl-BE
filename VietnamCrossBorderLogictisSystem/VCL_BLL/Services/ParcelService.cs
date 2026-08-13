@@ -718,6 +718,48 @@ namespace VCL_BLL.Services
             };
         }
 
+        /// <summary>
+        /// Kiện về từ lô quốc tế chỉ được xếp kệ khi nằm trong một phiếu nhập kho VN đã duyệt.
+        /// Ném lỗi kèm đúng lý do đang vướng để kho biết phải làm gì tiếp.
+        /// </summary>
+        private async Task EnsureApprovedInboundRequestAsync(Parcel parcel)
+        {
+            var code = parcel.PackageCode ?? parcel.Id.ToString();
+
+            var inboundItems = (await _unitOfWork.Repository<WarehouseInboundItem>().GetAllAsync())
+                .Where(i => i.ParcelId == parcel.Id)
+                .ToList();
+
+            if (inboundItems.Count == 0)
+            {
+                throw new ArgumentException(
+                    $"Kiện {code} chưa có phiếu nhập kho. Lập phiếu nhập kho VN và chờ Operations " +
+                    "Manager duyệt rồi mới xếp lên kệ được.");
+            }
+
+            var requestIds = inboundItems.Select(i => i.InboundRequestId).ToHashSet();
+            var requests = (await _unitOfWork.Repository<WarehouseInboundRequest>().GetAllAsync())
+                .Where(r => requestIds.Contains(r.Id))
+                .ToList();
+
+            if (requests.Any(r => string.Equals(r.Status, "INBOUND_APPROVED", StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            var pending = requests.FirstOrDefault(r => string.Equals(r.Status, "INBOUND_PENDING", StringComparison.OrdinalIgnoreCase));
+            if (pending != null)
+            {
+                throw new ArgumentException(
+                    $"Phiếu nhập kho {pending.InboundCode} của kiện {code} đang chờ Operations Manager duyệt.");
+            }
+
+            var rejected = requests.FirstOrDefault();
+            throw new ArgumentException(
+                $"Phiếu nhập kho {rejected?.InboundCode} của kiện {code} đã bị từ chối" +
+                (string.IsNullOrWhiteSpace(rejected?.RejectionReason) ? "." : $": {rejected.RejectionReason}"));
+        }
+
         public async Task<ParcelPutAwayResponse> PutAwayParcelAsync(Guid parcelId, ParcelPutAwayRequest request)
         {
             if (request == null)
@@ -744,6 +786,18 @@ namespace VCL_BLL.Services
             if (!putAwayEligibleStatuses.Any(s => string.Equals(s, parcel.PackageStatus, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new ArgumentException("Chỉ cho phép nhập vị trí kho với kiện hàng đã được nhận tại kho (RECEIVED hoặc RECEIVED_AT_DESTINATION).");
+            }
+
+            // 3b. Kiện về từ lô quốc tế thì phải có phiếu nhập kho VN đã được OM duyệt mới
+            // được xếp kệ. Không có chốt này thì kho cất hàng lên kệ lúc nào cũng được, phiếu
+            // nhập kho thành thủ tục trang trí, và đồng hồ phí lưu kho VN bắt đầu chạy trước
+            // khi ai đó đồng ý cho hàng nằm lại.
+            //
+            // Kiện check-in thẳng tại kho nguồn (RECEIVED) không dính chốt này — luồng ký gửi
+            // của khách vào kho nguồn không liên quan gì tới phiếu nhập kho VN.
+            if (string.Equals(parcel.PackageStatus, "RECEIVED_AT_DESTINATION", StringComparison.OrdinalIgnoreCase))
+            {
+                await EnsureApprovedInboundRequestAsync(parcel);
             }
 
             // 4. Tìm Warehouse, Zone, Shelf, Bin

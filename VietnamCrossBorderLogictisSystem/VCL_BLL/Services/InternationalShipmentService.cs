@@ -27,6 +27,30 @@ namespace VCL_BLL.Services
         // Nhận kiện tại kho đích: thêm cả Warehouse Staff
         private static readonly string[] ReceivingRoles = { "WAREHOUSESTAFF", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
 
+        // Hai hướng kiện có thể đi sau khi kho VN mở lô kiểm đếm.
+        private const string DirectDelivery = "DIRECT_DELIVERY";
+        private const string StoreAtVn = "STORE_AT_VN";
+
+        /// <summary>
+        /// Chuẩn hoá hướng xử lý về đúng một trong hai giá trị hợp lệ. Trả null khi bỏ trống để
+        /// bên gọi tự quyết mặc định. Gõ sai thì báo lỗi ngay chứ không lặng lẽ nhận bừa — sai
+        /// hướng là kiện đi nhầm nhánh, phát hiện ra thì hàng đã nằm sai chỗ.
+        /// </summary>
+        private static string? NormalizeHandling(string? value, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+
+            var normalized = value.Trim().ToUpperInvariant();
+            if (normalized != DirectDelivery && normalized != StoreAtVn)
+            {
+                throw new ArgumentException(
+                    $"{fieldName} không hợp lệ: '{value}'. Chỉ nhận {DirectDelivery} (giao thẳng cho khách) " +
+                    $"hoặc {StoreAtVn} (khách gửi lại kho VN).");
+            }
+
+            return normalized;
+        }
+
         public InternationalShipmentService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
@@ -71,6 +95,13 @@ namespace VCL_BLL.Services
             var allParcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
                 .ToDictionary(p => p.Id, p => p);
 
+            // Đơn và khách của từng kiện: màn xác nhận lô về kho đích phải cho sale xem trước
+            // ai sẽ bị ảnh hưởng, vì một lần bấm là mọi đơn trong lô cùng đổi trạng thái.
+            var ordersById = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                .ToDictionary(o => o.Id, o => o);
+            var customersById = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                .ToDictionary(c => c.Id, c => c);
+
             var parcels = new List<InternationalShipmentParcelDto>();
             var orderIds = new HashSet<Guid>();
 
@@ -82,11 +113,24 @@ namespace VCL_BLL.Services
 
                 if (allParcels.TryGetValue(inv.ParcelId, out var parcel))
                 {
+                    ordersById.TryGetValue(inv.OrderId, out var order);
+
+                    // Khách lấy theo đơn trước, vì đó mới là chủ đơn thật sự. Tồn kho cũng có
+                    // cột khách nên dùng làm đường lui khi đơn chưa gắn khách.
+                    var customerId = order?.CustomerId ?? inv.CustomerId;
+                    customersById.TryGetValue(customerId, out var customer);
+
                     parcels.Add(new InternationalShipmentParcelDto
                     {
                         ParcelId = parcel.Id,
                         PackageCode = parcel.PackageCode ?? string.Empty,
-                        Weight = parcel.ActualWeight ?? parcel.ChargeableWeight
+                        Weight = parcel.ActualWeight ?? parcel.ChargeableWeight,
+                        OrderId = order?.Id ?? inv.OrderId,
+                        OrderCode = order?.ConsignmentCode,
+                        CustomerId = customerId == Guid.Empty ? null : customerId,
+                        CustomerName = customer?.FullName,
+                        PackageStatus = parcel.PackageStatus,
+                        DestinationHandling = parcel.DestinationHandling
                     });
                 }
             }
@@ -233,16 +277,20 @@ namespace VCL_BLL.Services
                     throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {wroId}");
                 }
 
-                // Nhận yêu cầu đã xuất kho xong: RELEASED (do /complete đặt) hoặc HANDED_OVER
-                // (do /handover đặt sau đó). Trước đây chỉ chấp nhận RELEASED, mà bàn giao cho nhà xe
-                // lại ghi đè sang HANDED_OVER — đi đúng thứ tự nghiệp vụ là không bao giờ tạo được lô,
-                // hàng đứng vĩnh viễn ở kho nguồn.
-                var eligible = new[] { "RELEASED", "HANDED_OVER" };
+                // Nhận mọi phiếu đã rời kho nguồn. Ba trạng thái vì ba đường đi khác nhau đều
+                // hợp lệ, thiếu một cái là hàng đứng vĩnh viễn ở kho nguồn:
+                //   RELEASED    - hoàn tất xuất kho (đường cũ)
+                //   HANDED_OVER - đã bàn giao cho nhà xe
+                //   IN_TRANSIT  - hoàn tất xuất kho nay đặt thẳng IN_TRANSIT, và gán tuyến vận
+                //                 chuyển cũng đặt IN_TRANSIT. Nên OM gán tuyến SAU khi bàn giao
+                //                 là phiếu rơi khỏi danh sách này, không gom lô được nữa — lỗi
+                //                 phụ thuộc thứ tự thao tác, người dùng không thể tự đoán ra.
+                var eligible = new[] { "RELEASED", "HANDED_OVER", "IN_TRANSIT" };
                 if (!eligible.Contains(wro.Status?.Trim().ToUpperInvariant()))
                 {
                     throw new ArgumentException(
                         $"Yêu cầu xuất kho {wro.WroCode ?? wroId.ToString()} chưa đủ điều kiện " +
-                        $"(phải đã xuất kho xong — RELEASED hoặc HANDED_OVER; hiện tại: {wro.Status}).");
+                        $"(phải đã xuất kho xong — RELEASED, HANDED_OVER hoặc IN_TRANSIT; hiện tại: {wro.Status}).");
                 }
 
                 // Không cho gán cùng một yêu cầu xuất kho vào nhiều lô vận chuyển
@@ -346,7 +394,14 @@ namespace VCL_BLL.Services
             var totalPackages = parcels.Count;
             var totalWeight = parcels.Sum(p => p.ActualWeight ?? p.ChargeableWeight ?? 0m);
 
-            // 5. Tạo lô vận chuyển (Shipment) trạng thái CREATED
+            // 5. Tạo lô vận chuyển (Shipment) trạng thái MANIFESTED
+            //
+            // Gom các phiếu xuất kho thành một lô CHÍNH LÀ lập bản kê khai hàng hoá của lô
+            // (manifest), nên lô sinh ra ở MANIFESTED chứ không phải CREATED. Để CREATED thì
+            // bảng AllowedTransitions chỉ cho đi tiếp sang đúng MANIFESTED — mà màn hình của
+            // sale chỉ có 4 lựa chọn CUSTOMS_EXPORT_PENDING / IN_TRANSIT / CUSTOMS_IMPORT_PENDING
+            // / ISSUE, không có nút nào bấm ra MANIFESTED. Lô đứng im ngay bước đầu, không bao
+            // giờ tới được IN_TRANSIT để xác nhận hàng về kho VN.
             var shipmentCode = $"INTL-{DateTime.UtcNow:yyyyMMddHHmmss}-{new Random().Next(1000, 9999)}";
             var shipment = new Shipment
             {
@@ -354,7 +409,7 @@ namespace VCL_BLL.Services
                 ShipmentCode = shipmentCode,
                 ShipmentType = "INTERNATIONAL",
                 ShipmentStage = "INTERNATIONAL",
-                Status = "CREATED",
+                Status = "MANIFESTED",
                 OriginWarehouseId = request.OriginWarehouseId,
                 DestinationWarehouseId = request.DestinationWarehouseId,
                 CarrierId = request.CarrierId,
@@ -392,33 +447,14 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            // 7. Trả về kết quả
-            return new InternationalShipmentResponseDto
-            {
-                ShipmentId = shipment.Id,
-                ShipmentCode = shipment.ShipmentCode,
-                OriginWarehouseId = shipment.OriginWarehouseId,
-                OriginWarehouseName = originWarehouse.WarehouseName ?? string.Empty,
-                DestinationWarehouseId = shipment.DestinationWarehouseId,
-                DestinationWarehouseName = destinationWarehouse.WarehouseName ?? string.Empty,
-                CarrierId = shipment.CarrierId,
-                CarrierName = carrier?.CarrierName,
-                ShippingMethod = shipment.ShippingMethod,
-                TotalPackages = totalPackages,
-                TotalWeight = totalWeight,
-                Status = shipment.Status,
-                WroRequests = wroRequests.Select(w => new InternationalShipmentWroDto
-                {
-                    WroRequestId = w.Id,
-                    WroCode = w.WroCode ?? string.Empty
-                }).ToList(),
-                Parcels = parcels.Select(p => new InternationalShipmentParcelDto
-                {
-                    ParcelId = p.Id,
-                    PackageCode = p.PackageCode ?? string.Empty,
-                    Weight = p.ActualWeight ?? p.ChargeableWeight
-                }).ToList()
-            };
+            // 7. Trả về kết quả, dùng chung đúng bộ dựng của GET chi tiết.
+            //
+            // Trước đây chỗ này tự dựng DTO riêng nên response lúc tạo lô nghèo hơn hẳn lúc xem
+            // chi tiết: thiếu statusTab, carrierTrackingCode, tuyến vận chuyển, mốc thời gian,
+            // các link chứng từ, và từng kiện cũng thiếu đơn/khách. Mà FE đã đọc sẵn những
+            // trường đó, nên tạo lô xong màn hình hiện rỗng cho tới khi gọi thêm GET. Dùng chung
+            // một bộ dựng thì hai đường không bao giờ lệch nhau nữa.
+            return await BuildShipmentDtoAsync(shipment);
         }
 
         /// <summary>
@@ -701,11 +737,35 @@ namespace VCL_BLL.Services
             var allParcels = await parcelRepo.GetAllAsync();
             var shipmentParcels = allParcels.Where(p => shipmentParcelIds.Contains(p.Id)).ToList();
 
-            // 5. Xác định danh sách Parcel cần nhận
-            List<Parcel> targets;
-            if (request?.ParcelIds != null && request.ParcelIds.Count > 0)
+            // 5. Hướng xử lý mặc định cho lần nhận này. Không chọn gì thì hiểu là giao thẳng —
+            // gửi lại kho là ý muốn riêng của khách, phải nói ra mới có.
+            var defaultHandling = NormalizeHandling(request?.Handling, nameof(request.Handling));
+
+            // 6. Xác định danh sách Parcel cần nhận, kèm hướng xử lý của từng kiện.
+            // Ba cách gọi đều phải chạy được: items (mới, phân loại từng kiện), parcelIds (cũ,
+            // mobile đang dùng), hoặc không truyền gì (nhận cả lô).
+            var handlingByParcel = new Dictionary<Guid, string>();
+            List<Guid>? requestedIds = null;
+
+            if (request?.Items != null && request.Items.Count > 0)
             {
-                var requestedIds = request.ParcelIds.Distinct().ToList();
+                requestedIds = new List<Guid>();
+                foreach (var item in request.Items)
+                {
+                    if (handlingByParcel.ContainsKey(item.ParcelId)) continue;
+                    requestedIds.Add(item.ParcelId);
+                    handlingByParcel[item.ParcelId] =
+                        NormalizeHandling(item.Handling, nameof(item.Handling)) ?? defaultHandling ?? DirectDelivery;
+                }
+            }
+            else if (request?.ParcelIds != null && request.ParcelIds.Count > 0)
+            {
+                requestedIds = request.ParcelIds.Distinct().ToList();
+            }
+
+            List<Parcel> targets;
+            if (requestedIds != null)
+            {
                 targets = new List<Parcel>();
                 foreach (var pid in requestedIds)
                 {
@@ -733,12 +793,15 @@ namespace VCL_BLL.Services
                 }
             }
 
-            // 6. Cập nhật trạng thái Parcel + thời gian nhận
+            // 7. Cập nhật trạng thái Parcel + thời gian nhận + hướng xử lý
             var now = DateTime.UtcNow;
             foreach (var parcel in targets)
             {
                 parcel.PackageStatus = "RECEIVED_AT_DESTINATION";
                 parcel.CheckInTime = now;
+                parcel.DestinationHandling = handlingByParcel.TryGetValue(parcel.Id, out var perParcel)
+                    ? perParcel
+                    : (defaultHandling ?? DirectDelivery);
                 parcelRepo.Update(parcel);
             }
 
@@ -774,7 +837,8 @@ namespace VCL_BLL.Services
                 {
                     ParcelId = p.Id,
                     PackageCode = p.PackageCode ?? string.Empty,
-                    PackageStatus = p.PackageStatus ?? string.Empty
+                    PackageStatus = p.PackageStatus ?? string.Empty,
+                    DestinationHandling = p.DestinationHandling
                 }).ToList()
             };
         }

@@ -40,6 +40,35 @@ namespace VCL_BLL.DTOs
         public Guid ParcelId { get; set; }
         public string PackageCode { get; set; } = string.Empty;
         public decimal? Weight { get; set; }
+
+        /// <summary>
+        /// Đơn hàng và khách hàng của kiện này.
+        /// <para>
+        /// Một lô gom lô chứa kiện của nhiều đơn, nhiều khách khác nhau; sale bấm xác nhận lô
+        /// về kho đích một lần là mọi đơn trong lô cùng đổi trạng thái. Nên màn xác nhận phải
+        /// liệt kê được trước ai sẽ bị ảnh hưởng — thiếu mấy trường này thì FE chỉ có mã kiện,
+        /// không dựng nổi danh sách đó.
+        /// </para>
+        /// </summary>
+        public Guid? OrderId { get; set; }
+
+        public string? OrderCode { get; set; }
+
+        public Guid? CustomerId { get; set; }
+
+        public string? CustomerName { get; set; }
+
+        /// <summary>
+        /// Trạng thái kiện, để FE biết kiện đã được kho mở lô nhận hay chưa.
+        /// </summary>
+        public string? PackageStatus { get; set; }
+
+        /// <summary>
+        /// Hướng xử lý sau khi kho VN kiểm đếm: <c>DIRECT_DELIVERY</c> đi thẳng sang yêu cầu
+        /// giao hàng, <c>STORE_AT_VN</c> phải qua phiếu nhập kho VN trước. Null nghĩa là kiện
+        /// chưa qua bước phân loại. FE lọc theo trường này để biết kiện nào vào màn nào.
+        /// </summary>
+        public string? DestinationHandling { get; set; }
     }
 
     public class UpdateInternationalShipmentStatusDto
@@ -105,7 +134,30 @@ namespace VCL_BLL.DTOs
         /// <summary>Danh sách Parcel cần xác nhận nhận (bỏ trống = nhận tất cả kiện trong lô chưa nhận).</summary>
         public List<Guid>? ParcelIds { get; set; }
 
+        /// <summary>
+        /// Cách kho vừa tick kiện có mặt vừa chọn hướng xử lý cho từng kiện trong một lần bấm.
+        /// Truyền cái này thì <see cref="ParcelIds"/> bị bỏ qua.
+        /// </summary>
+        public List<DestinationReceivingItemDto>? Items { get; set; }
+
+        /// <summary>
+        /// Hướng xử lý áp cho mọi kiện trong lần nhận này, dùng khi cả lô cùng đi một hướng.
+        /// Kiện nào có hướng riêng trong <see cref="Items"/> thì lấy theo kiện đó.
+        /// Bỏ trống hết thì mặc định <c>DIRECT_DELIVERY</c>.
+        /// </summary>
+        public string? Handling { get; set; }
+
         public string? Note { get; set; }
+    }
+
+    /// <summary>Một kiện được kho xác nhận có mặt, kèm hướng xử lý khách chọn cho kiện đó.</summary>
+    public class DestinationReceivingItemDto
+    {
+        [Required(ErrorMessage = "Thiếu mã kiện hàng.")]
+        public Guid ParcelId { get; set; }
+
+        /// <summary><c>DIRECT_DELIVERY</c> giao thẳng cho khách · <c>STORE_AT_VN</c> gửi lại kho VN.</summary>
+        public string? Handling { get; set; }
     }
 
     public class DestinationReceivingParcelDto
@@ -113,6 +165,12 @@ namespace VCL_BLL.DTOs
         public Guid ParcelId { get; set; }
         public string PackageCode { get; set; } = string.Empty;
         public string PackageStatus { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Hướng xử lý vừa ghi nhận: <c>DIRECT_DELIVERY</c> đi thẳng sang yêu cầu giao hàng,
+        /// <c>STORE_AT_VN</c> phải qua phiếu nhập kho VN trước.
+        /// </summary>
+        public string? DestinationHandling { get; set; }
     }
 
     public class DestinationReceivingResponseDto
