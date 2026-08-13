@@ -2847,6 +2847,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("carrier_id");
 
+                    b.Property<string>("CarrierTrackingCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("carrier_tracking_code");
+
                     b.Property<Guid?>("ConsignmentId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("consignment_id");

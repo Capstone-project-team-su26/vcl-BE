@@ -547,9 +547,25 @@ namespace VCL_BLL.Services
             }
 
             var chargeableDays = storage.Parcels.Sum(p => p.ChargeableDays);
+
+            // Phí nay tính trên cả kho nguồn lẫn kho đích, nên nhãn cũ "tại kho đích" là sai —
+            // khách thấy dòng đó mà phần lớn số ngày lại phát sinh ở kho nguồn thì không đối
+            // chiếu được. Tách rõ từng kho để khách tự cộng lại ra đúng con số.
+            var perWarehouse = storage.Parcels
+                .SelectMany(p => p.Legs)
+                .Where(l => !string.IsNullOrWhiteSpace(l.WarehouseName))
+                .GroupBy(l => l.WarehouseName)
+                .Select(g => $"{g.Key}: {g.Sum(l => l.Days)} ngày")
+                .ToList();
+
             var description =
-                $"Phí lưu kho tại kho đích — {chargeableDays} ngày tính phí "
-                + $"({storage.UnitPrice:#,##0}đ/kiện/ngày, miễn phí {storage.FreeDays} ngày đầu)";
+                $"Phí lưu kho — {chargeableDays} ngày tính phí "
+                + $"({storage.UnitPrice:#,##0}đ/kiện/ngày, miễn {storage.FreeDays} ngày cho cả hành trình)";
+
+            if (perWarehouse.Count > 0)
+            {
+                description += $". {string.Join(" · ", perWarehouse)}";
+            }
 
             if (existing == null)
             {

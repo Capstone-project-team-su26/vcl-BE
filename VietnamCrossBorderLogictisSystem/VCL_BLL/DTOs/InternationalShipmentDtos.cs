@@ -40,6 +40,23 @@ namespace VCL_BLL.DTOs
         public Guid ParcelId { get; set; }
         public string PackageCode { get; set; } = string.Empty;
         public decimal? Weight { get; set; }
+
+        /// <summary>
+        /// Đơn hàng và khách hàng của kiện này.
+        /// <para>
+        /// Một lô gom lô chứa kiện của nhiều đơn, nhiều khách khác nhau; sale bấm xác nhận lô
+        /// về kho đích một lần là mọi đơn trong lô cùng đổi trạng thái. Nên màn xác nhận phải
+        /// liệt kê được trước ai sẽ bị ảnh hưởng — thiếu mấy trường này thì FE chỉ có mã kiện,
+        /// không dựng nổi danh sách đó.
+        /// </para>
+        /// </summary>
+        public Guid? OrderId { get; set; }
+
+        public string? OrderCode { get; set; }
+
+        public Guid? CustomerId { get; set; }
+
+        public string? CustomerName { get; set; }
     }
 
     public class UpdateInternationalShipmentStatusDto
