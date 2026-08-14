@@ -23,5 +23,14 @@ namespace VCL_BLL.Interface
 
         /// <summary>Tạo thông báo mới cho người dùng.</summary>
         Task CreateNotificationAsync(Guid userId, string title, string content);
+
+        /// <summary>Gửi thông báo tới 1 người dùng cụ thể (tự catch lỗi để không hỏng luồng chính).</summary>
+        Task NotifyUserAsync(Guid userId, string title, string content);
+
+        /// <summary>Gửi thông báo tới danh sách người dùng.</summary>
+        Task NotifyUsersAsync(System.Collections.Generic.IEnumerable<Guid> userIds, string title, string content);
+
+        /// <summary>Gửi thông báo tới toàn bộ người dùng có các vai trò được chỉ định (bỏ qua excludeUserId nếu có).</summary>
+        Task NotifyRolesAsync(System.Collections.Generic.IEnumerable<string> roles, string title, string content, Guid? excludeUserId = null);
     }
 }

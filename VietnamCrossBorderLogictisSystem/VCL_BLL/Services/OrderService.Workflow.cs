@@ -72,6 +72,13 @@ namespace VCL_BLL.Services
             var notificationRepo = _unitOfWork.Repository<Notification>();
             await notificationRepo.AddAsync(notification);
 
+            // Bắn thông báo cho Sale & Admin
+            await _notificationService.NotifyRolesAsync(
+                new[] { "Sale", "Sales", "Admin" },
+                "Đơn ký gửi đã bị hủy",
+                $"Khách hàng đã hủy đơn ký gửi {order.ConsignmentCode ?? order.Id.ToString()}.{(string.IsNullOrWhiteSpace(reason) ? "" : $" Lý do: {reason}")}",
+                excludeUserId: userId);
+
             await _unitOfWork.SaveChangesAsync();
 
             return new CancelConsignmentResponse
@@ -146,7 +153,7 @@ namespace VCL_BLL.Services
                     var customer = await customerRepo.GetByIdAsync(order.CustomerId);
                     if (customer != null)
                     {
-                        var notification = new Notification
+                        var notif = new Notification
                         {
                             Id = Guid.NewGuid(),
                             UserId = customer.UserId,
@@ -158,7 +165,17 @@ namespace VCL_BLL.Services
                             CreatedAt = DateTime.UtcNow
                         };
                         var notificationRepo = _unitOfWork.Repository<Notification>();
-                        await notificationRepo.AddAsync(notification);
+                        await notificationRepo.AddAsync(notif);
+                    }
+
+                    // Khi đơn ký gửi được duyệt, thông báo cho bộ phận Kho & Operations sẵn sàng tiếp nhận
+                    if (normalizedStatus == "APPROVED")
+                    {
+                        await _notificationService.NotifyRolesAsync(
+                            new[] { "WarehouseStaff", "OperationsManager", "Operations", "Warehouse" },
+                            "Đơn ký gửi đã được duyệt",
+                            $"Đơn ký gửi {order.ConsignmentCode ?? order.Id.ToString()} đã được duyệt, sẵn sàng tiếp nhận kiện hàng vào kho.",
+                            excludeUserId: actorUserId);
                     }
                 }
             }

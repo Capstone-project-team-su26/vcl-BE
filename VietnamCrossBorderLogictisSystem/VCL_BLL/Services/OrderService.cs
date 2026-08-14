@@ -11,6 +11,7 @@ namespace VCL_BLL.Services
         private readonly IQuotationService _quotationService;
         private readonly IConfiguration _configuration;
         private readonly IConsignmentReceiptService _consignmentReceiptService;
+        private readonly INotificationService _notificationService;
 
         // Các giá trị RestrictionType bị coi là hàng cấm (chặn tạo) → level BANNED.
         private static readonly string[] BannedRestrictionTypes = { "BANNED", "PROHIBITED", "CẤM", "CAM" };
@@ -28,12 +29,14 @@ namespace VCL_BLL.Services
             IUnitOfWork unitOfWork,
             IQuotationService quotationService,
             IConfiguration configuration,
-            IConsignmentReceiptService consignmentReceiptService)
+            IConsignmentReceiptService consignmentReceiptService,
+            INotificationService notificationService)
         {
             _unitOfWork = unitOfWork;
             _quotationService = quotationService;
             _configuration = configuration;
             _consignmentReceiptService = consignmentReceiptService;
+            _notificationService = notificationService;
         }
     }
 }

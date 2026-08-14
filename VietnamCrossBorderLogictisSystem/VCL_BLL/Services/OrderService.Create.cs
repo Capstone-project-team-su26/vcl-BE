@@ -396,6 +396,16 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
+            // Bắn thông báo cho Sale & Admin khi khách tự tạo đơn ký gửi
+            if (!createdById.HasValue)
+            {
+                var customerName = customer.FullName ?? customer.CustomerCode ?? "Khách hàng";
+                await _notificationService.NotifyRolesAsync(
+                    new[] { "Sale", "Sales", "Admin", "Staff" },
+                    "Có đơn ký gửi mới cần xử lý",
+                    $"Khách hàng {customerName} vừa tạo đơn ký gửi mới (Mã: {order.ConsignmentCode}). Vui lòng tiếp nhận và lập báo giá.");
+            }
+
             // Sinh báo giá tạm tính (tái sử dụng QuotationService).
             // Truyền danh sách phụ phí đã tick để báo giá chỉ áp các phí được chọn.
             var ruleIds = draft.SelectedRules.Select(r => r.Id).ToList();

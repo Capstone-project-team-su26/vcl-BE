@@ -120,5 +120,96 @@ namespace VCL_BLL.Services
             await _unitOfWork.Repository<Notification>().AddAsync(notification);
             await _unitOfWork.SaveChangesAsync();
         }
+
+        public async Task NotifyUserAsync(Guid userId, string title, string content)
+        {
+            if (userId == Guid.Empty || string.IsNullOrWhiteSpace(title)) return;
+
+            try
+            {
+                var notification = new Notification
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    Title = title.Trim(),
+                    Content = content?.Trim() ?? string.Empty,
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                await _unitOfWork.Repository<Notification>().AddAsync(notification);
+                await _unitOfWork.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[NOTIFICATION ERROR] To {userId}: {ex.Message}");
+            }
+        }
+
+        public async Task NotifyUsersAsync(System.Collections.Generic.IEnumerable<Guid> userIds, string title, string content)
+        {
+            if (userIds == null || string.IsNullOrWhiteSpace(title)) return;
+
+            var distinctUserIds = userIds.Where(id => id != Guid.Empty).Distinct().ToList();
+            if (!distinctUserIds.Any()) return;
+
+            try
+            {
+                var now = DateTime.UtcNow;
+                var trimmedTitle = title.Trim();
+                var trimmedContent = content?.Trim() ?? string.Empty;
+                var repo = _unitOfWork.Repository<Notification>();
+
+                foreach (var uid in distinctUserIds)
+                {
+                    await repo.AddAsync(new Notification
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = uid,
+                        Title = trimmedTitle,
+                        Content = trimmedContent,
+                        IsRead = false,
+                        CreatedAt = now
+                    });
+                }
+
+                await _unitOfWork.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[NOTIFICATION ERROR] Bulk users: {ex.Message}");
+            }
+        }
+
+        public async Task NotifyRolesAsync(System.Collections.Generic.IEnumerable<string> roles, string title, string content, Guid? excludeUserId = null)
+        {
+            if (roles == null || string.IsNullOrWhiteSpace(title)) return;
+
+            var roleSet = roles
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Select(r => r.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (!roleSet.Any()) return;
+
+            try
+            {
+                var allUsers = await _unitOfWork.Repository<User>().GetAllAsync();
+                var targetUserIds = allUsers
+                    .Where(u => !string.IsNullOrWhiteSpace(u.Role) && roleSet.Contains(u.Role.Trim()))
+                    .Where(u => !excludeUserId.HasValue || u.Id != excludeUserId.Value)
+                    .Select(u => u.Id)
+                    .ToList();
+
+                if (targetUserIds.Any())
+                {
+                    await NotifyUsersAsync(targetUserIds, title, content);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[NOTIFICATION ERROR] Roles ({string.Join(",", roleSet)}): {ex.Message}");
+            }
+        }
     }
 }

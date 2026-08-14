@@ -15,6 +15,7 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IGoshipService _goshipService;
+        private readonly INotificationService _notificationService;
 
         // Lập phiếu: sale là người liên hệ khách, nắm địa chỉ giao và biết khách trả tiền chưa.
         private static readonly string[] CreateRoles = { "SALE", "SALES", "ADMIN" };
@@ -42,10 +43,14 @@ namespace VCL_BLL.Services
         // sinh ra hai cách gọi khác nhau cho cùng một tình trạng.
         private const string AwaitingPickup = "AWAITING_PICKUP";
 
-        public DeliveryRequestService(IUnitOfWork unitOfWork, IGoshipService goshipService)
+        public DeliveryRequestService(
+            IUnitOfWork unitOfWork,
+            IGoshipService goshipService,
+            INotificationService notificationService)
         {
             _unitOfWork = unitOfWork;
             _goshipService = goshipService;
+            _notificationService = notificationService;
         }
 
         public async Task<DeliveryRequestDto> CreateAsync(Guid userId, string userRole, CreateDeliveryRequestDto request)
@@ -130,6 +135,14 @@ namespace VCL_BLL.Services
             }
 
             await _unitOfWork.SaveChangesAsync();
+
+            // Thông báo cho Operations & Kho có yêu cầu giao hàng mới cần duyệt
+            await _notificationService.NotifyRolesAsync(
+                new[] { "OperationsManager", "Operations", "Admin", "WarehouseStaff", "Warehouse" },
+                "Có yêu cầu giao hàng mới cần duyệt",
+                $"Yêu cầu giao hàng (Mã: {delivery.DeliveryCode}) vừa được tạo cho đơn {order.ConsignmentCode ?? order.Id.ToString()}. Vui lòng xem xét duyệt.",
+                excludeUserId: userId);
+
             return await BuildDtoAsync(delivery);
         }
 
@@ -168,6 +181,25 @@ namespace VCL_BLL.Services
             repo.Update(delivery);
 
             await _unitOfWork.SaveChangesAsync();
+
+            // Bắn thông báo kết quả duyệt yêu cầu giao hàng
+            if (target == StatusApproved)
+            {
+                await _notificationService.NotifyRolesAsync(
+                    new[] { "WarehouseStaff", "Warehouse", "Delivery", "Staff", "Sale", "Sales" },
+                    "Yêu cầu giao hàng đã được duyệt",
+                    $"Yêu cầu giao hàng (Mã: {delivery.DeliveryCode}) đã được duyệt. Sẵn sàng tạo vận đơn và xuất kho.",
+                    excludeUserId: userId);
+            }
+            else if (target == StatusRejected)
+            {
+                await _notificationService.NotifyRolesAsync(
+                    new[] { "Sale", "Sales", "Admin" },
+                    "Yêu cầu giao hàng bị từ chối",
+                    $"Yêu cầu giao hàng (Mã: {delivery.DeliveryCode}) đã bị từ chối. Lý do: {delivery.RejectionReason}",
+                    excludeUserId: userId);
+            }
+
             return await BuildDtoAsync(delivery);
         }
 

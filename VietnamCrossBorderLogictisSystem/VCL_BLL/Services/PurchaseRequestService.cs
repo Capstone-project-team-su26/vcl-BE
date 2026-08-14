@@ -85,17 +85,20 @@ namespace VCL_BLL.Services
 
         private readonly IExchangeRateService _exchangeRateService;
         private readonly IConsignmentReceiptService _receiptService;
+        private readonly INotificationService _notificationService;
 
         public PurchaseRequestService(
             IUnitOfWork unitOfWork,
             IOrderService orderService,
             IExchangeRateService exchangeRateService,
-            IConsignmentReceiptService receiptService)
+            IConsignmentReceiptService receiptService,
+            INotificationService notificationService)
         {
             _unitOfWork = unitOfWork;
             _orderService = orderService;
             _exchangeRateService = exchangeRateService;
             _receiptService = receiptService;
+            _notificationService = notificationService;
         }
 
         public async Task<PurchaseRequestResponseDto> CreatePurchaseRequestAsync(Guid userId, string userRole, CreatePurchaseRequestDto request)
@@ -265,6 +268,16 @@ namespace VCL_BLL.Services
             }
 
             await _unitOfWork.SaveChangesAsync();
+
+            // Bắn thông báo cho Sale & Admin khi khách tự tạo yêu cầu mua hộ
+            if (!createdByStaff)
+            {
+                var customerName = customer.FullName ?? customer.CustomerCode ?? "Khách hàng";
+                await _notificationService.NotifyRolesAsync(
+                    new[] { "Sale", "Sales", "Admin", "Staff" },
+                    "Có yêu cầu mua hộ mới cần báo giá",
+                    $"Khách hàng {customerName} vừa tạo yêu cầu mua hộ mới (Mã: {purchaseRequest.PurchaseCode}). Vui lòng kiểm tra và lập báo giá.");
+            }
 
             // 9. Trả về thông tin yêu cầu mua hộ vừa tạo
             return new PurchaseRequestResponseDto
@@ -1325,6 +1338,31 @@ namespace VCL_BLL.Services
                     IsRead = false,
                     CreatedAt = DateTime.UtcNow
                 });
+
+                // Bắn thông báo nội bộ cho các bộ phận liên quan
+                var code = purchaseRequest.PurchaseCode ?? purchaseRequest.Id.ToString();
+                if (string.Equals(targetStatus, "ARRIVED_ORIGIN_WAREHOUSE", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(targetStatus, "WAITING_STORED", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _notificationService.NotifyRolesAsync(
+                        new[] { "WarehouseStaff", "OperationsManager", "Operations", "Warehouse" },
+                        "Hàng mua hộ đã về kho",
+                        $"Hàng của yêu cầu mua hộ {code} đã về kho nước ngoài, sẵn sàng kiểm kê nhập kho.");
+                }
+                else if (string.Equals(targetStatus, "STORED", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _notificationService.NotifyRolesAsync(
+                        new[] { "Sale", "Sales", "Admin" },
+                        "Đơn mua hộ đã nhập kho",
+                        $"Hàng của yêu cầu mua hộ {code} đã được kiểm kê và nhập kho thành công.");
+                }
+                else if (string.Equals(targetStatus, "REJECTED", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _notificationService.NotifyRolesAsync(
+                        new[] { "Sale", "Sales", "Admin" },
+                        "Yêu cầu mua hộ bị từ chối",
+                        $"Yêu cầu mua hộ {code} đã bị từ chối.{(string.IsNullOrWhiteSpace(reason) ? "" : $" Lý do: {reason}")}");
+                }
             }
             catch (Exception ex)
             {
