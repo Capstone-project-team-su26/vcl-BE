@@ -9,7 +9,13 @@ using VCL_BLL.Interface;
 namespace VCL_API.Controllers
 {
     [ApiController]
-    [Authorize(Roles = "Admin,Sale")]
+    // Chỉ yêu cầu đăng nhập ở cấp controller; vai trò khai riêng từng action.
+    //
+    // Trước đây cấp controller khai [Authorize(Roles = "Admin,Sale")]. ASP.NET Core cộng dồn các
+    // attribute Authorize theo kiểu VÀ, nên action khai "WarehouseStaff,Admin" hoá ra đòi
+    // (WarehouseStaff hoặc Admin) VÀ (Admin hoặc Sale) — tức chỉ Admin lọt. Nhân viên kho vì thế
+    // không quét được phiếu lẫn không xác nhận nhận hàng được, cả nhánh kho của luồng đứng im.
+    [Authorize]
     public class WarehouseReceivingNoteController : ControllerBase
     {
         private readonly IWarehouseReceivingNoteService _wrnService;
@@ -23,6 +29,7 @@ namespace VCL_API.Controllers
         /// Lấy phiếu tiếp nhận kho đang hoạt động của đơn hàng ký gửi.
         /// </summary>
         [HttpGet("api/warehouse-receiving-notes/by-consignment/{consignmentOrderId}")]
+        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager")]
         public async Task<IActionResult> GetReceivingNoteByConsignment(Guid consignmentOrderId)
         {
             try
@@ -60,9 +67,11 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Tạo mới phiếu tiếp nhận kho cho đơn hàng ký gửi đã được duyệt (APPROVED).
+        /// Tạo mới phiếu tiếp nhận kho cho đơn ký gửi đang ở APPROVED, DEPOSIT_PAID hoặc
+        /// PAYMENT_CONFIRMED — tức đơn nhân viên tạo, hoặc đơn khách đã trả cọc.
         /// </summary>
         [HttpPost("api/warehouse-receiving-notes")]
+        [Authorize(Roles = "Admin,Sale")]
         public async Task<IActionResult> CreateReceivingNote([FromBody] CreateWarehouseReceivingNoteRequestDto request)
         {
             try

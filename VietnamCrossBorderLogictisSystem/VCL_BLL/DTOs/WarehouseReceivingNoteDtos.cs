@@ -106,10 +106,22 @@ namespace VCL_BLL.DTOs
         public string ConsignmentCode { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
         public string CustomerCode { get; set; } = string.Empty;
+        public string CustomerPhone { get; set; } = string.Empty;
+
+        /// <summary>Tuyến của đơn, để in lên phiếu cho kho biết hàng đi đâu.</summary>
+        public string Route { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Hàng KHÁCH KHAI BÁO trên đơn. Có ngay từ lúc phiếu vừa lập — đây là thứ kho cầm phiếu ra
+        /// đối chiếu với hàng thật. Khác <see cref="Items"/> ở chỗ Items chỉ sinh ra sau khi kho
+        /// bấm xác nhận nhận hàng, nên phiếu mới lập thì Items rỗng còn danh sách này đã có.
+        /// </summary>
+        public List<WarehouseReceivingNoteExpectedItemDto> ExpectedItems { get; set; } = new();
 
         /// <summary>True khi có bất kỳ dòng nào lệch số lượng hoặc trọng lượng</summary>
         public bool HasDiscrepancy { get; set; }
 
+        /// <summary>Dòng đối chiếu khai báo với thực tế — rỗng cho tới khi kho xác nhận nhận hàng.</summary>
         public List<WarehouseReceivingNoteItemDto> Items { get; set; } = new List<WarehouseReceivingNoteItemDto>();
     }
 }

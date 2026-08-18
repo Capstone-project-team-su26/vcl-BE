@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -22,16 +25,212 @@ namespace VCL_BLL.Services
         private readonly ILogger<GoshipService> _logger;
         private readonly IUnitOfWork _unitOfWork;
 
+        /// <summary>
+        /// Mở hồ sơ hàng hoàn khi hãng báo giao hỏng. Trước đây chỗ này chỉ bắn thông báo rồi
+        /// thôi, kiện nằm đâu và ai chịu cước giao lại không có gì ghi lại.
+        /// </summary>
+        private readonly IParcelReturnService _parcelReturnService;
+
+        /// <summary>
+        /// Danh mục hành chính của GoShip, giữ lại giữa các request.
+        /// <para>
+        /// Mỗi lần đặt giao phải tra ba cấp cho cả hai đầu địa chỉ — sáu lượt gọi sang GoShip cho
+        /// một dữ liệu gần như không bao giờ đổi. Service sống theo request nên cache phải tĩnh
+        /// thì mới dùng lại được.
+        /// </para>
+        /// </summary>
+        private static readonly ConcurrentDictionary<string, (DateTime CachedAt, List<GoshipLocationOption> Options)>
+            LocationCache = new();
+
+        private static readonly TimeSpan LocationCacheTtl = TimeSpan.FromHours(12);
+
         public GoshipService(
             HttpClient httpClient,
             IConfiguration configuration,
             ILogger<GoshipService> logger,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IParcelReturnService parcelReturnService)
         {
             _httpClient = httpClient;
             _configuration = configuration;
             _logger = logger;
             _unitOfWork = unitOfWork;
+            _parcelReturnService = parcelReturnService;
+        }
+
+        /// <summary>
+        /// GoShip chạy trên Laravel: request không khai <c>Accept: application/json</c> thì nó trả
+        /// TRANG HTML redirect thay vì JSON, và phía mình vỡ ngay khi parse với thông báo
+        /// <c>'&lt;' is an invalid start of a value</c> — nghe như lỗi token trong khi thật ra
+        /// token vẫn tốt. Đặt header này để mọi lỗi của GoShip về đúng dạng JSON đọc được.
+        /// </summary>
+        private static void AcceptJson(HttpRequestMessage httpRequest)
+        {
+            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        }
+
+        /// <summary>
+        /// Bỏ dấu tiếng Việt và các tiền tố hành chính để so tên cho khớp.
+        /// <para>
+        /// Sale gõ "TP. Hồ Chí Minh" còn GoShip ghi "Hồ Chí Minh"; "Quận 1" và "Q.1" cũng là một.
+        /// So thẳng chuỗi thì trượt hết, nên chuẩn hoá cả hai vế về cùng một dạng trước khi so.
+        /// </para>
+        /// </summary>
+        private static string NormalizeLocationName(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+
+            var withoutDiacritics = new string(
+                value.Normalize(NormalizationForm.FormD)
+                    .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                    .ToArray())
+                .Replace('đ', 'd').Replace('Đ', 'D')
+                .ToLowerInvariant();
+
+            var cleaned = withoutDiacritics.Replace(".", " ").Replace(",", " ");
+
+            // Cắt tiền tố hành chính, không cắt giữa chừng để "quan 1" không thành "1" sai chỗ.
+            string[] prefixes =
+            {
+                "thanh pho ", "tinh ", "tp ", "quan ", "huyen ", "thi xa ", "thi tran ",
+                "phuong ", "xa ", "q ", "p "
+            };
+
+            var result = string.Join(" ", cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            foreach (var prefix in prefixes)
+            {
+                if (result.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    result = result[prefix.Length..];
+                    break;
+                }
+            }
+
+            return result.Trim();
+        }
+
+        /// <summary>Tìm mục khớp tên trong một danh mục GoShip. Khớp đúng trước, chứa nhau sau.</summary>
+        private static GoshipLocationOption? MatchLocation(
+            List<GoshipLocationOption> options, string? name)
+        {
+            var needle = NormalizeLocationName(name);
+            if (needle.Length == 0) return null;
+
+            var exact = options.FirstOrDefault(o => NormalizeLocationName(o.Name) == needle);
+            if (exact != null) return exact;
+
+            return options.FirstOrDefault(o =>
+            {
+                var candidate = NormalizeLocationName(o.Name);
+                return candidate.Contains(needle, StringComparison.Ordinal)
+                    || needle.Contains(candidate, StringComparison.Ordinal);
+            });
+        }
+
+        /// <summary>Gọi một endpoint danh mục của GoShip, có cache.</summary>
+        private async Task<List<GoshipLocationOption>> GetLocationsAsync(string path, string token)
+        {
+            if (LocationCache.TryGetValue(path, out var cached)
+                && DateTime.UtcNow - cached.CachedAt < LocationCacheTtl)
+            {
+                return cached.Options;
+            }
+
+            var baseUrl = _configuration["GoshipSettings:ApiUrl"] ?? "https://api.goship.io/api/v2/";
+            var endpoint = $"{baseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
+
+            var httpRequest = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            AcceptJson(httpRequest);
+
+            var response = await _httpClient.SendAsync(httpRequest);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("GoShip location API error {StatusCode}: {Content}", response.StatusCode, responseContent);
+                throw new InvalidOperationException($"Không tra được danh mục địa chỉ GoShip: {responseContent}");
+            }
+
+            // GoShip không nhất quán kiểu của "id": tỉnh và quận trả chuỗi ("700000"), phường trả
+            // số (8955). Deserialize thẳng vào string là vỡ, nên đọc từng phần tử rồi tự ép kiểu.
+            var options = new List<GoshipLocationOption>();
+            using var doc = JsonDocument.Parse(responseContent);
+
+            if (!doc.RootElement.TryGetProperty("data", out var dataElement)
+                || dataElement.ValueKind != JsonValueKind.Array)
+            {
+                return options;
+            }
+
+            foreach (var item in dataElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+
+                var id = item.TryGetProperty("id", out var idElement)
+                    ? GetJsonStringValue(idElement)
+                    : string.Empty;
+                var name = item.TryGetProperty("name", out var nameElement)
+                    ? GetJsonStringValue(nameElement)
+                    : string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    options.Add(new GoshipLocationOption { Id = id, Name = name });
+                }
+            }
+
+            // Chỉ giữ lại khi có dữ liệu: cache một danh sách rỗng sẽ khoá luồng suốt 12 tiếng.
+            if (options.Count > 0)
+            {
+                LocationCache[path] = (DateTime.UtcNow, options);
+            }
+
+            return options;
+        }
+
+        public Task<List<GoshipLocationOption>> GetCitiesAsync(string token) =>
+            GetLocationsAsync("cities", token);
+
+        public Task<List<GoshipLocationOption>> GetDistrictsAsync(string cityId, string token)
+        {
+            if (string.IsNullOrWhiteSpace(cityId))
+                throw new ArgumentException("Thiếu mã tỉnh/thành để lấy danh sách quận/huyện.");
+
+            return GetLocationsAsync($"cities/{Uri.EscapeDataString(cityId)}/districts", token);
+        }
+
+        public Task<List<GoshipLocationOption>> GetWardsAsync(string districtId, string token)
+        {
+            if (string.IsNullOrWhiteSpace(districtId))
+                throw new ArgumentException("Thiếu mã quận/huyện để lấy danh sách phường/xã.");
+
+            return GetLocationsAsync($"districts/{Uri.EscapeDataString(districtId)}/wards", token);
+        }
+
+        public async Task<GoshipAddressCodes> ResolveAddressCodesAsync(
+            string cityName, string districtName, string wardName, string token)
+        {
+            var cities = await GetLocationsAsync("cities", token);
+            var city = MatchLocation(cities, cityName)
+                ?? throw new InvalidOperationException(
+                    $"GoShip không có tỉnh/thành nào khớp với \"{cityName}\".");
+
+            var districts = await GetLocationsAsync($"cities/{city.Id}/districts", token);
+            var district = MatchLocation(districts, districtName)
+                ?? throw new InvalidOperationException(
+                    $"GoShip không có quận/huyện nào khớp với \"{districtName}\" trong {city.Name}.");
+
+            // Phường có thể trống ở dữ liệu cũ: rate chỉ cần tỉnh + quận, nên không chặn ở đây.
+            var wards = await GetLocationsAsync($"districts/{district.Id}/wards", token);
+            var ward = MatchLocation(wards, wardName);
+
+            return new GoshipAddressCodes
+            {
+                CityId = city.Id,
+                DistrictId = district.Id,
+                WardId = ward?.Id ?? string.Empty,
+            };
         }
 
         public async Task<List<GoshipRateOption>> GetRatesAsync(GoshipRateRequest request, string token)
@@ -41,6 +240,7 @@ namespace VCL_BLL.Services
 
             var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            AcceptJson(httpRequest);
             httpRequest.Content = JsonContent.Create(request);
 
             _logger.LogInformation("Sending Get Rates request to GoShip API: {Endpoint}", endpoint);
@@ -73,6 +273,7 @@ namespace VCL_BLL.Services
 
             var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            AcceptJson(httpRequest);
 
             // Chỉ đẩy phần "shipment" sang GoShip. orderId/parcelIds là tham số nội bộ của mình,
             // gửi kèm sẽ làm GoShip từ chối payload.
@@ -348,6 +549,7 @@ namespace VCL_BLL.Services
 
             var httpRequest = new HttpRequestMessage(HttpMethod.Get, endpoint);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            AcceptJson(httpRequest);
 
             var response = await _httpClient.SendAsync(httpRequest);
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -523,6 +725,17 @@ namespace VCL_BLL.Services
                 else if (NeedsHumanAttention.Contains(packageStatus))
                 {
                     await NotifyStaffAsync(order, packageStatus, statusText);
+                }
+            }
+
+            // Mở hồ sơ hàng hoàn cho từng kiện bị hỏng. Làm sau vòng lặp đơn ở trên vì hồ sơ
+            // thuộc về KIỆN chứ không thuộc về đơn: một đơn nhiều kiện có thể chỉ hỏng một cái.
+            if (NeedsHumanAttention.Contains(packageStatus))
+            {
+                foreach (var waybill in waybills)
+                {
+                    await _parcelReturnService.SyncFromCarrierAsync(
+                        waybill.ParcelId!.Value, packageStatus, statusText, trackingCode);
                 }
             }
 

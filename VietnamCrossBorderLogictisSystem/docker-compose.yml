@@ -60,6 +60,18 @@ services:
       GoshipSettings__ClientSecret: "${GOSHIP_CLIENT_SECRET:-}"
       GoshipSettings__Token: "${GOSHIP_TOKEN:-}"
 
+      # Bí mật để xác thực webhook GoShip. Bỏ trống thì webhook vẫn nhận như trước (giữ tương
+      # thích), khai vào là bắt buộc khớp — khai cùng giá trị này bên trang quản trị GoShip.
+      GoshipSettings__WebhookSecret: "${GOSHIP_WEBHOOK_SECRET:-}"
+
+      # Người trực kho cho shipper liên hệ khi tới lấy hàng. Địa chỉ thì hệ thống tự lấy từ kho
+      # đích của lô, chỉ số điện thoại là thứ bảng WAREHOUSES chưa có cột để lưu.
+      GoshipSettings__Pickup__Phone: "${GOSHIP_PICKUP_PHONE:-}"
+
+      # Số ngày miễn phí lưu kho và số ngày ân hạn nối sau đó. Quá tổng hai mốc mới tính tiền.
+      PricingSettings__StorageFreeDays: "7"
+      PricingSettings__StorageGraceDays: "3"
+
       OpenRouterSettings__ApiKey: "${OPENROUTER_API_KEY:-}"
       OpenRouterSettings__Model: "google/gemini-2.0-flash-exp:free"
       OpenRouterSettings__BaseUrl: "https://openrouter.ai/api/v1/chat/completions"

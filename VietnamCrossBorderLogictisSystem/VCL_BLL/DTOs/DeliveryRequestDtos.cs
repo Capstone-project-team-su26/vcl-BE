@@ -122,6 +122,18 @@ namespace VCL_BLL.DTOs
         /// <summary><c>FROM_SHELF</c> nhặt trên ô kệ · <c>FROM_STAGING</c> lấy ở khu tạm.</summary>
         public string? PickSource { get; set; }
 
+        /// <summary>
+        /// Nguyện vọng khách khai lúc đặt đơn: <c>DIRECT_DELIVERY</c> hoặc <c>STORE_AT_VN</c>.
+        /// <para>
+        /// Khách chọn gửi lại kho mà lại có yêu cầu giao thì OM nên xác nhận với khách trước khi
+        /// duyệt — có thể khách gọi đổi ý, cũng có thể là nhầm đơn.
+        /// </para>
+        /// </summary>
+        public string? CustomerIntent { get; set; }
+
+        /// <summary>Nhãn tiếng Việt của <see cref="CustomerIntent"/>, null khi khách chưa chọn.</summary>
+        public string? CustomerIntentText { get; set; }
+
         /// <summary>Chỉ có khi kiện đang nằm trên kệ.</summary>
         public Guid? BinId { get; set; }
         public string? BinCode { get; set; }

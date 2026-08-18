@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
@@ -18,5 +18,11 @@ namespace VCL_BLL.Interface
         Task<WarehouseInboundRequestDto> GetByIdAsync(Guid inboundRequestId);
 
         Task<List<WarehouseInboundRequestDto>> GetListAsync(string? status, Guid? shipmentId);
+
+        /// <summary>
+        /// Đơn đang chờ kho lập phiếu nhập kho: khách đã tất toán, kiện đã kiểm đếm và được
+        /// phân loại gửi lại kho, và (với ký gửi) Sale đã báo.
+        /// </summary>
+        Task<List<PendingInboundOrderDto>> GetPendingInboundOrdersAsync(string userRole);
     }
 }

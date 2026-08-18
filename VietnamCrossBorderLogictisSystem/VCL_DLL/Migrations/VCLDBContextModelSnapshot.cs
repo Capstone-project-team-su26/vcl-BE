@@ -1307,6 +1307,11 @@ namespace VCL_DLL.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("customer_id");
 
+                    b.Property<string>("DefaultDestinationHandling")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("default_destination_handling");
+
                     b.Property<DateTime?>("DeliveredAt")
                         .HasColumnType("datetime2")
                         .HasColumnName("delivered_at");
@@ -1391,6 +1396,19 @@ namespace VCL_DLL.Migrations
                     b.Property<decimal?>("TotalWeight")
                         .HasColumnType("decimal(18, 2)")
                         .HasColumnName("total_weight");
+
+                    b.Property<DateTime?>("WarehouseNotifiedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("warehouse_notified_at");
+
+                    b.Property<Guid?>("WarehouseNotifiedById")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_notified_by_id");
+
+                    b.Property<string>("WarehouseNotifiedNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("warehouse_notified_note");
 
                     b.HasKey("Id")
                         .HasName("PK__ORDERS__3213E83F039F5424");
@@ -1644,6 +1662,188 @@ namespace VCL_DLL.Migrations
                     b.HasIndex("PackageConfigurationId");
 
                     b.ToTable("PARCELS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.ParcelInspection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<int?>("ActualQuantity")
+                        .HasColumnType("int")
+                        .HasColumnName("actual_quantity");
+
+                    b.Property<decimal?>("ActualWeight")
+                        .HasColumnType("decimal(18, 3)")
+                        .HasColumnName("actual_weight");
+
+                    b.Property<string>("Condition")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("condition");
+
+                    b.Property<int?>("DeclaredQuantity")
+                        .HasColumnType("int")
+                        .HasColumnName("declared_quantity");
+
+                    b.Property<decimal?>("DeclaredWeight")
+                        .HasColumnType("decimal(18, 3)")
+                        .HasColumnName("declared_weight");
+
+                    b.Property<bool>("HasDiscrepancy")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("has_discrepancy");
+
+                    b.Property<DateTime?>("InspectedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("inspected_at");
+
+                    b.Property<Guid?>("InspectedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("inspected_by");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("OrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_id");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<Guid?>("ShipmentId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("shipment_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PARCEL_INSPECTIONS");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("ParcelId");
+
+                    b.HasIndex("ShipmentId");
+
+                    b.ToTable("PARCEL_INSPECTIONS", (string)null);
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.ParcelReturn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("(newid())");
+
+                    b.Property<string>("CarrierStatusText")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("carrier_status_text");
+
+                    b.Property<Guid?>("DeliveryRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("delivery_request_id");
+
+                    b.Property<string>("FeeBearer")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("fee_bearer");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<DateTime?>("OpenedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("opened_at");
+
+                    b.Property<Guid?>("OrderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_id");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTime?>("ReceivedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("received_at");
+
+                    b.Property<Guid?>("ReceivedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("received_by");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("resolution");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("resolution_note");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("resolved_by");
+
+                    b.Property<string>("ReturnCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("return_code");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TrackingCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("tracking_code");
+
+                    b.Property<bool>("WaiveStorageFee")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("waive_storage_fee");
+
+                    b.Property<Guid?>("WarehouseId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_id");
+
+                    b.HasKey("Id")
+                        .HasName("PK_PARCEL_RETURNS");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("ParcelId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("PARCEL_RETURNS", (string)null);
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Payment", b =>
@@ -4613,6 +4813,56 @@ namespace VCL_DLL.Migrations
                     b.Navigation("MasterBox");
 
                     b.Navigation("PackageConfiguration");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.ParcelInspection", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .HasConstraintName("FK_PINS_ORDER");
+
+                    b.HasOne("VCL_DLL.Models.Parcel", "Parcel")
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .IsRequired()
+                        .HasConstraintName("FK_PINS_PARCEL");
+
+                    b.HasOne("VCL_DLL.Models.Shipment", "Shipment")
+                        .WithMany()
+                        .HasForeignKey("ShipmentId")
+                        .HasConstraintName("FK_PINS_SHIPMENT");
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Parcel");
+
+                    b.Navigation("Shipment");
+                });
+
+            modelBuilder.Entity("VCL_DLL.Models.ParcelReturn", b =>
+                {
+                    b.HasOne("VCL_DLL.Models.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .HasConstraintName("FK_RTN_ORDER");
+
+                    b.HasOne("VCL_DLL.Models.Parcel", "Parcel")
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .IsRequired()
+                        .HasConstraintName("FK_RTN_PARCEL");
+
+                    b.HasOne("VCL_DLL.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .HasConstraintName("FK_RTN_WAREHOUSE");
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Parcel");
+
+                    b.Navigation("Warehouse");
                 });
 
             modelBuilder.Entity("VCL_DLL.Models.Payment", b =>

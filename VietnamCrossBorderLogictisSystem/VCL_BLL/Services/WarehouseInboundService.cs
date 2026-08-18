@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -15,8 +15,25 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
 
+        // Duyệt phiếu xong là phải xếp kiện lên kệ ngay; mượn lại đúng hàm kho vẫn dùng để
+        // put-away thủ công, khỏi đẻ ra một đường vào kho thứ hai với luật riêng.
+        private readonly IParcelService _parcelService;
+
+        /// <summary>Nhãn tiếng Việt của nguyện vọng khách, null khi khách chưa chọn.</summary>
+        private static string? DescribeCustomerIntent(string? handling) =>
+            handling?.Trim().ToUpperInvariant() switch
+            {
+                "DIRECT_DELIVERY" => "Khách muốn giao ngay khi về VN",
+                "STORE_AT_VN" => "Khách muốn gửi lại kho VN",
+                _ => null,
+            };
+
         // Lập phiếu: kho VN là người trực tiếp thấy hàng, OM lập thay cũng được.
         private static readonly string[] CreateRoles =
+            { "WAREHOUSESTAFF", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
+
+        // Xem danh sach don cho nhap kho: kho lam viec, OM doi chieu truoc khi duyet.
+        private static readonly string[] ViewPendingRoles =
             { "WAREHOUSESTAFF", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
 
         // Duyệt phiếu: chỉ OM, đúng như anh Hoàng chốt.
@@ -29,10 +46,19 @@ namespace VCL_BLL.Services
 
         private const string StoreAtVn = "STORE_AT_VN";
         private const string ReceivedAtDestination = "RECEIVED_AT_DESTINATION";
+        private const string Stored = "STORED";
 
-        public WarehouseInboundService(IUnitOfWork unitOfWork)
+        /// <summary>Mot cho duy nhat quyet dinh don da tat toan chua.</summary>
+        private readonly ISettlementQueryService _settlementQueryService;
+
+        public WarehouseInboundService(
+            IUnitOfWork unitOfWork,
+            IParcelService parcelService,
+            ISettlementQueryService settlementQueryService)
         {
             _unitOfWork = unitOfWork;
+            _parcelService = parcelService;
+            _settlementQueryService = settlementQueryService;
         }
 
         public async Task<WarehouseInboundRequestDto> CreateAsync(
@@ -43,22 +69,61 @@ namespace VCL_BLL.Services
 
             EnsureRole(userRole, CreateRoles, "Chỉ nhân viên kho hoặc Operations được lập phiếu nhập kho.");
 
-            var shipment = await _unitOfWork.Repository<Shipment>().GetByIdAsync(request.ShipmentId)
-                ?? throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {request.ShipmentId}");
+            var byOrder = request.OrderId.HasValue && request.OrderId != Guid.Empty;
+            var byShipment = request.ShipmentId.HasValue && request.ShipmentId != Guid.Empty;
 
-            // Kiện của lô, kèm những kiện đã nằm trong phiếu nhập kho khác để khỏi lập trùng.
-            var shipmentParcelIds = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
-                .Where(sp => sp.ShipmentId == shipment.Id)
-                .Select(sp => sp.ParcelId)
+            if (byOrder == byShipment)
+            {
+                throw new ArgumentException(byOrder
+                    ? "Chi chon mot trong hai: don hang hoac lo van chuyen."
+                    : "Chon don hang hoac lo van chuyen de lap phieu nhap kho.");
+            }
+
+            Shipment? shipment = null;
+            List<Parcel> candidates;
+
+            if (byShipment)
+            {
+                shipment = await _unitOfWork.Repository<Shipment>().GetByIdAsync(request.ShipmentId!.Value)
+                    ?? throw new NotFoundException($"Khong tim thay lo van chuyen voi ID {request.ShipmentId}");
+
+                var shipmentParcelIds = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
+                    .Where(sp => sp.ShipmentId == shipment.Id)
+                    .Select(sp => sp.ParcelId)
+                    .ToHashSet();
+
+                candidates = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                    .Where(p => shipmentParcelIds.Contains(p.Id))
+                    .ToList();
+            }
+            else
+            {
+                candidates = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                    .Where(p => p.ConsignmentId == request.OrderId!.Value)
+                    .ToList();
+
+                if (candidates.Count == 0)
+                {
+                    throw new NotFoundException($"Khong tim thay kien nao cua don {request.OrderId}.");
+                }
+            }
+
+            // Chi nhung phieu CON HIEU LUC moi giu cho kien. Phieu bi OM tu choi phai nha kien
+            // ra, khong thi kho lap sai mot lan la kien do ket vinh vien, khong lap lai duoc.
+            var rejectedRequestIds = (await _unitOfWork.Repository<WarehouseInboundRequest>().GetAllAsync())
+                .Where(r => string.Equals(r.Status, StatusRejected, StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.Id)
                 .ToHashSet();
-
-            var allParcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
-                .Where(p => shipmentParcelIds.Contains(p.Id))
-                .ToList();
 
             var alreadyInRequest = (await _unitOfWork.Repository<WarehouseInboundItem>().GetAllAsync())
+                .Where(i => !rejectedRequestIds.Contains(i.InboundRequestId))
                 .Select(i => i.ParcelId)
                 .ToHashSet();
+
+            var orders = (await _unitOfWork.Repository<Order>().GetAllAsync()).ToDictionary(o => o.Id);
+
+            // Tien truoc, hang vao so sau - chot chan thu tien cua ca chang cuoi.
+            var settledOrderIds = await _settlementQueryService.GetSettledOrderIdsAsync(orders.Values.ToList());
 
             List<Parcel> targets;
             if (request.ParcelIds != null && request.ParcelIds.Count > 0)
@@ -66,29 +131,74 @@ namespace VCL_BLL.Services
                 targets = new List<Parcel>();
                 foreach (var pid in request.ParcelIds.Distinct())
                 {
-                    var parcel = allParcels.FirstOrDefault(p => p.Id == pid)
-                        ?? throw new ArgumentException($"Kiện {pid} không thuộc lô vận chuyển này.");
+                    var parcel = candidates.FirstOrDefault(p => p.Id == pid)
+                        ?? throw new ArgumentException(byShipment
+                            ? $"Kien {pid} khong thuoc lo van chuyen nay."
+                            : $"Kien {pid} khong thuoc don hang nay.");
 
                     EnsureParcelEligible(parcel, alreadyInRequest);
+                    EnsureOrderReadyForInbound(parcel, orders, settledOrderIds);
                     targets.Add(parcel);
                 }
             }
             else
             {
-                // Tự gom mọi kiện khách xin gửi lại mà chưa nằm trong phiếu nào.
-                targets = allParcels
+                var pending = candidates
                     .Where(p => IsStoreAtVn(p) && IsReceived(p) && !alreadyInRequest.Contains(p.Id))
+                    .ToList();
+
+                if (pending.Count == 0)
+                {
+                    throw new ArgumentException(byShipment
+                        ? "Lo nay khong con kien nao can nhap kho. Kien phai duoc kho kiem dem va phan loai la khach gui lai kho VN thi moi lap phieu duoc."
+                        : "Don nay khong con kien nao cho nhap kho.");
+                }
+
+                targets = pending
+                    .Where(p => IsOrderReadyForInbound(p, orders, settledOrderIds))
                     .ToList();
 
                 if (targets.Count == 0)
                 {
-                    throw new ArgumentException(
-                        "Lô này không còn kiện nào cần nhập kho. Kiện phải được kho xác nhận nhận " +
-                        "và phân loại là khách gửi lại kho VN (STORE_AT_VN) thì mới lập phiếu được.");
+                    // Noi dung cai dang vuong thay vi mot cau chung chung.
+                    EnsureOrderReadyForInbound(pending[0], orders, settledOrderIds);
                 }
             }
 
-            var warehouseId = request.WarehouseId ?? shipment.DestinationWarehouseId;
+            // Kho nhan hang: uu tien tham so, sau do toi kho dich cua lo cho kien.
+            if (shipment == null)
+            {
+                var targetIds = targets.Select(t => t.Id).ToHashSet();
+                var shipmentIds = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
+                    .Where(sp => targetIds.Contains(sp.ParcelId))
+                    .Select(sp => sp.ShipmentId)
+                    .Distinct()
+                    .ToList();
+
+                var relatedShipments = (await _unitOfWork.Repository<Shipment>().GetAllAsync())
+                    .Where(sh => shipmentIds.Contains(sh.Id))
+                    .ToList();
+
+                // Kien cung mot lo thi ghi lo vao phieu cho de tra; rai nhieu lo thi de trong,
+                // ghi bua mot lo dai dien la phieu noi doi cho hang nam.
+                shipment = relatedShipments.Count == 1 ? relatedShipments[0] : null;
+
+                if (request.WarehouseId == null && relatedShipments.Count > 0)
+                {
+                    var warehouses = relatedShipments
+                        .Where(sh => sh.DestinationWarehouseId.HasValue)
+                        .Select(sh => sh.DestinationWarehouseId!.Value)
+                        .Distinct()
+                        .ToList();
+
+                    if (warehouses.Count == 1)
+                    {
+                        request.WarehouseId = warehouses[0];
+                    }
+                }
+            }
+
+            var warehouseId = request.WarehouseId ?? shipment?.DestinationWarehouseId;
             if (warehouseId == null || warehouseId == Guid.Empty)
             {
                 throw new ArgumentException("Không xác định được kho VN nhận hàng. Truyền warehouseId hoặc gán kho đích cho lô.");
@@ -99,7 +209,7 @@ namespace VCL_BLL.Services
             {
                 Id = Guid.NewGuid(),
                 InboundCode = $"WIN-{now:yyyyMMdd}-{new Random().Next(1000, 9999)}",
-                ShipmentId = shipment.Id,
+                ShipmentId = shipment?.Id,
                 WarehouseId = warehouseId,
                 Status = StatusPending,
                 Note = request.Note,
@@ -123,6 +233,153 @@ namespace VCL_BLL.Services
             return await BuildDtoAsync(inbound);
         }
 
+        /// <inheritdoc />
+        public async Task<List<PendingInboundOrderDto>> GetPendingInboundOrdersAsync(string userRole)
+        {
+            EnsureRole(userRole, ViewPendingRoles, "Vai trò hiện tại không được xem danh sách đơn chờ nhập kho.");
+
+            var orders = (await _unitOfWork.Repository<Order>().GetAllAsync()).ToList();
+            var settledOrderIds = await _settlementQueryService.GetSettledOrderIdsAsync(orders);
+            if (settledOrderIds.Count == 0) return new List<PendingInboundOrderDto>();
+
+            var orderMap = orders.ToDictionary(o => o.Id);
+
+            var rejectedRequests = (await _unitOfWork.Repository<WarehouseInboundRequest>().GetAllAsync())
+                .Where(r => string.Equals(r.Status, StatusRejected, StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(r => r.Id);
+
+            var inboundItems = (await _unitOfWork.Repository<WarehouseInboundItem>().GetAllAsync()).ToList();
+
+            var activeParcelIds = inboundItems
+                .Where(i => !rejectedRequests.ContainsKey(i.InboundRequestId))
+                .Select(i => i.ParcelId)
+                .ToHashSet();
+
+            var rejectionByParcel = inboundItems
+                .Where(i => rejectedRequests.ContainsKey(i.InboundRequestId))
+                .GroupBy(i => i.ParcelId)
+                .ToDictionary(g => g.Key, g => rejectedRequests[g.Last().InboundRequestId].RejectionReason);
+
+            // Kien cho nhap kho: da kiem dem, duoc phan loai gui lai kho, chua nam phieu con hieu luc.
+            var pendingParcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => p.ConsignmentId.HasValue
+                            && settledOrderIds.Contains(p.ConsignmentId.Value)
+                            && IsStoreAtVn(p)
+                            && IsReceived(p)
+                            && !activeParcelIds.Contains(p.Id))
+                .ToList();
+
+            if (pendingParcels.Count == 0) return new List<PendingInboundOrderDto>();
+
+            var parcelIds = pendingParcels.Select(p => p.Id).ToHashSet();
+
+            var shipmentByParcel = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
+                .Where(sp => parcelIds.Contains(sp.ParcelId))
+                .GroupBy(sp => sp.ParcelId)
+                .ToDictionary(g => g.Key, g => g.Last().ShipmentId);
+
+            var shipments = (await _unitOfWork.Repository<Shipment>().GetAllAsync())
+                .ToDictionary(sh => sh.Id);
+
+            var warehouses = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                .ToDictionary(w => w.Id);
+
+            var customers = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                .ToDictionary(c => c.Id);
+
+            var users = (await _unitOfWork.Repository<User>().GetAllAsync())
+                .ToDictionary(u => u.Id);
+
+            var inspections = (await _unitOfWork.Repository<ParcelInspection>().GetAllAsync())
+                .Where(i => parcelIds.Contains(i.ParcelId))
+                .GroupBy(i => i.ParcelId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(i => i.InspectedAt).First());
+
+            var result = new List<PendingInboundOrderDto>();
+
+            foreach (var group in pendingParcels.GroupBy(p => p.ConsignmentId!.Value))
+            {
+                if (!orderMap.TryGetValue(group.Key, out var order)) continue;
+
+                var isPurchase = string.Equals(order.OrderType, "PURCHASE", StringComparison.OrdinalIgnoreCase);
+
+                // Ky gui phai cho Sale bam bao kho; mua ho vao thang.
+                if (!isPurchase && !order.WarehouseNotifiedAt.HasValue) continue;
+
+                var groupParcels = group.ToList();
+
+                var shipmentCodes = groupParcels
+                    .Select(p => shipmentByParcel.TryGetValue(p.Id, out var sid) ? sid : (Guid?)null)
+                    .Where(sid => sid.HasValue)
+                    .Select(sid => shipments.TryGetValue(sid!.Value, out var sh) ? sh.ShipmentCode : null)
+                    .Where(code => !string.IsNullOrWhiteSpace(code))
+                    .Distinct()
+                    .Select(code => code!)
+                    .ToList();
+
+                Guid? warehouseId = groupParcels
+                    .Select(p => shipmentByParcel.TryGetValue(p.Id, out var sid)
+                                 && shipments.TryGetValue(sid, out var sh)
+                        ? sh.DestinationWarehouseId
+                        : null)
+                    .FirstOrDefault(w => w.HasValue);
+
+                var customer = order.CustomerId.HasValue && customers.TryGetValue(order.CustomerId.Value, out var c)
+                    ? c
+                    : null;
+
+                var notifiedBy = order.WarehouseNotifiedById.HasValue
+                                 && users.TryGetValue(order.WarehouseNotifiedById.Value, out var u)
+                    ? u.FullName
+                    : null;
+
+                result.Add(new PendingInboundOrderDto
+                {
+                    OrderId = order.Id,
+                    OrderCode = order.ConsignmentCode,
+                    OrderType = isPurchase ? "PURCHASE" : "CONSIGNMENT",
+                    CustomerName = customer?.FullName,
+                    CustomerPhone = customer?.Phone,
+                    StoreAtVnParcelCount = groupParcels.Count,
+                    StoreAtVnTotalWeight = groupParcels.Sum(p => p.ActualWeight ?? p.ChargeableWeight ?? 0m),
+                    ParcelIds = groupParcels.Select(p => p.Id).ToList(),
+                    Parcels = groupParcels.Select(p => new PendingInboundParcelDto
+                    {
+                        ParcelId = p.Id,
+                        PackageCode = p.PackageCode ?? string.Empty,
+                        Weight = p.ActualWeight ?? p.ChargeableWeight,
+                        ShipmentCode = shipmentByParcel.TryGetValue(p.Id, out var sid)
+                                       && shipments.TryGetValue(sid, out var sh)
+                            ? sh.ShipmentCode
+                            : null,
+                        HasDiscrepancy = inspections.TryGetValue(p.Id, out var ins) && ins.HasDiscrepancy,
+                        DiscrepancySummary = inspections.TryGetValue(p.Id, out var ins2) && ins2.HasDiscrepancy
+                            ? ins2.Note
+                            : null,
+                    }).ToList(),
+                    ShipmentCodes = shipmentCodes,
+                    WarehouseId = warehouseId,
+                    WarehouseName = warehouseId.HasValue && warehouses.TryGetValue(warehouseId.Value, out var wh)
+                        ? wh.WarehouseName
+                        : null,
+                    ArrivedAt = groupParcels.Max(p => p.CheckInTime ?? p.PutAwayTime),
+                    WarehouseNotifiedAt = order.WarehouseNotifiedAt,
+                    WarehouseNotifiedByName = notifiedBy,
+                    WarehouseNotifiedNote = order.WarehouseNotifiedNote,
+                    DiscrepancyParcelCount = groupParcels.Count(p =>
+                        inspections.TryGetValue(p.Id, out var ins) && ins.HasDiscrepancy),
+                    LastRejectionReason = groupParcels
+                        .Select(p => rejectionByParcel.TryGetValue(p.Id, out var reason) ? reason : null)
+                        .FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason)),
+                });
+            }
+
+            // Bao lau nhat len dau - do la don dang tre nhat.
+            return result
+                .OrderBy(r => r.WarehouseNotifiedAt ?? r.ArrivedAt ?? DateTime.MaxValue)
+                .ToList();
+        }
+
         public async Task<WarehouseInboundRequestDto> UpdateStatusAsync(
             Guid inboundRequestId, Guid userId, string userRole, UpdateWarehouseInboundStatusDto request)
         {
@@ -142,7 +399,17 @@ namespace VCL_BLL.Services
             }
 
             var current = inbound.Status?.Trim().ToUpperInvariant();
-            if (current != StatusPending)
+
+            // Phiếu đã duyệt mà hàng chưa lên kệ thì cho duyệt lại. Bước xếp kệ chạy SAU khi
+            // trạng thái phiếu đã ghi (bắt buộc: put-away đòi phiếu phải ở trạng thái đã duyệt),
+            // nên nếu nó ném giữa chừng — kho hết ô trống chẳng hạn — sẽ còn lại phiếu ghi "đã
+            // duyệt" mà hàng vẫn ngoài sổ. Chặn cứng ở đây là hàng kẹt vĩnh viễn; cho bấm lại
+            // thì OM chỉ việc dọn ô kệ rồi duyệt lần nữa.
+            var canRetryPutAway = current == StatusApproved
+                                  && target == StatusApproved
+                                  && await HasParcelsNotStoredAsync(inbound);
+
+            if (current != StatusPending && !canRetryPutAway)
             {
                 throw new ArgumentException($"Phiếu đã được xử lý trước đó (hiện tại: {inbound.Status}), không duyệt lại được.");
             }
@@ -160,7 +427,134 @@ namespace VCL_BLL.Services
             repo.Update(inbound);
 
             await _unitOfWork.SaveChangesAsync();
+
+            // OM gật là hàng chính thức vào kho, không chỉ đổi trạng thái tờ phiếu.
+            if (target == StatusApproved)
+            {
+                await StoreApprovedParcelsAsync(inbound, userId);
+            }
+
             return await BuildDtoAsync(inbound);
+        }
+
+        /// <summary>Phiếu còn kiện nào chưa nằm trên kệ không.</summary>
+        private async Task<bool> HasParcelsNotStoredAsync(WarehouseInboundRequest inbound)
+        {
+            var parcelIds = (await _unitOfWork.Repository<WarehouseInboundItem>().GetAllAsync())
+                .Where(i => i.InboundRequestId == inbound.Id)
+                .Select(i => i.ParcelId)
+                .ToHashSet();
+
+            if (parcelIds.Count == 0) return false;
+
+            return (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => parcelIds.Contains(p.Id))
+                .Any(p => !string.Equals(p.PackageStatus, Stored, StringComparison.OrdinalIgnoreCase)
+                          || !p.BinId.HasValue);
+        }
+
+        /// <summary>
+        /// Xếp mọi kiện của phiếu vừa duyệt lên kệ kho nhận.
+        /// </summary>
+        /// <remarks>
+        /// Chọn ô kệ tự động theo sức chứa còn lại. Kho vẫn dời được sang ô khác sau đó, nhưng
+        /// ngay lúc duyệt hàng đã có vị trí và có mặt trong tồn kho — đó mới là "vào kho".
+        /// </remarks>
+        private async Task StoreApprovedParcelsAsync(WarehouseInboundRequest inbound, Guid userId)
+        {
+            if (!inbound.WarehouseId.HasValue) return;
+
+            var parcelIds = (await _unitOfWork.Repository<WarehouseInboundItem>().GetAllAsync())
+                .Where(i => i.InboundRequestId == inbound.Id)
+                .Select(i => i.ParcelId)
+                .ToHashSet();
+
+            var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => parcelIds.Contains(p.Id))
+                .ToList();
+
+            foreach (var parcel in parcels)
+            {
+                // Kiện kho đã tự xếp trước khi OM duyệt thì để nguyên chỗ cũ.
+                if (string.Equals(parcel.PackageStatus, Stored, StringComparison.OrdinalIgnoreCase)
+                    && parcel.BinId.HasValue)
+                {
+                    continue;
+                }
+
+                var location = await ResolveBinAsync(inbound.WarehouseId.Value, parcel);
+                await _parcelService.PutAwayParcelAsync(parcel.Id, location);
+            }
+        }
+
+        /// <summary>
+        /// Tìm ô kệ còn chỗ trong kho nhận cho một kiện, kèm đủ cây kho/khu/kệ để put-away nhận.
+        /// </summary>
+        private async Task<ParcelPutAwayRequest> ResolveBinAsync(Guid warehouseId, Parcel parcel)
+        {
+            var bins = (await _unitOfWork.Repository<Bin>().GetAllAsync())
+                .Where(b => b.WarehouseId == warehouseId && b.IsActive)
+                .OrderBy(b => b.BinCode)
+                .ToList();
+
+            if (bins.Count == 0)
+            {
+                throw new ArgumentException(
+                    "Kho nhận chưa khai báo ô kệ nào đang hoạt động nên không xếp hàng vào được. " +
+                    "Khai báo ô kệ cho kho rồi duyệt lại phiếu.");
+            }
+
+            var parcelVolume = (parcel.Length ?? 0) * (parcel.Width ?? 0) * (parcel.Height ?? 0);
+            var parcelWeight = parcel.ActualWeight ?? 0;
+
+            var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
+            var weightInBin = allParcels
+                .Where(p => p.BinId.HasValue
+                            && string.Equals(p.PackageStatus, Stored, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(p => p.BinId!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(p => p.ActualWeight ?? 0));
+
+            // Lặp đúng hai điều kiện put-away kiểm, để không chọn phải ô kệ rồi bị chính nó từ chối.
+            var bin = bins.FirstOrDefault(b =>
+            {
+                if (b.MaxVolume.HasValue && parcelVolume > b.MaxVolume.Value - (b.CurrentVolume ?? 0))
+                    return false;
+
+                if (b.MaxWeight.HasValue)
+                {
+                    weightInBin.TryGetValue(b.Id, out var used);
+                    if (parcelWeight > b.MaxWeight.Value - used) return false;
+                }
+
+                return true;
+            });
+
+            if (bin == null)
+            {
+                throw new ArgumentException(
+                    $"Kho nhận không còn ô kệ nào đủ chỗ cho kiện {parcel.PackageCode}. " +
+                    "Dọn bớt hoặc mở thêm ô kệ rồi duyệt lại phiếu.");
+            }
+
+            var shelf = bin.ShelfId.HasValue
+                ? await _unitOfWork.Repository<Shelf>().GetByIdAsync(bin.ShelfId.Value)
+                : null;
+            if (shelf?.ZoneId == null)
+            {
+                throw new ArgumentException(
+                    $"Ô kệ {bin.BinCode} chưa gắn vào kệ/khu nào nên không xác định được vị trí kho.");
+            }
+
+            var zone = await _unitOfWork.Repository<WarehouseZone>().GetByIdAsync(shelf.ZoneId.Value)
+                ?? throw new ArgumentException($"Không tìm thấy khu kho của ô kệ {bin.BinCode}.");
+
+            return new ParcelPutAwayRequest
+            {
+                WarehouseId = warehouseId,
+                ZoneId = zone.Id,
+                ShelfId = shelf.Id,
+                BinId = bin.Id,
+            };
         }
 
         public async Task<WarehouseInboundRequestDto> GetByIdAsync(Guid inboundRequestId)
@@ -238,6 +632,48 @@ namespace VCL_BLL.Services
             }
         }
 
+        /// <summary>
+        /// Don da du dieu kien cho hang vao so kho chua.
+        /// </summary>
+        /// <remarks>
+        /// Hai dieu kien: khach da tra xong tien, va (rieng ky gui) Sale da bam bao cho kho.
+        /// Don mua ho khong di qua buoc bao kho nen chi can dieu kien tien.
+        /// </remarks>
+        private static bool IsOrderReadyForInbound(
+            Parcel parcel, IReadOnlyDictionary<Guid, Order> orders, IReadOnlySet<Guid> settledOrderIds)
+        {
+            if (!parcel.ConsignmentId.HasValue) return false;
+            if (!orders.TryGetValue(parcel.ConsignmentId.Value, out var order)) return false;
+
+            if (!settledOrderIds.Contains(order.Id)) return false;
+
+            if (string.Equals(order.OrderType, "PURCHASE", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return order.WarehouseNotifiedAt.HasValue;
+        }
+
+        private static void EnsureOrderReadyForInbound(
+            Parcel parcel, IReadOnlyDictionary<Guid, Order> orders, IReadOnlySet<Guid> settledOrderIds)
+        {
+            if (IsOrderReadyForInbound(parcel, orders, settledOrderIds)) return;
+
+            var code = parcel.PackageCode ?? parcel.Id.ToString();
+            Order? order = null;
+            if (parcel.ConsignmentId.HasValue) orders.TryGetValue(parcel.ConsignmentId.Value, out order);
+
+            var label = order?.ConsignmentCode ?? ("cua kien " + code);
+
+            if (order == null || !settledOrderIds.Contains(order.Id))
+            {
+                throw new ArgumentException(
+                    $"Don {label} chua tat toan. Khach tra not dot cuoi roi kho moi nhap hang vao kho duoc.");
+            }
+
+            throw new ArgumentException(
+                $"Don {label} chua duoc Sale thong bao cho kho. Don chi vao muc Don hang can xu ly cua kho sau khi Sale bam thong bao.");
+        }
+
         private static string DescribeStatus(string? status) => status?.Trim().ToUpperInvariant() switch
         {
             StatusPending => "Chờ duyệt",
@@ -289,6 +725,8 @@ namespace VCL_BLL.Services
                     OrderId = order?.Id,
                     OrderCode = order?.ConsignmentCode,
                     CustomerName = customer?.FullName,
+                    CustomerIntent = order?.DefaultDestinationHandling,
+                    CustomerIntentText = DescribeCustomerIntent(order?.DefaultDestinationHandling),
                     BinId = parcel.BinId,
                     BinCode = bin?.BinCode
                 });

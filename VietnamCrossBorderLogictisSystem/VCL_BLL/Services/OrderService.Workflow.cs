@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -10,6 +10,98 @@ namespace VCL_BLL.Services
 {
     public partial class OrderService
     {
+        /// <summary>
+        /// Sale báo cho kho rằng đơn này có hàng khách xin gửi lại, kho vào lập phiếu nhập kho.
+        /// </summary>
+        /// <remarks>
+        /// Đứng SAU bước khách tất toán: thu đủ tiền rồi mới cho hàng vào sổ kho. Chỉ áp cho ký
+        /// gửi — hàng mua hộ vào kho qua bước OM duyệt riêng nên không cần Sale báo thêm.
+        /// </remarks>
+        public async Task<NotifyWarehouseResponse> NotifyWarehouseAsync(
+            Guid orderId, Guid userId, string userRole, NotifyWarehouseRequest request)
+        {
+            var normalizedRole = userRole?.Trim().ToUpperInvariant();
+            if (normalizedRole is not ("SALE" or "SALES" or "ADMIN"))
+            {
+                throw new UnauthorizedAccessException("Chỉ Sale được thông báo cho kho.");
+            }
+
+            var orderRepo = _unitOfWork.Repository<Order>();
+            var order = await orderRepo.GetByIdAsync(orderId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
+
+            if (string.Equals(order.OrderType, "PURCHASE", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    "Đơn mua hộ không cần bước này — hàng mua hộ vào kho qua bước OM duyệt nhập kho.");
+            }
+
+            // Kiện phải vừa được kho kiểm đếm xong, vừa được phân loại là khách gửi lại. Báo kho
+            // khi hàng chưa về hoặc chưa phân loại thì kho mở màn ra chẳng có gì để lập phiếu.
+            var storeAtVn = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Count(p => p.ConsignmentId == orderId
+                            && string.Equals(p.DestinationHandling, StoreAtVnHandling, StringComparison.OrdinalIgnoreCase)
+                            && string.Equals(p.PackageStatus, ReceivedAtDestinationStatus, StringComparison.OrdinalIgnoreCase));
+
+            if (storeAtVn == 0)
+            {
+                throw new ArgumentException(
+                    "Đơn này chưa có kiện nào kho đã kiểm đếm và phân loại là khách gửi lại kho VN. "
+                    + "Chờ kho mở lô kiểm đếm xong rồi mới báo được.");
+            }
+
+            // Tiền trước, hàng vào sổ sau. Đây là chốt chặn thu tiền của cả chặng cuối.
+            if (!await _settlementQueryService.IsSettledAsync(order))
+            {
+                throw new ArgumentException(
+                    $"Đơn {order.ConsignmentCode} chưa tất toán. Khách trả nốt đợt cuối rồi mới báo kho nhập hàng được.");
+            }
+
+            var actor = await _unitOfWork.Repository<User>().GetByIdAsync(userId);
+
+            // Bấm lại lần nữa không được dời mốc: kho đo thời gian chờ việc từ mốc này, dời là
+            // mọi đơn trễ đều tự động trẻ lại.
+            if (order.WarehouseNotifiedAt.HasValue)
+            {
+                return new NotifyWarehouseResponse
+                {
+                    OrderId = order.Id,
+                    ConsignmentCode = order.ConsignmentCode,
+                    WarehouseNotifiedAt = order.WarehouseNotifiedAt.Value,
+                    WarehouseNotifiedByName = actor?.FullName,
+                    Note = order.WarehouseNotifiedNote,
+                    StoreAtVnParcelCount = storeAtVn,
+                    AlreadyNotified = true,
+                };
+            }
+
+            var now = DateTime.UtcNow;
+            order.WarehouseNotifiedAt = now;
+            order.WarehouseNotifiedById = userId;
+            order.WarehouseNotifiedNote = string.IsNullOrWhiteSpace(request?.Note)
+                ? null
+                : request!.Note!.Trim();
+            orderRepo.Update(order);
+            await _unitOfWork.SaveChangesAsync();
+
+            await _notificationService.NotifyRolesAsync(
+                new[] { "WarehouseStaff", "Warehouse", "Staff", "OperationsManager", "Operations", "Admin" },
+                "Có đơn chờ nhập kho",
+                $"Đơn {order.ConsignmentCode} đã tất toán, {storeAtVn} kiện khách gửi lại kho VN. "
+                + "Vào mục Đơn hàng cần xử lý để lập phiếu nhập kho.",
+                excludeUserId: userId);
+
+            return new NotifyWarehouseResponse
+            {
+                OrderId = order.Id,
+                ConsignmentCode = order.ConsignmentCode,
+                WarehouseNotifiedAt = now,
+                WarehouseNotifiedByName = actor?.FullName,
+                Note = order.WarehouseNotifiedNote,
+                StoreAtVnParcelCount = storeAtVn,
+            };
+        }
+
         public async Task<CancelConsignmentResponse> CancelConsignmentAsync(Guid orderId, Guid userId, CancelConsignmentRequest request)
         {
             var customerRepo = _unitOfWork.Repository<Customer>();

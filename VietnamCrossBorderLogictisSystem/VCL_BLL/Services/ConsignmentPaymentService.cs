@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -571,6 +571,170 @@ namespace VCL_BLL.Services
         /// lần chốt trước. Dùng upsert thay vì cộng thêm dòng mới để phát hành lại đợt cuối
         /// nhiều lần cũng không nhân đôi tiền của khách.
         /// </summary>
+        /// <summary>Nhãn đợt thu phí lưu kho tại quầy, tách khỏi cọc và tất toán.</summary>
+        public const string StorageFeeInstallment = "STORAGE_FEE";
+
+        public async Task<CreateStorageFeePaymentResponse> CreateStorageFeePaymentAsync(
+            Guid orderId, Guid userId, string userRole, CreateStorageFeePaymentRequest request)
+        {
+            var order = await _unitOfWork.Repository<Order>().GetByIdAsync(orderId)
+                ?? throw new NotFoundException($"Không tìm thấy đơn hàng với ID {orderId}");
+
+            var (invoice, payments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
+            if (invoice == null)
+            {
+                throw new ArgumentException(
+                    $"Đơn {order.ConsignmentCode} chưa có hoá đơn nên chưa chốt được phí lưu kho.");
+            }
+
+            var storage = await _storageFeeService.CalculateForOrderAsync(orderId);
+            var consignmentCode = order.ConsignmentCode ?? string.Empty;
+
+            var invoiceItemRepo = _unitOfWork.Repository<InvoiceItem>();
+            var existingItems = (await invoiceItemRepo.GetAllAsync())
+                .Where(i => i.InvoiceId == invoice.Id)
+                .ToList();
+
+            // Phần phí đã nằm trên hoá đơn và đã thu qua đợt tất toán. Chỉ thu phần chênh ra,
+            // nếu không khách bị tính tiền hai lần cho cùng những ngày lưu kho.
+            var storageItem = existingItems.FirstOrDefault(i =>
+                string.Equals(i.FeeType, "STORAGE", StringComparison.OrdinalIgnoreCase));
+            var alreadyBilled = storageItem?.Amount ?? 0m;
+            var payable = storage.TotalAmount - alreadyBilled;
+
+            var response = new CreateStorageFeePaymentResponse
+            {
+                OrderId = order.Id,
+                ConsignmentCode = consignmentCode,
+                FreeDays = storage.FreeDays,
+                UnitPrice = storage.UnitPrice,
+                Currency = storage.Currency,
+                StorageFeeAmount = payable > 0m ? payable : 0m,
+                Note = storage.Note,
+                Parcels = storage.Parcels,
+            };
+
+            var paymentRepo = _unitOfWork.Repository<Payment>();
+
+            // Khoản cũ chưa trả thì bỏ đi: số ngày đã khác, giữ lại là để khách quét nhầm mã cũ
+            // rồi trả thiếu.
+            foreach (var stale in payments.Where(p =>
+                string.Equals(p.InstallmentType, StorageFeeInstallment, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(p.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase)))
+            {
+                stale.PaymentStatus = "CANCELLED";
+                stale.FailureReason = "Phát hành lại theo số ngày lưu kho mới.";
+                paymentRepo.Update(stale);
+            }
+
+            if (payable <= 0m)
+            {
+                await _unitOfWork.SaveChangesAsync();
+                response.IsFreeOfCharge = true;
+                response.PaymentStatus = "PAID";
+                return response;
+            }
+
+            // Ghi phần chênh lên hoá đơn để sổ sách khớp với số tiền vừa phát hành.
+            if (storageItem == null)
+            {
+                await invoiceItemRepo.AddAsync(new InvoiceItem
+                {
+                    Id = Guid.NewGuid(),
+                    InvoiceId = invoice.Id,
+                    FeeType = "STORAGE",
+                    ReferenceType = "ORDER",
+                    ReferenceId = orderId,
+                    Amount = storage.TotalAmount,
+                    Currency = storage.Currency,
+                    Description = BuildStorageDescription(storage),
+                });
+            }
+            else
+            {
+                storageItem.Amount = storage.TotalAmount;
+                storageItem.Description = BuildStorageDescription(storage);
+                invoiceItemRepo.Update(storageItem);
+            }
+
+            invoice.TotalAmount = (invoice.TotalAmount ?? 0m) + payable;
+            _unitOfWork.Repository<Invoice>().Update(invoice);
+
+            var orderCode = await GenerateUniqueOrderCodeAsync();
+            var isSePay = !string.Equals(request?.PaymentMethod, "PAYOS", StringComparison.OrdinalIgnoreCase);
+
+            string checkoutUrl;
+            string paymentLinkId;
+            string paymentMethod;
+
+            if (isSePay)
+            {
+                paymentMethod = "SEPAY";
+                paymentLinkId = $"SEPAY-{orderCode}";
+                var baseUrl = _configuration["SePay:BaseUrl"] ?? string.Empty;
+                checkoutUrl = $"{baseUrl}/api/payments/sepay/checkout/{orderCode}";
+            }
+            else
+            {
+                paymentMethod = "PAYOS";
+                var amountInt = (int)Math.Round(payable, MidpointRounding.AwayFromZero);
+                var returnUrl = FirstNonEmpty(request?.ReturnUrl, _configuration["PayOS:ReturnUrl"], string.Empty);
+                var cancelUrl = FirstNonEmpty(request?.CancelUrl, returnUrl, string.Empty);
+                var items = new List<PayOsItem> { new PayOsItem($"Phi luu kho {consignmentCode}", 1, amountInt) };
+
+                var link = await _payOsService.CreatePaymentLinkAsync(
+                    orderCode, amountInt, BuildDescription("LuuKho", consignmentCode), returnUrl, cancelUrl, items);
+                checkoutUrl = link.CheckoutUrl;
+                paymentLinkId = link.PaymentLinkId;
+            }
+
+            var payment = new Payment
+            {
+                Id = Guid.NewGuid(),
+                InvoiceId = invoice.Id,
+                Amount = payable,
+                PaymentMethod = paymentMethod,
+                PaymentStatus = "PENDING",
+                InstallmentType = StorageFeeInstallment,
+                OrderCode = orderCode,
+                CheckoutUrl = checkoutUrl,
+                PaymentLinkId = paymentLinkId,
+                CreatedAt = DateTime.UtcNow,
+            };
+            await paymentRepo.AddAsync(payment);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            response.PaymentId = payment.Id;
+            response.PaymentStatus = payment.PaymentStatus;
+            response.CheckoutUrl = checkoutUrl;
+            response.OrderCode = orderCode;
+            return response;
+        }
+
+        private static string BuildStorageDescription(StorageFeeDto storage)
+        {
+            var chargeableDays = storage.Parcels.Sum(p => p.ChargeableDays);
+            var perWarehouse = storage.Parcels
+                .SelectMany(p => p.Legs)
+                .Where(l => !string.IsNullOrWhiteSpace(l.WarehouseName))
+                .GroupBy(l => l.WarehouseName)
+                .Select(g => $"{g.Key}: {g.Sum(l => l.Days)} ngày")
+                .ToList();
+
+            var allowance = storage.GraceDays > 0
+                ? $"miễn {storage.FreeDays} ngày kể từ khi hàng về kho VN + {storage.GraceDays} ngày ân hạn"
+                : $"miễn {storage.FreeDays} ngày kể từ khi hàng về kho VN";
+
+            var description =
+                $"Phí lưu kho — {chargeableDays} ngày tính phí "
+                + $"({storage.UnitPrice:#,##0}đ/kiện/ngày, {allowance})";
+
+            return perWarehouse.Count > 0
+                ? description + $". {string.Join(" · ", perWarehouse)}"
+                : description;
+        }
+
         private async Task<decimal> ApplyStorageFeeAsync(
             Guid orderId,
             Invoice invoice,
@@ -602,7 +766,7 @@ namespace VCL_BLL.Services
 
             var description =
                 $"Phí lưu kho — {chargeableDays} ngày tính phí "
-                + $"({storage.UnitPrice:#,##0}đ/kiện/ngày, miễn {storage.FreeDays} ngày cho cả hành trình)";
+                + $"({storage.UnitPrice:#,##0}đ/kiện/ngày, miễn {storage.FreeDays} ngày kể từ khi hàng về kho VN)";
 
             if (perWarehouse.Count > 0)
             {
@@ -1186,14 +1350,21 @@ namespace VCL_BLL.Services
                             if (installment == "DEPOSIT")
                             {
                                 order.Status = "DEPOSIT_PAID";
+                                orderRepo.Update(order);
+                            }
+                            else if (installment == StorageFeeInstallment)
+                            {
+                                // Phí lưu kho thu tại quầy lúc lấy hàng, không phải một đợt của
+                                // hoá đơn gốc. Đụng vào order.Status ở đây sẽ đánh dấu đơn đã
+                                // thanh toán xong trong khi tất toán có thể còn dở.
                             }
                             else
                             {
                                 order.Status = "PAID";
                                 invoice.InvoiceStatus = "PAID";
                                 invoiceRepo.Update(invoice);
+                                orderRepo.Update(order);
                             }
-                            orderRepo.Update(order);
                         }
                     }
                 }

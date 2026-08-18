@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.Extensions.Configuration;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
@@ -12,6 +12,9 @@ namespace VCL_BLL.Services
         private readonly IConfiguration _configuration;
         private readonly IConsignmentReceiptService _consignmentReceiptService;
         private readonly INotificationService _notificationService;
+
+        /// <summary>Một chỗ duy nhất quyết định "đơn này đã tất toán chưa".</summary>
+        private readonly ISettlementQueryService _settlementQueryService;
 
         // Các giá trị RestrictionType bị coi là hàng cấm (chặn tạo) → level BANNED.
         private static readonly string[] BannedRestrictionTypes = { "BANNED", "PROHIBITED", "CẤM", "CAM" };
@@ -30,13 +33,15 @@ namespace VCL_BLL.Services
             IQuotationService quotationService,
             IConfiguration configuration,
             IConsignmentReceiptService consignmentReceiptService,
-            INotificationService notificationService)
+            INotificationService notificationService,
+            ISettlementQueryService settlementQueryService)
         {
             _unitOfWork = unitOfWork;
             _quotationService = quotationService;
             _configuration = configuration;
             _consignmentReceiptService = consignmentReceiptService;
             _notificationService = notificationService;
+            _settlementQueryService = settlementQueryService;
         }
     }
 }

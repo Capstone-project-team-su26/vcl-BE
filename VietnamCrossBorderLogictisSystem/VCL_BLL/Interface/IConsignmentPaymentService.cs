@@ -34,5 +34,20 @@ namespace VCL_BLL.Interface
         /// Trả về trạng thái payOS: PENDING | PAID | CANCELLED | EXPIRED.
         /// </summary>
         Task<string> SyncPaymentStatusAsync(long orderCode);
+
+        /// <summary>
+        /// Chốt phí lưu kho và phát hành mã thanh toán để thu một lần lúc khách đến lấy hàng.
+        /// <para>
+        /// Phí lưu kho chạy theo ngày nên không thể gộp vào đợt tất toán trước đó: khách trả nốt
+        /// hôm nay mà mười ngày sau mới lấy thì mười ngày ấy chưa ai thu. Chốt tại đúng thời điểm
+        /// xuất hàng là cách duy nhất ra đúng số, và cũng khỏi phải sinh giao dịch lặt vặt mỗi ngày.
+        /// </para>
+        /// <para>
+        /// Gọi lại khi khoản cũ chưa trả thì khoản cũ bị huỷ và phát hành lại theo số ngày mới —
+        /// tiền phải khớp thời điểm quét mã, không phải thời điểm bấm nút lần đầu.
+        /// </para>
+        /// </summary>
+        Task<CreateStorageFeePaymentResponse> CreateStorageFeePaymentAsync(
+            Guid orderId, Guid userId, string userRole, CreateStorageFeePaymentRequest request);
     }
 }
