@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -36,6 +36,14 @@ namespace VCL_BLL.Services
         private const string DirectDelivery = "DIRECT_DELIVERY";
         private const string StoreAtVn = "STORE_AT_VN";
 
+        /// <summary>Nhãn tiếng Việt của hướng xử lý, để FE hiện thẳng khỏi tự map.</summary>
+        private static string? DescribeHandling(string? handling) => handling?.Trim().ToUpperInvariant() switch
+        {
+            DirectDelivery => "Khách muốn giao ngay khi về VN",
+            StoreAtVn => "Khách muốn gửi lại kho VN",
+            _ => null,
+        };
+
         /// <summary>
         /// Chuẩn hoá hướng xử lý về đúng một trong hai giá trị hợp lệ. Trả null khi bỏ trống để
         /// bên gọi tự quyết mặc định. Gõ sai thì báo lỗi ngay chứ không lặng lẽ nhận bừa — sai
@@ -56,56 +64,448 @@ namespace VCL_BLL.Services
             return normalized;
         }
 
+        /// <summary>Nhãn tiếng Việt của tình trạng kiện lúc nhận.</summary>
+        private static string? DescribeCondition(string? condition) =>
+            condition?.Trim().ToUpperInvariant() switch
+            {
+                "INTACT" => "Nguyên vẹn",
+                "MISSING" => "Thiếu hàng",
+                "DAMAGED" => "Hư hỏng",
+                "WET" => "Ẩm ướt",
+                "SEAL_BROKEN" => "Rách niêm phong",
+                _ => null,
+            };
+
+        /// <summary>Tình trạng khác nguyên vẹn thì tự nó đã là chênh lệch, khỏi cần so số.</summary>
+        private static bool IsProblemCondition(string? condition)
+        {
+            var normalized = condition?.Trim().ToUpperInvariant();
+            return !string.IsNullOrEmpty(normalized) && normalized != "INTACT";
+        }
+
+        /// <summary>
+        /// Kho có thật sự đối chiếu kiện này không. Bấm xác nhận mà không nhập gì thì bỏ qua,
+        /// đừng đẻ biên bản rỗng làm loãng danh sách chênh lệch của OM.
+        /// </summary>
+        private static bool HasInspectionInput(DestinationReceivingItemDto item) =>
+            item.ActualQuantity.HasValue
+            || item.ActualWeight.HasValue
+            || !string.IsNullOrWhiteSpace(item.Condition)
+            || !string.IsNullOrWhiteSpace(item.InspectionNote);
+
+        /// <summary>
+        /// Ghi biên bản đối chiếu một kiện.
+        /// <para>
+        /// Khai báo lấy từ chính kiện: số lượng luôn là 1 (mỗi Parcel là một kiện vật lý), cân
+        /// nặng lấy trọng lượng thực đã cân ở kho nguồn. Lệch một trong hai, hoặc tình trạng
+        /// khác nguyên vẹn, thì đánh dấu để OM lọc ra xử lý với hãng vận chuyển.
+        /// </para>
+        /// </summary>
+        private async Task SaveParcelInspectionAsync(
+            Parcel parcel, Guid shipmentId, DestinationReceivingItemDto input, Guid userId, DateTime now)
+        {
+            const int declaredQuantity = 1;
+            var declaredWeight = parcel.ActualWeight ?? parcel.ChargeableWeight;
+
+            var quantityMismatch = input.ActualQuantity.HasValue
+                && input.ActualQuantity.Value != declaredQuantity;
+
+            // Cân điện tử luôn lệch vài chục gram, chấp nhận sai số 0.05kg để khỏi báo động giả.
+            var weightMismatch = input.ActualWeight.HasValue
+                && declaredWeight.HasValue
+                && Math.Abs(input.ActualWeight.Value - declaredWeight.Value) > 0.05m;
+
+            var condition = string.IsNullOrWhiteSpace(input.Condition)
+                ? null
+                : input.Condition.Trim().ToUpperInvariant();
+
+            // Ghi đè bản ghi cũ của cùng kiện. Kho thường đã lưu đối chiếu từng kiện trước rồi
+            // mới bấm xác nhận cả lô — chèn thêm ở đây là danh sách của OM có hai dòng cho một
+            // kiện, không biết tin dòng nào.
+            var repo = _unitOfWork.Repository<ParcelInspection>();
+            var existing = (await repo.GetAllAsync())
+                .Where(i => i.ParcelId == parcel.Id)
+                .OrderByDescending(i => i.InspectedAt)
+                .FirstOrDefault();
+
+            var entity = existing ?? new ParcelInspection
+            {
+                Id = Guid.NewGuid(),
+                ParcelId = parcel.Id,
+            };
+
+            entity.ShipmentId = shipmentId;
+            entity.OrderId = parcel.ConsignmentId;
+            entity.DeclaredQuantity = declaredQuantity;
+            entity.ActualQuantity = input.ActualQuantity;
+            entity.DeclaredWeight = declaredWeight;
+            entity.ActualWeight = input.ActualWeight;
+            entity.Condition = condition;
+            entity.Note = string.IsNullOrWhiteSpace(input.InspectionNote) ? null : input.InspectionNote.Trim();
+            entity.HasDiscrepancy = quantityMismatch || weightMismatch || IsProblemCondition(condition);
+            entity.InspectedBy = userId;
+            entity.InspectedAt = now;
+
+            if (existing == null)
+            {
+                await repo.AddAsync(entity);
+            }
+            else
+            {
+                repo.Update(entity);
+            }
+        }
+
+        // Chỉ vai điều hành và quản trị mới xem được: biên bản có tên, số điện thoại khách.
+        private static readonly string[] InspectionViewRoles =
+            { "OPERATIONSMANAGER", "OPERATIONS", "ADMIN", "STAFF", "WAREHOUSESTAFF" };
+
+        // Kho la nguoi cam kien tren tay nen duoc luu ket qua doi chieu; OM/Admin luu thay khi ho tro.
+        private static readonly string[] InspectionSaveRoles =
+            { "WAREHOUSESTAFF", "STAFF", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
+
+        public async Task<ParcelInspectionDto> SaveParcelInspectionAsync(
+            Guid parcelId, SaveParcelInspectionRequest request, Guid userId, string userRole)
+        {
+            var normalizedRole = userRole?.Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(normalizedRole) || !InspectionSaveRoles.Contains(normalizedRole))
+            {
+                throw new UnauthorizedAccessException("Vai trò hiện tại không được lưu kết quả đối chiếu kiện.");
+            }
+
+            var parcel = await _unitOfWork.Repository<Parcel>().GetByIdAsync(parcelId)
+                ?? throw new NotFoundException($"Không tìm thấy kiện hàng với ID {parcelId}");
+
+            // Lô mà kiện đang đi theo — để OM lọc chênh lệch theo từng chuyến.
+            var shipmentParcel = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
+                .FirstOrDefault(sp => sp.ParcelId == parcelId);
+
+            var condition = string.IsNullOrWhiteSpace(request?.Condition)
+                ? null
+                : request.Condition.Trim().ToUpperInvariant();
+
+            const int declaredQuantity = 1;
+            var declaredWeight = parcel.ActualWeight ?? parcel.ChargeableWeight;
+
+            var quantityMismatch = request?.ActualQuantity != null
+                && request.ActualQuantity.Value != declaredQuantity;
+
+            // Cân điện tử luôn lệch vài chục gram; dưới ngưỡng này coi như khớp.
+            var weightMismatch = request?.ActualWeight != null
+                && declaredWeight.HasValue
+                && Math.Abs(request.ActualWeight.Value - declaredWeight.Value) > 0.05m;
+
+            var repo = _unitOfWork.Repository<ParcelInspection>();
+            var now = DateTime.UtcNow;
+
+            // Lưu đè bản ghi cũ của cùng kiện. Sửa số nhập nhầm là chuyện thường; để lại hai
+            // dòng chỉ làm danh sách chênh lệch của OM khó đọc.
+            var existing = (await repo.GetAllAsync())
+                .Where(i => i.ParcelId == parcelId)
+                .OrderByDescending(i => i.InspectedAt)
+                .FirstOrDefault();
+
+            var entity = existing ?? new ParcelInspection
+            {
+                Id = Guid.NewGuid(),
+                ParcelId = parcelId,
+            };
+
+            entity.ShipmentId = shipmentParcel?.ShipmentId ?? entity.ShipmentId;
+            entity.OrderId = parcel.ConsignmentId;
+            entity.DeclaredQuantity = declaredQuantity;
+            entity.ActualQuantity = request?.ActualQuantity;
+            entity.DeclaredWeight = declaredWeight;
+            entity.ActualWeight = request?.ActualWeight;
+            entity.Condition = condition;
+            entity.Note = string.IsNullOrWhiteSpace(request?.Note) ? null : request.Note.Trim();
+            entity.HasDiscrepancy = quantityMismatch || weightMismatch || IsProblemCondition(condition);
+            entity.InspectedBy = userId;
+            entity.InspectedAt = now;
+
+            if (existing == null)
+            {
+                await repo.AddAsync(entity);
+            }
+            else
+            {
+                repo.Update(entity);
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            var user = await _unitOfWork.Repository<User>().GetByIdAsync(userId);
+            var order = parcel.ConsignmentId.HasValue
+                ? await _unitOfWork.Repository<Order>().GetByIdAsync(parcel.ConsignmentId.Value)
+                : null;
+
+            var quantityDiff = entity.ActualQuantity.HasValue
+                ? entity.ActualQuantity.Value - declaredQuantity
+                : (int?)null;
+            var weightDiff = entity.ActualWeight.HasValue && declaredWeight.HasValue
+                ? entity.ActualWeight.Value - declaredWeight.Value
+                : (decimal?)null;
+
+            return new ParcelInspectionDto
+            {
+                InspectionId = entity.Id,
+                ParcelId = parcelId,
+                PackageCode = parcel.PackageCode ?? string.Empty,
+                ShipmentId = entity.ShipmentId,
+                OrderId = entity.OrderId,
+                OrderCode = order?.ConsignmentCode,
+                DeclaredQuantity = declaredQuantity,
+                ActualQuantity = entity.ActualQuantity,
+                DeclaredWeight = declaredWeight,
+                ActualWeight = entity.ActualWeight,
+                QuantityDifference = quantityDiff,
+                WeightDifference = weightDiff,
+                Condition = entity.Condition,
+                ConditionText = DescribeCondition(entity.Condition),
+                Note = entity.Note,
+                HasDiscrepancy = entity.HasDiscrepancy,
+                DiscrepancySummary = BuildDiscrepancySummary(quantityDiff, weightDiff, entity.Condition),
+                InspectedByName = user?.FullName,
+                InspectedAt = entity.InspectedAt,
+            };
+        }
+
+        public async Task<ParcelInspectionListDto> GetParcelInspectionsAsync(
+            bool onlyDiscrepancy, Guid? shipmentId, string userRole)
+        {
+            var normalizedRole = userRole?.Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(normalizedRole) || !InspectionViewRoles.Contains(normalizedRole))
+            {
+                throw new UnauthorizedAccessException("Vai trò hiện tại không được xem biên bản kiểm đếm.");
+            }
+
+            var all = (await _unitOfWork.Repository<ParcelInspection>().GetAllAsync()).ToList();
+
+            var scoped = shipmentId.HasValue
+                ? all.Where(i => i.ShipmentId == shipmentId.Value).ToList()
+                : all;
+
+            var filtered = (onlyDiscrepancy ? scoped.Where(i => i.HasDiscrepancy) : scoped)
+                .OrderByDescending(i => i.InspectedAt)
+                .ToList();
+
+            var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync()).ToDictionary(p => p.Id);
+            var shipments = (await _unitOfWork.Repository<Shipment>().GetAllAsync()).ToDictionary(sh => sh.Id);
+            var orders = (await _unitOfWork.Repository<Order>().GetAllAsync()).ToDictionary(o => o.Id);
+            var customers = (await _unitOfWork.Repository<Customer>().GetAllAsync()).ToDictionary(c => c.Id);
+            var users = (await _unitOfWork.Repository<User>().GetAllAsync()).ToDictionary(u => u.Id);
+            var warehouses = (await _unitOfWork.Repository<Warehouse>().GetAllAsync()).ToDictionary(w => w.Id);
+
+            var items = new List<ParcelInspectionDto>();
+            foreach (var ins in filtered)
+            {
+                parcels.TryGetValue(ins.ParcelId, out var parcel);
+
+                Shipment? shipment = null;
+                if (ins.ShipmentId.HasValue) shipments.TryGetValue(ins.ShipmentId.Value, out shipment);
+
+                Order? order = null;
+                if (ins.OrderId.HasValue) orders.TryGetValue(ins.OrderId.Value, out order);
+
+                Customer? customer = null;
+                if (order?.CustomerId is Guid cid) customers.TryGetValue(cid, out customer);
+
+                string? warehouseName = null;
+                if (shipment?.DestinationWarehouseId is Guid wid && warehouses.TryGetValue(wid, out var wh))
+                {
+                    warehouseName = wh.WarehouseName;
+                }
+
+                var quantityDiff = ins.ActualQuantity.HasValue && ins.DeclaredQuantity.HasValue
+                    ? ins.ActualQuantity.Value - ins.DeclaredQuantity.Value
+                    : (int?)null;
+                var weightDiff = ins.ActualWeight.HasValue && ins.DeclaredWeight.HasValue
+                    ? ins.ActualWeight.Value - ins.DeclaredWeight.Value
+                    : (decimal?)null;
+
+                items.Add(new ParcelInspectionDto
+                {
+                    InspectionId = ins.Id,
+                    ParcelId = ins.ParcelId,
+                    PackageCode = parcel?.PackageCode ?? string.Empty,
+                    ShipmentId = ins.ShipmentId,
+                    ShipmentCode = shipment?.ShipmentCode,
+                    OrderId = ins.OrderId,
+                    OrderCode = order?.ConsignmentCode,
+                    CustomerName = customer?.FullName,
+                    CustomerPhone = customer?.Phone,
+                    DeclaredQuantity = ins.DeclaredQuantity,
+                    ActualQuantity = ins.ActualQuantity,
+                    DeclaredWeight = ins.DeclaredWeight,
+                    ActualWeight = ins.ActualWeight,
+                    QuantityDifference = quantityDiff,
+                    WeightDifference = weightDiff,
+                    Condition = ins.Condition,
+                    ConditionText = DescribeCondition(ins.Condition),
+                    Note = ins.Note,
+                    HasDiscrepancy = ins.HasDiscrepancy,
+                    DiscrepancySummary = BuildDiscrepancySummary(quantityDiff, weightDiff, ins.Condition),
+                    InspectedByName = ins.InspectedBy.HasValue && users.TryGetValue(ins.InspectedBy.Value, out var u)
+                        ? u.FullName
+                        : null,
+                    InspectedAt = ins.InspectedAt,
+                    WarehouseName = warehouseName,
+                });
+            }
+
+            var weekAgo = DateTime.UtcNow.AddDays(-7);
+            return new ParcelInspectionListDto
+            {
+                // Số liệu tính trên TOÀN BỘ biên bản chứ không theo bộ lọc đang xem, để OM lọc
+                // hẹp lại mà mấy ô đếm không tụt về 0 rồi tưởng hết việc.
+                Summary = new ParcelInspectionSummaryDto
+                {
+                    Total = all.Count,
+                    WithDiscrepancy = all.Count(i => i.HasDiscrepancy),
+                    RecentDiscrepancy = all.Count(i =>
+                        i.HasDiscrepancy && i.InspectedAt.HasValue && i.InspectedAt.Value >= weekAgo),
+                    DamagedParcels = all.Count(i => IsProblemCondition(i.Condition)),
+                },
+                Items = items,
+            };
+        }
+
+        /// <summary>Gộp chênh lệch thành một câu tiếng Việt để OM đọc lướt danh sách.</summary>
+        private static string BuildDiscrepancySummary(int? quantityDiff, decimal? weightDiff, string? condition)
+        {
+            var parts = new List<string>();
+
+            if (quantityDiff.HasValue && quantityDiff.Value != 0)
+            {
+                parts.Add(quantityDiff.Value < 0
+                    ? $"Thiếu {Math.Abs(quantityDiff.Value)} kiện"
+                    : $"Thừa {quantityDiff.Value} kiện");
+            }
+
+            if (weightDiff.HasValue && Math.Abs(weightDiff.Value) > 0.05m)
+            {
+                parts.Add(weightDiff.Value < 0
+                    ? $"nhẹ hơn {Math.Abs(weightDiff.Value):0.###} kg"
+                    : $"nặng hơn {weightDiff.Value:0.###} kg");
+            }
+
+            var conditionText = DescribeCondition(condition);
+            if (IsProblemCondition(condition) && conditionText != null)
+            {
+                parts.Add(conditionText.ToLowerInvariant());
+            }
+
+            return parts.Count == 0 ? "Khớp khai báo" : string.Join(" · ", parts);
+        }
+
         public InternationalShipmentService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
         }
 
         /// <summary>
+        /// Bảng tra cứu dùng chung khi dựng DTO lô hàng.
+        /// </summary>
+        /// <remarks>
+        /// Repository chỉ có <c>GetAllAsync()</c>, không nhận điều kiện lọc — nên mỗi lần đụng vào
+        /// một bảng là kéo trọn bảng đó về bộ nhớ. Bản cũ gọi <c>GetAllAsync()</c> cho 11 bảng ngay
+        /// bên trong hàm dựng DTO, mà hàm đó lại chạy trong vòng lặp từng lô: một trang 50 lô là
+        /// khoảng 550 lần quét toàn bảng, đo được 22 giây cho 50KB dữ liệu trả về. Nạp một lần rồi
+        /// truyền vào đưa nó về đúng 11 lần cho cả trang, và không còn phình theo số lô nữa.
+        /// </remarks>
+        private sealed class ShipmentLookups
+        {
+            public Dictionary<Guid, List<ShipmentWroRequest>> WroLinksByShipment { get; init; } = new();
+            public Dictionary<Guid, WroRequest> WroRequestsById { get; init; } = new();
+            public Dictionary<Guid, List<WroItem>> WroItemsByWroRequest { get; init; } = new();
+            public Dictionary<Guid, Warehouse> WarehousesById { get; init; } = new();
+            public Dictionary<Guid, Carrier> CarriersById { get; init; } = new();
+            public Dictionary<Guid, ShippingRoute> RoutesById { get; init; } = new();
+            public Dictionary<Guid, Inventory> InventoriesById { get; init; } = new();
+            public Dictionary<Guid, Parcel> ParcelsById { get; init; } = new();
+            public Dictionary<Guid, Order> OrdersById { get; init; } = new();
+            public Dictionary<Guid, Customer> CustomersById { get; init; } = new();
+        }
+
+        private async Task<ShipmentLookups> LoadShipmentLookupsAsync()
+        {
+            return new ShipmentLookups
+            {
+                WroLinksByShipment = (await _unitOfWork.Repository<ShipmentWroRequest>().GetAllAsync())
+                    .GroupBy(sw => sw.ShipmentId)
+                    .ToDictionary(g => g.Key, g => g.ToList()),
+                WroRequestsById = (await _unitOfWork.Repository<WroRequest>().GetAllAsync())
+                    .ToDictionary(w => w.Id, w => w),
+                WroItemsByWroRequest = (await _unitOfWork.Repository<WroItem>().GetAllAsync())
+                    .GroupBy(i => i.WroRequestId)
+                    .ToDictionary(g => g.Key, g => g.ToList()),
+                WarehousesById = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                    .ToDictionary(w => w.Id, w => w),
+                CarriersById = (await _unitOfWork.Repository<Carrier>().GetAllAsync())
+                    .ToDictionary(c => c.Id, c => c),
+                RoutesById = (await _unitOfWork.Repository<ShippingRoute>().GetAllAsync())
+                    .ToDictionary(r => r.Id, r => r),
+                InventoriesById = (await _unitOfWork.Repository<Inventory>().GetAllAsync())
+                    .ToDictionary(i => i.Id, i => i),
+                ParcelsById = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                    .ToDictionary(p => p.Id, p => p),
+                OrdersById = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                    .ToDictionary(o => o.Id, o => o),
+                CustomersById = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                    .ToDictionary(c => c.Id, c => c),
+            };
+        }
+
+        /// <summary>
         /// Dựng DTO đầy đủ cho một lô. Dùng chung cho cả danh sách lẫn chi tiết để hai
         /// đầu không lệch nhau — FE render cùng một component cho cả hai màn.
         /// </summary>
-        private async Task<InternationalShipmentResponseDto> BuildShipmentDtoAsync(Shipment shipment)
+        private InternationalShipmentResponseDto BuildShipmentDto(Shipment shipment, ShipmentLookups db)
         {
-            var wroLinks = (await _unitOfWork.Repository<ShipmentWroRequest>().GetAllAsync())
-                .Where(sw => sw.ShipmentId == shipment.Id)
-                .ToList();
+            var wroLinks = db.WroLinksByShipment.TryGetValue(shipment.Id, out var links)
+                ? links
+                : new List<ShipmentWroRequest>();
             var wroIds = wroLinks.Select(sw => sw.WroRequestId).ToHashSet();
 
-            var wroRequests = (await _unitOfWork.Repository<WroRequest>().GetAllAsync())
-                .Where(w => wroIds.Contains(w.Id))
+            var wroRequests = wroIds
+                .Select(id => db.WroRequestsById.TryGetValue(id, out var w) ? w : null)
+                .Where(w => w != null)
+                .Select(w => w!)
                 .ToList();
 
-            var allWarehouses = await _unitOfWork.Repository<Warehouse>().GetAllAsync();
-            var origin = allWarehouses.FirstOrDefault(w => w.Id == shipment.OriginWarehouseId);
-            var destination = allWarehouses.FirstOrDefault(w => w.Id == shipment.DestinationWarehouseId);
+            Warehouse? origin = shipment.OriginWarehouseId.HasValue
+                && db.WarehousesById.TryGetValue(shipment.OriginWarehouseId.Value, out var foundOrigin)
+                ? foundOrigin
+                : null;
+            Warehouse? destination = shipment.DestinationWarehouseId.HasValue
+                && db.WarehousesById.TryGetValue(shipment.DestinationWarehouseId.Value, out var foundDest)
+                ? foundDest
+                : null;
 
             Carrier? carrier = shipment.CarrierId.HasValue
-                ? (await _unitOfWork.Repository<Carrier>().GetAllAsync()).FirstOrDefault(c => c.Id == shipment.CarrierId.Value)
+                && db.CarriersById.TryGetValue(shipment.CarrierId.Value, out var foundCarrier)
+                ? foundCarrier
                 : null;
 
             // Tuyến không lưu trên Shipment; mọi WRO trong lô đã được validate là cùng tuyến
             // nên lấy của phiếu đầu tiên là đại diện cho cả lô.
             var routeId = wroRequests.Select(w => w.ShippingRouteId).FirstOrDefault(r => r.HasValue);
             ShippingRoute? route = routeId.HasValue
-                ? (await _unitOfWork.Repository<ShippingRoute>().GetAllAsync()).FirstOrDefault(r => r.Id == routeId.Value)
+                && db.RoutesById.TryGetValue(routeId.Value, out var foundRoute)
+                ? foundRoute
                 : null;
 
             // Kiện trong lô: qua WroItem → Inventory → Parcel
-            var wroItems = (await _unitOfWork.Repository<WroItem>().GetAllAsync())
-                .Where(i => wroIds.Contains(i.WroRequestId))
+            var wroItems = wroIds
+                .SelectMany(id => db.WroItemsByWroRequest.TryGetValue(id, out var list) ? list : new List<WroItem>())
                 .ToList();
-            var inventories = (await _unitOfWork.Repository<Inventory>().GetAllAsync())
-                .ToDictionary(i => i.Id, i => i);
-            var allParcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
-                .ToDictionary(p => p.Id, p => p);
+            var inventories = db.InventoriesById;
+            var allParcels = db.ParcelsById;
 
             // Đơn và khách của từng kiện: màn xác nhận lô về kho đích phải cho sale xem trước
             // ai sẽ bị ảnh hưởng, vì một lần bấm là mọi đơn trong lô cùng đổi trạng thái.
-            var ordersById = (await _unitOfWork.Repository<Order>().GetAllAsync())
-                .ToDictionary(o => o.Id, o => o);
-            var customersById = (await _unitOfWork.Repository<Customer>().GetAllAsync())
-                .ToDictionary(c => c.Id, c => c);
+            var ordersById = db.OrdersById;
+            var customersById = db.CustomersById;
 
             var parcels = new List<InternationalShipmentParcelDto>();
             var orderIds = new HashSet<Guid>();
@@ -135,16 +535,19 @@ namespace VCL_BLL.Services
                         CustomerId = customerId == Guid.Empty ? null : customerId,
                         CustomerName = customer?.FullName,
                         PackageStatus = parcel.PackageStatus,
-                        DestinationHandling = parcel.DestinationHandling
+                        DestinationHandling = parcel.DestinationHandling,
+                        CustomerIntent = order?.DefaultDestinationHandling,
+                        CustomerIntentText = DescribeHandling(order?.DefaultDestinationHandling)
                     });
                 }
             }
 
             // Hồ sơ PDF: phiếu nhập kho của các đơn liên quan. Phiếu xuất kho từng WRO
             // sẽ được nối vào đây khi ReleasePdfUrl có mặt.
-            var pdfUrls = (await _unitOfWork.Repository<Order>().GetAllAsync())
-                .Where(o => orderIds.Contains(o.Id) && !string.IsNullOrWhiteSpace(o.ReceiptPdfUrl))
-                .Select(o => o.ReceiptPdfUrl!)
+            var pdfUrls = orderIds
+                .Select(id => ordersById.TryGetValue(id, out var o) ? o : null)
+                .Where(o => o != null && !string.IsNullOrWhiteSpace(o.ReceiptPdfUrl))
+                .Select(o => o!.ReceiptPdfUrl!)
                 .Distinct()
                 .ToList();
 
@@ -223,11 +626,10 @@ namespace VCL_BLL.Services
 
             var page = ordered.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToList();
 
-            var items = new List<InternationalShipmentResponseDto>();
-            foreach (var shipment in page)
-            {
-                items.Add(await BuildShipmentDtoAsync(shipment));
-            }
+            // Nạp bảng tra cứu MỘT lần cho cả trang, không nạp lại theo từng lô.
+            var lookups = await LoadShipmentLookupsAsync();
+
+            var items = page.Select(shipment => BuildShipmentDto(shipment, lookups)).ToList();
 
             return new PaginatedResponse<InternationalShipmentResponseDto>
             {
@@ -246,7 +648,7 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {shipmentId}");
             }
 
-            return await BuildShipmentDtoAsync(shipment);
+            return BuildShipmentDto(shipment, await LoadShipmentLookupsAsync());
         }
 
         public async Task<InternationalShipmentResponseDto> CreateAsync(Guid userId, string userRole, CreateInternationalShipmentDto request)
@@ -473,6 +875,32 @@ namespace VCL_BLL.Services
             if (destinationWarehouse == null)
                 throw new NotFoundException($"Không tìm thấy kho đến với ID {request.DestinationWarehouseId}");
 
+            // 3b. Kho đến phải khớp tuyến vận chuyển của những kiện đã chọn.
+            //
+            // Tuyến đã khai sẵn đi từ kho nào tới kho nào, nhưng người gom lô vẫn nhập tay kho
+            // đến — chọn nhầm thì lô báo về sai kho, và địa chỉ shipper tới lấy hàng ở chặng cuối
+            // cũng lấy theo kho đích của lô, tức xe chạy nhầm tỉnh. Đối chiếu ngay lúc gom, khi
+            // sửa còn rẻ.
+            //
+            // Tuyến chưa khai kho đích thì bỏ qua: không có gì để đối chiếu, chặn ở đây chỉ làm
+            // kẹt những tuyến khai thiếu.
+            var lotRouteId = routeIds.FirstOrDefault(r => r.HasValue);
+            if (lotRouteId.HasValue)
+            {
+                var route = await _unitOfWork.Repository<ShippingRoute>().GetByIdAsync(lotRouteId.Value);
+
+                if (route?.DestinationWarehouseId is Guid routeDestinationId
+                    && routeDestinationId != request.DestinationWarehouseId)
+                {
+                    var routeDestination = await warehouseRepo.GetByIdAsync(routeDestinationId);
+                    throw new ArgumentException(
+                        $"Kho đến không khớp tuyến vận chuyển. Tuyến \"{route.RouteName}\" đi về "
+                        + $"{routeDestination?.WarehouseName ?? routeDestinationId.ToString()}, "
+                        + $"nhưng lô đang khai về {destinationWarehouse.WarehouseName}. "
+                        + "Chọn lại kho đến, hoặc sửa tuyến nếu hàng thật sự đổi điểm nhận.");
+                }
+            }
+
             Carrier? carrier = null;
             if (request.CarrierId.HasValue)
             {
@@ -552,7 +980,7 @@ namespace VCL_BLL.Services
             // các link chứng từ, và từng kiện cũng thiếu đơn/khách. Mà FE đã đọc sẵn những
             // trường đó, nên tạo lô xong màn hình hiện rỗng cho tới khi gọi thêm GET. Dùng chung
             // một bộ dựng thì hai đường không bao giờ lệch nhau nữa.
-            return await BuildShipmentDtoAsync(shipment);
+            return BuildShipmentDto(shipment, await LoadShipmentLookupsAsync());
         }
 
         /// <summary>
@@ -628,6 +1056,16 @@ namespace VCL_BLL.Services
             {
                 throw new ArgumentException(
                     $"Trạng thái không hợp lệ. Hợp lệ: {string.Join(", ", AllowedTransitions.Keys)}.");
+            }
+
+            // Lô về tới kho đích phải đi qua PUT /{id}/arrive, vì bước đó mới cập nhật trạng
+            // thái CỦA TỪNG KIỆN. Đặt thẳng ở đây thì lô báo "đã về" mà kiện vẫn còn ở
+            // RELEASED — kho VN mở màn kiểm đếm không thấy hàng đâu, mà nhìn lô thì tưởng xong.
+            if (string.Equals(targetStatus, "ARRIVED_DESTINATION", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    "Không đặt trực tiếp trạng thái ARRIVED_DESTINATION được. "
+                    + "Dùng chức năng xác nhận lô đến kho đích để hệ thống cập nhật cả lô lẫn các kiện.");
             }
 
             var currentStatus = shipment.Status?.Trim().ToUpperInvariant() ?? string.Empty;
@@ -842,8 +1280,14 @@ namespace VCL_BLL.Services
             // 6. Xác định danh sách Parcel cần nhận, kèm hướng xử lý của từng kiện.
             // Ba cách gọi đều phải chạy được: items (mới, phân loại từng kiện), parcelIds (cũ,
             // mobile đang dùng), hoặc không truyền gì (nhận cả lô).
-            var handlingByParcel = new Dictionary<Guid, string>();
+            // Giá trị null trong dictionary nghĩa là "kiện có trong danh sách nhưng kho không
+            // chốt hướng riêng" — khác hẳn với "kiện không được gửi lên". Phân biệt được hai
+            // trường hợp đó thì kiện không chốt riêng mới rơi đúng xuống ý khách ở bước sau.
+            var handlingByParcel = new Dictionary<Guid, string?>();
             List<Guid>? requestedIds = null;
+
+            // Kết quả đối chiếu của từng kiện, giữ lại để ghi biên bản sau khi xác định kiện hợp lệ.
+            var inspectionByParcel = new Dictionary<Guid, DestinationReceivingItemDto>();
 
             if (request?.Items != null && request.Items.Count > 0)
             {
@@ -853,7 +1297,8 @@ namespace VCL_BLL.Services
                     if (handlingByParcel.ContainsKey(item.ParcelId)) continue;
                     requestedIds.Add(item.ParcelId);
                     handlingByParcel[item.ParcelId] =
-                        NormalizeHandling(item.Handling, nameof(item.Handling)) ?? defaultHandling ?? DirectDelivery;
+                        NormalizeHandling(item.Handling, nameof(item.Handling));
+                    inspectionByParcel[item.ParcelId] = item;
                 }
             }
             else if (request?.ParcelIds != null && request.ParcelIds.Count > 0)
@@ -891,16 +1336,43 @@ namespace VCL_BLL.Services
                 }
             }
 
+            // Ý muốn khách khai từ lúc tạo đơn. Kho không chọn gì thì rơi về đây, thay vì mặc
+            // định giao thẳng — khách đã nói muốn gửi lại kho mà hệ thống vẫn đẩy đi giao là sai.
+            var orderIds = targets.Where(p => p.ConsignmentId.HasValue)
+                .Select(p => p.ConsignmentId!.Value)
+                .ToHashSet();
+            var customerIntentByOrder = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                .Where(o => orderIds.Contains(o.Id) && !string.IsNullOrWhiteSpace(o.DefaultDestinationHandling))
+                .ToDictionary(o => o.Id, o => o.DefaultDestinationHandling!.Trim().ToUpperInvariant());
+
             // 7. Cập nhật trạng thái Parcel + thời gian nhận + hướng xử lý
             var now = DateTime.UtcNow;
             foreach (var parcel in targets)
             {
                 parcel.PackageStatus = "RECEIVED_AT_DESTINATION";
                 parcel.CheckInTime = now;
-                parcel.DestinationHandling = handlingByParcel.TryGetValue(parcel.Id, out var perParcel)
-                    ? perParcel
-                    : (defaultHandling ?? DirectDelivery);
+
+                // Thứ tự ưu tiên: kho chọn riêng cho kiện → kho chọn chung cho lần nhận này →
+                // ý khách khai lúc đặt đơn → cuối cùng mới là giao thẳng.
+                string? customerIntent = null;
+                if (parcel.ConsignmentId.HasValue)
+                {
+                    customerIntentByOrder.TryGetValue(parcel.ConsignmentId.Value, out customerIntent);
+                }
+
+                handlingByParcel.TryGetValue(parcel.Id, out var perParcel);
+                parcel.DestinationHandling =
+                    perParcel ?? defaultHandling ?? customerIntent ?? DirectDelivery;
                 parcelRepo.Update(parcel);
+
+                // Biên bản đối chiếu của kiện. Chỉ ghi khi kho thật sự nhập gì đó — kho bấm
+                // xác nhận mà không đếm lại thì đừng đẻ ra bản ghi rỗng làm loãng danh sách
+                // chênh lệch của OM.
+                if (inspectionByParcel.TryGetValue(parcel.Id, out var inspectionInput)
+                    && HasInspectionInput(inspectionInput))
+                {
+                    await SaveParcelInspectionAsync(parcel, shipment.Id, inspectionInput, userId, now);
+                }
             }
 
             // 7. Lưu lịch sử nhận kiện tại kho đích
@@ -921,6 +1393,12 @@ namespace VCL_BLL.Services
                 : null;
             var user = await _unitOfWork.Repository<User>().GetByIdAsync(userId);
 
+            // Biên bản vừa ghi trong lần này, trả kèm để app kho hiện ngay kết quả đối chiếu
+            // mà không phải gọi lại API.
+            var inspectionsJustSaved = (await _unitOfWork.Repository<ParcelInspection>().GetAllAsync())
+                .Where(i => i.InspectedAt == now)
+                .ToDictionary(i => i.ParcelId, i => i);
+
             return new DestinationReceivingResponseDto
             {
                 ShipmentId = shipment.Id,
@@ -931,12 +1409,44 @@ namespace VCL_BLL.Services
                 ReceivedByName = user?.FullName ?? string.Empty,
                 Note = request?.Note,
                 ReceivedCount = targets.Count,
-                Parcels = targets.Select(p => new DestinationReceivingParcelDto
+                Parcels = targets.Select(p =>
                 {
-                    ParcelId = p.Id,
-                    PackageCode = p.PackageCode ?? string.Empty,
-                    PackageStatus = p.PackageStatus ?? string.Empty,
-                    DestinationHandling = p.DestinationHandling
+                    string? intent = null;
+                    if (p.ConsignmentId.HasValue)
+                    {
+                        customerIntentByOrder.TryGetValue(p.ConsignmentId.Value, out intent);
+                    }
+
+                    return new DestinationReceivingParcelDto
+                    {
+                        ParcelId = p.Id,
+                        PackageCode = p.PackageCode ?? string.Empty,
+                        PackageStatus = p.PackageStatus ?? string.Empty,
+                        DestinationHandling = p.DestinationHandling,
+                        CustomerIntent = intent,
+                        CustomerIntentText = DescribeHandling(intent),
+                        Inspection = inspectionsJustSaved.TryGetValue(p.Id, out var ins)
+                            ? new ParcelInspectionResultDto
+                            {
+                                DeclaredQuantity = ins.DeclaredQuantity,
+                                ActualQuantity = ins.ActualQuantity,
+                                DeclaredWeight = ins.DeclaredWeight,
+                                ActualWeight = ins.ActualWeight,
+                                Condition = ins.Condition,
+                                ConditionText = DescribeCondition(ins.Condition),
+                                Note = ins.Note,
+                                HasDiscrepancy = ins.HasDiscrepancy,
+                                QuantityDifference = ins.ActualQuantity.HasValue && ins.DeclaredQuantity.HasValue
+                                    ? ins.ActualQuantity.Value - ins.DeclaredQuantity.Value
+                                    : null,
+                                WeightDifference = ins.ActualWeight.HasValue && ins.DeclaredWeight.HasValue
+                                    ? ins.ActualWeight.Value - ins.DeclaredWeight.Value
+                                    : null,
+                                InspectedByName = user?.FullName,
+                                InspectedAt = ins.InspectedAt,
+                            }
+                            : null,
+                    };
                 }).ToList()
             };
         }

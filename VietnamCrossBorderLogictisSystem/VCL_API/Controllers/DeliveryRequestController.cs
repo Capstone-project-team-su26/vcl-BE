@@ -92,8 +92,34 @@ namespace VCL_API.Controllers
             catch (Exception ex) { return Handle(ex); }
         }
 
-        /// <summary>Danh sách yêu cầu giao hàng, lọc theo trạng thái hoặc theo đơn.</summary>
+        /// <summary>
+        /// Khách theo dõi tiến trình giao hàng của một đơn: phiếu giao, mã vận đơn, trạng thái
+        /// từng kiện, phí lưu kho đang phát sinh và cờ cho phép bấm xác nhận đã nhận đủ hàng.
+        /// </summary>
+        [HttpGet("~/api/orders/{orderId}/delivery-tracking")]
+        public async Task<IActionResult> GetOrderTracking(Guid orderId)
+        {
+            if (!TryGetUser(out var userId, out var userRole))
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+
+            try
+            {
+                var result = await _deliveryService.GetOrderTrackingAsync(orderId, userId, userRole);
+                return Ok(new { message = "Lấy tiến trình giao hàng thành công.", data = result });
+            }
+            catch (Exception ex) { return Handle(ex); }
+        }
+
+        /// <summary>
+        /// Danh sách yêu cầu giao hàng, lọc theo trạng thái hoặc theo đơn.
+        /// <para>
+        /// Chỉ dành cho nhân viên: dữ liệu gồm tên, số điện thoại và địa chỉ nhà của khách, mà
+        /// hàm lọc bên dưới không giới hạn theo chủ đơn. Khách muốn theo dõi thì dùng
+        /// <c>GET /api/orders/{orderId}/delivery-tracking</c>.
+        /// </para>
+        /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> GetList([FromQuery] string? status = null, [FromQuery] Guid? orderId = null)
         {
             try

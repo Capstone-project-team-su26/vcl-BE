@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -45,6 +45,16 @@ namespace VCL_BLL.DTOs
         /// <summary>Link phiếu xác nhận ký gửi (PDF) sinh khi Sale xác nhận yêu cầu. Null nếu chưa sinh.</summary>
         public string? ReceiptPdfUrl { get; set; }
 
+        /// <summary>
+        /// Khách muốn hàng đi đâu khi về tới kho VN: <c>DIRECT_DELIVERY</c> giao ngay,
+        /// <c>STORE_AT_VN</c> gửi lại kho. Null là khách không chọn lúc đặt.
+        /// Sale nhìn trường này để biết trước cần chuẩn bị giao hay chuẩn bị chỗ kệ.
+        /// </summary>
+        public string? DefaultDestinationHandling { get; set; }
+
+        /// <summary>Nhãn tiếng Việt của <see cref="DefaultDestinationHandling"/>.</summary>
+        public string? DefaultDestinationHandlingText { get; set; }
+
         /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
         public List<Guid> PricingRuleIds { get; set; } = new();
 
@@ -53,6 +63,220 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Báo giá mới nhất của đơn (null nếu chưa có).</summary>
         public ConsignmentQuotationSummary? Quotation { get; set; }
+
+        /// <summary>
+        /// Hàng của đơn đang đi theo lô nào và tới đâu rồi. Rỗng khi đơn chưa đóng kiện.
+        /// <para>
+        /// Sale là người nghe khách hỏi "hàng em tới đâu rồi", nên cần thấy đúng thứ màn Vận
+        /// chuyển của OM đang thấy: mã lô, chặng, và kết quả kho VN kiểm đếm từng kiện.
+        /// </para>
+        /// </summary>
+        public List<ConsignmentShipmentGroup> Shipments { get; set; } = new();
+
+        /// <summary>Số kiện của đơn bị kho Việt Nam ghi nhận lệch khi kiểm đếm.</summary>
+        public int DiscrepancyParcelCount { get; set; }
+
+        /// <summary>
+        /// Thời điểm Sale xác nhận đơn đủ điều kiện cho hàng vào kho VN. Null là chưa xác nhận,
+        /// và kho sẽ không lập được phiếu nhập kho cho đơn này.
+        /// </summary>
+        public DateTime? WarehouseNotifiedAt { get; set; }
+
+        /// <summary>Ghi chú Sale để lại lúc xác nhận đủ điều kiện nhập kho.</summary>
+        public string? WarehouseNotifiedNote { get; set; }
+    }
+
+    /// <summary>
+    /// Một lô vận chuyển quốc tế kèm những kiện của đơn đang đi theo lô đó.
+    /// Kiện đã đóng nhưng chưa được xếp lô nằm ở nhóm có <see cref="ShipmentId"/> null.
+    /// </summary>
+    public class ConsignmentShipmentGroup
+    {
+        public Guid? ShipmentId { get; set; }
+        public string? ShipmentCode { get; set; }
+        public string? Status { get; set; }
+        public string? StatusText { get; set; }
+
+        /// <summary>Mã vận đơn / số container bên vận chuyển thứ ba cấp, để Sale tra cứu hộ khách.</summary>
+        public string? CarrierTrackingCode { get; set; }
+
+        public string? OriginWarehouseName { get; set; }
+        public string? DestinationWarehouseName { get; set; }
+        public DateTime? ShippedAt { get; set; }
+        public DateTime? DeliveredAt { get; set; }
+
+        public List<ConsignmentParcelStatus> Parcels { get; set; } = new();
+    }
+
+    /// <summary>Một kiện của đơn: đang ở đâu, khách muốn xử lý thế nào, kho đếm ra sao.</summary>
+    public class ConsignmentParcelStatus
+    {
+        public Guid ParcelId { get; set; }
+        public string? PackageCode { get; set; }
+        public string? Status { get; set; }
+        public string? StatusText { get; set; }
+        public decimal? Weight { get; set; }
+
+        /// <summary>Xử lý khi về kho VN của riêng kiện này (có thể khác nguyện vọng ban đầu của đơn).</summary>
+        public string? DestinationHandling { get; set; }
+        public string? DestinationHandlingText { get; set; }
+
+        public DateTime? CheckInTime { get; set; }
+        public DateTime? PutAwayTime { get; set; }
+
+        /// <summary>Kết quả kho VN đối chiếu kiện này (null nếu kho chưa đếm).</summary>
+        public ConsignmentParcelCheckResult? Inspection { get; set; }
+    }
+
+    /// <summary>Một hàng đợi việc của Sale ở chặng cuối (chờ tất toán hoặc chờ xuất kho).</summary>
+    public class SettlementQueueResponse
+    {
+        public List<SettlementQueueItem> Items { get; set; } = new();
+    }
+
+    public class SettlementQueueItem
+    {
+        public Guid OrderId { get; set; }
+        public string? OrderCode { get; set; }
+
+        /// <summary><c>CONSIGNMENT</c> hoặc <c>PURCHASE</c> — màn hình dùng để mở đúng trang chi tiết.</summary>
+        public string OrderType { get; set; } = string.Empty;
+
+        /// <summary>Có giá trị với đơn mua hộ, để mở được màn chi tiết yêu cầu mua hộ.</summary>
+        public Guid? PurchaseRequestId { get; set; }
+
+        public string? Status { get; set; }
+
+        public Guid? CustomerId { get; set; }
+        public string? CustomerName { get; set; }
+        public string? CustomerPhone { get; set; }
+
+        public string? ReceiverName { get; set; }
+        public string? ReceiverPhone { get; set; }
+        public string? ReceiverAddress { get; set; }
+        public string? Route { get; set; }
+
+        /// <summary>Số kiện của đơn đã về tới kho VN.</summary>
+        public int ParcelCount { get; set; }
+        public decimal TotalWeight { get; set; }
+
+        /// <summary>Số kiện kho ghi nhận lệch — Sale nên xử lý trước khi chốt tiền.</summary>
+        public int DiscrepancyParcelCount { get; set; }
+
+        public DateTime? ArrivedAt { get; set; }
+
+        /// <summary>Thời điểm Sale xác nhận đủ điều kiện nhập kho (chỉ đơn ký gửi).</summary>
+        public DateTime? WarehouseNotifiedAt { get; set; }
+
+        /// <summary>Số kiện đủ điều kiện đưa vào phiếu xuất kho ngay.</summary>
+        public int ReadyToDeliverParcelCount { get; set; }
+
+        /// <summary>
+        /// Số tiền đợt cuối đang chờ khách trả. Null là Sale chưa chốt phí cuối, nên màn khách
+        /// hiển thị "chờ nhân viên chốt" thay vì bày một nút trả tiền chưa dùng được.
+        /// </summary>
+        public decimal? PendingPaymentAmount { get; set; }
+
+        /// <summary>Link thanh toán của đợt cuối đang chờ, để khách bấm trả ngay.</summary>
+        public string? PendingCheckoutUrl { get; set; }
+    }
+
+    /// <summary>
+    /// Hàng đợi "Đơn hàng cần xử lý" của Sale — mỗi dòng là MỘT VIỆC, không phải một đơn.
+    /// </summary>
+    /// <remarks>
+    /// Một đơn có thể vừa có kiện giao thẳng vừa có kiện gửi lại kho: hai việc khác nhau, hai
+    /// nút khác nhau, hai người xử lý tiếp khác nhau. Gộp chung một dòng thì Sale phải đọc bảng
+    /// hai tầng mới biết mình cần bấm gì, nên tách phẳng ngay từ server.
+    /// </remarks>
+    public class OrderActionQueueResponse
+    {
+        public List<OrderActionQueueItem> Items { get; set; } = new();
+    }
+
+    public class OrderActionQueueItem : SettlementQueueItem
+    {
+        /// <summary>Khoá dòng do server sinh (<c>{orderId}:{nhóm}</c>), để mỗi màn khỏi tự ghép một kiểu.</summary>
+        public string RowKey { get; set; } = string.Empty;
+
+        /// <summary><c>DIRECT_DELIVERY</c> hoặc <c>STORE_AT_VN</c>.</summary>
+        public string HandlingGroup { get; set; } = string.Empty;
+        public string HandlingGroupText { get; set; } = string.Empty;
+
+        /// <summary>Số kiện riêng của nhóm này; <c>ParcelCount</c> vẫn là tổng kiện đã về của đơn.</summary>
+        public int GroupParcelCount { get; set; }
+        public decimal GroupTotalWeight { get; set; }
+
+        /// <summary>Kiện của nhóm, để màn hình gửi thẳng lên khi lập phiếu — khỏi đoán lại.</summary>
+        public List<Guid> ParcelIds { get; set; } = new();
+
+        /// <summary>
+        /// Tình trạng việc: <c>AWAITING_RECEIVING_NOTE</c>, <c>AWAITING_DELIVERY_REQUEST</c>,
+        /// <c>AWAITING_WAREHOUSE_NOTICE</c>, <c>NOTIFIED_AWAITING_INBOUND</c>,
+        /// <c>INBOUND_PENDING_APPROVAL</c>, <c>INBOUND_REJECTED</c>.
+        /// </summary>
+        public string ActionState { get; set; } = string.Empty;
+        public string ActionStateText { get; set; } = string.Empty;
+
+        /// <summary>
+        /// <c>CREATE_RECEIVING_NOTE</c>, <c>CREATE_DELIVERY_REQUEST</c>, <c>NOTIFY_WAREHOUSE</c>,
+        /// <c>RENOTIFY_WAREHOUSE</c> hoặc <c>NONE</c>.
+        /// </summary>
+        public string NextAction { get; set; } = "NONE";
+
+        /// <summary>Kho sẽ nhận hàng của đơn — chỉ có ở dòng lập phiếu tiếp nhận, để FE đổ sẵn.</summary>
+        public Guid? ReceivingWarehouseId { get; set; }
+        public string? ReceivingWarehouseName { get; set; }
+
+        /// <summary>Nút có bấm được không; false thì <see cref="BlockedReason"/> nói vì sao.</summary>
+        public bool CanAct { get; set; }
+        public string? BlockedReason { get; set; }
+
+        public string? InboundCode { get; set; }
+        public string? InboundStatus { get; set; }
+        public string? InboundRejectionReason { get; set; }
+    }
+
+    /// <summary>Sale báo cho kho rằng đơn này có hàng khách xin gửi lại, kho vào lập phiếu nhập kho.</summary>
+    public class NotifyWarehouseRequest
+    {
+        /// <summary>Ghi chú kèm theo, ví dụ điều kiện đã thoả thuận riêng với khách. Không bắt buộc.</summary>
+        [MaxLength(500, ErrorMessage = "Ghi chú tối đa 500 ký tự.")]
+        public string? Note { get; set; }
+    }
+
+    public class NotifyWarehouseResponse
+    {
+        public Guid OrderId { get; set; }
+        public string? ConsignmentCode { get; set; }
+        public DateTime WarehouseNotifiedAt { get; set; }
+        public string? WarehouseNotifiedByName { get; set; }
+        public string? Note { get; set; }
+
+        /// <summary>Số kiện của đơn khách xin gửi lại kho VN — kho sẽ lập phiếu nhập cho đúng ngần này.</summary>
+        public int StoreAtVnParcelCount { get; set; }
+
+        /// <summary>
+        /// True khi đơn đã được báo cho kho từ trước. Bấm lại không dời mốc và không bắn thông
+        /// báo lần hai; màn hình dùng cờ này để nói "đã báo rồi" thay vì mừng hụt.
+        /// </summary>
+        public bool AlreadyNotified { get; set; }
+    }
+
+    /// <summary>Biên bản đối chiếu kiện tại kho VN, rút gọn cho Sale đọc.</summary>
+    public class ConsignmentParcelCheckResult
+    {
+        public bool HasDiscrepancy { get; set; }
+
+        /// <summary>Mô tả lệch một dòng, ví dụ "Thiếu 1 kiện; nhẹ hơn 0,6 kg". Null khi khớp.</summary>
+        public string? Summary { get; set; }
+
+        public string? ConditionText { get; set; }
+        public int? ActualQuantity { get; set; }
+        public decimal? ActualWeight { get; set; }
+        public decimal? DeclaredWeight { get; set; }
+        public string? Note { get; set; }
+        public DateTime? InspectedAt { get; set; }
     }
 
     public class ConsignmentCustomerInfo
@@ -153,6 +377,16 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Khách đăng ký bảo hiểm (map rule INSURANCE).</summary>
         public bool RequiresInsurance { get; set; }
+
+        /// <summary>
+        /// Khách muốn xử lý thế nào khi hàng về Việt Nam:
+        /// <c>DIRECT_DELIVERY</c> giao thẳng tới nhà · <c>STORE_AT_VN</c> gửi lại kho chờ nhận sau.
+        /// <para>
+        /// Bỏ trống nghĩa là khách chưa chọn — kho sẽ hỏi lại lúc hàng về, khác với việc khách
+        /// chủ động chọn giao thẳng. Chọn gửi lại kho thì phát sinh phí lưu kho sau kỳ miễn phí.
+        /// </para>
+        /// </summary>
+        public string? DefaultDestinationHandling { get; set; }
 
         /// <summary>Ghi chú xử lý chung cho cả yêu cầu.</summary>
         public string? Note { get; set; }
@@ -356,6 +590,14 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Ghi chú từ Sales/Khách hàng.</summary>
         public string? Note { get; set; }
+
+        /// <summary>
+        /// Nguyện vọng của khách khi hàng về tới kho VN: <c>DIRECT_DELIVERY</c> giao ngay hoặc
+        /// <c>STORE_AT_VN</c> gửi lại kho (phát sinh phí lưu kho sau kỳ miễn phí).
+        /// Sale hỏi khách rồi tick hộ. Bỏ trống hoặc gửi giá trị lạ thì coi như khách chưa chọn,
+        /// lúc hàng về kho mặc định giao ngay.
+        /// </summary>
+        public string? DefaultDestinationHandling { get; set; }
 
         [Required(ErrorMessage = "Yêu cầu ký gửi phải có ít nhất một mặt hàng.")]
         [MinLength(1, ErrorMessage = "Yêu cầu ký gửi phải có ít nhất một mặt hàng.")]

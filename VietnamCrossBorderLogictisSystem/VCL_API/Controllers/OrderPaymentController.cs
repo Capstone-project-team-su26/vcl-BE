@@ -25,6 +25,22 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
+        /// Bảng giá lưu kho để khách cân nhắc trước khi tick "gửi lại kho VN" lúc tạo đơn.
+        /// </summary>
+        /// <remarks>
+        /// Chưa gắn với đơn nào nên không cần quyền gì ngoài đăng nhập: trả về số ngày miễn phí,
+        /// số ngày ân hạn, đơn giá đang áp dụng và vài mốc ngày mẫu. Con số ở đây lấy chung một
+        /// chỗ tính với hoá đơn thật nên khách thấy sao thì trả vậy.
+        /// </remarks>
+        [HttpGet("api/storage-fee/estimate")]
+        [ProducesResponseType(typeof(StorageFeeEstimateDto), 200)]
+        public async Task<IActionResult> GetStorageFeeEstimate()
+        {
+            var result = await _storageFeeService.GetEstimateAsync();
+            return Ok(new { message = "Lấy bảng phí lưu kho thành công.", data = result });
+        }
+
+        /// <summary>
         /// Xem trước phí lưu kho tại kho đích của một đơn, kèm chi tiết từng kiện.
         /// </summary>
         /// <remarks>
@@ -45,6 +61,50 @@ namespace VCL_API.Controllers
             }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Chốt phí lưu kho và phát hành mã thanh toán để thu một lần lúc khách đến lấy hàng.
+        /// <para>
+        /// Kho bấm khi chuẩn bị xuất: hệ thống chốt số ngày lưu thực tế, trừ phần đã thu ở đợt
+        /// tất toán, rồi sinh mã cho khách quét ngay tại quầy. Trả xong mới xuất được hàng.
+        /// Không phát sinh thêm phí thì trả về <c>isFreeOfCharge</c> và cho xuất luôn.
+        /// </para>
+        /// </summary>
+        [HttpPost("api/orders/{orderId}/payments/storage-fee")]
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        public async Task<IActionResult> CreateStorageFeePayment(
+            Guid orderId, [FromBody] CreateStorageFeePaymentRequest? request = null)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _consignmentPaymentService.CreateStorageFeePaymentAsync(
+                    orderId, userId, userRole, request ?? new CreateStorageFeePaymentRequest());
+
+                var message = result.IsFreeOfCharge
+                    ? "Không phát sinh phí lưu kho, có thể xuất hàng."
+                    : "Chốt phí lưu kho thành công. Mời khách quét mã thanh toán.";
+
+                return Ok(new { message, data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
         }
 
         /// <summary>

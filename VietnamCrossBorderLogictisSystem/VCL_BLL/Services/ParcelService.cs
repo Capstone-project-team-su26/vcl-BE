@@ -1442,8 +1442,22 @@ namespace VCL_BLL.Services
                     CreatedAt = DateTime.UtcNow
                 });
 
+                // Dòng tồn kho của kiện nguồn đã gộp sang kiện mới. Dòng nào có nhật ký vận động
+                // trỏ vào thì giữ lại và cho về 0 — xoá sẽ phá khoá ngoại sang INVENTORY_MOVEMENTS
+                // và cả thao tác gộp kiện đổ lỗi hệ thống.
+                var movements = await _unitOfWork.Repository<InventoryMovement>().GetAllAsync();
+                var referenced = movements.Select(m => m.InventoryId).ToHashSet();
+
                 foreach (var inventory in sourceInventories)
                 {
+                    if (referenced.Contains(inventory.Id))
+                    {
+                        inventory.Quantity = 0;
+                        inventory.Status = "RELEASED";
+                        inventoryRepo.Update(inventory);
+                        continue;
+                    }
+
                     inventoryRepo.Delete(inventory);
                 }
             }

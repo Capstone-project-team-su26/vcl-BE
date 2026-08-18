@@ -13,6 +13,32 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
 
+        /*
+         * Mốc đơn được phép mở phiếu tiếp nhận kho.
+         *
+         * APPROVED: đơn nhân viên tạo, hàng khách mang tới kho ngay, chưa qua báo giá.
+         *
+         * DEPOSIT_PAID: khách vừa trả cọc xong — đây là mốc "đủ điều kiện" của nghiệp vụ, và cũng
+         * là mốc hàng đợi của Sale đẩy đơn ra (xem OrderService.BuildReceivingNoteRowsAsync).
+         *
+         * PAYMENT_CONFIRMED: Sale đã đối chiếu và xác nhận khoản tiền.
+         *
+         * Trước đây chỉ chấp nhận APPROVED nên mọi đơn đã qua báo giá đều tắc: đơn rời APPROVED
+         * từ lúc gửi báo giá và không bao giờ quay lại, kho vì thế không nhận được hàng của đơn đó
+         * nữa. Danh sách này là nguồn duy nhất — hàng đợi của Sale dùng lại chính nó để nút bày ra
+         * và luật của API không bao giờ lệch nhau.
+         */
+        public static readonly string[] ReceivingNoteOpenableStatuses =
+            { "APPROVED", "DEPOSIT_PAID", "PAYMENT_CONFIRMED" };
+
+        /// <summary>Trạng thái phiếu còn hiệu lực — đã có một phiếu như vậy thì không mở phiếu mới.</summary>
+        public static readonly string[] ActiveNoteStatuses =
+            { "ACTIVE", "PENDING", "OPEN", "IN_EFFECT" };
+
+        private static bool CanOpenReceivingNote(string? orderStatus) =>
+            !string.IsNullOrWhiteSpace(orderStatus)
+            && ReceivingNoteOpenableStatuses.Contains(orderStatus.Trim(), StringComparer.OrdinalIgnoreCase);
+
         public WarehouseReceivingNoteService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
@@ -36,19 +62,9 @@ namespace VCL_BLL.Services
             if (matchedNote == null)
                 throw new NotFoundException("Chưa có phiếu tiếp nhận kho nào được kích hoạt cho yêu cầu ký gửi này.");
 
-            var warehouse = await warehouseRepo.GetByIdAsync(matchedNote.WarehouseId);
-
-            return new WarehouseReceivingNoteResponseDto
-            {
-                Id = matchedNote.Id,
-                ReceivingNoteCode = matchedNote.ReceivingNoteCode ?? string.Empty,
-                ConsignmentOrderId = matchedNote.ConsignmentOrderId,
-                WarehouseId = matchedNote.WarehouseId,
-                WarehouseName = warehouse?.WarehouseName ?? "Kho không xác định",
-                WarehouseNote = matchedNote.WarehouseNote ?? string.Empty,
-                Status = matchedNote.Status ?? "ACTIVE",
-                CreatedAt = matchedNote.CreatedAt
-            };
+            // Trả bản đầy đủ: khách, tuyến, hàng khai báo. Trước đây chỉ trả 8 trường của bản thân
+            // phiếu nên màn hình mở ra gần như trống, không đủ để kho cầm đi đối chiếu hàng.
+            return await BuildDetailAsync(matchedNote);
         }
 
         public async Task<WarehouseReceivingNoteScanResponseDto> ScanReceivingNoteAsync(string code)
@@ -78,17 +94,7 @@ namespace VCL_BLL.Services
             }
 
             // 3. Danh sách hàng dự kiến nhận (order items)
-            var allItems = await _unitOfWork.Repository<OrderItem>().GetAllAsync();
-            var expectedItems = allItems
-                .Where(i => i.OrderId == order.Id)
-                .Select(i => new WarehouseReceivingNoteExpectedItemDto
-                {
-                    ProductName = i.ProductName ?? string.Empty,
-                    ProductType = i.ProductType ?? string.Empty,
-                    Quantity = i.Quantity ?? 0,
-                    DeclaredValue = i.DeclaredValue
-                })
-                .ToList();
+            var expectedItems = await BuildExpectedItemsAsync(order.Id);
 
             // 4. Kho tiếp nhận
             var warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(note.WarehouseId);
@@ -127,14 +133,16 @@ namespace VCL_BLL.Services
             if (!receivingWarehouseTypes.Any(t => string.Equals(warehouse.WarehouseType, t, StringComparison.OrdinalIgnoreCase)))
                 throw new ArgumentException("Phiếu tiếp nhận kho chỉ được áp dụng cho kho gốc hoặc kho đích.");
 
-            // 2. Rule: Consignment must exist and be APPROVED
+            // 2. Rule: đơn phải tồn tại và đang ở một mốc cho phép lập phiếu tiếp nhận.
             var orderRepo = _unitOfWork.Repository<Order>();
             var order = await orderRepo.GetByIdAsync(request.ConsignmentOrderId);
             if (order == null)
                 throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID: {request.ConsignmentOrderId}");
 
-            if (!string.Equals(order.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException("Chỉ có thể tạo phiếu tiếp nhận kho khi yêu cầu ký gửi đã được duyệt (APPROVED).");
+            if (!CanOpenReceivingNote(order.Status))
+                throw new ArgumentException(
+                    $"Không lập được phiếu tiếp nhận khi đơn đang ở trạng thái {order.Status}. "
+                    + $"Chỉ lập được khi đơn ở: {string.Join(", ", ReceivingNoteOpenableStatuses)}.");
 
             var wrnRepo = _unitOfWork.Repository<WarehouseReceivingNote>();
             var allNotes = await wrnRepo.GetAllAsync();
@@ -174,17 +182,8 @@ namespace VCL_BLL.Services
             await wrnRepo.AddAsync(newNote);
             await _unitOfWork.SaveChangesAsync();
 
-            return new WarehouseReceivingNoteResponseDto
-            {
-                Id = newNote.Id,
-                ReceivingNoteCode = newNote.ReceivingNoteCode,
-                ConsignmentOrderId = newNote.ConsignmentOrderId,
-                WarehouseId = newNote.WarehouseId,
-                WarehouseName = warehouse.WarehouseName ?? "Kho không xác định",
-                WarehouseNote = newNote.WarehouseNote,
-                Status = newNote.Status,
-                CreatedAt = newNote.CreatedAt
-            };
+            // Trả luôn bản đầy đủ để màn hình vừa lập xong đã hiện được nội dung phiếu.
+            return await BuildDetailAsync(newNote);
         }
 
         public async Task<WarehouseReceivingNoteDetailDto> GetReceivingNoteDetailAsync(Guid receivingNoteId)
@@ -290,6 +289,40 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
+        /// Hàng khách khai báo trên đơn, dùng chung cho cả phiếu lẫn màn quét của kho.
+        /// </summary>
+        /// <remarks>
+        /// Cột ORDER_ITEMS.PRODUCT_TYPE lưu ID của loại hàng chứ không lưu tên, nên đổ thẳng ra là
+        /// phiếu hiện một chuỗi GUID. Tra sang bảng PRODUCT_TYPES lấy tên; ID nào không tra được
+        /// thì giữ nguyên giá trị gốc còn hơn để trống.
+        /// </remarks>
+        private async Task<List<WarehouseReceivingNoteExpectedItemDto>> BuildExpectedItemsAsync(Guid orderId)
+        {
+            var productTypeNames = (await _unitOfWork.Repository<ProductType>().GetAllAsync())
+                .ToDictionary(t => t.Id.ToString(), t => t.Name ?? string.Empty);
+
+            return (await _unitOfWork.Repository<OrderItem>().GetAllAsync())
+                .Where(i => i.OrderId == orderId)
+                .Select(i =>
+                {
+                    var rawType = i.ProductType ?? string.Empty;
+                    var typeName = productTypeNames.TryGetValue(rawType, out var name) && !string.IsNullOrWhiteSpace(name)
+                        ? name
+                        : rawType;
+
+                    return new WarehouseReceivingNoteExpectedItemDto
+                    {
+                        ProductName = i.ProductName ?? string.Empty,
+                        ProductType = typeName,
+                        Quantity = i.Quantity ?? 0,
+                        DeclaredValue = i.DeclaredValue
+                    };
+                })
+                .OrderBy(i => i.ProductName)
+                .ToList();
+        }
+
+        /// <summary>
         /// Ghép phần đầu phiếu với các dòng đối chiếu và thông tin khách hàng.
         /// </summary>
         private async Task<WarehouseReceivingNoteDetailDto> BuildDetailAsync(WarehouseReceivingNote note)
@@ -322,6 +355,9 @@ namespace VCL_BLL.Services
                 .OrderBy(i => i.ProductName)
                 .ToList();
 
+            // Hàng khách khai trên đơn — phần ruột của phiếu lúc mới lập, khi chưa có dòng đối chiếu.
+            var expectedItems = await BuildExpectedItemsAsync(note.ConsignmentOrderId);
+
             return new WarehouseReceivingNoteDetailDto
             {
                 Id = note.Id,
@@ -335,6 +371,9 @@ namespace VCL_BLL.Services
                 ConsignmentCode = order?.ConsignmentCode ?? string.Empty,
                 CustomerName = customer?.FullName ?? string.Empty,
                 CustomerCode = customer?.CustomerCode ?? string.Empty,
+                CustomerPhone = customer?.Phone ?? string.Empty,
+                Route = order?.Route ?? string.Empty,
+                ExpectedItems = expectedItems,
                 HasDiscrepancy = items.Any(i => i.QuantityDifference != 0
                     || (i.WeightDifference.HasValue && i.WeightDifference.Value != 0)),
                 Items = items

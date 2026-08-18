@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
@@ -78,6 +78,27 @@ namespace VCL_API.Controllers
         /// <summary>
         /// Danh sách phiếu nhập kho, lọc theo trạng thái hoặc theo lô vận chuyển.
         /// </summary>
+        /// <summary>
+        /// Don dang cho kho lap phieu nhap kho.
+        /// </summary>
+        /// <remarks>
+        /// Khach da tat toan, kien da duoc kiem dem va phan loai gui lai kho VN, va rieng don ky
+        /// gui thi Sale da bam thong bao cho kho. Don bao lau nhat len dau.
+        /// </remarks>
+        [HttpGet("pending-orders")]
+        [ProducesResponseType(typeof(List<PendingInboundOrderDto>), 200)]
+        public async Task<IActionResult> GetPendingOrders()
+        {
+            try
+            {
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+                var result = await _inboundService.GetPendingInboundOrdersAsync(userRole);
+                return Ok(new { message = "Lay danh sach don cho nhap kho thanh cong.", data = result });
+            }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetList([FromQuery] string? status = null, [FromQuery] Guid? shipmentId = null)
         {

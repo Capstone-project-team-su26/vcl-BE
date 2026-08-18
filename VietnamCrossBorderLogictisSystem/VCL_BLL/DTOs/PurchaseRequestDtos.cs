@@ -209,6 +209,15 @@ namespace VCL_BLL.DTOs
         public int TotalQuantity { get; set; }
         public List<PurchaseRequestItemResponseDto> Items { get; set; } = new();
         public PurchaseQuotationResponseDto? Quotation { get; set; }
+
+        /// <summary>
+        /// Hàng của đơn đang đi theo lô nào và tới đâu rồi. Rỗng khi đơn chưa đóng kiện.
+        /// Dùng chung cấu trúc với đơn ký gửi để hai màn hiển thị y hệt nhau.
+        /// </summary>
+        public List<ConsignmentShipmentGroup> Shipments { get; set; } = new();
+
+        /// <summary>Số kiện của đơn bị kho Việt Nam ghi nhận lệch khi kiểm đếm.</summary>
+        public int DiscrepancyParcelCount { get; set; }
     }
 
     /// <summary>

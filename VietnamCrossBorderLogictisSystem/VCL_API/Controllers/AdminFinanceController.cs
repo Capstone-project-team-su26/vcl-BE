@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
+using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
 
 namespace VCL_API.Controllers
@@ -89,6 +90,101 @@ namespace VCL_API.Controllers
                     message = "Lấy danh sách giao dịch thanh toán thành công.",
                     data = result
                 });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Danh sách khoản tiền đang treo chờ Admin đối soát tay: khách chuyển khoản tay (OFFLINE →
+        /// PENDING_RECONCILIATION) hoặc đã phát hành link cổng thanh toán mà webhook chưa về (PENDING).
+        /// Gồm cả tiền ký gửi lẫn tiền mua hộ; lọc bằng ?source=CONSIGNMENT|PURCHASE.
+        /// </summary>
+        [HttpGet("transactions/pending-approval")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        public async Task<IActionResult> GetPendingApprovalTransactions([FromQuery] AdminPendingTransactionQueryDto query)
+        {
+            try
+            {
+                var result = await _adminFinanceService.GetPendingManualTransactionsAsync(query);
+                return Ok(new
+                {
+                    message = "Lấy danh sách giao dịch chờ duyệt thành công.",
+                    data = result
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Admin xác nhận đã thấy tiền về trong sao kê: ghi nhận khoản đã thu và đẩy đơn đi tiếp,
+        /// đúng như khi webhook cổng thanh toán bắn về.
+        /// </summary>
+        [HttpPut("transactions/{paymentId}/approve")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> ApproveTransaction(Guid paymentId, [FromBody] ApproveManualTransactionRequest request)
+        {
+            try
+            {
+                var result = await _adminFinanceService.ApproveManualTransactionAsync(paymentId, request);
+                return Ok(new
+                {
+                    message = "Duyệt giao dịch thủ công thành công.",
+                    data = result
+                });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Admin từ chối khoản treo (không thấy tiền về, khách khai sai...). Bắt buộc ghi lý do.
+        /// </summary>
+        [HttpPut("transactions/{paymentId}/reject")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> RejectTransaction(Guid paymentId, [FromBody] RejectManualTransactionRequest request)
+        {
+            try
+            {
+                var result = await _adminFinanceService.RejectManualTransactionAsync(paymentId, request);
+                return Ok(new
+                {
+                    message = "Đã từ chối giao dịch.",
+                    data = result
+                });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {

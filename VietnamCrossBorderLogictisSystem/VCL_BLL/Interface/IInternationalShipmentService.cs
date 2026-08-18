@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 
@@ -17,5 +17,25 @@ namespace VCL_BLL.Interface
         Task<UpdateInternationalShipmentStatusResponseDto> UpdateStatusAsync(Guid shipmentId, Guid userId, string userRole, UpdateInternationalShipmentStatusDto request);
         Task<ConfirmShipmentArrivalResponseDto> ConfirmArrivalAsync(Guid shipmentId, Guid userId, string userRole, ConfirmShipmentArrivalDto request);
         Task<DestinationReceivingResponseDto> ConfirmDestinationReceivingAsync(Guid shipmentId, Guid userId, string userRole, DestinationReceivingDto request);
+
+        /// <summary>
+        /// Biên bản kiểm đếm kiện tại kho VN, cho OM theo dõi chênh lệch.
+        /// <para>
+        /// <paramref name="onlyDiscrepancy"/> mặc định true vì đó là thứ OM mở màn này để xem;
+        /// muốn xem cả biên bản khớp thì truyền false.
+        /// </para>
+        /// </summary>
+        Task<ParcelInspectionListDto> GetParcelInspectionsAsync(
+            bool onlyDiscrepancy, Guid? shipmentId, string userRole);
+
+        /// <summary>
+        /// Kho lưu kết quả đối chiếu một kiện ngay khi cân đếm xong, không đợi chốt cả lô.
+        /// <para>
+        /// Lưu đè bản ghi cũ của cùng kiện thay vì đẻ thêm dòng mới — sửa số nhập nhầm là
+        /// chuyện thường, để lại hai dòng chỉ làm danh sách của OM khó đọc.
+        /// </para>
+        /// </summary>
+        Task<ParcelInspectionDto> SaveParcelInspectionAsync(
+            Guid parcelId, SaveParcelInspectionRequest request, Guid userId, string userRole);
     }
 }

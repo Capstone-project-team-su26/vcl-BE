@@ -776,6 +776,12 @@ namespace VCL_BLL.Services
             var warehouseOrder = (await _unitOfWork.Repository<Order>().GetAllAsync())
                 .FirstOrDefault(o => o.PurchaseRequestId == request.Id);
 
+            // Hành trình lô của đơn — dựng lại bằng đúng hàm luồng ký gửi đang dùng, để Sale
+            // nhìn hai loại đơn thấy cùng một khối thông tin.
+            var shipmentGroups = warehouseOrder != null
+                ? await _orderService.GetOrderShipmentJourneyAsync(warehouseOrder.Id)
+                : new List<ConsignmentShipmentGroup>();
+
             // 4.1 Lấy báo giá liên quan nếu có
             PurchaseQuotationResponseDto? quotationDto = null;
             var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
@@ -875,7 +881,11 @@ namespace VCL_BLL.Services
                 ReceiptGeneratedAt = warehouseOrder?.ReceiptGeneratedAt,
                 TotalQuantity = relatedItems.Sum(i => i.Quantity),
                 Items = itemDtos,
-                Quotation = quotationDto
+                Quotation = quotationDto,
+                Shipments = shipmentGroups,
+                DiscrepancyParcelCount = shipmentGroups
+                    .SelectMany(g => g.Parcels)
+                    .Count(p => p.Inspection?.HasDiscrepancy == true)
             };
         }
 

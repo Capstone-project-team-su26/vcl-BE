@@ -19,6 +19,15 @@ namespace VCL_BLL.Interface
 
         Task<DeliveryRequestDto> GetByIdAsync(Guid deliveryRequestId);
 
+        /// <summary>
+        /// Tiến trình giao hàng của MỘT đơn, dành cho khách theo dõi.
+        /// <para>
+        /// Khách chỉ xem được đơn của chính mình; nhân viên xem được mọi đơn. Endpoint danh sách
+        /// phiếu giao không lọc theo khách nên không thể mở thẳng cho khách dùng.
+        /// </para>
+        /// </summary>
+        Task<OrderDeliveryTrackingDto> GetOrderTrackingAsync(Guid orderId, Guid userId, string userRole);
+
         Task<List<DeliveryRequestDto>> GetListAsync(string? status, Guid? orderId);
     }
 }

@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
@@ -268,6 +268,81 @@ namespace VCL_API.Controllers
             }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Hàng đợi "Hàng chờ tất toán" của Sale: đơn kho đã kiểm xong, khách chưa trả nốt.
+        /// </summary>
+        /// <remarks>Gồm cả đơn ký gửi lẫn đơn mua hộ.</remarks>
+        [HttpGet("awaiting-settlement")]
+        [Authorize]
+        [ProducesResponseType(typeof(SettlementQueueResponse), 200)]
+        public async Task<IActionResult> GetAwaitingSettlement()
+        {
+            try
+            {
+                var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+                Guid? actorId = Guid.TryParse(
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var uid) ? uid : null;
+                var result = await _orderService.GetSettlementQueueAsync(role, settled: false, actorId);
+                return Ok(new { message = "Lấy danh sách hàng chờ tất toán thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Hàng đợi "Đơn hàng cần xử lý": mỗi dòng một việc, tách theo nhóm kiện.
+        /// </summary>
+        /// <remarks>
+        /// Đơn vừa có kiện giao thẳng vừa có kiện gửi kho sẽ ra hai dòng với hai nút khác nhau.
+        /// </remarks>
+        [HttpGet("action-queue")]
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [ProducesResponseType(typeof(OrderActionQueueResponse), 200)]
+        public async Task<IActionResult> GetActionQueue()
+        {
+            try
+            {
+                var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+                var result = await _orderService.GetActionQueueAsync(role);
+                return Ok(new { message = "Lấy danh sách đơn cần xử lý thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        /// <summary>
+        /// Sale báo cho kho rằng đơn này có hàng khách xin gửi lại, kho vào lập phiếu nhập kho.
+        /// </summary>
+        /// <remarks>
+        /// Đứng sau bước khách tất toán. Kho chỉ lập được phiếu nhập kho sau khi có báo này.
+        /// Đơn mua hộ không dùng endpoint này — hàng mua hộ vào kho qua bước OM duyệt riêng.
+        /// </remarks>
+        [HttpPut("consignments/{orderId}/notify-warehouse")]
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES")]
+        [ProducesResponseType(typeof(NotifyWarehouseResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> NotifyWarehouse(
+            Guid orderId, [FromBody] NotifyWarehouseRequest request)
+        {
+            var actorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(actorIdClaim, out var actorUserId))
+            {
+                return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
+            }
+
+            try
+            {
+                var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+                var result = await _orderService.NotifyWarehouseAsync(
+                    orderId, actorUserId, role, request ?? new NotifyWarehouseRequest());
+                return Ok(new { message = result.AlreadyNotified ? "Đơn này đã được báo cho kho từ trước." : "Đã thông báo cho kho.", data = result });
+            }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
             catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         }
 

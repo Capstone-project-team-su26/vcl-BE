@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -175,6 +175,8 @@ namespace VCL_BLL.Services
 
             var paymentConfirmedAt = order.PaymentConfirmedAt ?? paidPayment?.PaidAt ?? paidPayment?.CreatedAt;
 
+            var shipmentGroups = await GetOrderShipmentJourneyAsync(orderId);
+
             return new ConsignmentDetailResponse
             {
                 OrderId = order.Id,
@@ -195,6 +197,8 @@ namespace VCL_BLL.Services
                 QuotationCreatedAt = latestQuotation?.CreatedAt,
                 StatusUpdatedAt = paymentConfirmedAt ?? latestQuotation?.CreatedAt ?? order.CreatedAt,
                 ReceiptPdfUrl = order.ReceiptPdfUrl,
+                DefaultDestinationHandling = order.DefaultDestinationHandling,
+                DefaultDestinationHandlingText = DescribeDestinationHandling(order.DefaultDestinationHandling),
                 PricingRuleIds = pricingRuleIds,
                 Customer = new ConsignmentCustomerInfo
                 {
@@ -204,8 +208,231 @@ namespace VCL_BLL.Services
                     Phone = customer?.Phone
                 },
                 Items = items,
-                Quotation = quotationSummary
+                Quotation = quotationSummary,
+                Shipments = shipmentGroups,
+                DiscrepancyParcelCount = shipmentGroups
+                    .SelectMany(g => g.Parcels)
+                    .Count(p => p.Inspection?.HasDiscrepancy == true),
+                WarehouseNotifiedAt = order.WarehouseNotifiedAt,
+                WarehouseNotifiedNote = order.WarehouseNotifiedNote
             };
+        }
+
+        /// <summary>
+        /// Dựng hành trình vận chuyển quốc tế của đơn: kiện nào đang đi lô nào, lô tới đâu,
+        /// kho Việt Nam kiểm đếm ra sao.
+        /// </summary>
+        /// <remarks>
+        /// Gom theo lô chứ không liệt kê phẳng từng kiện, vì một đơn hoàn toàn có thể bị tách
+        /// làm nhiều chuyến — khách hỏi thì Sale phải trả lời được "kiện này về rồi, kiện kia
+        /// còn ở Quảng Châu", không phải một trạng thái chung chung cho cả đơn.
+        /// <para>
+        /// Public vì đơn mua hộ cũng cần đúng khối này; bên đó tra ra Order tương ứng rồi gọi
+        /// lại hàm này thay vì chép một bản thứ hai.
+        /// </para>
+        /// </remarks>
+        public async Task<List<ConsignmentShipmentGroup>> GetOrderShipmentJourneyAsync(Guid orderId)
+        {
+            var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => p.ConsignmentId == orderId)
+                .OrderBy(p => p.CheckInTime ?? DateTime.MaxValue)
+                .ThenBy(p => p.PackageCode)
+                .ToList();
+
+            if (parcels.Count == 0)
+            {
+                return new List<ConsignmentShipmentGroup>();
+            }
+
+            var parcelIds = parcels.Select(p => p.Id).ToHashSet();
+
+            // Kiện bị tách rồi ghép lại có thể còn nhiều dòng liên kết; lấy dòng cuối vì đó là
+            // lô đang thực sự chở kiện.
+            var shipmentIdByParcel = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
+                .Where(sp => parcelIds.Contains(sp.ParcelId))
+                .GroupBy(sp => sp.ParcelId)
+                .ToDictionary(g => g.Key, g => g.Last().ShipmentId);
+
+            var shipmentIds = shipmentIdByParcel.Values.ToHashSet();
+            var shipments = (await _unitOfWork.Repository<Shipment>().GetAllAsync())
+                .Where(s => shipmentIds.Contains(s.Id))
+                .ToDictionary(s => s.Id, s => s);
+
+            var warehouseNames = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                .ToDictionary(w => w.Id, w => w.WarehouseName);
+
+            // Kho có thể sửa lại số đã đếm; chỉ bản mới nhất mới phản ánh đúng hiện trạng.
+            var inspections = (await _unitOfWork.Repository<ParcelInspection>().GetAllAsync())
+                .Where(i => parcelIds.Contains(i.ParcelId))
+                .GroupBy(i => i.ParcelId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(i => i.InspectedAt).First());
+
+            var groups = new List<ConsignmentShipmentGroup>();
+
+            foreach (var byShipment in parcels.GroupBy(p =>
+                shipmentIdByParcel.TryGetValue(p.Id, out var sid) ? sid : (Guid?)null))
+            {
+                Shipment? shipment = null;
+                if (byShipment.Key.HasValue)
+                {
+                    shipments.TryGetValue(byShipment.Key.Value, out shipment);
+                }
+
+                groups.Add(new ConsignmentShipmentGroup
+                {
+                    ShipmentId = shipment?.Id,
+                    ShipmentCode = shipment?.ShipmentCode,
+                    Status = shipment?.Status,
+                    StatusText = shipment == null
+                        ? "Kiện đã đóng, chờ xếp lô"
+                        : DescribeShipmentStatus(shipment.Status),
+                    CarrierTrackingCode = shipment?.CarrierTrackingCode,
+                    OriginWarehouseName = LookupWarehouseName(warehouseNames, shipment?.OriginWarehouseId),
+                    DestinationWarehouseName = LookupWarehouseName(warehouseNames, shipment?.DestinationWarehouseId),
+                    ShippedAt = shipment?.ShippedAt,
+                    DeliveredAt = shipment?.DeliveredAt,
+                    Parcels = byShipment
+                        .Select(p => BuildParcelStatus(p, inspections))
+                        .ToList(),
+                });
+            }
+
+            // Lô đã đi xếp trước, kiện chưa lên lô xuống cuối: Sale mở ra là thấy ngay hàng
+            // đang chạy, phần chưa khởi hành đọc sau cũng được.
+            return groups
+                .OrderBy(g => g.ShipmentId.HasValue ? 0 : 1)
+                .ThenByDescending(g => g.ShippedAt ?? DateTime.MinValue)
+                .ToList();
+        }
+
+        private static string? LookupWarehouseName(
+            IReadOnlyDictionary<Guid, string> names, Guid? warehouseId) =>
+            warehouseId.HasValue && names.TryGetValue(warehouseId.Value, out var name) ? name : null;
+
+        private static ConsignmentParcelStatus BuildParcelStatus(
+            Parcel parcel, IReadOnlyDictionary<Guid, ParcelInspection> inspections)
+        {
+            ConsignmentParcelCheckResult? check = null;
+
+            if (inspections.TryGetValue(parcel.Id, out var inspection))
+            {
+                var quantityDiff = inspection.ActualQuantity.HasValue
+                    ? inspection.ActualQuantity.Value - inspection.DeclaredQuantity
+                    : (int?)null;
+
+                var weightDiff = inspection.ActualWeight.HasValue && inspection.DeclaredWeight.HasValue
+                    ? inspection.ActualWeight.Value - inspection.DeclaredWeight.Value
+                    : (decimal?)null;
+
+                check = new ConsignmentParcelCheckResult
+                {
+                    HasDiscrepancy = inspection.HasDiscrepancy,
+                    Summary = inspection.HasDiscrepancy
+                        ? SummarizeParcelDiscrepancy(quantityDiff, weightDiff, inspection.Condition)
+                        : null,
+                    ConditionText = DescribeParcelCondition(inspection.Condition),
+                    ActualQuantity = inspection.ActualQuantity,
+                    ActualWeight = inspection.ActualWeight,
+                    DeclaredWeight = inspection.DeclaredWeight,
+                    Note = inspection.Note,
+                    InspectedAt = inspection.InspectedAt,
+                };
+            }
+
+            return new ConsignmentParcelStatus
+            {
+                ParcelId = parcel.Id,
+                PackageCode = parcel.PackageCode,
+                Status = parcel.PackageStatus,
+                StatusText = DescribeParcelJourney(parcel.PackageStatus),
+                Weight = parcel.ActualWeight ?? parcel.ChargeableWeight,
+                DestinationHandling = parcel.DestinationHandling,
+                DestinationHandlingText = DescribeDestinationHandling(parcel.DestinationHandling),
+                CheckInTime = parcel.CheckInTime,
+                PutAwayTime = parcel.PutAwayTime,
+                Inspection = check,
+            };
+        }
+
+        /// <summary>Trạng thái kiện, viết theo cách Sale đọc xong là trả lời khách được ngay.</summary>
+        private static string DescribeParcelJourney(string? status) => status?.Trim().ToUpperInvariant() switch
+        {
+            "PENDING_CHECKIN" => "Chờ kho nước ngoài nhận",
+            "RECEIVED" => "Kho nước ngoài đã nhận",
+            "IN_WAREHOUSE" => "Đang nằm kho nước ngoài",
+            "STORED" => "Đang lưu kho",
+            "MERGED" => "Đã gộp kiện",
+            "SPLIT" => "Đã tách kiện",
+            "RELEASED" => "Đã xuất kho, chờ lên lô",
+            "IN_TRANSIT" => "Đang trên đường về Việt Nam",
+            "ARRIVED_DESTINATION" => "Đã về kho Việt Nam, chờ kiểm đếm",
+            "RECEIVED_AT_DESTINATION" => "Kho Việt Nam đã kiểm đếm xong",
+            "RETURNED_TO_WAREHOUSE" => "Giao không thành, đã hoàn về kho",
+            "AWAITING_PICKUP" => "Chờ đơn vị giao tới lấy",
+            "PICKING_UP" => "Đơn vị giao đang lấy hàng",
+            "DELIVERED" => "Đã giao cho khách",
+            _ => "Đang xử lý",
+        };
+
+        /// <summary>Nhãn trạng thái lô, dùng chung cách gọi với màn Vận chuyển của OM.</summary>
+        private static string DescribeShipmentStatus(string? status) => status?.Trim().ToUpperInvariant() switch
+        {
+            "CREATED" or "LOT_CREATED" => "Lô mới tạo",
+            "PREPARING" => "Đang chuẩn bị",
+            "MANIFESTED" => "Đã lên manifest",
+            "CUSTOMS_EXPORT_PENDING" => "Chờ thông quan xuất",
+            "IN_TRANSIT" => "Đang vận chuyển",
+            "CUSTOMS_IMPORT_PENDING" => "Chờ thông quan nhập",
+            "ARRIVED" or "ARRIVED_DESTINATION" or "ARRIVED_IN_VN" => "Đã đến kho Việt Nam",
+            "CUSTOMS_REJECTED" => "Hải quan từ chối",
+            "HOLD" => "Đang tạm giữ",
+            "ISSUE" => "Lô đang có sự cố",
+            "CANCELLED" => "Lô đã huỷ",
+            _ => "Đang xử lý",
+        };
+
+        private static string? DescribeParcelCondition(string? condition) =>
+            condition?.Trim().ToUpperInvariant() switch
+            {
+                "INTACT" => "Nguyên vẹn",
+                "MISSING" => "Thiếu hàng",
+                "DAMAGED" => "Hư hỏng",
+                "WET" => "Ẩm ướt",
+                "SEAL_BROKEN" => "Rách niêm phong",
+                _ => null,
+            };
+
+        /// <summary>Gộp chênh lệch thành một câu để Sale đọc lướt là hiểu phải báo khách gì.</summary>
+        private static string SummarizeParcelDiscrepancy(int? quantityDiff, decimal? weightDiff, string? condition)
+        {
+            var parts = new List<string>();
+
+            if (quantityDiff.HasValue && quantityDiff.Value != 0)
+            {
+                parts.Add(quantityDiff.Value < 0
+                    ? $"Thiếu {Math.Abs(quantityDiff.Value)} kiện"
+                    : $"Thừa {quantityDiff.Value} kiện");
+            }
+
+            // Cân điện tử luôn lệch vài chục gram; dưới ngưỡng này không đáng gọi là chênh lệch.
+            if (weightDiff.HasValue && Math.Abs(weightDiff.Value) > 0.05m)
+            {
+                parts.Add(weightDiff.Value < 0
+                    ? $"nhẹ hơn {Math.Abs(weightDiff.Value):0.###} kg"
+                    : $"nặng hơn {weightDiff.Value:0.###} kg");
+            }
+
+            var normalized = condition?.Trim().ToUpperInvariant();
+            if (normalized is "MISSING" or "DAMAGED" or "WET" or "SEAL_BROKEN")
+            {
+                var conditionText = DescribeParcelCondition(normalized);
+                if (conditionText != null)
+                {
+                    parts.Add(conditionText.ToLowerInvariant());
+                }
+            }
+
+            return parts.Count == 0 ? "Có ghi nhận bất thường" : string.Join(" · ", parts);
         }
 
         public async Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode, string? orderType = null)
@@ -362,6 +589,8 @@ namespace VCL_BLL.Services
                     WarehouseRegion = orderWarehouse?.Region?.ToString(),
                     WarehouseType = orderWarehouse?.WarehouseType,
                     ReceiptPdfUrl = o.ReceiptPdfUrl,
+                    DefaultDestinationHandling = o.DefaultDestinationHandling,
+                    DefaultDestinationHandlingText = DescribeDestinationHandling(o.DefaultDestinationHandling),
                     PricingRuleIds = pricingRuleIds,
                     ItemNames = allItems
                         .Where(i => i.OrderId == o.Id && !string.IsNullOrWhiteSpace(i.ProductName))

@@ -105,6 +105,30 @@ namespace VCL_BLL.DTOs
         public List<Guid>? ParcelIds { get; set; }
     }
 
+    /// <summary>Một mục trong danh mục hành chính của GoShip (tỉnh, quận hoặc phường).</summary>
+    public class GoshipLocationOption
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+    }
+
+    public class GoshipLocationResponse
+    {
+        [JsonPropertyName("data")]
+        public List<GoshipLocationOption>? Data { get; set; }
+    }
+
+    /// <summary>Mã hành chính GoShip tương ứng với tên mà hệ thống đang lưu.</summary>
+    public class GoshipAddressCodes
+    {
+        public string CityId { get; set; } = string.Empty;
+        public string DistrictId { get; set; } = string.Empty;
+        public string WardId { get; set; } = string.Empty;
+    }
+
     public class GoshipOrderShipment
     {
         [JsonPropertyName("rate")]

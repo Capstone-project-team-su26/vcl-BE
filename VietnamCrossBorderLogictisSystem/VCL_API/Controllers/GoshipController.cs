@@ -21,6 +21,91 @@ namespace VCL_API.Controllers
             _configuration = configuration;
         }
 
+        /// <summary>Token dùng chung cho các endpoint tra danh mục.</summary>
+        private string? ResolveToken(string? token) =>
+            !string.IsNullOrWhiteSpace(token) ? token : _configuration["GoshipSettings:Token"];
+
+        /// <summary>
+        /// Danh mục tỉnh/thành của đơn vị vận chuyển.
+        /// <para>
+        /// FE dùng ba endpoint danh mục này để dựng dropdown phụ thuộc nhau cho màn lập yêu cầu
+        /// giao hàng. Chọn từ danh mục thì địa chỉ luôn khớp mã GoShip, khỏi phụ thuộc vào việc
+        /// đoán tên do người dùng gõ tay.
+        /// </para>
+        /// </summary>
+        [HttpGet("cities")]
+        [Authorize]
+        public async Task<IActionResult> GetCities([FromQuery] string? token = null)
+        {
+            var effectiveToken = ResolveToken(token);
+            if (string.IsNullOrEmpty(effectiveToken))
+            {
+                return BadRequest(new { message = "Chưa cấu hình Goship Access Token trong hệ thống." });
+            }
+
+            try
+            {
+                var cities = await _goshipService.GetCitiesAsync(effectiveToken);
+                return Ok(new { message = "Lấy danh sách tỉnh/thành thành công.", items = cities });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Không lấy được danh sách tỉnh/thành.", error = ex.Message });
+            }
+        }
+
+        /// <summary>Quận/huyện thuộc một tỉnh/thành.</summary>
+        [HttpGet("cities/{cityId}/districts")]
+        [Authorize]
+        public async Task<IActionResult> GetDistricts(string cityId, [FromQuery] string? token = null)
+        {
+            var effectiveToken = ResolveToken(token);
+            if (string.IsNullOrEmpty(effectiveToken))
+            {
+                return BadRequest(new { message = "Chưa cấu hình Goship Access Token trong hệ thống." });
+            }
+
+            try
+            {
+                var districts = await _goshipService.GetDistrictsAsync(cityId, effectiveToken);
+                return Ok(new { message = "Lấy danh sách quận/huyện thành công.", items = districts });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Không lấy được danh sách quận/huyện.", error = ex.Message });
+            }
+        }
+
+        /// <summary>Phường/xã thuộc một quận/huyện.</summary>
+        [HttpGet("districts/{districtId}/wards")]
+        [Authorize]
+        public async Task<IActionResult> GetWards(string districtId, [FromQuery] string? token = null)
+        {
+            var effectiveToken = ResolveToken(token);
+            if (string.IsNullOrEmpty(effectiveToken))
+            {
+                return BadRequest(new { message = "Chưa cấu hình Goship Access Token trong hệ thống." });
+            }
+
+            try
+            {
+                var wards = await _goshipService.GetWardsAsync(districtId, effectiveToken);
+                return Ok(new { message = "Lấy danh sách phường/xã thành công.", items = wards });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Không lấy được danh sách phường/xã.", error = ex.Message });
+            }
+        }
+
         /// <summary>
         /// Ước tính và so sánh phí giao hàng của tất cả các hãng vận chuyển qua GoShip Express.
         /// </summary>
@@ -125,8 +210,26 @@ namespace VCL_API.Controllers
         /// </summary>
         [HttpPost("webhook")]
         [AllowAnonymous]
-        public async Task<IActionResult> ProcessWebhook([FromBody] GoshipWebhookPayload payload)
+        public async Task<IActionResult> ProcessWebhook(
+            [FromBody] GoshipWebhookPayload payload,
+            [FromQuery] string? secret = null)
         {
+            // Webhook mở cho mọi người gọi được, mà nội dung của nó lật trạng thái kiện sang
+            // DELIVERED. Có cấu hình secret thì bắt buộc khớp; chưa cấu hình thì vẫn cho qua để
+            // môi trường đang chạy không đứt, nhưng ghi log cảnh báo.
+            var expectedSecret = _configuration["GoshipSettings:WebhookSecret"];
+            if (!string.IsNullOrWhiteSpace(expectedSecret))
+            {
+                var provided = !string.IsNullOrWhiteSpace(secret)
+                    ? secret
+                    : Request.Headers["X-Goship-Secret"].ToString();
+
+                if (!string.Equals(provided, expectedSecret, StringComparison.Ordinal))
+                {
+                    return Unauthorized(new { code = 401, status = "error", message = "Webhook secret không hợp lệ." });
+                }
+            }
+
             try
             {
                 await _goshipService.ProcessWebhookAsync(payload);
@@ -134,7 +237,10 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return Ok(new { code = 200, status = "success", warning = ex.Message });
+                // Trước đây lỗi bị nuốt rồi vẫn trả 200 "success": GoShip tưởng đã nhận xong nên
+                // không gửi lại, còn mình thì mất luôn cập nhật mà không ai biết. Trả 500 để bên
+                // kia retry và để lỗi hiện ra trong log.
+                return StatusCode(500, new { code = 500, status = "error", message = ex.Message });
             }
         }
     }

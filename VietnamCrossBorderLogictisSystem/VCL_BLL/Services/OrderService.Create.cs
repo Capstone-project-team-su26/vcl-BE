@@ -29,6 +29,7 @@ namespace VCL_BLL.Services
                 request.Items, request.PricingRuleIds, request.Note,
                 request.RequiresInspection, request.RequiresPacking,
                 request.RequiresWoodenCrate, request.RequiresInsurance);
+            draft.DefaultDestinationHandling = NormalizeDestinationHandling(request.DefaultDestinationHandling);
 
             return await PersistConsignmentAsync(
                 customer, route, shippingOption, "PENDING_REVIEW", createdById: null,
@@ -56,6 +57,7 @@ namespace VCL_BLL.Services
                 request.Items, request.PricingRuleIds, request.Note,
                 request.RequiresInspection, request.RequiresPacking,
                 request.RequiresWoodenCrate, request.RequiresInsurance);
+            draft.DefaultDestinationHandling = NormalizeDestinationHandling(request.DefaultDestinationHandling);
 
             return await PersistConsignmentAsync(
                 customer, route, shippingOption, initialStatus, staffUserId,
@@ -67,10 +69,30 @@ namespace VCL_BLL.Services
         /// Thông tin đã tổng hợp từ request, dùng chung cho cả 2 luồng tạo ký gửi
         /// (khách tự tạo và Sale tạo hộ).
         /// </summary>
+        /// <summary>
+        /// Chuẩn hoá ý muốn của khách về đúng hai giá trị hệ thống hiểu.
+        /// <para>
+        /// Gõ sai thì trả null — coi như khách chưa chọn, kho sẽ hỏi lại. Không đoán bừa, vì
+        /// đoán nhầm là hàng đi sai hướng: giao thẳng khi khách muốn gửi kho, hoặc ngược lại.
+        /// </para>
+        /// </summary>
+        private static string? NormalizeDestinationHandling(string? value)
+        {
+            var normalized = value?.Trim().ToUpperInvariant();
+
+            return normalized switch
+            {
+                "DIRECT_DELIVERY" => "DIRECT_DELIVERY",
+                "STORE_AT_VN" => "STORE_AT_VN",
+                _ => null,
+            };
+        }
+
         private sealed class ConsignmentDraft
         {
             public List<PricingRule> SelectedRules { get; set; } = new();
             public bool RequiresInspection { get; set; }
+            public string? DefaultDestinationHandling { get; set; }
             public string? Note { get; set; }
             public List<RestrictedItemWarning> Warnings { get; set; } = new();
         }
@@ -357,6 +379,7 @@ namespace VCL_BLL.Services
                 ReceiverPhone = receiverPhone,
                 ReceiverAddress = receiverAddress,
                 RequiresInspection = draft.RequiresInspection,
+                DefaultDestinationHandling = draft.DefaultDestinationHandling,
                 Status = status,
                 OrderType = "CONSIGNMENT",
                 Note = draft.Note,

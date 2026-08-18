@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -16,6 +16,9 @@ namespace VCL_BLL.Services
     public class StorageFeeService : IStorageFeeService
     {
         private const int DefaultFreeDays = 7;
+
+        /// <summary>Ngày ân hạn sau kỳ miễn phí, đổi được qua PricingSettings:StorageGraceDays.</summary>
+        private const int DefaultGraceDays = 3;
         private const string StorageServiceType = ServicePricingHelper.StorageServiceType;
 
         private readonly IUnitOfWork _unitOfWork;
@@ -33,6 +36,7 @@ namespace VCL_BLL.Services
                 ?? throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
 
             var freeDays = ReadFreeDays();
+            var graceDays = ReadGraceDays();
             var (unitPrice, currency) = await ResolveUnitPriceAsync();
 
             var result = new StorageFeeDto
@@ -40,6 +44,7 @@ namespace VCL_BLL.Services
                 OrderId = order.Id,
                 OrderCode = order.ConsignmentCode ?? string.Empty,
                 FreeDays = freeDays,
+                GraceDays = graceDays,
                 UnitPrice = unitPrice,
                 Currency = currency
             };
@@ -54,8 +59,9 @@ namespace VCL_BLL.Services
                 return result;
             }
 
-            // Phí lưu kho tính ở CẢ HAI KHO (nguồn quốc tế + đích VN) nên không lọc theo kho
-            // nữa; chỉ cần biết mỗi ô kệ thuộc kho nào để hiện chi tiết từng chặng cho khách.
+            // Chỉ tính phí từ lúc hàng về kho Việt Nam. Thời gian nằm kho nguồn là do lịch gom
+            // container của công ty quyết chứ không phải khách chậm — tính tiền khoảng đó thì
+            // khách hết miễn phí trước cả khi hàng kịp về, không giải thích được.
             var binWarehouses = await GetBinWarehouseMapAsync();
 
             var parcelIds = parcels.Select(p => p.Id).ToHashSet();
@@ -63,6 +69,14 @@ namespace VCL_BLL.Services
                 .Where(m => parcelIds.Contains(m.ParcelId))
                 .OrderBy(m => m.MovedAt)
                 .ToList();
+
+            // Kiện nào được OM miễn phí lưu kho cho quãng hoàn về, và miễn kể từ mốc nào.
+            // Giao hỏng vì lỗi bên mình mà vẫn tính tiền kho những ngày đó thì không giải thích
+            // được với khách.
+            var waivedFrom = (await _unitOfWork.Repository<ParcelReturn>().GetAllAsync())
+                .Where(r => parcelIds.Contains(r.ParcelId) && r.WaiveStorageFee && r.ReceivedAt.HasValue)
+                .GroupBy(r => r.ParcelId)
+                .ToDictionary(g => g.Key, g => g.Min(r => r.ReceivedAt!.Value));
 
             var now = DateTime.UtcNow;
 
@@ -76,6 +90,21 @@ namespace VCL_BLL.Services
 
                 foreach (var stay in ResolveStorageStays(parcel, movements))
                 {
+                    // Chặng ở kho nguồn bỏ qua hẳn, kể cả khỏi danh sách hiển thị: để lại một
+                    // dòng "Kho Quảng Châu: 8 ngày" mà không tính tiền chỉ làm khách hoang mang
+                    // không biết mình có bị tính hay không.
+                    if (!IsDestinationBin(stay.BinId, binWarehouses))
+                    {
+                        continue;
+                    }
+
+                    // Lượt nằm kho bắt đầu sau khi hàng hoàn về mà OM đã miễn phí thì bỏ qua.
+                    if (waivedFrom.TryGetValue(parcel.Id, out var waivedSince)
+                        && stay.StoredAt >= waivedSince)
+                    {
+                        continue;
+                    }
+
                     var until = stay.ReleasedAt ?? now;
                     var elapsed = until - stay.StoredAt;
 
@@ -108,8 +137,11 @@ namespace VCL_BLL.Services
 
                     line.StoredDays = line.Legs.Sum(l => l.Days);
 
-                    // Miễn phí trừ MỘT LẦN trên tổng cả hành trình, không phải mỗi kho một lần.
-                    line.ChargeableDays = Math.Max(0, line.StoredDays - freeDays);
+                    // Miễn phí trừ MỘT LẦN trên tổng số ngày nằm kho VN, kể cả khi kiện vào kho hai lượt
+                    // (ví dụ giao hỏng rồi hoàn về) — không phải mỗi lượt được miễn một lần.
+                    // Ân hạn nối ngay sau đó: hết miễn phí khách vẫn còn mấy ngày để tới lấy,
+                    // quá khoảng ấy mới bắt đầu tính tiền.
+                    line.ChargeableDays = Math.Max(0, line.StoredDays - freeDays - graceDays);
                     line.Amount = Math.Round(line.ChargeableDays * unitPrice, 0);
                 }
 
@@ -135,7 +167,7 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Mọi lượt kiện nằm kho trên toàn hành trình, theo thứ tự thời gian. Kiện đi trọn
+        /// Mọi lượt kiện nằm kho, theo thứ tự thời gian. Bên gọi tự lọc bỏ lượt ở kho nguồn. Kiện đi trọn
         /// đường có hai lượt: nằm kho nguồn chờ gom lô, rồi nằm kho đích chờ giao (nếu có nhập
         /// kho — luồng giao thẳng thì không có lượt thứ hai).
         ///
@@ -178,6 +210,19 @@ namespace VCL_BLL.Services
             return stays;
         }
 
+        /// <summary>
+        /// Ô kệ này có thuộc kho đích Việt Nam không.
+        /// <para>
+        /// Ô kệ không tra được kho (dữ liệu cũ, kho chưa khai loại) bị coi là KHÔNG tính phí.
+        /// Thà bỏ sót tiền còn hơn tính nhầm tiền của khách vì thiếu cấu hình.
+        /// </para>
+        /// </summary>
+        private static bool IsDestinationBin(
+            Guid binId,
+            IReadOnlyDictionary<Guid, (Guid Id, string Name, string Type)> binWarehouses) =>
+            binWarehouses.TryGetValue(binId, out var warehouse)
+            && string.Equals(warehouse.Type, "DESTINATION", StringComparison.OrdinalIgnoreCase);
+
         /// <summary>Ô kệ thuộc kho nào — để hiện tên kho trên từng chặng lưu kho.</summary>
         private async Task<Dictionary<Guid, (Guid Id, string Name, string Type)>> GetBinWarehouseMapAsync()
         {
@@ -213,10 +258,62 @@ namespace VCL_BLL.Services
             return (pricing?.Price ?? 0m, string.IsNullOrWhiteSpace(pricing?.Currency) ? "VND" : pricing.Currency);
         }
 
+        public async Task<StorageFeeEstimateDto> GetEstimateAsync()
+        {
+            var freeDays = ReadFreeDays();
+            var graceDays = ReadGraceDays();
+            var (unitPrice, currency) = await ResolveUnitPriceAsync();
+            var coveredDays = freeDays + graceDays;
+
+            // Mốc mẫu: ngay sau kỳ miễn phí, rồi vài mốc quen thuộc để khách tự chiếu vào dự
+            // định của mình. Không liệt kê dài dòng, đủ để thấy tiền tăng theo ngày.
+            var sampleDays = new[] { coveredDays, coveredDays + 5, coveredDays + 10, coveredDays + 20 };
+
+            var samples = sampleDays.Select(days =>
+            {
+                var chargeable = Math.Max(0, days - coveredDays);
+                return new StorageFeeEstimateLineDto
+                {
+                    Days = days,
+                    ChargeableDays = chargeable,
+                    AmountPerParcel = Math.Round(chargeable * unitPrice, 0),
+                };
+            }).ToList();
+
+            var note = unitPrice <= 0m
+                ? $"Chưa cấu hình đơn giá lưu kho (SERVICE_PRICINGS, ServiceType = {StorageServiceType}) nên tạm tính 0đ."
+                : $"Miễn phí {freeDays} ngày kể từ khi hàng về kho Việt Nam, cộng {graceDays} ngày ân hạn để bạn thu xếp đến lấy. "
+                  + $"Từ ngày thứ {coveredDays + 1} tính {unitPrice:#,##0}đ mỗi kiện mỗi ngày, thu một lần khi nhận hàng.";
+
+            return new StorageFeeEstimateDto
+            {
+                FreeDays = freeDays,
+                GraceDays = graceDays,
+                TotalFreeDays = coveredDays,
+                UnitPrice = unitPrice,
+                Currency = currency,
+                Samples = samples,
+                Note = note,
+            };
+        }
+
         private int ReadFreeDays()
         {
             var configured = _configuration["PricingSettings:StorageFreeDays"];
             return int.TryParse(configured, out var parsed) && parsed >= 0 ? parsed : DefaultFreeDays;
+        }
+
+        /// <summary>
+        /// Số ngày ân hạn nối ngay sau kỳ miễn phí, cho khách thu xếp đến lấy hàng.
+        /// <para>
+        /// Hết bảy ngày miễn phí không có nghĩa là tính tiền ngay: khách còn ba ngày nữa để đến
+        /// kho. Quá khoảng đó mới bắt đầu tính, và khoản phát sinh thu một lần lúc xuất hàng.
+        /// </para>
+        /// </summary>
+        private int ReadGraceDays()
+        {
+            var configured = _configuration["PricingSettings:StorageGraceDays"];
+            return int.TryParse(configured, out var parsed) && parsed >= 0 ? parsed : DefaultGraceDays;
         }
 
         private static string BuildZeroNote(StorageFeeDto result, decimal unitPrice, int freeDays)
@@ -232,7 +329,12 @@ namespace VCL_BLL.Services
             }
 
             var longest = result.Parcels.Max(p => p.StoredDays);
-            return $"Kiện lưu lâu nhất mới {longest} ngày (cộng cả hành trình), còn trong {freeDays} ngày miễn phí.";
+            var coveredDays = freeDays + result.GraceDays;
+
+            return result.GraceDays > 0
+                ? $"Kiện nằm kho Việt Nam lâu nhất mới {longest} ngày, còn trong {freeDays} ngày miễn phí "
+                  + $"cộng {result.GraceDays} ngày ân hạn — chưa phát sinh phí trước ngày thứ {coveredDays + 1}."
+                : $"Kiện nằm kho Việt Nam lâu nhất mới {longest} ngày, còn trong {freeDays} ngày miễn phí.";
         }
     }
 }

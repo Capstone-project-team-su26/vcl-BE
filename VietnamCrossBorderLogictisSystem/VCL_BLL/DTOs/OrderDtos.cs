@@ -62,6 +62,17 @@ namespace VCL_BLL.DTOs
         /// <summary>Link phiếu xác nhận ký gửi (PDF) sinh khi Sale xác nhận yêu cầu. Null nếu chưa sinh.</summary>
         public string? ReceiptPdfUrl { get; set; }
 
+        /// <summary>
+        /// Khách muốn hàng đi đâu khi về tới kho VN: <c>DIRECT_DELIVERY</c> giao ngay,
+        /// <c>STORE_AT_VN</c> gửi lại kho. Null nghĩa là khách không chọn lúc đặt — lúc hàng về
+        /// kho tự quyết theo mặc định giao ngay. Đây là NGUYỆN VỌNG, không phải lệnh: khách gọi
+        /// đổi ý thì Sale/kho vẫn ghi đè được ở bước kiểm đếm.
+        /// </summary>
+        public string? DefaultDestinationHandling { get; set; }
+
+        /// <summary>Nhãn tiếng Việt của <see cref="DefaultDestinationHandling"/>, FE hiện thẳng.</summary>
+        public string? DefaultDestinationHandlingText { get; set; }
+
         /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
         public List<Guid> PricingRuleIds { get; set; } = new();
 

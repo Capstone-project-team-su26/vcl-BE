@@ -162,4 +162,53 @@ namespace VCL_BLL.DTOs
 
         public List<PaymentHistoryItemDto> Payments { get; set; } = new();
     }
+
+    /// <summary>
+    /// Yêu cầu chốt phí lưu kho để thu một lần lúc xuất hàng (Pay-at-Pickup).
+    /// </summary>
+    public class CreateStorageFeePaymentRequest
+    {
+        /// <summary>SEPAY hoặc PAYOS. Bỏ trống thì dùng SEPAY.</summary>
+        public string? PaymentMethod { get; set; }
+
+        public string? ReturnUrl { get; set; }
+        public string? CancelUrl { get; set; }
+    }
+
+    /// <summary>
+    /// Khoản phí lưu kho đã chốt, kèm mã thanh toán cho khách quét tại quầy.
+    /// </summary>
+    public class CreateStorageFeePaymentResponse
+    {
+        public Guid OrderId { get; set; }
+        public string ConsignmentCode { get; set; } = string.Empty;
+
+        /// <summary>Số ngày miễn phí đang áp dụng.</summary>
+        public int FreeDays { get; set; }
+
+        /// <summary>Đơn giá một kiện một ngày.</summary>
+        public decimal UnitPrice { get; set; }
+
+        public string Currency { get; set; } = "VND";
+
+        /// <summary>Tổng phí lưu kho chốt tại thời điểm gọi.</summary>
+        public decimal StorageFeeAmount { get; set; }
+
+        /// <summary>Diễn giải cách tính, hiện thẳng cho khách xem.</summary>
+        public string? Note { get; set; }
+
+        /// <summary>Chi tiết từng kiện: số ngày lưu, số ngày tính tiền, thành tiền.</summary>
+        public List<StorageFeeParcelDto> Parcels { get; set; } = new();
+
+        public Guid? PaymentId { get; set; }
+        public string PaymentStatus { get; set; } = string.Empty;
+
+        /// <summary>Null khi phí bằng 0 — không cần thu thì không phát hành mã.</summary>
+        public string? CheckoutUrl { get; set; }
+
+        public long? OrderCode { get; set; }
+
+        /// <summary>True khi không phát sinh phí, kho cho xuất hàng ngay.</summary>
+        public bool IsFreeOfCharge { get; set; }
+    }
 }

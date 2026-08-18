@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
@@ -161,6 +161,78 @@ namespace VCL_API.Controllers
         /// Staff/Operations xác nhận lô vận chuyển quốc tế đã đến kho đích (chỉ khi đang IN_TRANSIT).
         /// Cập nhật lô + các kiện sang ARRIVED_DESTINATION để sẵn sàng cho quy trình nhập kho.
         /// </summary>
+        /// <summary>
+        /// Biên bản kiểm đếm kiện tại kho VN — dùng cho màn theo dõi chênh lệch của OM.
+        /// </summary>
+        /// <param name="onlyDiscrepancy">Mặc định true: chỉ trả biên bản có lệch khai báo.</param>
+        /// <param name="shipmentId">Lọc theo một lô cụ thể (tuỳ chọn).</param>
+        /// <remarks>
+        /// Hệ thống chỉ GHI NHẬN chênh lệch. Việc đòi hãng vận chuyển hay đền khách do OM xử lý
+        /// bên ngoài, nên ở đây không có thao tác duyệt hay đóng hồ sơ.
+        /// </remarks>
+        /// <summary>
+        /// Kho lưu kết quả đối chiếu một kiện ngay khi cân đếm xong.
+        /// </summary>
+        /// <remarks>
+        /// Không cần đợi xác nhận cả lô: đếm tới đâu lưu tới đó, rời màn hình cũng không mất,
+        /// và OM thấy được chênh lệch ngay cả khi lô chưa chốt. Gọi lại cho cùng một kiện thì
+        /// ghi đè bản cũ chứ không đẻ thêm dòng.
+        /// </remarks>
+        [HttpPut("~/api/parcels/{parcelId}/inspection")]
+        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [ProducesResponseType(typeof(ParcelInspectionDto), 200)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> SaveParcelInspection(
+            Guid parcelId, [FromBody] SaveParcelInspectionRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _shipmentService.SaveParcelInspectionAsync(
+                    parcelId, request ?? new SaveParcelInspectionRequest(), userId, userRole);
+                return Ok(new { message = "Đã lưu kết quả đối chiếu kiện.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("~/api/parcel-inspections")]
+        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF")]
+        [ProducesResponseType(typeof(ParcelInspectionListDto), 200)]
+        public async Task<IActionResult> GetParcelInspections(
+            [FromQuery] bool onlyDiscrepancy = true,
+            [FromQuery] Guid? shipmentId = null)
+        {
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _shipmentService.GetParcelInspectionsAsync(onlyDiscrepancy, shipmentId, userRole);
+                return Ok(new { message = "Lấy biên bản kiểm đếm thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+        }
+
         [HttpPut("{shipmentId}/arrive")]
         public async Task<IActionResult> ConfirmArrival(Guid shipmentId, [FromBody] ConfirmShipmentArrivalDto request)
         {

@@ -8,6 +8,18 @@ namespace VCL_BLL.Services
 {
     public partial class OrderService
     {
+        /// <summary>
+        /// Nhãn tiếng Việt của nguyện vọng khách về hướng xử lý tại kho VN.
+        /// Trả null khi khách chưa chọn, để FE tự phân biệt "chưa chọn" với "chọn giao ngay".
+        /// </summary>
+        public static string? DescribeDestinationHandling(string? handling) =>
+            handling?.Trim().ToUpperInvariant() switch
+            {
+                "DIRECT_DELIVERY" => "Giao ngay khi về VN",
+                "STORE_AT_VN" => "Gửi lại kho VN",
+                _ => null,
+            };
+
         public static string MapRouteToDisplayName(string? route)
         {
             if (string.IsNullOrWhiteSpace(route)) return string.Empty;

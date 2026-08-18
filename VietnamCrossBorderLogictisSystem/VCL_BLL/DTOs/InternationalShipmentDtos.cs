@@ -86,6 +86,19 @@ namespace VCL_BLL.DTOs
         /// chưa qua bước phân loại. FE lọc theo trường này để biết kiện nào vào màn nào.
         /// </summary>
         public string? DestinationHandling { get; set; }
+
+        /// <summary>
+        /// Nguyện vọng khách khai lúc đặt đơn: <c>DIRECT_DELIVERY</c> hoặc <c>STORE_AT_VN</c>.
+        /// <para>
+        /// Kho cần trường này TRƯỚC khi bấm xác nhận để đặt sẵn công tắc hướng xử lý theo ý
+        /// khách, thay vì mặc định giao ngay cho mọi kiện rồi nhân viên phải tự nhớ mà gạt lại.
+        /// Vẫn gạt tay được — khách gọi đổi ý là chuyện thường.
+        /// </para>
+        /// </summary>
+        public string? CustomerIntent { get; set; }
+
+        /// <summary>Nhãn tiếng Việt của <see cref="CustomerIntent"/>, null khi khách chưa chọn.</summary>
+        public string? CustomerIntentText { get; set; }
     }
 
     public class UpdateInternationalShipmentStatusDto
@@ -167,7 +180,7 @@ namespace VCL_BLL.DTOs
         public string? Note { get; set; }
     }
 
-    /// <summary>Một kiện được kho xác nhận có mặt, kèm hướng xử lý khách chọn cho kiện đó.</summary>
+    /// <summary>Một kiện được kho xác nhận có mặt, kèm hướng xử lý và kết quả đối chiếu thực tế.</summary>
     public class DestinationReceivingItemDto
     {
         [Required(ErrorMessage = "Thiếu mã kiện hàng.")]
@@ -175,6 +188,28 @@ namespace VCL_BLL.DTOs
 
         /// <summary><c>DIRECT_DELIVERY</c> giao thẳng cho khách · <c>STORE_AT_VN</c> gửi lại kho VN.</summary>
         public string? Handling { get; set; }
+
+        /// <summary>
+        /// Số lượng kho đếm được thực tế trong kiện. Bỏ trống nghĩa là kho không đếm lại,
+        /// hệ thống coi như khớp khai báo — khác hẳn với đếm ra 0.
+        /// </summary>
+        [Range(0, 100000, ErrorMessage = "Số lượng thực tế không hợp lệ.")]
+        public int? ActualQuantity { get; set; }
+
+        /// <summary>Cân nặng kho cân lại thực tế (kg). Bỏ trống là không cân lại.</summary>
+        [Range(0, 100000, ErrorMessage = "Cân nặng thực tế không hợp lệ.")]
+        public decimal? ActualWeight { get; set; }
+
+        /// <summary>
+        /// Tình trạng kiện: <c>INTACT</c> · <c>MISSING</c> · <c>DAMAGED</c> · <c>WET</c> ·
+        /// <c>SEAL_BROKEN</c>. Bỏ trống hiểu là nguyên vẹn.
+        /// </summary>
+        [MaxLength(30, ErrorMessage = "Tình trạng kiện tối đa 30 ký tự.")]
+        public string? Condition { get; set; }
+
+        /// <summary>Mô tả chênh lệch hoặc hư hỏng của riêng kiện này.</summary>
+        [MaxLength(500, ErrorMessage = "Ghi chú kiện tối đa 500 ký tự.")]
+        public string? InspectionNote { get; set; }
     }
 
     public class DestinationReceivingParcelDto
@@ -184,10 +219,45 @@ namespace VCL_BLL.DTOs
         public string PackageStatus { get; set; } = string.Empty;
 
         /// <summary>
+        /// Ý muốn khách khai lúc đặt đơn. Kho nhìn vào đây để biết nên xếp kệ hay đẩy đi giao,
+        /// và vẫn ghi đè được nếu khách gọi đổi ý. Null nghĩa là khách chưa chọn.
+        /// </summary>
+        public string? CustomerIntent { get; set; }
+        public string? CustomerIntentText { get; set; }
+
+        /// <summary>
         /// Hướng xử lý vừa ghi nhận: <c>DIRECT_DELIVERY</c> đi thẳng sang yêu cầu giao hàng,
         /// <c>STORE_AT_VN</c> phải qua phiếu nhập kho VN trước.
         /// </summary>
         public string? DestinationHandling { get; set; }
+
+        /// <summary>Kết quả đối chiếu thực tế của riêng kiện này, null nếu kho không nhập gì.</summary>
+        public ParcelInspectionResultDto? Inspection { get; set; }
+    }
+
+    /// <summary>Kết quả kho đối chiếu một kiện với khai báo.</summary>
+    public class ParcelInspectionResultDto
+    {
+        public int? DeclaredQuantity { get; set; }
+        public int? ActualQuantity { get; set; }
+        public decimal? DeclaredWeight { get; set; }
+        public decimal? ActualWeight { get; set; }
+
+        public string? Condition { get; set; }
+        public string? ConditionText { get; set; }
+        public string? Note { get; set; }
+
+        /// <summary>Có lệch khai báo hay không — FE tô cảnh báo theo trường này.</summary>
+        public bool HasDiscrepancy { get; set; }
+
+        /// <summary>Chênh lệch số lượng (thực tế trừ khai báo), âm là thiếu.</summary>
+        public int? QuantityDifference { get; set; }
+
+        /// <summary>Chênh lệch cân nặng (kg), âm là nhẹ hơn khai báo.</summary>
+        public decimal? WeightDifference { get; set; }
+
+        public string? InspectedByName { get; set; }
+        public DateTime? InspectedAt { get; set; }
     }
 
     public class DestinationReceivingResponseDto

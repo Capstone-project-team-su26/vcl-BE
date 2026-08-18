@@ -1216,10 +1216,7 @@ namespace VCL_BLL.Services
                     {
                         wroItemRepo.Delete(wroItem);
                     }
-                    if (inventoryRecord != null)
-                    {
-                        inventoryRepo.Delete(inventoryRecord);
-                    }
+                    await DiscardInventoryReservationAsync(inventoryRecord, inventoryRepo);
                 }
                 else if (qShipped < qPicked)
                 {
@@ -1654,6 +1651,34 @@ namespace VCL_BLL.Services
                 MovedById = null,
                 MovedAt = DateTime.UtcNow
             });
+        }
+
+        /// <summary>
+        /// Bỏ một dòng tồn kho giữ chỗ đã tiêu xong.
+        /// </summary>
+        /// <remarks>
+        /// Dòng nào đã có nhật ký vận động trỏ vào thì KHÔNG xoá được: nhật ký kho là sổ gốc,
+        /// xoá dòng tồn kho là phá khoá ngoại và cả lệnh hoàn tất xuất kho đổ 500 — hàng kẹt lại
+        /// kho nguồn không đi lô được. Trường hợp đó cho số lượng về 0 và đánh dấu đã xuất, vừa
+        /// giữ được sổ vừa không còn tính là hàng trong kho.
+        /// </remarks>
+        private async Task DiscardInventoryReservationAsync(
+            Inventory? inventory, IGenericRepository<Inventory> inventoryRepo)
+        {
+            if (inventory == null) return;
+
+            var hasMovement = (await _unitOfWork.Repository<InventoryMovement>().GetAllAsync())
+                .Any(m => m.InventoryId == inventory.Id);
+
+            if (hasMovement)
+            {
+                inventory.Quantity = 0;
+                inventory.Status = "RELEASED";
+                inventoryRepo.Update(inventory);
+                return;
+            }
+
+            inventoryRepo.Delete(inventory);
         }
 
         private async Task ReleaseInventoryToAvailableAsync(
