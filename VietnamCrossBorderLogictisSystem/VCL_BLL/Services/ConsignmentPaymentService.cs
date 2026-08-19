@@ -22,6 +22,11 @@ namespace VCL_BLL.Services
         private readonly ILogger<ConsignmentPaymentService> _logger;
         private readonly IStorageFeeService _storageFeeService;
 
+        /// <summary>
+        /// Thu được tiền là kho có việc: phiếu tiếp nhận sinh ngay tại đây thay vì đợi Sale bấm.
+        /// </summary>
+        private readonly IWarehouseReceivingNoteService _receivingNoteService;
+
         // Role nội bộ được tạo thanh toán cuối / xem lịch sử thanh toán.
         private static readonly string[] StaffRoles =
             { "ADMIN", "ADMINISTRATOR", "SALE", "SALES", "STAFF", "OPERATIONSMANAGER", "OPERATIONS" };
@@ -47,7 +52,8 @@ namespace VCL_BLL.Services
             ISePayService sePayService,
             IConfiguration configuration,
             ILogger<ConsignmentPaymentService> logger,
-            IStorageFeeService storageFeeService)
+            IStorageFeeService storageFeeService,
+            IWarehouseReceivingNoteService receivingNoteService)
         {
             _unitOfWork = unitOfWork;
             _payOsService = payOsService;
@@ -55,6 +61,7 @@ namespace VCL_BLL.Services
             _configuration = configuration;
             _logger = logger;
             _storageFeeService = storageFeeService;
+            _receivingNoteService = receivingNoteService;
         }
 
         // ---------------------------------------------------------------------
@@ -155,6 +162,9 @@ namespace VCL_BLL.Services
                 };
                 await paymentRepo.AddAsync(noDeposit);
                 await _unitOfWork.SaveChangesAsync();
+
+                // Cọc 0đ vẫn là "đã chốt tiền" nên kho phải có phiếu như mọi đơn khác.
+                await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(order.Id);
 
                 return new ConfirmQuotationPaymentResponse
                 {
@@ -912,6 +922,8 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
+            await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(order.Id);
+
             return new ConfirmOrderPaymentResponse
             {
                 OrderId = order.Id,
@@ -1102,6 +1114,9 @@ namespace VCL_BLL.Services
             payment.TransactionCode = reference;
             paymentRepo.Update(payment);
 
+            // Đơn vừa thu được tiền — sinh phiếu tiếp nhận kho sau khi đã lưu xong giao dịch.
+            Guid? settledOrderId = null;
+
             if (payment.InvoiceId.HasValue)
             {
                 var invoiceRepo = _unitOfWork.Repository<Invoice>();
@@ -1131,12 +1146,18 @@ namespace VCL_BLL.Services
                                 invoiceRepo.Update(invoice);
                             }
                             orderRepo.Update(order);
+                            settledOrderId = order.Id;
                         }
                     }
                 }
             }
 
             await _unitOfWork.SaveChangesAsync();
+
+            if (settledOrderId.HasValue)
+            {
+                await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(settledOrderId.Value);
+            }
         }
 
         // ---------------------------------------------------------------------
@@ -1333,6 +1354,9 @@ namespace VCL_BLL.Services
             payment.TransactionCode = dto.ReferenceCode;
             paymentRepo.Update(payment);
 
+            // Đơn vừa thu được tiền — sinh phiếu tiếp nhận kho sau khi đã lưu xong giao dịch.
+            Guid? settledOrderId = null;
+
             if (payment.InvoiceId.HasValue)
             {
                 var invoiceRepo = _unitOfWork.Repository<Invoice>();
@@ -1351,6 +1375,7 @@ namespace VCL_BLL.Services
                             {
                                 order.Status = "DEPOSIT_PAID";
                                 orderRepo.Update(order);
+                                settledOrderId = order.Id;
                             }
                             else if (installment == StorageFeeInstallment)
                             {
@@ -1364,6 +1389,7 @@ namespace VCL_BLL.Services
                                 invoice.InvoiceStatus = "PAID";
                                 invoiceRepo.Update(invoice);
                                 orderRepo.Update(order);
+                                settledOrderId = order.Id;
                             }
                         }
                     }
@@ -1371,6 +1397,12 @@ namespace VCL_BLL.Services
             }
 
             await _unitOfWork.SaveChangesAsync();
+
+            if (settledOrderId.HasValue)
+            {
+                await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(settledOrderId.Value);
+            }
+
             return true;
         }
     }

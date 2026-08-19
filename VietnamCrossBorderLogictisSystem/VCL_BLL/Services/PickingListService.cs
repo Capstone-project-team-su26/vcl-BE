@@ -201,12 +201,13 @@ namespace VCL_BLL.Services
             pickingList.ConfirmedAt = DateTime.UtcNow;
             pickingListRepo.Update(pickingList);
 
-            // 9. Cập nhật trạng thái yêu cầu xuất kho sang PACKING
+            // 9. Bốc xong là hết việc của phiếu xuất kho — PICKED là trạng thái cuối của nó.
+            // Kho gom các phiếu đã PICKED thành lô, mọi mốc từ đó trở đi nằm trên lô.
             var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
             var wroRequest = await wroRequestRepo.GetByIdAsync(pickingList.WroRequestId);
             if (wroRequest != null)
             {
-                wroRequest.Status = "PACKING";
+                wroRequest.Status = "PICKED";
                 wroRequestRepo.Update(wroRequest);
             }
 

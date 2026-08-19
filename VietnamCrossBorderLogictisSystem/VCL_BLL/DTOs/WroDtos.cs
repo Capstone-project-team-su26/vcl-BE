@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
@@ -122,12 +122,6 @@ namespace VCL_BLL.DTOs
         public string ShippingRoute { get; set; } = string.Empty;
         public decimal? ShippingFee { get; set; }
         public List<string> CustomsDocumentUrls { get; set; } = new();
-        public bool IsCustomsCleared => string.Equals(Status, "ARRIVED_IN_VN", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "ARRIVED_VN", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "DELIVERED", StringComparison.OrdinalIgnoreCase);
-        public string CustomsStatus => IsCustomsCleared ? "CUSTOMS_CLEARED" : "CUSTOMS_PENDING";
-        public string CustomsStatusText => IsCustomsCleared ? "Đã thông quan" : "Chờ thông quan";
         public DateTime CreatedAt { get; set; }
         public List<WroItemResponseDto> Items { get; set; } = new();
     }
@@ -206,12 +200,6 @@ namespace VCL_BLL.DTOs
         public DateTime? HandoverAt { get; set; }
         public decimal? ShippingFee { get; set; }
         public List<string> CustomsDocumentUrls { get; set; } = new();
-        public bool IsCustomsCleared => string.Equals(Status, "ARRIVED_IN_VN", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "ARRIVED_VN", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "DELIVERED", StringComparison.OrdinalIgnoreCase);
-        public string CustomsStatus => IsCustomsCleared ? "CUSTOMS_CLEARED" : "CUSTOMS_PENDING";
-        public string CustomsStatusText => IsCustomsCleared ? "Đã thông quan" : "Chờ thông quan";
         public List<string> PackagingPhotos { get; set; } = new();
         public string? PackingNotes { get; set; }
         public string? Note { get; set; }
@@ -330,12 +318,6 @@ namespace VCL_BLL.DTOs
         public Guid? ShippingRouteId { get; set; }
         public string ShippingRoute { get; set; } = string.Empty;
         public string Note { get; set; } = string.Empty;
-        public bool IsCustomsCleared => string.Equals(Status, "ARRIVED_IN_VN", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "ARRIVED_VN", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(Status, "DELIVERED", StringComparison.OrdinalIgnoreCase);
-        public string CustomsStatus => IsCustomsCleared ? "CUSTOMS_CLEARED" : "CUSTOMS_PENDING";
-        public string CustomsStatusText => IsCustomsCleared ? "Đã thông quan" : "Chờ thông quan";
     }
 
     public class UpdatePackingDetailsRequestDto

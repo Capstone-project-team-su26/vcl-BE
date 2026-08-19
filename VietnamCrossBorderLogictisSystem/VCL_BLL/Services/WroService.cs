@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -17,6 +17,61 @@ namespace VCL_BLL.Services
         public WroService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
+        }
+
+        /// <summary>
+        /// Bảng tra cứu nạp một lần rồi dùng lại trong suốt một lượt đọc.
+        /// </summary>
+        /// <remarks>
+        /// Dựng phiếu chi tiết cần nạp trọn 10 bảng (tồn kho, kiện, ô kệ, kho, đơn, dòng hàng…).
+        /// Màn danh sách gọi hàm dựng đó cho từng dòng, nên 20 phiếu một trang thành ~200 lượt
+        /// quét bảng — đo thực tế 8,4 giây cho đúng 20 dòng.
+        /// <para>
+        /// Cache sống đúng bằng một lượt đọc và không được dùng ở nhánh ghi, nên không có chuyện
+        /// đọc phải dữ liệu cũ sau khi vừa lưu.
+        /// </para>
+        /// </remarks>
+        private sealed class WroLookupCache
+        {
+            private readonly IUnitOfWork _uow;
+
+            private List<WroItem>? _wroItems;
+            private List<Inventory>? _inventories;
+            private List<Parcel>? _parcels;
+            private List<Bin>? _bins;
+            private List<Warehouse>? _warehouses;
+            private List<Order>? _orders;
+            private List<OrderItem>? _orderItems;
+            private List<Shelf>? _shelves;
+            private List<WarehouseZone>? _zones;
+            private List<Customer>? _customers;
+            private List<User>? _users;
+            private List<Carrier>? _carriers;
+            private List<ShippingRoute>? _routes;
+
+            public WroLookupCache(IUnitOfWork uow) => _uow = uow;
+
+            private async Task<List<T>> LoadAsync<T>(List<T>? cached, Action<List<T>> save) where T : class
+            {
+                if (cached != null) return cached;
+                var loaded = (await _uow.Repository<T>().GetAllAsync()).ToList();
+                save(loaded);
+                return loaded;
+            }
+
+            public Task<List<WroItem>> WroItemsAsync() => LoadAsync(_wroItems, v => _wroItems = v);
+            public Task<List<Inventory>> InventoriesAsync() => LoadAsync(_inventories, v => _inventories = v);
+            public Task<List<Parcel>> ParcelsAsync() => LoadAsync(_parcels, v => _parcels = v);
+            public Task<List<Bin>> BinsAsync() => LoadAsync(_bins, v => _bins = v);
+            public Task<List<Warehouse>> WarehousesAsync() => LoadAsync(_warehouses, v => _warehouses = v);
+            public Task<List<Order>> OrdersAsync() => LoadAsync(_orders, v => _orders = v);
+            public Task<List<OrderItem>> OrderItemsAsync() => LoadAsync(_orderItems, v => _orderItems = v);
+            public Task<List<Shelf>> ShelvesAsync() => LoadAsync(_shelves, v => _shelves = v);
+            public Task<List<WarehouseZone>> ZonesAsync() => LoadAsync(_zones, v => _zones = v);
+            public Task<List<Customer>> CustomersAsync() => LoadAsync(_customers, v => _customers = v);
+            public Task<List<User>> UsersAsync() => LoadAsync(_users, v => _users = v);
+            public Task<List<Carrier>> CarriersAsync() => LoadAsync(_carriers, v => _carriers = v);
+            public Task<List<ShippingRoute>> RoutesAsync() => LoadAsync(_routes, v => _routes = v);
         }
 
         public async Task<WroResponseDto> CreateSingleWroRequestAsync(Guid userId, string userRole, CreateSingleWroRequestDto request)
@@ -437,8 +492,17 @@ namespace VCL_BLL.Services
             };
         }
 
-        public async Task<WroDetailResponseDto> GetWroRequestDetailAsync(Guid requestId, Guid userId, string role)
+        public Task<WroDetailResponseDto> GetWroRequestDetailAsync(Guid requestId, Guid userId, string role)
+            => GetWroRequestDetailAsync(requestId, userId, role, null);
+
+        /// <param name="cache">
+        /// Bảng tra cứu dùng lại giữa nhiều phiếu. Truyền null thì hàm tự dựng một cái cho riêng
+        /// lượt gọi này — hành vi y hệt như trước.
+        /// </param>
+        private async Task<WroDetailResponseDto> GetWroRequestDetailAsync(
+            Guid requestId, Guid userId, string role, WroLookupCache? cache)
         {
+            cache ??= new WroLookupCache(_unitOfWork);
             var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
             var wroRequest = await wroRequestRepo.GetByIdAsync(requestId);
             if (wroRequest == null)
@@ -450,18 +514,15 @@ namespace VCL_BLL.Services
             bool isCustomer = string.Equals(role, "Customer", StringComparison.OrdinalIgnoreCase);
             if (isCustomer)
             {
-                var customerRepo = _unitOfWork.Repository<Customer>();
-                var allCustomers = await customerRepo.GetAllAsync();
+                var allCustomers = await cache.CustomersAsync();
                 var customer = allCustomers.FirstOrDefault(c => c.UserId == userId);
                 bool isOwner = (customer != null && wroRequest.CustomerId == customer.Id) || (wroRequest.UserId == userId);
 
                 // Đối với BATCH WRO, kiểm tra nếu Customer sở hữu ít nhất 1 kiện/tồn kho trong phiếu gom lô
                 if (!isOwner && customer != null && string.Equals(wroRequest.ExportType, "BATCH", StringComparison.OrdinalIgnoreCase))
                 {
-                    var itemCheckRepo = _unitOfWork.Repository<WroItem>();
-                    var invCheckRepo = _unitOfWork.Repository<Inventory>();
-                    var checkWroItems = await itemCheckRepo.GetAllAsync();
-                    var checkInventories = await invCheckRepo.GetAllAsync();
+                    var checkWroItems = await cache.WroItemsAsync();
+                    var checkInventories = await cache.InventoriesAsync();
                     var relatedInvIds = checkWroItems.Where(i => i.WroRequestId == requestId).Select(i => i.InventoryId).ToList();
                     isOwner = checkInventories.Any(inv => relatedInvIds.Contains(inv.Id) && inv.CustomerId == customer.Id);
                 }
@@ -473,8 +534,9 @@ namespace VCL_BLL.Services
             }
 
             // 2. Lấy thông tin người tạo (User)
-            var userRepo = _unitOfWork.Repository<User>();
-            var creator = wroRequest.UserId.HasValue ? await userRepo.GetByIdAsync(wroRequest.UserId.Value) : null;
+            var creator = wroRequest.UserId.HasValue
+                ? (await cache.UsersAsync()).FirstOrDefault(u => u.Id == wroRequest.UserId.Value)
+                : null;
             string createdByName = creator?.FullName ?? "Hệ thống";
             string createdByUserRole = creator?.Role ?? "System";
 
@@ -482,36 +544,23 @@ namespace VCL_BLL.Services
             string customerName = "";
             if (wroRequest.CustomerId.HasValue)
             {
-                var customerRepo = _unitOfWork.Repository<Customer>();
-                var wroOwner = await customerRepo.GetByIdAsync(wroRequest.CustomerId.Value);
+                var wroOwner = (await cache.CustomersAsync())
+                    .FirstOrDefault(c => c.Id == wroRequest.CustomerId.Value);
                 customerName = wroOwner?.FullName ?? string.Empty;
             }
 
             // 4. Lấy chi tiết các mặt hàng cần xuất và thông tin kho hàng liên quan
-            var wroItemRepo = _unitOfWork.Repository<WroItem>();
-            var allWroItems = await wroItemRepo.GetAllAsync();
+            var allWroItems = await cache.WroItemsAsync();
             var relatedWroItems = allWroItems.Where(i => i.WroRequestId == requestId).ToList();
 
-            var inventoryRepo = _unitOfWork.Repository<Inventory>();
-            var allInventories = await inventoryRepo.GetAllAsync();
-
-            var parcelRepo = _unitOfWork.Repository<Parcel>();
-            var allParcels = await parcelRepo.GetAllAsync();
-
-            var binRepo = _unitOfWork.Repository<Bin>();
-            var allBins = await binRepo.GetAllAsync();
-
-            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
-            var allWarehouses = await warehouseRepo.GetAllAsync();
-
-            var orderRepo = _unitOfWork.Repository<Order>();
-            var allOrders = await orderRepo.GetAllAsync();
-
-            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            var allOrderItems = await orderItemRepo.GetAllAsync();
-
-            var allShelves = await _unitOfWork.Repository<Shelf>().GetAllAsync();
-            var allZones = await _unitOfWork.Repository<WarehouseZone>().GetAllAsync();
+            var allInventories = await cache.InventoriesAsync();
+            var allParcels = await cache.ParcelsAsync();
+            var allBins = await cache.BinsAsync();
+            var allWarehouses = await cache.WarehousesAsync();
+            var allOrders = await cache.OrdersAsync();
+            var allOrderItems = await cache.OrderItemsAsync();
+            var allShelves = await cache.ShelvesAsync();
+            var allZones = await cache.ZonesAsync();
 
             var itemsDetail = new List<WroDetailItemDto>();
             string warehouseName = "";
@@ -657,8 +706,8 @@ namespace VCL_BLL.Services
 
                 if (string.IsNullOrWhiteSpace(receiverName) && wroRequest.CustomerId.HasValue)
                 {
-                    var customerRepo = _unitOfWork.Repository<Customer>();
-                    var wroOwner = await customerRepo.GetByIdAsync(wroRequest.CustomerId.Value);
+                    var wroOwner = (await cache.CustomersAsync())
+                        .FirstOrDefault(c => c.Id == wroRequest.CustomerId.Value);
                     if (wroOwner != null)
                     {
                         if (string.IsNullOrWhiteSpace(receiverName)) receiverName = wroOwner.FullName ?? string.Empty;
@@ -671,16 +720,16 @@ namespace VCL_BLL.Services
             string carrierName = string.Empty;
             if (wroRequest.CarrierId.HasValue)
             {
-                var carrierRepo = _unitOfWork.Repository<Carrier>();
-                var carrier = await carrierRepo.GetByIdAsync(wroRequest.CarrierId.Value);
+                var carrier = (await cache.CarriersAsync())
+                    .FirstOrDefault(c => c.Id == wroRequest.CarrierId.Value);
                 carrierName = carrier?.CarrierName ?? string.Empty;
             }
 
             string shippingRouteName = string.Empty;
             if (wroRequest.ShippingRouteId.HasValue)
             {
-                var routeRepo = _unitOfWork.Repository<ShippingRoute>();
-                var route = await routeRepo.GetByIdAsync(wroRequest.ShippingRouteId.Value);
+                var route = (await cache.RoutesAsync())
+                    .FirstOrDefault(r => r.Id == wroRequest.ShippingRouteId.Value);
                 shippingRouteName = route?.RouteName ?? route?.RouteCode ?? string.Empty;
             }
 
@@ -756,16 +805,28 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
             }
 
-            // 2. Validate trạng thái mới
+            // 2. Validate trạng thái mới.
+            //
+            // Phiếu xuất kho được DUYỆT MỘT LẦN rồi thôi: sau khi OM gật, phần đời còn lại của
+            // hàng thuộc về LÔ vận chuyển. Trước đây phiếu có cả IN_TRANSIT / ARRIVED_IN_VN /
+            // COMPLETED, trùng ý với trạng thái của lô mà không chỗ nào đồng bộ hai bên — Sale bấm
+            // "đã về VN" ở màn phiếu thì chỉ đổi mỗi cột status của phiếu, còn kiện và lô đứng
+            // nguyên, kho VN không có gì để đối soát. Bỏ hẳn ở đây để chỉ còn một nguồn sự thật.
             var targetStatus = request.Status.Trim().ToUpperInvariant();
-            var validStatuses = new[] { "RELEASE_APPROVED", "RELEASE_REJECTED", "IN_TRANSIT", "ARRIVED_IN_VN", "ARRIVED_VN", "COMPLETED", "DELIVERED" };
+            var validStatuses = new[] { "RELEASE_APPROVED", "RELEASE_REJECTED" };
             if (!validStatuses.Contains(targetStatus))
             {
-                throw new ArgumentException("Trạng thái mới không hợp lệ. Các trạng thái hợp lệ: RELEASE_APPROVED, RELEASE_REJECTED, IN_TRANSIT, ARRIVED_IN_VN, COMPLETED, DELIVERED.");
-            }
+                var movedToShipment = new[] { "IN_TRANSIT", "ARRIVED_IN_VN", "ARRIVED_VN", "COMPLETED", "DELIVERED" };
+                if (movedToShipment.Contains(targetStatus))
+                {
+                    throw new ArgumentException(
+                        $"Trạng thái {targetStatus} nay thuộc về lô vận chuyển, không đặt trên phiếu xuất kho nữa. "
+                        + "Dùng PUT /api/international-shipments/{shipmentId}/status.");
+                }
 
-            if (targetStatus == "ARRIVED_VN") targetStatus = "ARRIVED_IN_VN";
-            if (targetStatus == "DELIVERED") targetStatus = "COMPLETED";
+                throw new ArgumentException(
+                    "Trạng thái mới không hợp lệ. Phiếu xuất kho chỉ nhận: RELEASE_APPROVED, RELEASE_REJECTED.");
+            }
 
             // 3. Kiểm tra hợp lệ quy trình trạng thái
             var currentStatus = wroRequest.Status?.Trim().ToUpperInvariant() ?? "";
@@ -775,36 +836,6 @@ namespace VCL_BLL.Services
                 if (currentStatus != "RELEASE_PENDING")
                 {
                     throw new ArgumentException($"Không thể chuyển sang {targetStatus} do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
-                }
-            }
-            else if (targetStatus == "IN_TRANSIT")
-            {
-                var allowedPrev = new[] { "HANDED_OVER", "RELEASED", "PACKED" };
-                if (!allowedPrev.Contains(currentStatus))
-                {
-                    throw new ArgumentException($"Không thể chuyển sang IN_TRANSIT do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
-                }
-            }
-            else if (targetStatus == "ARRIVED_IN_VN")
-            {
-                var allowedPrev = new[] { "IN_TRANSIT", "HANDED_OVER", "RELEASED", "PACKED", "RELEASE_APPROVED", "PICKING", "PACKING" };
-                if (!allowedPrev.Contains(currentStatus))
-                {
-                    throw new ArgumentException($"Không thể chuyển sang ARRIVED_IN_VN do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
-                }
-
-                // Khi Sale bấm báo khách: Tự động chuyển chưa thông quan -> đã thông quan
-                if (string.IsNullOrWhiteSpace(wroRequest.CustomsDocumentUrls))
-                {
-                    wroRequest.CustomsDocumentUrls = "https://res.cloudinary.com/vcl/image/upload/customs_cleared_default.pdf";
-                }
-            }
-            else if (targetStatus == "COMPLETED")
-            {
-                var allowedPrev = new[] { "ARRIVED_IN_VN", "IN_TRANSIT", "HANDED_OVER", "RELEASED" };
-                if (!allowedPrev.Contains(currentStatus))
-                {
-                    throw new ArgumentException($"Không thể chuyển sang COMPLETED do yêu cầu xuất kho đang ở trạng thái {wroRequest.Status}.");
                 }
             }
 
@@ -1080,219 +1111,26 @@ namespace VCL_BLL.Services
             };
         }
 
+        /// <summary>
+        /// KHÔNG CÒN DÙNG. Hàng rời kho nay được ghi nhận ở mốc <c>IN_TRANSIT</c> của lô.
+        /// </summary>
+        /// <remarks>
+        /// Giữ lại để URL cũ trả lỗi có chỉ đường thay vì 404 trống. Toàn bộ tác động của nó —
+        /// nhả ô kệ, <c>Inventory → RELEASED</c>, ghi nhật ký xuất kho — đã chuyển sang
+        /// <c>InternationalShipmentService.UpdateStatusAsync</c>, vì một lô gom nhiều phiếu mà
+        /// hàng thì rời kho một lần theo lô chứ không theo từng phiếu.
+        /// </remarks>
         public async Task<CompleteWroResponseDto> CompleteWroRequestAsync(
             Guid requestId,
             Guid userId,
             string role,
             CompleteWroRequestDto request)
         {
-            if (request == null)
-            {
-                throw new ArgumentException("Yêu cầu hoàn tất xuất kho không được để trống.");
-            }
-
-            // 1. Phân quyền: Chỉ Warehouse Staff, Staff hoặc Operations được thao tác
-            var allowedRoles = new[] { "WarehouseStaff", "Staff", "OperationsManager", "Operations", "Admin" };
-            if (!allowedRoles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new UnauthorizedAccessException("Bạn không có quyền hoàn tất xuất kho.");
-            }
-
-            // 2. Tìm yêu cầu xuất kho
-            var wroRequestRepo = _unitOfWork.Repository<WroRequest>();
-            var wroRequest = await wroRequestRepo.GetByIdAsync(requestId);
-            if (wroRequest == null)
-            {
-                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
-            }
-
-            // 3. Chỉ hoàn tất xuất kho với yêu cầu đã PICKED hoặc PACKING
-            if (string.Equals(wroRequest.Status, "RELEASED", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("Yêu cầu xuất kho này đã hoàn tất xuất kho trước đó.");
-            }
-
-            // PACKING do xác nhận soạn hàng đặt, PACKED do bước cập nhật đóng gói đặt.
-            // Thiếu PACKED ở đây nên đơn nào đã khai đóng gói là không hoàn tất xuất kho được:
-            // tồn kho không bị trừ, kiện không rời ô kệ, hàng đã đi rồi mà sổ sách vẫn còn.
-            var validStatuses = new[] { "PICKED", "PACKING", "PACKED" };
-            if (!validStatuses.Any(s => string.Equals(s, wroRequest.Status, StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new ArgumentException($"Yêu cầu xuất kho chưa đủ điều kiện xuất kho. Trạng thái hiện tại: {wroRequest.Status}");
-            }
-
-            // 4. Lấy phiếu picking để xác nhận có phiếu và liên kết
-            var pickingListRepo = _unitOfWork.Repository<PickingList>();
-            var allPickingLists = await pickingListRepo.GetAllAsync();
-            var pickingList = allPickingLists.FirstOrDefault(pl => pl.WroRequestId == requestId);
-            if (pickingList == null)
-            {
-                throw new NotFoundException($"Không tìm thấy phiếu picking liên kết với yêu cầu xuất kho có ID {requestId}.");
-            }
-
-            if (!string.Equals(pickingList.Status, "PICKED", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException($"Yêu cầu xuất kho chưa được xác nhận picking (Phiếu picking chưa ở trạng thái PICKED). Trạng thái hiện tại: {pickingList.Status}");
-            }
-
-            // 5. Lấy danh sách hàng đã picking (RESERVED hoặc PICKED)
-            var pickingItemRepo = _unitOfWork.Repository<PickingItem>();
-            var allPickingItems = await pickingItemRepo.GetAllAsync();
-            var relatedPickingItems = allPickingItems.Where(pi => pi.PickingListId == pickingList.Id).ToList();
-
-            var wroItemRepo = _unitOfWork.Repository<WroItem>();
-            var allWroItems = await wroItemRepo.GetAllAsync();
-            var relatedWroItems = allWroItems.Where(wi => wi.WroRequestId == requestId).ToList();
-
-            var inventoryRepo = _unitOfWork.Repository<Inventory>();
-            var allInventories = await inventoryRepo.GetAllAsync();
-
-            var binRepo = _unitOfWork.Repository<Bin>();
-            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
-            var allBins = await binRepo.GetAllAsync();
-            var allWarehouses = await warehouseRepo.GetAllAsync();
-
-            // 6. Kiểm tra các InventoryId gửi lên có hợp lệ không
-            var pickedInventoryIds = relatedPickingItems.Select(pi => pi.InventoryId).ToHashSet();
-            foreach (var reqItem in request.Items)
-            {
-                if (!pickedInventoryIds.Contains(reqItem.InventoryId))
-                {
-                    throw new ArgumentException($"Tồn kho ID {reqItem.InventoryId} không nằm trong danh sách đã picking của yêu cầu xuất kho này.");
-                }
-            }
-
-            // 7. Kiểm tra số lượng đóng gói không vượt quá số lượng đã picking (RESERVED/PICKED)
-            foreach (var item in relatedPickingItems)
-            {
-                var reqItem = request.Items.FirstOrDefault(ri => ri.InventoryId == item.InventoryId);
-                var qShipped = reqItem?.Quantity ?? 0;
-
-                if (qShipped < 0)
-                {
-                    throw new ArgumentException("Số lượng xuất kho không được nhỏ hơn 0.");
-                }
-
-                if (qShipped > item.Quantity)
-                {
-                    throw new ArgumentException($"Số lượng xuất ({qShipped}) vượt quá số lượng đã picking ({item.Quantity}) cho tồn kho ID {item.InventoryId}.");
-                }
-            }
-
-            // 8. Cập nhật Inventory và các liên kết
-            var confirmedItemsResponse = new List<CompleteWroItemResponseDto>();
-            Guid? warehouseId = null;
-            string warehouseName = string.Empty;
-
-            foreach (var item in relatedPickingItems)
-            {
-                var reqItem = request.Items.FirstOrDefault(ri => ri.InventoryId == item.InventoryId);
-                var qShipped = reqItem?.Quantity ?? 0;
-                var qPicked = item.Quantity;
-
-                var inventoryRecord = await inventoryRepo.GetByIdAsync(item.InventoryId);
-                var wroItem = relatedWroItems.FirstOrDefault(wi => wi.InventoryId == item.InventoryId);
-
-                // Xác định thông tin Kho xuất hàng từ Bin của inventory đầu tiên có hợp lệ
-                if (inventoryRecord != null && !warehouseId.HasValue)
-                {
-                    var bin = allBins.FirstOrDefault(b => b.Id == inventoryRecord.BinId);
-                    if (bin != null && bin.WarehouseId.HasValue)
-                    {
-                        warehouseId = bin.WarehouseId.Value;
-                        var wh = allWarehouses.FirstOrDefault(w => w.Id == warehouseId.Value);
-                        warehouseName = wh?.WarehouseName ?? string.Empty;
-                    }
-                }
-
-                if (qShipped == 0)
-                {
-                    // Trả lại toàn bộ lượng picked về AVAILABLE
-                    await ReleaseInventoryToAvailableAsync(inventoryRecord, qPicked, inventoryRepo, allInventories);
-
-                    // Xóa liên kết
-                    pickingItemRepo.Delete(item);
-                    if (wroItem != null)
-                    {
-                        wroItemRepo.Delete(wroItem);
-                    }
-                    await DiscardInventoryReservationAsync(inventoryRecord, inventoryRepo);
-                }
-                else if (qShipped < qPicked)
-                {
-                    // Trả phần dư về AVAILABLE
-                    var qRemain = qPicked - qShipped;
-                    await ReleaseInventoryToAvailableAsync(inventoryRecord, qRemain, inventoryRepo, allInventories);
-
-                    // Cập nhật số lượng và trạng thái phần xuất
-                    if (inventoryRecord != null)
-                    {
-                        inventoryRecord.Quantity = qShipped;
-                        inventoryRecord.Status = "RELEASED";
-                        inventoryRepo.Update(inventoryRecord);
-                        await ReleaseParcelFromBinAsync(inventoryRecord, inventoryRepo, allInventories);
-                    }
-
-                    item.Quantity = qShipped;
-                    pickingItemRepo.Update(item);
-
-                    if (wroItem != null)
-                    {
-                        wroItem.Quantity = qShipped;
-                        wroItemRepo.Update(wroItem);
-                    }
-
-                    confirmedItemsResponse.Add(new CompleteWroItemResponseDto
-                    {
-                        InventoryId = item.InventoryId,
-                        Quantity = qShipped,
-                        Status = "RELEASED"
-                    });
-                }
-                else // qShipped == qPicked
-                {
-                    if (inventoryRecord != null)
-                    {
-                        inventoryRecord.Status = "RELEASED";
-                        inventoryRepo.Update(inventoryRecord);
-                        await ReleaseParcelFromBinAsync(inventoryRecord, inventoryRepo, allInventories);
-                    }
-
-                    confirmedItemsResponse.Add(new CompleteWroItemResponseDto
-                    {
-                        InventoryId = item.InventoryId,
-                        Quantity = qShipped,
-                        Status = "RELEASED"
-                    });
-                }
-            }
-
-            // 9. Cập nhật yêu cầu xuất kho thành IN_TRANSIT (Đã bàn giao đơn vị vận chuyển)
-            wroRequest.Status = "IN_TRANSIT";
-            wroRequest.ReleasedBy = userId;
-            wroRequest.ReleasedAt = DateTime.UtcNow;
-            wroRequestRepo.Update(wroRequest);
-
-            // 10. Lưu các thay đổi vào DB
-            await _unitOfWork.SaveChangesAsync();
-
-            // Lấy thông tin người xác nhận
-            var userRepo = _unitOfWork.Repository<User>();
-            var user = await userRepo.GetByIdAsync(userId);
-            var releasedByName = user?.FullName ?? string.Empty;
-
-            return new CompleteWroResponseDto
-            {
-                WroRequestId = wroRequest.Id,
-                WroCode = wroRequest.WroCode,
-                Status = wroRequest.Status,
-                ReleasedBy = wroRequest.ReleasedBy,
-                ReleasedByName = releasedByName,
-                ReleasedAt = wroRequest.ReleasedAt,
-                WarehouseId = warehouseId,
-                WarehouseName = warehouseName,
-                Items = confirmedItemsResponse
-            };
+            await Task.CompletedTask;
+            throw new ArgumentException(
+                "Hoàn tất xuất kho nay là thao tác trên lô vận chuyển. "
+                + "Gom phiếu đã PICKED thành lô rồi đẩy lô sang IN_TRANSIT "
+                + "(PUT /api/international-shipments/{shipmentId}/status).");
         }
 
         public async Task<PagedWroListResponseDto> GetWroRequestsAsync(Guid userId, string role, GetWroListRequestDto request)
@@ -1351,12 +1189,16 @@ namespace VCL_BLL.Services
                                   .Take(pageSize)
                                   .ToList();
 
+            // Một bảng tra cứu cho cả trang: 20 phiếu dùng chung thay vì mỗi phiếu tự nạp lại
+            // toàn bộ tồn kho, kiện, ô kệ, đơn hàng...
+            var lookup = new WroLookupCache(_unitOfWork);
+
             var itemsDto = new List<WroDetailResponseDto>();
             foreach (var item in pagedItems)
             {
                 try
                 {
-                    var detail = await GetWroRequestDetailAsync(item.Id, userId, role);
+                    var detail = await GetWroRequestDetailAsync(item.Id, userId, role, lookup);
                     itemsDto.Add(detail);
                 }
                 catch
@@ -1444,19 +1286,17 @@ namespace VCL_BLL.Services
                 wroRequest.CustomsDocumentUrls = string.Join(";", request.CustomsDocumentUrls);
             }
 
-            // Tự động chuyển trạng thái sang RELEASE_APPROVED nếu đang RELEASE_PENDING, hoặc sang IN_TRANSIT nếu WRO đang ở các bước bàn giao / hoàn tất đóng gói
+            // Gán tuyến lúc phiếu còn chờ duyệt cũng là duyệt luôn — OM nhập đối tác vận chuyển,
+            // tuyến và chứng từ trong cùng một thao tác.
+            //
+            // Trước đây nhánh else còn tự đẩy phiếu sang IN_TRANSIT khi phiếu đã qua bước bàn
+            // giao. Bỏ: hàng đang đi là trạng thái của LÔ, và cái nhánh đó còn khiến thứ tự thao
+            // tác quyết định trạng thái phiếu — gán tuyến sau khi bàn giao là phiếu rơi khỏi tập
+            // gom lô được.
             var currentStatus = wroRequest.Status?.Trim().ToUpperInvariant() ?? "";
             if (currentStatus == "RELEASE_PENDING")
             {
                 wroRequest.Status = "RELEASE_APPROVED";
-            }
-            else
-            {
-                var allowedStatusesForInTransit = new[] { "HANDED_OVER", "RELEASED", "PACKED", "IN_TRANSIT" };
-                if (allowedStatusesForInTransit.Contains(currentStatus))
-                {
-                    wroRequest.Status = "IN_TRANSIT";
-                }
             }
 
             wroRepo.Update(wroRequest);
@@ -1516,142 +1356,22 @@ namespace VCL_BLL.Services
             };
         }
 
+        /// <summary>
+        /// KHÔNG CÒN DÙNG. Bàn giao cho đơn vị vận chuyển nay là mốc của LÔ.
+        /// </summary>
+        /// <remarks>
+        /// Một lô gom nhiều phiếu nhưng xe chỉ tới lấy hàng một lần, nên bàn giao thuộc về lô.
+        /// Tác động nhả ô kệ và trừ tồn kho đã chuyển sang mốc <c>IN_TRANSIT</c> của lô.
+        /// </remarks>
         public async Task<ReleaseHandoverResponseDto> HandoverToCarrierAsync(Guid requestId, Guid userId, string role, ReleaseHandoverRequestDto request)
         {
-            var allowedRoles = new[] { "WarehouseStaff", "Staff", "OperationsManager", "Operations", "Admin" };
-            if (!allowedRoles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new UnauthorizedAccessException("Bạn không có quyền thực hiện bàn giao kiện hàng cho đơn vị vận chuyển.");
-            }
-
-            var wroRepo = _unitOfWork.Repository<WroRequest>();
-            var wroRequest = await wroRepo.GetByIdAsync(requestId);
-            if (wroRequest == null)
-            {
-                throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {requestId}");
-            }
-
-            // Đơn vị vận chuyển phải có thật. Trước đây tra không thấy vẫn gán id vào WRO rồi lưu,
-            // nên DB chặn bằng khoá ngoại FK_WRO_CARRIER và API trả 500 không rõ nguyên nhân.
-            // Hỏng cả luồng: bàn giao là bước đưa WRO sang RELEASED, không qua được thì không tạo
-            // được lô quốc tế, hàng đứng lại ở kho nguồn.
-            if (request.CarrierId == Guid.Empty)
-            {
-                throw new ArgumentException("Vui lòng chọn đơn vị vận chuyển trước khi bàn giao.");
-            }
-
-            var carrierRepo = _unitOfWork.Repository<Carrier>();
-            var carrier = await carrierRepo.GetByIdAsync(request.CarrierId)
-                ?? throw new NotFoundException($"Không tìm thấy đơn vị vận chuyển với ID {request.CarrierId}.");
-
-            string carrierName = carrier.CarrierName ?? "Đơn vị vận chuyển";
-
-            var now = DateTime.UtcNow;
-            wroRequest.CarrierId = request.CarrierId;
-            wroRequest.DriverName = request.DriverName;
-            wroRequest.DriverPhone = request.DriverPhone;
-            wroRequest.VehicleNumber = request.VehicleNumber;
-            wroRequest.TrackingNumber = request.TrackingNumber;
-            wroRequest.HandoverNotes = request.HandoverNotes;
-            wroRequest.HandoverAt = now;
-            wroRequest.Status = "HANDED_OVER";
-
-            wroRepo.Update(wroRequest);
-
-            // Đảm bảo tồn kho Inventory và kiện hàng Parcel đều chuyển sang RELEASED và nhả khỏi ô kệ khi bàn giao cho hãng
-            var wroItemRepo = _unitOfWork.Repository<WroItem>();
-            var allWroItems = await wroItemRepo.GetAllAsync();
-            var relatedWroItems = allWroItems.Where(wi => wi.WroRequestId == requestId).ToList();
-
-            var inventoryRepo = _unitOfWork.Repository<Inventory>();
-            var allInventories = await inventoryRepo.GetAllAsync();
-
-            foreach (var wroItem in relatedWroItems)
-            {
-                var inv = await inventoryRepo.GetByIdAsync(wroItem.InventoryId);
-                if (inv != null && !string.Equals(inv.Status, "RELEASED", StringComparison.OrdinalIgnoreCase))
-                {
-                    inv.Status = "RELEASED";
-                    inventoryRepo.Update(inv);
-                    await ReleaseParcelFromBinAsync(inv, inventoryRepo, allInventories);
-                }
-            }
-
-            await _unitOfWork.SaveChangesAsync();
-
-            return new ReleaseHandoverResponseDto
-            {
-                WroId = wroRequest.Id,
-                WroCode = wroRequest.WroCode,
-                Status = wroRequest.Status,
-                CarrierId = wroRequest.CarrierId,
-                CarrierName = carrierName,
-                DriverName = wroRequest.DriverName,
-                DriverPhone = wroRequest.DriverPhone,
-                VehicleNumber = wroRequest.VehicleNumber,
-                TrackingNumber = wroRequest.TrackingNumber,
-                HandoverNotes = wroRequest.HandoverNotes,
-                HandoverAt = now
-            };
+            await Task.CompletedTask;
+            throw new ArgumentException(
+                "Bàn giao cho đơn vị vận chuyển nay là thao tác trên lô. "
+                + "Gom phiếu đã PICKED thành lô rồi đẩy lô sang IN_TRANSIT "
+                + "(PUT /api/international-shipments/{shipmentId}/status).");
         }
 
-        /// <summary>
-        /// Nhả kiện khỏi ô kệ khi hàng thực sự rời kho: trừ thể tích đang chiếm, bỏ liên kết ô
-        /// và đổi trạng thái kiện. Thiếu bước này thì Bin.CurrentVolume chỉ tăng mà không bao giờ
-        /// giảm, lâu dần mọi ô đều báo hết chỗ dù đang trống.
-        ///
-        /// Chỉ nhả khi kiện đã ra hết. Đơn xuất một phần vẫn còn hàng nằm trong ô nên giữ nguyên.
-        /// </summary>
-        private async Task ReleaseParcelFromBinAsync(
-            Inventory? releasedInventory,
-            IGenericRepository<Inventory> inventoryRepo,
-            IEnumerable<Inventory> allInventories)
-        {
-            if (releasedInventory == null) return;
-
-            // Còn dòng tồn kho nào của kiện này chưa xuất thì hàng vẫn nằm trong ô.
-            var stillInWarehouse = allInventories.Any(inv =>
-                inv.Id != releasedInventory.Id &&
-                inv.ParcelId == releasedInventory.ParcelId &&
-                inv.Quantity > 0 &&
-                !string.Equals(inv.Status, "RELEASED", StringComparison.OrdinalIgnoreCase));
-
-            if (stillInWarehouse) return;
-
-            var parcelRepo = _unitOfWork.Repository<Parcel>();
-            var parcel = await parcelRepo.GetByIdAsync(releasedInventory.ParcelId);
-            if (parcel == null) return;
-
-            var binRepo = _unitOfWork.Repository<Bin>();
-            var bin = await binRepo.GetByIdAsync(releasedInventory.BinId);
-            if (bin != null)
-            {
-                var released = (parcel.Length ?? 0m) * (parcel.Width ?? 0m) * (parcel.Height ?? 0m);
-                var remaining = (bin.CurrentVolume ?? 0m) - released;
-                bin.CurrentVolume = remaining < 0m ? 0m : remaining;
-                binRepo.Update(bin);
-            }
-
-            parcel.BinId = null;
-            parcel.PackageStatus = "RELEASED";
-            parcelRepo.Update(parcel);
-
-            // Nhật ký xuất kho. Cột to_bin_id là NOT NULL nên ghi lại chính ô vừa rời đi;
-            // MovementType = OUTBOUND đã đủ để phân biệt với điều chuyển nội bộ.
-            await _unitOfWork.Repository<InventoryMovement>().AddAsync(new InventoryMovement
-            {
-                Id = Guid.NewGuid(),
-                InventoryId = releasedInventory.Id,
-                ParcelId = parcel.Id,
-                FromBinId = releasedInventory.BinId,
-                ToBinId = releasedInventory.BinId,
-                MovementType = "OUTBOUND",
-                Reason = $"Xuất kho kiện {parcel.PackageCode}",
-                Quantity = releasedInventory.Quantity,
-                MovedById = null,
-                MovedAt = DateTime.UtcNow
-            });
-        }
 
         /// <summary>
         /// Bỏ một dòng tồn kho giữ chỗ đã tiêu xong.

@@ -235,6 +235,16 @@ namespace VCL_BLL.DTOs
         public DateTime SyncedAt { get; set; }
     }
 
+    /// <summary>Đặt tay trạng thái vận đơn khi chạy thử luồng giao hàng.</summary>
+    public class SimulateGoshipStatusDto
+    {
+        /// <summary>Mã trạng thái GoShip: 901 chờ lấy · 903 đã lấy · 904 đang giao · 905 giao xong.</summary>
+        public int StatusCode { get; set; }
+
+        /// <summary>Mô tả kèm theo, chỉ để ghi log cho dễ đọc.</summary>
+        public string? StatusText { get; set; }
+    }
+
     public class GoshipWebhookPayload
     {
         [JsonPropertyName("id")]

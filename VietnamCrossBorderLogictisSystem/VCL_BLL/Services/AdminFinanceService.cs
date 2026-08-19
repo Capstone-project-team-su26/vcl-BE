@@ -14,9 +14,17 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
 
-        public AdminFinanceService(IUnitOfWork unitOfWork)
+        /// <summary>
+        /// Duyệt tay cũng là một lần thu tiền, nên phải sinh phiếu tiếp nhận như các nhánh khác.
+        /// </summary>
+        private readonly IWarehouseReceivingNoteService _receivingNoteService;
+
+        public AdminFinanceService(
+            IUnitOfWork unitOfWork,
+            IWarehouseReceivingNoteService receivingNoteService)
         {
             _unitOfWork = unitOfWork;
+            _receivingNoteService = receivingNoteService;
         }
 
         public async Task<AdminFinanceSummaryDto> GetFinanceSummaryAsync(DateTime? from, DateTime? to)
@@ -605,6 +613,15 @@ namespace VCL_BLL.Services
             }
 
             await _unitOfWork.SaveChangesAsync();
+
+            // Đơn vừa thu được tiền thì kho phải có phiếu tiếp nhận, bất kể tiền vào bằng đường
+            // nào. Nhánh duyệt tay này trước đây bị bỏ quên nên đơn đối soát thủ công không có
+            // phiếu, kho mở app ra không thấy việc.
+            if (order != null && !string.Equals(payment.InstallmentType?.Trim(), StorageFeeInstallment,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(order.Id);
+            }
 
             return new ManualTransactionResultDto
             {

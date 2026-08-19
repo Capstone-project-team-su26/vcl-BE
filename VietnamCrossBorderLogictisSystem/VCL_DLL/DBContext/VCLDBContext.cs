@@ -1957,6 +1957,12 @@ public partial class VCLDBContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(getutcdate())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.ApprovedBy).HasColumnName("approved_by");
+            entity.Property(e => e.ApprovedAt).HasColumnName("approved_at");
+            entity.Property(e => e.RejectionReason)
+                .HasMaxLength(500)
+                .IsRequired(false)
+                .HasColumnName("rejection_reason");
 
             entity.HasOne(d => d.ConsignmentOrder)
                 .WithMany()

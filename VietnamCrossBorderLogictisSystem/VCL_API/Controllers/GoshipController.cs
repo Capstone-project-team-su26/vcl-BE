@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using VCL_BLL.DTOs;
 using VCL_BLL.Interface;
 
@@ -14,11 +15,16 @@ namespace VCL_API.Controllers
     {
         private readonly IGoshipService _goshipService;
         private readonly IConfiguration _configuration;
+        private readonly IHostEnvironment _environment;
 
-        public GoshipController(IGoshipService goshipService, IConfiguration configuration)
+        public GoshipController(
+            IGoshipService goshipService,
+            IConfiguration configuration,
+            IHostEnvironment environment)
         {
             _goshipService = goshipService;
             _configuration = configuration;
+            _environment = environment;
         }
 
         /// <summary>Token dùng chung cho các endpoint tra danh mục.</summary>
@@ -198,6 +204,71 @@ namespace VCL_API.Controllers
 
                 var result = await _goshipService.SyncShipmentStatusAsync(trackingCode, effectiveToken);
                 return Ok(new { message = "Đồng bộ trạng thái vận đơn GoShip thành công.", data = result });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Đặt tay trạng thái một vận đơn, dùng để chạy thử luồng giao hàng.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Sandbox GoShip giữ đơn ở "Đơn mới" và không bắn webhook, nên không có cách nào chạy
+        /// hết chặng giao bằng dữ liệu thật. Endpoint này đi đúng đường mà webhook đi — cùng
+        /// hàm áp trạng thái, cùng quy tắc đổi trạng thái kiện và đơn — chỉ khác là người bấm
+        /// thay vì hãng vận chuyển gọi.
+        /// </para>
+        /// <para>
+        /// Khoá ở môi trường Production: ở đó trạng thái phải do hãng vận chuyển quyết, đặt tay
+        /// là ghi đè sự thật. Muốn mở (ví dụ môi trường staging dùng cấu hình Production) thì
+        /// bật <c>GoshipSettings:AllowStatusSimulation</c>.
+        /// </para>
+        /// </remarks>
+        [HttpPost("shipments/{trackingCode}/simulate")]
+        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF")]
+        public async Task<IActionResult> SimulateShipmentStatus(
+            string trackingCode, [FromBody] SimulateGoshipStatusDto request)
+        {
+            var explicitlyAllowed = _configuration.GetValue<bool>("GoshipSettings:AllowStatusSimulation");
+            if (_environment.IsProduction() && !explicitlyAllowed)
+            {
+                return BadRequest(new
+                {
+                    message = "Không đặt tay trạng thái vận đơn ở môi trường thật. "
+                        + "Trạng thái phải do đơn vị vận chuyển cập nhật."
+                });
+            }
+
+            if (request == null || request.StatusCode <= 0)
+            {
+                return BadRequest(new { message = "Thiếu mã trạng thái GoShip cần đặt." });
+            }
+
+            try
+            {
+                var applied = await _goshipService.ProcessWebhookAsync(new GoshipWebhookPayload
+                {
+                    Code = trackingCode,
+                    Status = request.StatusCode,
+                    StatusText = request.StatusText ?? string.Empty,
+                });
+
+                if (!applied)
+                {
+                    return NotFound(new
+                    {
+                        message = $"Không tìm thấy vận đơn {trackingCode} trong hệ thống."
+                    });
+                }
+
+                return Ok(new
+                {
+                    message = "Đã đặt trạng thái vận đơn.",
+                    data = new { trackingCode, request.StatusCode, request.StatusText }
+                });
             }
             catch (Exception ex)
             {

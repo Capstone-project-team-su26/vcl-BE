@@ -277,20 +277,29 @@ namespace VCL_BLL.Services
             // GoShip chỉ hiểu mã số, phiếu thì lưu tên — đổi trước khi gửi, cả hai đầu.
             try
             {
-                var toCodes = await _goshipService.ResolveAddressCodesAsync(
+                // Hai đầu địa chỉ không phụ thuộc nhau mà mỗi đầu tốn ba lượt gọi sang GoShip
+                // (tỉnh → quận → phường). Chạy nối tiếp là gấp đôi thời gian chờ cho đúng một
+                // việc; danh mục có cache 12 giờ nên chỉ lần đầu sau khi khởi động mới đắt.
+                var toTask = _goshipService.ResolveAddressCodesAsync(
                     delivery.Province ?? string.Empty,
                     delivery.District ?? string.Empty,
                     delivery.Ward ?? string.Empty,
                     token);
-                shipment.AddressTo.City = toCodes.CityId;
-                shipment.AddressTo.District = toCodes.DistrictId;
-                shipment.AddressTo.Ward = toCodes.WardId;
 
-                var fromCodes = await _goshipService.ResolveAddressCodesAsync(
+                var fromTask = _goshipService.ResolveAddressCodesAsync(
                     shipment.AddressFrom.City,
                     shipment.AddressFrom.District,
                     shipment.AddressFrom.Ward,
                     token);
+
+                await Task.WhenAll(toTask, fromTask);
+
+                var toCodes = await toTask;
+                shipment.AddressTo.City = toCodes.CityId;
+                shipment.AddressTo.District = toCodes.DistrictId;
+                shipment.AddressTo.Ward = toCodes.WardId;
+
+                var fromCodes = await fromTask;
                 shipment.AddressFrom.City = fromCodes.CityId;
                 shipment.AddressFrom.District = fromCodes.DistrictId;
                 shipment.AddressFrom.Ward = fromCodes.WardId;
@@ -489,10 +498,15 @@ namespace VCL_BLL.Services
                 all = all.Where(d => d.OrderId == orderId.Value);
             }
 
+            // Nạp bảng tra MỘT lần cho cả danh sách. Trước đây mỗi phiếu tự nạp lại toàn bộ
+            // Parcel, Bin, User, Customer và DeliveryRequestItem — 23 phiếu thành hơn trăm lượt
+            // gọi DB, mất bảy giây cho một danh sách 26KB.
+            var lookups = await LoadLookupsAsync();
+
             var result = new List<DeliveryRequestDto>();
             foreach (var delivery in all.OrderByDescending(d => d.CreatedAt ?? DateTime.MinValue))
             {
-                result.Add(await BuildDtoAsync(delivery));
+                result.Add(BuildDto(delivery, lookups));
             }
             return result;
         }
@@ -922,29 +936,62 @@ namespace VCL_BLL.Services
             _ => status ?? string.Empty
         };
 
-        private async Task<DeliveryRequestDto> BuildDtoAsync(DeliveryRequest delivery)
+        /// <summary>
+        /// Bảng tra dùng chung khi dựng nhiều phiếu giao một lượt.
+        /// </summary>
+        /// <remarks>
+        /// Repository ở đây chỉ có <c>GetAllAsync</c>, nên dựng từng phiếu một là mỗi phiếu kéo
+        /// lại nguyên bảng. Nạp sẵn vào đây rồi tra trong bộ nhớ.
+        /// </remarks>
+        private sealed class DeliveryLookups
         {
-            var items = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
-                .Where(i => i.DeliveryRequestId == delivery.Id)
-                .ToList();
-            var parcelIds = items.Select(i => i.ParcelId).ToHashSet();
+            public ILookup<Guid, DeliveryRequestItem> ItemsByDelivery { get; init; } =
+                Array.Empty<DeliveryRequestItem>().ToLookup(i => Guid.Empty);
+            public Dictionary<Guid, Parcel> Parcels { get; init; } = new();
+            public Dictionary<Guid, Bin> Bins { get; init; } = new();
+            public Dictionary<Guid, User> Users { get; init; } = new();
+            public Dictionary<Guid, Order> Orders { get; init; } = new();
+            public Dictionary<Guid, Customer> Customers { get; init; } = new();
+        }
 
-            var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
-                .Where(p => parcelIds.Contains(p.Id))
-                .ToDictionary(p => p.Id);
-
-            var bins = (await _unitOfWork.Repository<Bin>().GetAllAsync()).ToDictionary(b => b.Id);
-            var users = (await _unitOfWork.Repository<User>().GetAllAsync()).ToDictionary(u => u.Id);
-
-            var order = delivery.OrderId.HasValue
-                ? await _unitOfWork.Repository<Order>().GetByIdAsync(delivery.OrderId.Value)
-                : null;
-
-            Customer? customer = null;
-            if (order?.CustomerId is Guid cid)
+        private async Task<DeliveryLookups> LoadLookupsAsync()
+        {
+            return new DeliveryLookups
             {
-                customer = (await _unitOfWork.Repository<Customer>().GetAllAsync()).FirstOrDefault(c => c.Id == cid);
-            }
+                ItemsByDelivery = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
+                    .ToLookup(i => i.DeliveryRequestId),
+                Parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                    .ToDictionary(p => p.Id),
+                Bins = (await _unitOfWork.Repository<Bin>().GetAllAsync())
+                    .ToDictionary(b => b.Id),
+                Users = (await _unitOfWork.Repository<User>().GetAllAsync())
+                    .ToDictionary(u => u.Id),
+                Orders = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                    .ToDictionary(o => o.Id),
+                Customers = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                    .ToDictionary(c => c.Id),
+            };
+        }
+
+        private async Task<DeliveryRequestDto> BuildDtoAsync(DeliveryRequest delivery) =>
+            BuildDto(delivery, await LoadLookupsAsync());
+
+        private static DeliveryRequestDto BuildDto(DeliveryRequest delivery, DeliveryLookups lookups)
+        {
+            var items = lookups.ItemsByDelivery[delivery.Id].ToList();
+            var parcels = lookups.Parcels;
+            var bins = lookups.Bins;
+            var users = lookups.Users;
+
+            Order? order = delivery.OrderId.HasValue
+                && lookups.Orders.TryGetValue(delivery.OrderId.Value, out var foundOrder)
+                    ? foundOrder
+                    : null;
+
+            Customer? customer = order?.CustomerId is Guid cid
+                && lookups.Customers.TryGetValue(cid, out var foundCustomer)
+                    ? foundCustomer
+                    : null;
 
             var lines = new List<DeliveryRequestParcelDto>();
             foreach (var item in items)
