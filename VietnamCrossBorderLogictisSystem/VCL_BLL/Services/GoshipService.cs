@@ -30,6 +30,7 @@ namespace VCL_BLL.Services
         /// thôi, kiện nằm đâu và ai chịu cước giao lại không có gì ghi lại.
         /// </summary>
         private readonly IParcelReturnService _parcelReturnService;
+        private readonly ISettlementQueryService _settlementQueryService;
 
         /// <summary>
         /// Danh mục hành chính của GoShip, giữ lại giữa các request.
@@ -49,13 +50,15 @@ namespace VCL_BLL.Services
             IConfiguration configuration,
             ILogger<GoshipService> logger,
             IUnitOfWork unitOfWork,
-            IParcelReturnService parcelReturnService)
+            IParcelReturnService parcelReturnService,
+            ISettlementQueryService settlementQueryService)
         {
             _httpClient = httpClient;
             _configuration = configuration;
             _logger = logger;
             _unitOfWork = unitOfWork;
             _parcelReturnService = parcelReturnService;
+            _settlementQueryService = settlementQueryService;
         }
 
         /// <summary>
@@ -403,50 +406,20 @@ namespace VCL_BLL.Services
 
         /// <summary>
         /// Cổng chặn: khách phải trả xong đợt cuối thì mới gọi GoShip đến lấy hàng.
-        /// Không có chốt này thì hàng rời kho trong khi tiền chưa về.
+        /// Sử dụng ISettlementQueryService để hỗ trợ cả đơn ký gửi lẫn đơn mua hộ (PurchasePayment).
         /// </summary>
         private async Task EnsureFinalPaymentSettledAsync(Order order)
         {
-            var quotationIds = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
-                .Where(q => q.OrderId == order.Id)
-                .Select(q => q.Id)
-                .ToHashSet();
-
-            var invoiceIds = (await _unitOfWork.Repository<Invoice>().GetAllAsync())
-                .Where(i => i.QuotationId.HasValue && quotationIds.Contains(i.QuotationId.Value))
-                .Select(i => i.Id)
-                .ToHashSet();
-
-            if (invoiceIds.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    $"Đơn {order.ConsignmentCode} chưa có hoá đơn nên chưa thể gọi GoShip đến lấy hàng.");
-            }
-
-            var payments = (await _unitOfWork.Repository<Payment>().GetAllAsync())
-                .Where(p => p.InvoiceId.HasValue && invoiceIds.Contains(p.InvoiceId.Value))
-                .ToList();
-
-            var finalSettled = payments.Any(p =>
-                string.Equals(p.InstallmentType, "FINAL_PAYMENT", StringComparison.OrdinalIgnoreCase)
-                && IsSettled(p.PaymentStatus));
-
-            if (finalSettled)
+            if (await _settlementQueryService.IsSettledAsync(order))
             {
                 return;
             }
 
-            var hasPendingFinal = payments.Any(p =>
-                string.Equals(p.InstallmentType, "FINAL_PAYMENT", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(p.PaymentStatus, "PENDING", StringComparison.OrdinalIgnoreCase));
-
-            throw new InvalidOperationException(hasPendingFinal
-                ? $"Đơn {order.ConsignmentCode} còn đợt thanh toán cuối đang chờ khách trả. Trả xong mới gọi GoShip được."
-                : $"Đơn {order.ConsignmentCode} chưa có thanh toán cuối. Tạo đợt thanh toán cuối và đợi khách trả trước đã.");
+            var label = order.PurchaseRequestId.HasValue ? "Đơn mua hộ" : "Đơn";
+            throw new InvalidOperationException(
+                $"{label} {order.ConsignmentCode} chưa tất toán xong. "
+                + "Khách trả nốt đợt cuối rồi mới gọi GoShip được.");
         }
-
-        private static bool IsSettled(string? paymentStatus) =>
-            paymentStatus?.Trim().ToUpperInvariant() is "PAID" or "SUCCESS" or "COMPLETED";
 
         /// <summary>
         /// Lưu vận đơn nội địa cho từng kiện. Thiếu bước này thì webhook và nút đồng bộ đều
