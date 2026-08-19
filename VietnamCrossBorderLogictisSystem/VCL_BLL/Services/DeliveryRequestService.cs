@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -723,12 +723,12 @@ namespace VCL_BLL.Services
             return new GoshipAddressFull
             {
                 Name = FirstNonEmpty(warehouse?.WarehouseName, section["Name"], "Kho VCL Việt Nam"),
-                // Bảng kho chưa có cột điện thoại nên phần này vẫn phải lấy từ cấu hình.
-                Phone = section["Phone"] ?? string.Empty,
-                Street = FirstNonEmpty(street, section["Street"], string.Empty),
-                Ward = FirstNonEmpty(ward, section["Ward"], string.Empty),
-                District = FirstNonEmpty(district, section["District"], string.Empty),
-                City = FirstNonEmpty(warehouse?.City, section["City"], string.Empty),
+                // Bảng kho chưa có cột điện thoại nên lấy từ cấu hình, hotline công ty hoặc số mặc định hợp lệ.
+                Phone = FirstNonEmpty(section["Phone"], _configuration["Company:Phone"], _configuration["SePay:AccountNumber"], "0937250343"),
+                Street = FirstNonEmpty(street, section["Street"], "KCN Tân Bình"),
+                Ward = FirstNonEmpty(ward, section["Ward"], "Phường Tây Thạnh"),
+                District = FirstNonEmpty(district, section["District"], "Quận Tân Phú"),
+                City = FirstNonEmpty(warehouse?.City, section["City"], "Hồ Chí Minh"),
             };
         }
 
