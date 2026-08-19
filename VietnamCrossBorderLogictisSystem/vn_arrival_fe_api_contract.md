@@ -1,5 +1,8 @@
 # 📦 CONTRACT API — LUỒNG HÀNG VỀ TỚI KHO VN (FE + MOBILE)
 
+> ⚠️ **Bảng trạng thái trong doc này đã lỗi thời từ 18/08/2026.** Xem `API_CHANGES_2026-08-18.md` — vòng đời lô nay là `CREATED → READY_TO_SHIP → IN_TRANSIT → ARRIVED_VN → ARRIVED_DESTINATION`, không còn hai chặng thông quan.
+
+
 > **Dự án**: Vietnam Cross Border Logistics System (`vcl-BE`)
 > **Phạm vi**: từ lúc kho quốc tế gom kiện thành lô → hàng về VN → khách tất toán → giao tận nhà
 > **Commit**: `d46f76b1` · `b5d64421` · `2c60f33b` · `6ee03d95`

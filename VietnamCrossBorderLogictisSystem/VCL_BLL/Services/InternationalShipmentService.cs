@@ -640,6 +640,139 @@ namespace VCL_BLL.Services
             };
         }
 
+        /// <summary>
+        /// Phiếu xuất kho còn gom lô được, kèm số kiện thật sự còn trống chỗ.
+        /// </summary>
+        /// <remarks>
+        /// Đơn vị gom lô là KIỆN chứ không phải phiếu, nên một phiếu có thể đã đẩy vài kiện lên
+        /// chuyến trước mà phần còn lại vẫn chờ. Vì vậy điều kiện loại bỏ là "hết kiện trống",
+        /// không phải "đã từng thuộc một lô".
+        /// </remarks>
+        public async Task<List<AvailableWroForShipmentDto>> GetAvailableWroRequestsAsync(
+            Guid? originWarehouseId, string? search)
+        {
+            var readyWroRequests = (await _unitOfWork.Repository<WroRequest>().GetAllAsync())
+                .Where(w => IsWroReadyForShipment(w.Status))
+                .ToList();
+
+            if (readyWroRequests.Count == 0)
+            {
+                return new List<AvailableWroForShipmentDto>();
+            }
+
+            var parcelIdsInLots = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
+                .Select(sp => sp.ParcelId)
+                .ToHashSet();
+
+            var wroItemsByWro = (await _unitOfWork.Repository<WroItem>().GetAllAsync())
+                .GroupBy(i => i.WroRequestId)
+                .ToDictionary(g => g.Key, g => g.Select(i => i.InventoryId).Distinct().ToList());
+
+            var inventoriesById = (await _unitOfWork.Repository<Inventory>().GetAllAsync())
+                .ToDictionary(i => i.Id, i => i);
+            var parcelsById = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .ToDictionary(p => p.Id, p => p);
+            var binsById = (await _unitOfWork.Repository<Bin>().GetAllAsync())
+                .ToDictionary(b => b.Id, b => b);
+            var warehousesById = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
+                .ToDictionary(w => w.Id, w => w);
+            var routesById = (await _unitOfWork.Repository<ShippingRoute>().GetAllAsync())
+                .ToDictionary(r => r.Id, r => r);
+            var customersById = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                .ToDictionary(c => c.Id, c => c);
+
+            var keyword = search?.Trim();
+            var results = new List<AvailableWroForShipmentDto>();
+
+            foreach (var wro in readyWroRequests)
+            {
+                if (!wroItemsByWro.TryGetValue(wro.Id, out var inventoryIds)) continue;
+
+                var parcelIds = inventoryIds
+                    .Select(id => inventoriesById.TryGetValue(id, out var inv) ? inv : null)
+                    .Where(inv => inv != null && inv.ParcelId != Guid.Empty)
+                    .Select(inv => inv!.ParcelId)
+                    .Distinct()
+                    .ToList();
+
+                if (parcelIds.Count == 0) continue;
+
+                var freeParcelIds = parcelIds.Where(id => !parcelIdsInLots.Contains(id)).ToList();
+                if (freeParcelIds.Count == 0) continue;
+
+                // Kho giữ hàng suy từ ô kệ thật của phần kiện còn lại. Phiếu nằm rải nhiều kho là
+                // dữ liệu hỏng, nhưng ở đây chỉ cần một kho để màn hình lọc — chặn thật nằm ở
+                // CreateAsync.
+                Guid? originId = null;
+                foreach (var invId in inventoryIds)
+                {
+                    if (inventoriesById.TryGetValue(invId, out var inv)
+                        && freeParcelIds.Contains(inv.ParcelId)
+                        && binsById.TryGetValue(inv.BinId, out var bin)
+                        && bin.WarehouseId.HasValue)
+                    {
+                        originId = bin.WarehouseId.Value;
+                        break;
+                    }
+                }
+
+                if (originWarehouseId.HasValue && originId != originWarehouseId.Value) continue;
+
+                var customerName = wro.CustomerId.HasValue
+                    && customersById.TryGetValue(wro.CustomerId.Value, out var customer)
+                        ? customer.FullName ?? string.Empty
+                        : string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(keyword))
+                {
+                    var haystack = $"{wro.WroCode} {customerName} {wro.ReceiverName}";
+                    if (!haystack.Contains(keyword, StringComparison.OrdinalIgnoreCase)) continue;
+                }
+
+                ShippingRoute? route = wro.ShippingRouteId.HasValue
+                    && routesById.TryGetValue(wro.ShippingRouteId.Value, out var foundRoute)
+                        ? foundRoute
+                        : null;
+
+                Warehouse? routeDestination = route?.DestinationWarehouseId is Guid destId
+                    && warehousesById.TryGetValue(destId, out var destWarehouse)
+                        ? destWarehouse
+                        : null;
+
+                var status = wro.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+
+                results.Add(new AvailableWroForShipmentDto
+                {
+                    WroRequestId = wro.Id,
+                    WroCode = wro.WroCode ?? string.Empty,
+                    Status = wro.Status ?? string.Empty,
+                    IsLegacyStatus = !string.Equals(status, "PICKED", StringComparison.Ordinal),
+                    CustomerName = customerName,
+                    ReceiverName = wro.ReceiverName ?? string.Empty,
+                    AvailableParcelCount = freeParcelIds.Count,
+                    TotalParcelCount = parcelIds.Count,
+                    AvailableWeight = freeParcelIds
+                        .Select(id => parcelsById.TryGetValue(id, out var parcel) ? parcel.ActualWeight ?? 0m : 0m)
+                        .Sum(),
+                    OriginWarehouseId = originId,
+                    OriginWarehouseName = originId.HasValue
+                        && warehousesById.TryGetValue(originId.Value, out var originWarehouse)
+                            ? originWarehouse.WarehouseName ?? string.Empty
+                            : string.Empty,
+                    ShippingRouteId = route?.Id,
+                    ShippingRouteName = route?.RouteName ?? string.Empty,
+                    SuggestedDestinationWarehouseId = routeDestination?.Id,
+                    SuggestedDestinationWarehouseName = routeDestination?.WarehouseName ?? string.Empty,
+                });
+            }
+
+            // Phiếu bốc xong theo luồng mới lên trước, phiếu tồn của vòng đời cũ xuống dưới.
+            return results
+                .OrderBy(r => r.IsLegacyStatus)
+                .ThenBy(r => r.WroCode, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         public async Task<InternationalShipmentResponseDto> GetByIdAsync(Guid shipmentId)
         {
             var shipment = await _unitOfWork.Repository<Shipment>().GetByIdAsync(shipmentId);
@@ -768,7 +901,7 @@ namespace VCL_BLL.Services
                     var st = candidateWro.Status?.Trim().ToUpperInvariant() ?? string.Empty;
                     seenStatuses.Add($"{candidateWro.WroCode}: {candidateWro.Status}");
 
-                    if (st is "RELEASED" or "HANDED_OVER" or "IN_TRANSIT")
+                    if (IsWroReadyForShipment(st))
                     {
                         chosenWroId = candidate;
                         break;
@@ -796,20 +929,11 @@ namespace VCL_BLL.Services
                     throw new NotFoundException($"Không tìm thấy yêu cầu xuất kho với ID {wroId}");
                 }
 
-                // Nhận mọi phiếu đã rời kho nguồn. Ba trạng thái vì ba đường đi khác nhau đều
-                // hợp lệ, thiếu một cái là hàng đứng vĩnh viễn ở kho nguồn:
-                //   RELEASED    - hoàn tất xuất kho (đường cũ)
-                //   HANDED_OVER - đã bàn giao cho nhà xe
-                //   IN_TRANSIT  - hoàn tất xuất kho nay đặt thẳng IN_TRANSIT, và gán tuyến vận
-                //                 chuyển cũng đặt IN_TRANSIT. Nên OM gán tuyến SAU khi bàn giao
-                //                 là phiếu rơi khỏi danh sách này, không gom lô được nữa — lỗi
-                //                 phụ thuộc thứ tự thao tác, người dùng không thể tự đoán ra.
-                var eligible = new[] { "RELEASED", "HANDED_OVER", "IN_TRANSIT" };
-                if (!eligible.Contains(wro.Status?.Trim().ToUpperInvariant()))
+                if (!IsWroReadyForShipment(wro.Status))
                 {
                     throw new ArgumentException(
                         $"Yêu cầu xuất kho {wro.WroCode ?? wroId.ToString()} chưa đủ điều kiện " +
-                        $"(phải đã xuất kho xong — RELEASED, HANDED_OVER hoặc IN_TRANSIT; hiện tại: {wro.Status}).");
+                        $"(kho phải bốc xong — PICKED; hiện tại: {wro.Status}).");
                 }
 
                 wroRequests.Add(wro);
@@ -920,14 +1044,8 @@ namespace VCL_BLL.Services
             var totalPackages = parcels.Count;
             var totalWeight = parcels.Sum(p => p.ActualWeight ?? p.ChargeableWeight ?? 0m);
 
-            // 5. Tạo lô vận chuyển (Shipment) trạng thái MANIFESTED
-            //
-            // Gom các phiếu xuất kho thành một lô CHÍNH LÀ lập bản kê khai hàng hoá của lô
-            // (manifest), nên lô sinh ra ở MANIFESTED chứ không phải CREATED. Để CREATED thì
-            // bảng AllowedTransitions chỉ cho đi tiếp sang đúng MANIFESTED — mà màn hình của
-            // sale chỉ có 4 lựa chọn CUSTOMS_EXPORT_PENDING / IN_TRANSIT / CUSTOMS_IMPORT_PENDING
-            // / ISSUE, không có nút nào bấm ra MANIFESTED. Lô đứng im ngay bước đầu, không bao
-            // giờ tới được IN_TRANSIT để xác nhận hàng về kho VN.
+            // 5. Tạo lô vận chuyển (Shipment) ở CREATED — kho vừa gom xong, hàng còn trong kho.
+            // Bước tiếp theo là kho tự bấm READY_TO_SHIP khi xếp xong và sẵn sàng giao cho xe.
             var shipmentCode = $"INTL-{DateTime.UtcNow:yyyyMMddHHmmss}-{new Random().Next(1000, 9999)}";
             var shipment = new Shipment
             {
@@ -935,7 +1053,7 @@ namespace VCL_BLL.Services
                 ShipmentCode = shipmentCode,
                 ShipmentType = "INTERNATIONAL",
                 ShipmentStage = "INTERNATIONAL",
-                Status = "MANIFESTED",
+                Status = StatusCreated,
                 OriginWarehouseId = request.OriginWarehouseId,
                 DestinationWarehouseId = request.DestinationWarehouseId,
                 CarrierId = request.CarrierId,
@@ -984,34 +1102,76 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Vòng đời lô vận chuyển quốc tế, bám theo nghiệp vụ thực tế:
+        /// Phiếu xuất kho đã bốc xong, gom được vào lô.
+        /// </summary>
+        /// <remarks>
+        /// <c>PICKED</c> là trạng thái cuối của phiếu theo vòng đời mới. Bốn giá trị còn lại là
+        /// của dữ liệu cũ — phiếu đã đi qua các bước đóng gói/bàn giao trước khi những bước đó
+        /// chuyển sang lô. Không nhận chúng thì hàng đang dở dang kẹt vĩnh viễn ở kho nguồn.
+        /// </remarks>
+        private static readonly string[] WroReadyForShipmentStatuses =
+            { "PICKED", "PACKING", "PACKED", "RELEASED", "HANDED_OVER", "IN_TRANSIT" };
+
+        private static bool IsWroReadyForShipment(string? status) =>
+            !string.IsNullOrWhiteSpace(status)
+            && WroReadyForShipmentStatuses.Contains(status.Trim(), StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Lô vừa gom xong, kho còn đang xếp hàng.</summary>
+        public const string StatusCreated = "CREATED";
+
+        /// <summary>Kho chốt "hàng đã sẵn sàng, chờ xe tới lấy".</summary>
+        public const string StatusReadyToShip = "READY_TO_SHIP";
+
+        /// <summary>Đối tác đã lấy hàng — hàng rời kho nguồn, đang trên đường về VN.</summary>
+        public const string StatusInTransit = "IN_TRANSIT";
+
+        /// <summary>Hàng đã tới Việt Nam, chờ xe chuyển về kho.</summary>
+        public const string StatusArrivedVn = "ARRIVED_VN";
+
+        /// <summary>Lô đã về tới kho VN — mốc mở khoá cho kho đối soát.</summary>
+        public const string StatusArrivedDestination = "ARRIVED_DESTINATION";
+
+        /// <summary>
+        /// Vòng đời lô vận chuyển quốc tế:
         ///
-        ///   CREATED → MANIFESTED → CUSTOMS_EXPORT_PENDING → IN_TRANSIT
-        ///           → CUSTOMS_IMPORT_PENDING → ARRIVED_DESTINATION
+        ///   CREATED → READY_TO_SHIP → IN_TRANSIT → ARRIVED_VN → ARRIVED_DESTINATION
         ///
-        /// Hai chặng thông quan tách riêng vì mỗi chặng có thể bị treo độc lập:
-        /// xuất tại nước nguồn và nhập tại Việt Nam.
-        ///
-        /// Giữ lại đường tắt MANIFESTED → IN_TRANSIT và IN_TRANSIT → ARRIVED_DESTINATION
-        /// để client cũ chưa cập nhật vẫn chạy được.
+        /// Kho bấm hai mốc đầu (gom xong / đối tác đã lấy hàng), Sale bấm hai mốc sau
+        /// (đã về VN / đã về tới kho). Sau ARRIVED_DESTINATION là việc của kho VN:
+        /// mở lô đối soát qua <c>destination-receiving</c>.
+        /// <para>
+        /// Không còn chặng thông quan trong bảng này. Chứng từ thông quan được đính lúc OM duyệt
+        /// phiếu xuất kho; giữ thêm hai trạng thái CUSTOMS_* ở đây chỉ tạo ra một mốc nữa mà
+        /// không ai có dữ liệu thật để cập nhật. Lô kẹt cửa khẩu thì dùng HOLD/ISSUE.
+        /// </para>
         /// </summary>
         private static readonly Dictionary<string, string[]> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["MANIFESTED"] = new[] { "CREATED" },
-            ["CUSTOMS_EXPORT_PENDING"] = new[] { "MANIFESTED", "CUSTOMS_REJECTED", "HOLD" },
-            ["IN_TRANSIT"] = new[] { "CUSTOMS_EXPORT_PENDING", "MANIFESTED", "HOLD" },
-            ["CUSTOMS_IMPORT_PENDING"] = new[] { "IN_TRANSIT", "CUSTOMS_REJECTED", "HOLD" },
-            ["ARRIVED_DESTINATION"] = new[] { "CUSTOMS_IMPORT_PENDING", "IN_TRANSIT" },
+            [StatusReadyToShip] = new[] { StatusCreated, "MANIFESTED", "HOLD" },
+            [StatusInTransit] = new[] { StatusReadyToShip, "HOLD" },
+            [StatusArrivedVn] = new[] { StatusInTransit, "HOLD" },
+            [StatusArrivedDestination] = new[] { StatusArrivedVn },
 
             // Trạng thái sự cố: vào được từ mọi chặng chưa kết thúc, và gỡ ra được.
-            ["CUSTOMS_REJECTED"] = new[] { "CUSTOMS_EXPORT_PENDING", "CUSTOMS_IMPORT_PENDING" },
-            ["HOLD"] = new[] { "CREATED", "MANIFESTED", "CUSTOMS_EXPORT_PENDING", "IN_TRANSIT", "CUSTOMS_IMPORT_PENDING", "CUSTOMS_REJECTED" },
-            ["ISSUE"] = new[] { "CREATED", "MANIFESTED", "CUSTOMS_EXPORT_PENDING", "IN_TRANSIT", "CUSTOMS_IMPORT_PENDING", "CUSTOMS_REJECTED", "HOLD" }
+            ["HOLD"] = new[] { StatusCreated, "MANIFESTED", StatusReadyToShip, StatusInTransit, StatusArrivedVn },
+            ["ISSUE"] = new[] { StatusCreated, "MANIFESTED", StatusReadyToShip, StatusInTransit, StatusArrivedVn, "HOLD" }
         };
 
+        /// <summary>Mốc kho bấm, khác với mốc Sale bấm — xem <see cref="ResolveRolesFor"/>.</summary>
+        private static readonly string[] WarehouseDrivenStatuses = { StatusReadyToShip, StatusInTransit };
+
         /// <summary>
-        /// Gom trạng thái về đúng 5 tab của màn Vận chuyển bên mobile, để FE lọc theo
-        /// một giá trị thay vì phải tự nhớ trạng thái nào thuộc tab nào.
+        /// Ai được đặt trạng thái nào. Trước đây dùng chung một tập cho mọi mốc, nên kho không
+        /// bấm được "đối tác đã lấy hàng" dù đó đúng là việc của kho.
+        /// </summary>
+        private static string[] ResolveRolesFor(string targetStatus) =>
+            WarehouseDrivenStatuses.Contains(targetStatus, StringComparer.OrdinalIgnoreCase)
+                ? ConsolidationRoles
+                : TrackingUpdateRoles;
+
+        /// <summary>
+        /// Gom trạng thái về đúng các tab của màn Vận chuyển, để FE lọc theo một giá trị thay vì
+        /// phải tự nhớ trạng thái nào thuộc tab nào.
         /// </summary>
         public static string MapStatusToTab(string? status)
         {
@@ -1019,11 +1179,14 @@ namespace VCL_BLL.Services
 
             return s switch
             {
-                "CREATED" or "MANIFESTED" or "LOT_CREATED" or "PREPARING" => "PREPARING",
-                "CUSTOMS_EXPORT_PENDING" or "CUSTOMS_IMPORT_PENDING" => "CUSTOMS",
+                "CREATED" or "MANIFESTED" or "LOT_CREATED" or "PREPARING" or "READY_TO_SHIP" => "PREPARING",
                 "IN_TRANSIT" => "IN_TRANSIT",
-                "ARRIVED_DESTINATION" or "ARRIVED_IN_VN" => "ARRIVED",
+                "ARRIVED_VN" or "ARRIVED_DESTINATION" or "ARRIVED_IN_VN" => "ARRIVED",
                 "ISSUE" or "CUSTOMS_REJECTED" or "HOLD" => "ISSUE",
+
+                // Lô cũ còn kẹt ở chặng thông quan: xếp vào "đang đi" thay vì rơi về PREPARING,
+                // vì hàng của chúng đã rời kho nguồn thật.
+                "CUSTOMS_EXPORT_PENDING" or "CUSTOMS_IMPORT_PENDING" => "IN_TRANSIT",
                 _ => "PREPARING"
             };
         }
@@ -1034,38 +1197,67 @@ namespace VCL_BLL.Services
             if (request == null)
                 throw new ArgumentException("Dữ liệu cập nhật không được để trống.");
 
-            // 1. Phân quyền
-            bool allowed = !string.IsNullOrWhiteSpace(userRole)
-                && TrackingUpdateRoles.Contains(userRole.Trim().ToUpperInvariant());
-            if (!allowed)
-            {
-                throw new UnauthorizedAccessException("Chỉ Sale, Staff hoặc Operations được cập nhật trạng thái lô vận chuyển.");
-            }
-
-            // 2. Tìm lô vận chuyển (404 nếu không có)
-            var shipmentRepo = _unitOfWork.Repository<Shipment>();
-            var shipment = await shipmentRepo.GetByIdAsync(shipmentId);
-            if (shipment == null)
-            {
-                throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {shipmentId}");
-            }
-
-            // 3. Validate trạng thái mới + đúng thứ tự
-            var targetStatus = request.Status.Trim().ToUpperInvariant();
+            // 1. Validate trạng thái mới (phải biết mốc nào thì mới biết ai được bấm)
+            var targetStatus = request.Status?.Trim().ToUpperInvariant() ?? string.Empty;
             if (!AllowedTransitions.ContainsKey(targetStatus))
             {
                 throw new ArgumentException(
                     $"Trạng thái không hợp lệ. Hợp lệ: {string.Join(", ", AllowedTransitions.Keys)}.");
             }
 
-            // Lô về tới kho đích phải đi qua PUT /{id}/arrive, vì bước đó mới cập nhật trạng
-            // thái CỦA TỪNG KIỆN. Đặt thẳng ở đây thì lô báo "đã về" mà kiện vẫn còn ở
-            // RELEASED — kho VN mở màn kiểm đếm không thấy hàng đâu, mà nhìn lô thì tưởng xong.
-            if (string.Equals(targetStatus, "ARRIVED_DESTINATION", StringComparison.OrdinalIgnoreCase))
+            // 2. Phân quyền theo từng mốc: kho chốt hàng rời kho, Sale chốt hàng về VN.
+            var rolesForStatus = ResolveRolesFor(targetStatus);
+            bool allowed = !string.IsNullOrWhiteSpace(userRole)
+                && rolesForStatus.Contains(userRole.Trim().ToUpperInvariant());
+            if (!allowed)
             {
-                throw new ArgumentException(
-                    "Không đặt trực tiếp trạng thái ARRIVED_DESTINATION được. "
-                    + "Dùng chức năng xác nhận lô đến kho đích để hệ thống cập nhật cả lô lẫn các kiện.");
+                throw new UnauthorizedAccessException(
+                    WarehouseDrivenStatuses.Contains(targetStatus, StringComparer.OrdinalIgnoreCase)
+                        ? $"Chỉ nhân viên kho, Staff hoặc Operations được đặt trạng thái {targetStatus}."
+                        : $"Chỉ Sale, Staff hoặc Operations được đặt trạng thái {targetStatus}.");
+            }
+
+            // Lô về tới kho đích kéo theo trạng thái CỦA TỪNG KIỆN, nên đi qua đúng một đường
+            // xử lý — cùng thân với PUT /{id}/arrive. Trước đây chỗ này chặn cứng và bắt FE gọi
+            // API khác, nhưng màn hình vẫn bày lựa chọn đó trong danh sách trạng thái kế tiếp,
+            // nên người dùng bấm vào chỉ nhận được lỗi.
+            if (string.Equals(targetStatus, StatusArrivedDestination, StringComparison.OrdinalIgnoreCase))
+            {
+                var arrival = await ConfirmArrivalAsync(
+                    shipmentId, userId, userRole, new ConfirmShipmentArrivalDto { Note = request.Note });
+
+                // Mã vận đơn đối tác gửi kèm ở lần cập nhật này thì vẫn phải giữ lại, đường
+                // /arrive không nhận field đó.
+                if (!string.IsNullOrWhiteSpace(request.CarrierTrackingCode))
+                {
+                    var arrivedShipment = await _unitOfWork.Repository<Shipment>().GetByIdAsync(shipmentId);
+                    if (arrivedShipment != null)
+                    {
+                        arrivedShipment.CarrierTrackingCode = request.CarrierTrackingCode.Trim();
+                        _unitOfWork.Repository<Shipment>().Update(arrivedShipment);
+                        await _unitOfWork.SaveChangesAsync();
+                    }
+                }
+
+                return new UpdateInternationalShipmentStatusResponseDto
+                {
+                    ShipmentId = arrival.ShipmentId,
+                    ShipmentCode = arrival.ShipmentCode,
+                    Status = arrival.Status,
+                    StatusTab = MapStatusToTab(arrival.Status),
+                    Note = request.Note,
+                    CarrierTrackingCode = request.CarrierTrackingCode,
+                    UpdatedAt = arrival.ArrivedAt,
+                    UpdatedByName = arrival.ConfirmedByName
+                };
+            }
+
+            // 3. Tìm lô vận chuyển (404 nếu không có)
+            var shipmentRepo = _unitOfWork.Repository<Shipment>();
+            var shipment = await shipmentRepo.GetByIdAsync(shipmentId);
+            if (shipment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {shipmentId}");
             }
 
             var currentStatus = shipment.Status?.Trim().ToUpperInvariant() ?? string.Empty;
@@ -1080,8 +1272,17 @@ namespace VCL_BLL.Services
             // 4. Cập nhật trạng thái + mốc thời gian tương ứng
             var now = DateTime.UtcNow;
             shipment.Status = targetStatus;
-            if (targetStatus == "IN_TRANSIT") shipment.ShippedAt = now;
-            if (targetStatus == "ARRIVED_DESTINATION") shipment.DeliveredAt = now;
+
+            if (targetStatus == StatusInTransit)
+            {
+                shipment.ShippedAt = now;
+
+                // Đối tác đã lấy hàng = hàng RỜI KHO THẬT. Đây là chỗ duy nhất nhả ô kệ và trừ
+                // tồn kho: trước đây việc này nằm ở bước bàn giao của từng phiếu xuất kho, nhưng
+                // một lô gom nhiều phiếu mà xe chỉ tới lấy một lần, nên chốt theo phiếu vừa lặp
+                // vừa dễ sót phiếu.
+                await ReleaseParcelsFromOriginAsync(shipment, userId, now);
+            }
 
             // Mã vận đơn bên đối tác: sale nhập tay, thường chỉ có từ lúc lô bắt đầu đi. Bỏ
             // trống thì giữ nguyên mã cũ — lần cập nhật trạng thái sau không được xoá mất mã
@@ -1089,6 +1290,21 @@ namespace VCL_BLL.Services
             if (!string.IsNullOrWhiteSpace(request.CarrierTrackingCode))
             {
                 shipment.CarrierTrackingCode = request.CarrierTrackingCode.Trim();
+            }
+
+            // Đơn vị vận chuyển: kho chọn từ danh mục lúc chốt sẵn sàng hoặc lúc bàn giao. Cũng
+            // như mã vận đơn, bỏ trống là giữ nguyên chứ không xoá.
+            if (request.CarrierId.HasValue && request.CarrierId.Value != Guid.Empty)
+            {
+                var selectedCarrier = await _unitOfWork.Repository<Carrier>()
+                    .GetByIdAsync(request.CarrierId.Value);
+                if (selectedCarrier == null)
+                {
+                    throw new NotFoundException(
+                        $"Không tìm thấy đơn vị vận chuyển với ID {request.CarrierId.Value}");
+                }
+
+                shipment.CarrierId = selectedCarrier.Id;
             }
 
             shipmentRepo.Update(shipment);
@@ -1103,6 +1319,14 @@ namespace VCL_BLL.Services
                 Note = request.Note,
                 TrackingTime = now
             });
+
+            // Khách chỉ cần biết đúng một tin ở chặng này: hàng đã về tới Việt Nam. Báo tự động
+            // tại mốc thật thay vì để Sale bấm một nút riêng bên phiếu xuất kho — nút đó từng
+            // báo khách "đã về" trong khi lô còn đang trên biển.
+            if (targetStatus == StatusArrivedVn)
+            {
+                await NotifyCustomersOfArrivalAsync(shipment);
+            }
 
             await _unitOfWork.SaveChangesAsync();
 
@@ -1120,6 +1344,128 @@ namespace VCL_BLL.Services
                 UpdatedAt = now,
                 UpdatedByName = user?.FullName ?? string.Empty
             };
+        }
+
+        /// <summary>Các kiện thuộc một lô.</summary>
+        private async Task<List<Parcel>> GetShipmentParcelsAsync(Guid shipmentId)
+        {
+            var parcelIds = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
+                .Where(sp => sp.ShipmentId == shipmentId)
+                .Select(sp => sp.ParcelId)
+                .ToHashSet();
+
+            return (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => parcelIds.Contains(p.Id))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Hàng rời kho nguồn: nhả ô kệ, đóng bản ghi tồn kho và ghi nhật ký xuất kho.
+        /// </summary>
+        /// <remarks>
+        /// Thiếu bước nhả ô thì <c>Bin.CurrentVolume</c> chỉ tăng mà không bao giờ giảm, lâu dần
+        /// mọi ô đều trông như đã đầy dù kho trống. Thiếu bước đóng tồn kho thì màn tồn kho vẫn
+        /// đếm hàng đã đi mất.
+        /// </remarks>
+        private async Task ReleaseParcelsFromOriginAsync(Shipment shipment, Guid userId, DateTime now)
+        {
+            var parcels = await GetShipmentParcelsAsync(shipment.Id);
+            if (parcels.Count == 0) return;
+
+            var parcelRepo = _unitOfWork.Repository<Parcel>();
+            var binRepo = _unitOfWork.Repository<Bin>();
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var movementRepo = _unitOfWork.Repository<InventoryMovement>();
+
+            var bins = (await binRepo.GetAllAsync()).ToDictionary(b => b.Id);
+            var parcelIds = parcels.Select(p => p.Id).ToHashSet();
+
+            var inventoriesByParcel = (await inventoryRepo.GetAllAsync())
+                .Where(i => parcelIds.Contains(i.ParcelId)
+                            && !string.Equals(i.Status, "RELEASED", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(i => i.ParcelId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var parcel in parcels)
+            {
+                var binId = parcel.BinId;
+
+                if (binId.HasValue && bins.TryGetValue(binId.Value, out var bin))
+                {
+                    var released = (parcel.Length ?? 0m) * (parcel.Width ?? 0m) * (parcel.Height ?? 0m);
+                    var remaining = (bin.CurrentVolume ?? 0m) - released;
+                    bin.CurrentVolume = remaining < 0m ? 0m : remaining;
+                    binRepo.Update(bin);
+                }
+
+                if (inventoriesByParcel.TryGetValue(parcel.Id, out var inventories))
+                {
+                    foreach (var inventory in inventories)
+                    {
+                        inventory.Status = "RELEASED";
+                        inventoryRepo.Update(inventory);
+
+                        // Cột to_bin_id là NOT NULL nên ghi lại chính ô vừa rời đi;
+                        // MovementType = OUTBOUND đã đủ để phân biệt với điều chuyển nội bộ.
+                        var movementBin = binId ?? inventory.BinId;
+                        await movementRepo.AddAsync(new InventoryMovement
+                        {
+                            Id = Guid.NewGuid(),
+                            InventoryId = inventory.Id,
+                            ParcelId = parcel.Id,
+                            FromBinId = movementBin,
+                            ToBinId = movementBin,
+                            MovementType = "OUTBOUND",
+                            Reason = $"Xuất kho theo lô {shipment.ShipmentCode}",
+                            Quantity = inventory.Quantity > 0 ? inventory.Quantity : 1,
+                            MovedById = userId,
+                            MovedAt = now
+                        });
+                    }
+                }
+
+                parcel.BinId = null;
+                parcel.PackageStatus = StatusInTransit;
+                parcelRepo.Update(parcel);
+            }
+        }
+
+        /// <summary>Báo khách hàng có kiện trong lô rằng hàng đã về tới Việt Nam.</summary>
+        private async Task NotifyCustomersOfArrivalAsync(Shipment shipment)
+        {
+            var parcels = await GetShipmentParcelsAsync(shipment.Id);
+            var orderIds = parcels
+                .Where(p => p.ConsignmentId.HasValue)
+                .Select(p => p.ConsignmentId!.Value)
+                .ToHashSet();
+            if (orderIds.Count == 0) return;
+
+            var orders = (await _unitOfWork.Repository<Order>().GetAllAsync())
+                .Where(o => orderIds.Contains(o.Id))
+                .ToList();
+
+            var customers = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                .ToDictionary(c => c.Id);
+
+            var notificationRepo = _unitOfWork.Repository<Notification>();
+
+            foreach (var order in orders)
+            {
+                if (!order.CustomerId.HasValue) continue;
+                if (!customers.TryGetValue(order.CustomerId.Value, out var customer)) continue;
+                if (customer.UserId is not Guid userId || userId == Guid.Empty) continue;
+
+                await notificationRepo.AddAsync(new Notification
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    Title = $"Đơn {order.ConsignmentCode} đã về Việt Nam",
+                    Content = $"Hàng của đơn {order.ConsignmentCode} đã về tới Việt Nam và đang được chuyển về kho. "
+                        + "Nhân viên sẽ liên hệ để tất toán và sắp xếp giao hàng.",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
         }
 
         public async Task<ConfirmShipmentArrivalResponseDto> ConfirmArrivalAsync(
@@ -1141,46 +1487,41 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {shipmentId}");
             }
 
-            // 3. Chỉ xác nhận khi đang IN_TRANSIT (đồng thời chặn xác nhận nhiều lần vì đã ARRIVED sẽ khác IN_TRANSIT)
+            // 3. Chặn xác nhận nhiều lần, và chỉ nhận từ đúng mốc trước đó.
             var currentStatus = shipment.Status?.Trim().ToUpperInvariant() ?? string.Empty;
-            if (currentStatus == "ARRIVED_DESTINATION")
+            if (currentStatus == StatusArrivedDestination)
             {
                 throw new ArgumentException("Lô vận chuyển này đã được xác nhận đến kho đích trước đó.");
             }
-            // Khớp đúng bảng AllowedTransitions ở trên: ARRIVED_DESTINATION vào được từ IN_TRANSIT
-            // hoặc CUSTOMS_IMPORT_PENDING. Trước đây chỉ nhận IN_TRANSIT, nên lô nào đi đúng vòng
-            // đời có chặng thông quan nhập là không xác nhận tới kho được — kẹt vĩnh viễn.
-            var arrivableFrom = new[] { "IN_TRANSIT", "CUSTOMS_IMPORT_PENDING" };
+
+            // Khớp đúng bảng AllowedTransitions. CUSTOMS_IMPORT_PENDING giữ lại cho những lô cũ
+            // đang kẹt ở chặng thông quan trước khi bỏ hai trạng thái đó khỏi vòng đời — không
+            // nhận thì chúng không bao giờ về kho được nữa.
+            var arrivableFrom = new[] { StatusArrivedVn, StatusInTransit, "CUSTOMS_IMPORT_PENDING" };
             if (!arrivableFrom.Contains(currentStatus))
             {
                 throw new ArgumentException(
-                    $"Lô chưa đủ điều kiện xác nhận đến kho đích (phải đang IN_TRANSIT hoặc " +
-                    $"CUSTOMS_IMPORT_PENDING, hiện tại: {shipment.Status}).");
+                    $"Lô chưa đủ điều kiện xác nhận về tới kho (phải đang {StatusArrivedVn}, " +
+                    $"hiện tại: {shipment.Status}).");
             }
 
             var now = DateTime.UtcNow;
 
             // 4. Cập nhật lô -> ARRIVED_DESTINATION
-            shipment.Status = "ARRIVED_DESTINATION";
+            shipment.Status = StatusArrivedDestination;
             shipment.DeliveredAt = now;
             shipmentRepo.Update(shipment);
 
-            // 5. Cập nhật các Parcel trong lô -> ARRIVED_DESTINATION (sẵn sàng cho nhập kho tại kho đích)
-            var shipmentParcelRepo = _unitOfWork.Repository<ShipmentParcel>();
-            var allShipmentParcels = await shipmentParcelRepo.GetAllAsync();
-            var parcelIds = allShipmentParcels
-                .Where(sp => sp.ShipmentId == shipment.Id)
-                .Select(sp => sp.ParcelId)
-                .ToHashSet();
-
+            // 5. Cập nhật các Parcel trong lô -> ARRIVED_DESTINATION (sẵn sàng cho kho VN đối soát)
+            //
+            // Ô kệ kho nguồn đã được nhả từ mốc IN_TRANSIT (ReleaseParcelsFromOriginAsync), và
+            // bước đó xoá luôn BinId. Nên kiện nào tới đây mà VẪN còn BinId là kiện của lô cũ đi
+            // thẳng từ chặng thông quan lên, chưa ai nhả ô cho nó — trừ thể tích ở đây. Kiện đã
+            // nhả rồi thì không đụng vào, trừ hai lần là ô trống mà báo đầy.
+            var parcels = await GetShipmentParcelsAsync(shipment.Id);
             var parcelRepo = _unitOfWork.Repository<Parcel>();
-            var allParcels = await parcelRepo.GetAllAsync();
-            var parcels = allParcels.Where(p => parcelIds.Contains(p.Id)).ToList();
-            // Kiện đã rời kho nguồn nên phải nhả chỗ trong ô kệ. Thiếu bước này thì
-            // Bin.CurrentVolume chỉ tăng mà không bao giờ giảm, lâu dần mọi ô đều trông như đã đầy.
             var binRepo = _unitOfWork.Repository<Bin>();
-            var allBins = await binRepo.GetAllAsync();
-            var binsById = allBins.ToDictionary(b => b.Id);
+            var binsById = (await binRepo.GetAllAsync()).ToDictionary(b => b.Id);
 
             foreach (var parcel in parcels)
             {
@@ -1193,7 +1534,7 @@ namespace VCL_BLL.Services
                 }
 
                 parcel.BinId = null;
-                parcel.PackageStatus = "ARRIVED_DESTINATION";
+                parcel.PackageStatus = StatusArrivedDestination;
                 parcelRepo.Update(parcel);
             }
 

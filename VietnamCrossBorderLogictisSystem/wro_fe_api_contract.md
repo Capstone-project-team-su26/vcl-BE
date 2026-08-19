@@ -1,5 +1,8 @@
 # 📘 CONTRACT API MODULE XUẤT KHO (WRO) DÀNH CHO FRONTEND (FE)
 
+> ⚠️ **Bảng trạng thái trong doc này đã lỗi thời từ 18/08/2026.** Xem `API_CHANGES_2026-08-18.md` — phiếu xuất kho nay duyệt một lần rồi hết việc, mọi mốc sau đó thuộc về lô vận chuyển.
+
+
 > **Dự án**: Vietnam Cross Border Logistics System (`vcl-BE`)  
 > **Module**: Warehouse Release Requests (WRO)  
 > **Phiên bản API**: v1.2  

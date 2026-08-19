@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
@@ -42,6 +43,33 @@ namespace VCL_API.Controllers
             {
                 var result = await _shipmentService.GetListAsync(pageNumber, pageSize, statusTab, status, originWarehouseId, search);
                 return Ok(new { message = "Lấy danh sách lô vận chuyển thành công.", data = result });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Phiếu xuất kho còn gom lô được: kho đã bốc xong và phiếu còn kiện chưa lên chuyến nào.
+        /// </summary>
+        /// <remarks>
+        /// Màn gom lô không tự lọc được bằng trạng thái phiếu: gom lô xong phiếu vẫn đứng nguyên
+        /// ở <c>PICKED</c> vì mọi mốc sau đó thuộc về lô. Endpoint này trừ sẵn phần đã lên chuyến
+        /// nên màn hình khỏi phải tải toàn bộ lô về rồi tự đối chiếu.
+        /// </remarks>
+        /// <param name="originWarehouseId">Chỉ lấy phiếu đang giữ hàng ở kho này</param>
+        /// <param name="search">Tìm theo mã phiếu, tên khách hoặc tên người nhận</param>
+        [HttpGet("available-wro-requests")]
+        [ProducesResponseType(typeof(List<AvailableWroForShipmentDto>), 200)]
+        public async Task<IActionResult> GetAvailableWroRequests(
+            [FromQuery] Guid? originWarehouseId = null,
+            [FromQuery] string? search = null)
+        {
+            try
+            {
+                var result = await _shipmentService.GetAvailableWroRequestsAsync(originWarehouseId, search);
+                return Ok(new { message = "Lấy danh sách phiếu xuất kho chờ gom lô thành công.", data = result });
             }
             catch (Exception ex)
             {
@@ -116,8 +144,13 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Staff/Operations cập nhật trạng thái lô vận chuyển quốc tế (MANIFESTED → IN_TRANSIT → ARRIVED_DESTINATION)
+        /// Cập nhật trạng thái lô: CREATED → READY_TO_SHIP → IN_TRANSIT → ARRIVED_VN → ARRIVED_DESTINATION.
         /// </summary>
+        /// <remarks>
+        /// Hai mốc đầu là của kho (gom xong / đối tác đã lấy hàng), hai mốc sau của Sale
+        /// (đã về VN / đã về tới kho). ARRIVED_DESTINATION đi qua đúng thân xử lý của
+        /// <c>PUT /{shipmentId}/arrive</c> nên cập nhật cả lô lẫn từng kiện.
+        /// </remarks>
         [HttpPut("{shipmentId}/status")]
         public async Task<IActionResult> UpdateStatus(Guid shipmentId, [FromBody] UpdateInternationalShipmentStatusDto request)
         {

@@ -142,5 +142,119 @@ namespace VCL_API.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        /// <summary>
+        /// Khách tự tra phiếu tiếp nhận của đơn mình: kho đã nhận hàng chưa, đếm được bao nhiêu,
+        /// có thiếu so với khai báo không.
+        /// </summary>
+        /// <remarks>
+        /// Trả <c>data: null</c> khi đơn chưa có phiếu (chưa thanh toán, hoặc là đơn mua hộ).
+        /// Xem đơn của người khác → 403.
+        /// </remarks>
+        [HttpGet("api/warehouse-receiving-notes/my-order/{consignmentOrderId}")]
+        [Authorize]
+        [ProducesResponseType(typeof(WarehouseReceivingNoteDetailDto), 200)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetMyReceivingNote(Guid consignmentOrderId)
+        {
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            try
+            {
+                var result = await _wrnService.GetMyReceivingNoteAsync(consignmentOrderId, userId);
+                return Ok(new
+                {
+                    message = result == null
+                        ? "Đơn hàng chưa có phiếu tiếp nhận kho."
+                        : "Lấy phiếu tiếp nhận thành công.",
+                    data = result,
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Danh sách phiếu tiếp nhận — hàng đợi việc của kho và màn duyệt của OM.
+        /// Phiếu chờ duyệt luôn nằm trên đầu.
+        /// </summary>
+        /// <param name="status">ACTIVE · PARTIALLY_RECEIVED · RECEIVED · APPROVED · REJECTED</param>
+        /// <param name="warehouseId">Lọc theo kho tiếp nhận</param>
+        /// <param name="search">Tìm theo mã phiếu, mã đơn, tên hoặc số điện thoại khách</param>
+        [HttpGet("api/warehouse-receiving-notes")]
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Manager,MANAGER")]
+        [ProducesResponseType(typeof(PaginatedResponse<WarehouseReceivingNoteListItemDto>), 200)]
+        public async Task<IActionResult> GetReceivingNotes(
+            [FromQuery] string? status = null,
+            [FromQuery] Guid? warehouseId = null,
+            [FromQuery] string? search = null,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            try
+            {
+                var result = await _wrnService.GetReceivingNotesAsync(status, warehouseId, search, pageNumber, pageSize);
+                return Ok(new { message = "Lấy danh sách phiếu tiếp nhận thành công.", data = result });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Operations Manager duyệt hoặc từ chối biên bản đối chiếu của phiếu tiếp nhận.
+        /// Phiếu phải đang ở RECEIVED. Từ chối thì bắt buộc ghi lý do.
+        /// </summary>
+        /// <remarks>
+        /// Duyệt xong kho mới xếp được hàng lên kệ — chốt nằm ở
+        /// <c>PUT /api/parcels/{parcelId}/put-away</c>.
+        /// </remarks>
+        [HttpPut("api/warehouse-receiving-notes/{receivingNoteId}/status")]
+        [Authorize]
+        [ProducesResponseType(typeof(WarehouseReceivingNoteDetailDto), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> UpdateStatus(
+            Guid receivingNoteId, [FromBody] UpdateReceivingNoteStatusDto request)
+        {
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            }
+
+            var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var result = await _wrnService.UpdateStatusAsync(receivingNoteId, userId, userRole, request);
+                return Ok(new { message = "Cập nhật phiếu tiếp nhận thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

@@ -4106,6 +4106,14 @@ namespace VCL_DLL.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("(newid())");
 
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("approved_at");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("approved_by");
+
                     b.Property<Guid>("ConsignmentOrderId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("consignment_order_id");
@@ -4121,6 +4129,11 @@ namespace VCL_DLL.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)")
                         .HasColumnName("receiving_note_code");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("rejection_reason");
 
                     b.Property<string>("Status")
                         .IsRequired()

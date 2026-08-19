@@ -162,10 +162,14 @@ namespace VCL_BLL.Services
                     RowKey = $"{order.Id}:RECEIVING_NOTE",
                     HandlingGroup = "RECEIVING_NOTE",
                     HandlingGroupText = "Tiếp nhận hàng tại kho gốc",
-                    ActionState = "AWAITING_RECEIVING_NOTE",
-                    ActionStateText = "Chờ lập phiếu tiếp nhận kho",
-                    NextAction = "CREATE_RECEIVING_NOTE",
-                    CanAct = true,
+                    ActionState = "AWAITING_WAREHOUSE_RECEIPT",
+                    ActionStateText = "Chờ kho nhận hàng",
+
+                    // Phiếu tiếp nhận nay tự sinh lúc thu tiền, nên dòng này chỉ để Sale theo dõi
+                    // chứ không còn nút bấm. Đường lập tay POST /api/warehouse-receiving-notes vẫn
+                    // còn, dùng khi đơn cũ chưa có phiếu.
+                    NextAction = "NONE",
+                    CanAct = false,
                     ReceivingWarehouseId = warehouse?.Id,
                     ReceivingWarehouseName = warehouse?.WarehouseName,
                 });

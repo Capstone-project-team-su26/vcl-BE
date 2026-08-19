@@ -52,6 +52,54 @@ namespace VCL_BLL.DTOs
         public string WroCode { get; set; } = string.Empty;
     }
 
+    /// <summary>
+    /// Một phiếu xuất kho còn gom lô được: kho đã bốc xong và phiếu còn ít nhất một kiện chưa
+    /// thuộc lô nào.
+    /// </summary>
+    /// <remarks>
+    /// Trạng thái phiếu không đổi sau khi gom lô — vòng đời của nó kết thúc ở <c>PICKED</c> — nên
+    /// màn hình không thể tự lọc bằng trạng thái. Danh sách này là nơi duy nhất biết phiếu nào
+    /// còn hàng chưa lên chuyến.
+    /// </remarks>
+    public class AvailableWroForShipmentDto
+    {
+        public Guid WroRequestId { get; set; }
+        public string WroCode { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Trạng thái thuộc vòng đời cũ (đóng gói / bàn giao trên phiếu). Vẫn gom lô được, nhưng
+        /// FE nên đánh dấu để kho biết đây là dữ liệu tồn chứ không phải luồng hiện tại.
+        /// </summary>
+        public bool IsLegacyStatus { get; set; }
+
+        public string CustomerName { get; set; } = string.Empty;
+        public string ReceiverName { get; set; } = string.Empty;
+
+        /// <summary>Số kiện của phiếu chưa nằm trong lô nào — đây mới là số thật sẽ lên chuyến.</summary>
+        public int AvailableParcelCount { get; set; }
+
+        /// <summary>Tổng số kiện của phiếu, để thấy phiếu đã bị tách sang lô khác bao nhiêu.</summary>
+        public int TotalParcelCount { get; set; }
+
+        /// <summary>Tổng cân nặng thực tế của phần kiện còn lại, kg.</summary>
+        public decimal AvailableWeight { get; set; }
+
+        /// <summary>Kho đang giữ hàng, suy từ ô kệ thật chứ không lấy theo khai báo trên phiếu.</summary>
+        public Guid? OriginWarehouseId { get; set; }
+        public string OriginWarehouseName { get; set; } = string.Empty;
+
+        public Guid? ShippingRouteId { get; set; }
+        public string ShippingRouteName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Kho đích lấy theo tuyến của phiếu. Máy chủ chặn lô khai kho đến lệch tuyến, nên FE
+        /// dùng giá trị này để chọn sẵn đúng kho thay vì để kho đoán.
+        /// </summary>
+        public Guid? SuggestedDestinationWarehouseId { get; set; }
+        public string SuggestedDestinationWarehouseName { get; set; } = string.Empty;
+    }
+
     public class InternationalShipmentParcelDto
     {
         public Guid ParcelId { get; set; }
@@ -115,6 +163,15 @@ namespace VCL_BLL.DTOs
         /// </summary>
         [MaxLength(100, ErrorMessage = "Mã vận đơn đối tác tối đa 100 ký tự.")]
         public string? CarrierTrackingCode { get; set; }
+
+        /// <summary>
+        /// Đơn vị vận chuyển chở lô này. Kho chọn từ danh mục lúc chốt "sẵn sàng xuất kho" hoặc
+        /// lúc bàn giao — trước đó thường chưa biết ai chở.
+        /// </summary>
+        /// <remarks>
+        /// Bỏ trống thì giữ nguyên đơn vị đã lưu, không xoá mất; muốn đổi thì gửi id mới.
+        /// </remarks>
+        public Guid? CarrierId { get; set; }
     }
 
     public class UpdateInternationalShipmentStatusResponseDto

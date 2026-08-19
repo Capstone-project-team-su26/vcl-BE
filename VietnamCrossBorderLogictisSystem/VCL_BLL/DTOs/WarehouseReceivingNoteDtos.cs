@@ -5,9 +5,24 @@ namespace VCL_BLL.DTOs
 {
     public class WarehouseReceivingNoteExpectedItemDto
     {
+        /// <summary>
+        /// Dòng hàng gốc trên đơn. Kho gửi lại đúng id này khi chốt số thực tế để hệ thống so
+        /// được với khai báo.
+        /// </summary>
+        /// <remarks>
+        /// Thiếu field này thì màn kiểm đếm không có gì để tham chiếu ngược, mọi dòng bị coi là
+        /// hàng phát sinh ngoài khai báo — <c>declaredQuantity</c> ghi 0 và biên bản báo lệch
+        /// toàn bộ dù hàng về đúng.
+        /// </remarks>
+        public Guid? OrderItemId { get; set; }
+
         public string ProductName { get; set; } = string.Empty;
         public string ProductType { get; set; } = string.Empty;
         public int Quantity { get; set; }
+
+        /// <summary>Cân nặng khách khai, để kho biết mình đang lệch bao nhiêu so với cái gì.</summary>
+        public decimal? Weight { get; set; }
+
         public decimal? DeclaredValue { get; set; }
     }
 
@@ -74,9 +89,35 @@ namespace VCL_BLL.DTOs
     }
 
     /// <summary>Yêu cầu xác nhận nhập kho kèm số liệu thực tế từng dòng hàng</summary>
+    /// <summary>
+    /// Một kiện hàng thật kho cân đo được lúc nhận.
+    /// </summary>
+    /// <remarks>
+    /// Dòng hàng của phiếu là thứ khách KHAI (tên hàng, số lượng); còn kiện là thùng hàng THẬT
+    /// nằm trên bàn cân, có kích thước để tính cước theo thể tích. Hai thứ khác nhau nên tách
+    /// riêng, nhưng kho khai cả hai trong cùng một lần chốt — cân xong đo luôn, không phải mở
+    /// thêm màn check-in nữa.
+    /// </remarks>
+    public class ConfirmReceiptParcelDto
+    {
+        public decimal ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+
+        /// <summary>Dòng hàng của đơn mà kiện này chứa, bỏ trống cũng được.</summary>
+        public Guid? OrderItemId { get; set; }
+    }
+
     public class ConfirmReceiptRequestDto
     {
         public string WarehouseNote { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Kiện thật kho nhận được. Bỏ trống thì phiếu vẫn chốt bình thường, chỉ là chưa có kiện
+        /// nào để xếp kệ.
+        /// </summary>
+        public List<ConfirmReceiptParcelDto>? Parcels { get; set; }
 
         public List<ConfirmReceiptItemDto> Items { get; set; } = new List<ConfirmReceiptItemDto>();
     }
@@ -123,5 +164,98 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Dòng đối chiếu khai báo với thực tế — rỗng cho tới khi kho xác nhận nhận hàng.</summary>
         public List<WarehouseReceivingNoteItemDto> Items { get; set; } = new List<WarehouseReceivingNoteItemDto>();
+
+        /// <summary>Kiện thật đã nhận của đơn này, kèm cân nặng và kích thước kho đo được.</summary>
+        public List<ReceivingNoteParcelDto> Parcels { get; set; } = new();
+
+        public string ApprovedByName { get; set; } = string.Empty;
+        public DateTime? ApprovedAt { get; set; }
+
+        /// <summary>Lý do OM từ chối, null khi phiếu không bị từ chối.</summary>
+        public string? RejectionReason { get; set; }
+
+        /// <summary>
+        /// Kho được phép xếp hàng lên kệ chưa. Chốt thật nằm ở
+        /// <c>ParcelService.PutAwayParcelAsync</c>; field này để màn hình biết đường bật/tắt nút.
+        /// </summary>
+        public bool CanPutAway { get; set; }
+    }
+
+    /// <summary>
+    /// Một dòng trong danh sách phiếu tiếp nhận — đủ để kho chọn việc và OM quyết duyệt hay không
+    /// mà không phải mở từng phiếu.
+    /// </summary>
+    public class WarehouseReceivingNoteListItemDto
+    {
+        public Guid Id { get; set; }
+        public string ReceivingNoteCode { get; set; } = string.Empty;
+
+        public Guid ConsignmentOrderId { get; set; }
+        public string ConsignmentCode { get; set; } = string.Empty;
+
+        public Guid WarehouseId { get; set; }
+        public string WarehouseName { get; set; } = string.Empty;
+
+        public string CustomerName { get; set; } = string.Empty;
+        public string CustomerPhone { get; set; } = string.Empty;
+
+        /// <summary>ACTIVE · PARTIALLY_RECEIVED · RECEIVED · APPROVED · REJECTED.</summary>
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>Nhãn tiếng Việt để FE hiện thẳng, khỏi tự map.</summary>
+        public string StatusText { get; set; } = string.Empty;
+
+        public DateTime CreatedAt { get; set; }
+        public string ApprovedByName { get; set; } = string.Empty;
+        public DateTime? ApprovedAt { get; set; }
+        public string? RejectionReason { get; set; }
+
+        /// <summary>Số dòng hàng khách khai trên đơn.</summary>
+        public int DeclaredItemCount { get; set; }
+
+        /// <summary>Số dòng kho đã cân đếm lại.</summary>
+        public int CheckedItemCount { get; set; }
+
+        /// <summary>Có dòng nào lệch số lượng hoặc trọng lượng không — cái OM cần nhìn trước tiên.</summary>
+        public bool HasDiscrepancy { get; set; }
+
+        /// <summary>Số kiện đã check-in cho đơn này.</summary>
+        public int ParcelCount { get; set; }
+
+        /// <summary>Phiếu đang chờ OM quyết, dùng để FE bật/tắt nút duyệt.</summary>
+        public bool AwaitingApproval { get; set; }
+    }
+
+    /// <summary>Kiện thật của đơn, hiện trên phiếu để đối chiếu và theo dõi.</summary>
+    public class ReceivingNoteParcelDto
+    {
+        public Guid ParcelId { get; set; }
+        public string PackageCode { get; set; } = string.Empty;
+
+        /// <summary>RECEIVED · STORED · IN_TRANSIT…</summary>
+        public string PackageStatus { get; set; } = string.Empty;
+        public string PackageStatusText { get; set; } = string.Empty;
+
+        public decimal? ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+
+        /// <summary>Thể tích quy đổi (cm³) — kho nhìn để biết kiện chiếm bao nhiêu chỗ trên kệ.</summary>
+        public decimal? Volume { get; set; }
+
+        /// <summary>Ô kệ đang chứa kiện, rỗng khi chưa xếp.</summary>
+        public string BinCode { get; set; } = string.Empty;
+        public DateTime? CheckInTime { get; set; }
+    }
+
+    /// <summary>OM duyệt hoặc từ chối biên bản đối chiếu của phiếu tiếp nhận.</summary>
+    public class UpdateReceivingNoteStatusDto
+    {
+        /// <summary><c>APPROVED</c> hoặc <c>REJECTED</c>.</summary>
+        public string Status { get; set; } = string.Empty;
+
+        /// <summary>Bắt buộc khi từ chối.</summary>
+        public string? RejectionReason { get; set; }
     }
 }

@@ -336,42 +336,25 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Nút bấm dành cho bên Sale: Báo cho khách hàng, đồng thời chuyển trạng thái chưa thông quan -> đã thông quan và status -> Hàng về Việt Nam (ARRIVED_IN_VN)
+        /// KHÔNG CÒN DÙNG — hàng về VN nay là mốc của lô vận chuyển, và khách được báo tự động.
         /// </summary>
+        /// <remarks>
+        /// Nút này trước đây đẩy phiếu xuất kho sang <c>ARRIVED_IN_VN</c>, khiến API phiếu trả
+        /// <c>"Đã thông quan"</c> trong khi kiện hàng và lô vẫn đang ở nước ngoài — hai bộ trạng
+        /// thái nói ngược nhau. Mốc thật nằm ở lô; khi lô sang <c>ARRIVED_VN</c> thì hệ thống tự
+        /// gửi thông báo cho khách.
+        /// </remarks>
         [HttpPost("{requestId}/notify-customer")]
         [Authorize(Roles = "Sale,WarehouseStaff,Staff,OperationsManager,Operations,Admin")]
-        public async Task<IActionResult> NotifyCustomerAndArrivedVN(Guid requestId)
+        [ProducesResponseType(400)]
+        public IActionResult NotifyCustomerAndArrivedVN(Guid requestId)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            return BadRequest(new
             {
-                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
-            }
-
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-            try
-            {
-                var requestDto = new UpdateWroStatusRequestDto { Status = "ARRIVED_IN_VN" };
-                var result = await _wroService.UpdateWroStatusAsync(requestId, userId, userRole, requestDto);
-                return Ok(new { message = "Đã báo khách thành công. Trạng thái đã chuyển sang Hàng về VN và Đã thông quan.", data = result });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(403, new { message = ex.Message });
-            }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
+                message = "Hàng về VN nay là trạng thái của lô vận chuyển, không đặt trên phiếu xuất kho. "
+                    + "Dùng PUT /api/international-shipments/{shipmentId}/status với status = ARRIVED_VN; "
+                    + "khách sẽ được thông báo tự động."
+            });
         }
 
         /// <summary>
@@ -522,6 +505,10 @@ namespace VCL_API.Controllers
             catch (NotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {

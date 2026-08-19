@@ -286,11 +286,7 @@ public class AiService : IAiService
         var model = _configuration["OpenRouterSettings:Model"] ?? "google/gemini-2.0-flash-exp:free";
         var baseUrl = _configuration["OpenRouterSettings:BaseUrl"] ?? "https://openrouter.ai/api/v1/chat/completions";
 
-        apiKey = apiKey?.Trim().Replace("\r", string.Empty).Replace("\n", string.Empty);
-        model = model?.Trim().Replace("\r", string.Empty).Replace("\n", string.Empty);
-        baseUrl = baseUrl?.Trim().Replace("\r", string.Empty).Replace("\n", string.Empty);
-
-        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_") || apiKey.StartsWith("REPLACE_WITH_"))
+        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_"))
         {
             throw new InvalidOperationException("OpenRouter API Key chưa được cấu hình hợp lệ trong appsettings.json hoặc môi trường.");
         }
@@ -874,11 +870,7 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
         var model = _configuration["OpenRouterSettings:Model"] ?? "google/gemini-2.0-flash-exp:free";
         var baseUrl = _configuration["OpenRouterSettings:BaseUrl"] ?? "https://openrouter.ai/api/v1/chat/completions";
 
-        apiKey = apiKey?.Trim().Replace("\r", string.Empty).Replace("\n", string.Empty);
-        model = model?.Trim().Replace("\r", string.Empty).Replace("\n", string.Empty);
-        baseUrl = baseUrl?.Trim().Replace("\r", string.Empty).Replace("\n", string.Empty);
-
-        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_") || apiKey.StartsWith("REPLACE_WITH_"))
+        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_"))
         {
             return null;
         }

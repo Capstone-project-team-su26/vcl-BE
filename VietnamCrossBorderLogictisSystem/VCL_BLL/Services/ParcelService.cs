@@ -722,6 +722,65 @@ namespace VCL_BLL.Services
         /// Kiện về từ lô quốc tế chỉ được xếp kệ khi nằm trong một phiếu nhập kho VN đã duyệt.
         /// Ném lỗi kèm đúng lý do đang vướng để kho biết phải làm gì tiếp.
         /// </summary>
+        /// <summary>
+        /// Kiện nhận tại kho gốc chỉ được xếp kệ sau khi OM duyệt phiếu tiếp nhận.
+        /// </summary>
+        /// <remarks>
+        /// Cùng ý với <see cref="EnsureApprovedInboundRequestAsync"/> ở phía kho Việt Nam: kho cân
+        /// đếm xong là xong phần kho, còn cho hàng vào sổ hay không là quyết định của OM. Không có
+        /// chốt này thì biên bản đối chiếu chênh lệch thành tờ giấy không ai đọc — hàng cứ lên kệ
+        /// rồi mới có người hỏi sao thiếu.
+        /// </remarks>
+        private async Task EnsureApprovedReceivingNoteAsync(Parcel parcel)
+        {
+            if (!parcel.ConsignmentId.HasValue) return;
+
+            var code = parcel.PackageCode ?? parcel.Id.ToString();
+
+            var notes = (await _unitOfWork.Repository<WarehouseReceivingNote>().GetAllAsync())
+                .Where(n => n.ConsignmentOrderId == parcel.ConsignmentId.Value)
+                .ToList();
+
+            // Đơn cũ chạy từ trước khi có phiếu tiếp nhận thì không chặn — chặn ở đây là kẹt
+            // vĩnh viễn những kiện đã nằm sẵn trong kho mà không ai lập phiếu ngược lại được.
+            if (notes.Count == 0) return;
+
+            if (notes.Any(n => string.Equals(n.Status, WarehouseReceivingNoteService.StatusApproved,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            var rejected = notes.FirstOrDefault(n => string.Equals(n.Status,
+                WarehouseReceivingNoteService.StatusRejected, StringComparison.OrdinalIgnoreCase));
+            if (rejected != null && notes.Count == 1)
+            {
+                throw new ArgumentException(
+                    $"Phiếu tiếp nhận {rejected.ReceivingNoteCode} của kiện {code} đã bị từ chối"
+                    + (string.IsNullOrWhiteSpace(rejected.RejectionReason)
+                        ? "." : $": {rejected.RejectionReason}"));
+            }
+
+            var pending = notes.FirstOrDefault(n => !string.Equals(n.Status,
+                WarehouseReceivingNoteService.StatusRejected, StringComparison.OrdinalIgnoreCase));
+
+            var awaitingApproval = new[]
+            {
+                WarehouseReceivingNoteService.StatusReceived,
+                WarehouseReceivingNoteService.StatusPartiallyReceived
+            };
+
+            if (awaitingApproval.Contains(pending?.Status, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"Phiếu tiếp nhận {pending!.ReceivingNoteCode} của kiện {code} đang chờ Operations Manager duyệt.");
+            }
+
+            throw new ArgumentException(
+                $"Phiếu tiếp nhận {pending?.ReceivingNoteCode} của kiện {code} chưa được xác nhận nhập kho "
+                + $"(hiện tại: {pending?.Status}). Kho nhập số thực tế rồi OM duyệt mới xếp kệ được.");
+        }
+
         private async Task EnsureApprovedInboundRequestAsync(Parcel parcel)
         {
             var code = parcel.PackageCode ?? parcel.Id.ToString();
@@ -793,11 +852,16 @@ namespace VCL_BLL.Services
             // nhập kho thành thủ tục trang trí, và đồng hồ phí lưu kho VN bắt đầu chạy trước
             // khi ai đó đồng ý cho hàng nằm lại.
             //
-            // Kiện check-in thẳng tại kho nguồn (RECEIVED) không dính chốt này — luồng ký gửi
-            // của khách vào kho nguồn không liên quan gì tới phiếu nhập kho VN.
+            // Kiện check-in thẳng tại kho nguồn (RECEIVED) đi qua phiếu TIẾP NHẬN, không phải
+            // phiếu nhập kho VN — hai loại phiếu khác nhau nhưng cùng một luật: OM gật rồi mới
+            // lên kệ.
             if (string.Equals(parcel.PackageStatus, "RECEIVED_AT_DESTINATION", StringComparison.OrdinalIgnoreCase))
             {
                 await EnsureApprovedInboundRequestAsync(parcel);
+            }
+            else if (string.Equals(parcel.PackageStatus, "RECEIVED", StringComparison.OrdinalIgnoreCase))
+            {
+                await EnsureApprovedReceivingNoteAsync(parcel);
             }
 
             // 4. Tìm Warehouse, Zone, Shelf, Bin

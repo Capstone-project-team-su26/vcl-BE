@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 
@@ -11,6 +12,16 @@ namespace VCL_BLL.Interface
         /// <summary>Danh sách lô vận chuyển quốc tế, lọc theo tab/trạng thái/kho.</summary>
         Task<PaginatedResponse<InternationalShipmentResponseDto>> GetListAsync(
             int pageNumber, int pageSize, string? statusTab, string? status, Guid? originWarehouseId, string? search);
+
+        /// <summary>
+        /// Phiếu xuất kho còn gom lô được: đã bốc xong và còn kiện chưa thuộc lô nào.
+        /// </summary>
+        /// <remarks>
+        /// Trạng thái phiếu đứng yên ở <c>PICKED</c> sau khi gom lô, nên màn hình không thể tự
+        /// suy ra phiếu nào đã đi. Tính ở đây một lần thay vì bắt FE tải hết lô về rồi trừ.
+        /// </remarks>
+        Task<List<AvailableWroForShipmentDto>> GetAvailableWroRequestsAsync(
+            Guid? originWarehouseId, string? search);
 
         /// <summary>Chi tiết một lô vận chuyển quốc tế.</summary>
         Task<InternationalShipmentResponseDto> GetByIdAsync(Guid shipmentId);

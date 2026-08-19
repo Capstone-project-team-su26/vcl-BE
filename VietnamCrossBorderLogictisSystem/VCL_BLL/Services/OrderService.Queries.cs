@@ -379,11 +379,15 @@ namespace VCL_BLL.Services
         {
             "CREATED" or "LOT_CREATED" => "Lô mới tạo",
             "PREPARING" => "Đang chuẩn bị",
+            "READY_TO_SHIP" => "Sẵn sàng xuất kho",
+            "IN_TRANSIT" => "Đang vận chuyển về Việt Nam",
+            "ARRIVED_VN" => "Đã về Việt Nam, chờ chuyển về kho",
+            "ARRIVED" or "ARRIVED_DESTINATION" or "ARRIVED_IN_VN" => "Đã đến kho Việt Nam",
+
+            // Nhãn của các mốc đã bỏ khỏi vòng đời, giữ để lô cũ trong DB vẫn hiện đúng chữ.
             "MANIFESTED" => "Đã lên manifest",
             "CUSTOMS_EXPORT_PENDING" => "Chờ thông quan xuất",
-            "IN_TRANSIT" => "Đang vận chuyển",
             "CUSTOMS_IMPORT_PENDING" => "Chờ thông quan nhập",
-            "ARRIVED" or "ARRIVED_DESTINATION" or "ARRIVED_IN_VN" => "Đã đến kho Việt Nam",
             "CUSTOMS_REJECTED" => "Hải quan từ chối",
             "HOLD" => "Đang tạm giữ",
             "ISSUE" => "Lô đang có sự cố",
