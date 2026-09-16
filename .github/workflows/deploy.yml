@@ -1,0 +1,90 @@
+name: Deploy VCL Backend
+
+# Replaces auto-build-deploy-dotnet.yml and backend-ci-cd.yml.
+# Runs directly on the team's own server via a self-hosted runner
+# (see the runbook for how to register it) — no SSH step needed.
+
+on:
+  push:
+    branches:
+      - dtrong
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vcl-backend-deploy-${{ github.ref_name }}
+  # Queue instead of cancel: killing `docker compose up --build` midway
+  # leaves the old container running while main has already moved on.
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ github.ref_name }}
+    # This label is what pins the job to the VCL backend's own runner
+    # instead of any other self-hosted runner registered in the org.
+    runs-on: [self-hosted, ec2-runner]
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write deploy environment file
+        working-directory: VietnamCrossBorderLogictisSystem
+        run: |
+          set -eu
+          cat > .env <<EOF
+          IMAGE_TAG=${{ github.sha }}
+          TUNNEL_TOKEN=${{ secrets.CF_TUNNEL_TOKEN }}
+          CONNECTIONSTRING=${{ secrets.CONNECTIONSTRING }}
+          JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
+          PAYOS_CLIENT_ID=${{ secrets.PAYOS_CLIENT_ID }}
+          PAYOS_API_KEY=${{ secrets.PAYOS_API_KEY }}
+          PAYOS_CHECKSUM_KEY=${{ secrets.PAYOS_CHECKSUM_KEY }}
+          SEPAY_WEBHOOK_SECRET=${{ secrets.SEPAY_WEBHOOK_SECRET }}
+          CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }}
+          MAIL_APP_PASSWORD=${{ secrets.MAIL_APP_PASSWORD }}
+          GOSHIP_CLIENT_SECRET=${{ secrets.GOSHIP_CLIENT_SECRET }}
+          GOSHIP_TOKEN=${{ secrets.GOSHIP_TOKEN }}
+          OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
+          EOF
+          chmod 600 .env
+
+      - name: Build and deploy
+        working-directory: VietnamCrossBorderLogictisSystem
+        run: |
+          set -eu
+          docker compose config --quiet
+          docker compose up --detach --build --remove-orphans
+
+      - name: Wait for vcl-api health check
+        working-directory: VietnamCrossBorderLogictisSystem
+        run: |
+          set -eu
+          attempt=1
+          until [ "$attempt" -gt 18 ]; do
+            status="$(docker inspect --format='{{.State.Health.Status}}' vcl-api 2>/dev/null || echo starting)"
+            if [ "$status" = "healthy" ]; then
+              echo "vcl-api is healthy"
+              exit 0
+            fi
+            echo "Waiting for vcl-api health check ($attempt/18): $status"
+            sleep 5
+            attempt=$((attempt + 1))
+          done
+          echo "Deployment failed its health check." >&2
+          docker compose ps
+          docker compose logs --tail=100 vcl-api
+          exit 1
+
+      - name: Show running services
+        if: always()
+        working-directory: VietnamCrossBorderLogictisSystem
+        run: docker compose ps
+
+      - name: Clean up deploy environment file
+        if: always()
+        working-directory: VietnamCrossBorderLogictisSystem
+        run: rm -f .env
