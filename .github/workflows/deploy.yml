@@ -24,7 +24,7 @@ jobs:
     name: Deploy ${{ github.ref_name }}
     # This label is what pins the job to the VCL backend's own runner
     # instead of any other self-hosted runner registered in the org.
-    runs-on: [self-hosted, ec2-runner]
+    runs-on: [self-hosted, hoctrothayliem]
     timeout-minutes: 25
 
     steps:
