@@ -1,67 +1,77 @@
 name: vcl-backend
 
+# Luồng request (khớp sơ đồ Conceptual System Architecture):
+#   Người dùng → Cloudflare → cloudflared → vcl-api → sqlserver
+# Không service nào mở cổng ra máy chủ: VPS chỉ mở SSH, mọi request web đi vào qua
+# Cloudflare Tunnel (cloudflared tự gọi ra Cloudflare nên firewall không cần mở 80/443).
+
 networks:
-  edge:
-    name: vcl-edge
+  vcl-net:
+    name: vcl-net
     driver: bridge
+
+volumes:
+  # Dữ liệu SQL Server nằm ở volume riêng nên deploy lại API không mất dữ liệu.
+  # Tuyệt đối không chạy `docker compose down -v` — cờ -v xoá luôn volume này.
+  mssql-data:
 
 services:
   # ---------------------------------------------------------------------
-  # Reverse proxy. No ports are published to the host on purpose: the
-  # only way in is through the "edge" network, which only cloudflared
-  # can reach. That means the server's firewall never needs 80/443 open.
+  # SQL Server 2022 bản Express (miễn phí, đủ cho đồ án: DB tối đa 10 GB).
+  # Chỉ các container trong mạng vcl-net gọi được, không lộ ra Internet.
   # ---------------------------------------------------------------------
-  traefik:
-    image: traefik:v3.1
-    container_name: traefik
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: vcl-sqlserver
     restart: unless-stopped
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=vcl-edge"
-      - "--entrypoints.web.address=:80"
-      - "--api.dashboard=false"
-      - "--log.level=INFO"
-    networks:
-      - edge
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-
-  # ---------------------------------------------------------------------
-  # Cloudflare Tunnel connector. Reads its token from the environment
-  # (see .env / GitHub secret CF_TUNNEL_TOKEN). No cloudflared config
-  # file needed — the tunnel's public hostnames are configured once in
-  # the Cloudflare Zero Trust dashboard (see the runbook).
-  # ---------------------------------------------------------------------
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required (Cloudflare Zero Trust > Tunnels)}
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD is required (GitHub secret)}
+      # VPS có 4 GB RAM: chừa phần còn lại cho API, cloudflared và hệ điều hành.
+      MSSQL_MEMORY_LIMIT_MB: "2048"
+    volumes:
+      - mssql-data:/var/opt/mssql
     networks:
-      - edge
-    depends_on:
-      - traefik
+      - vcl-net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   # ---------------------------------------------------------------------
-  # The .NET backend. Traefik discovers it via the docker provider using
-  # the labels below — nothing to configure on the Traefik side per
-  # deploy. Internal port 8080 must match what Kestrel actually listens
-  # on inside the container (ASPNETCORE_URLS / launchSettings).
+  # Backend .NET. Kestrel nghe cổng 8080 bên trong container (ASPNETCORE_URLS
+  # trong Dockerfile); route trên Cloudflare trỏ vào http://vcl-api:8080.
   # ---------------------------------------------------------------------
   vcl-api:
     build:
       context: .
       dockerfile: Dockerfile
+      labels:
+        # Để bước dọn dẹp của workflow chỉ xoá image API cũ, không đụng image khác.
+        com.vcl.app: vcl-api
     image: vcl-api:${IMAGE_TAG:-latest}
     container_name: vcl-api
     restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
     networks:
-      - edge
+      - vcl-net
     environment:
-      ConnectionStrings__DefaultConnection: ${CONNECTIONSTRING}
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=AppDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=True;"
+
+      # appsettings.json vẫn trỏ domain cũ (api-vcl.zushin.io.vn); ghi đè cho server mới.
+      App__PublicBaseUrl: https://api-vcl.vnlogistic.click
+      SePay__BaseUrl: https://api-vcl.vnlogistic.click
+
+      # GoShip sandbox không bắn webhook nên muốn chạy hết chặng giao hàng phải đặt tay
+      # trạng thái. Mặc định tắt; bật bằng GitHub variable GOSHIP_ALLOW_STATUS_SIMULATION=true.
+      GoshipSettings__AllowStatusSimulation: ${GOSHIP_ALLOW_STATUS_SIMULATION:-false}
+
       JWT__SecretKey: ${JWT_SECRET_KEY}
       PayOS__ClientId: ${PAYOS_CLIENT_ID}
       PayOS__ApiKey: ${PAYOS_API_KEY}
@@ -74,15 +84,25 @@ services:
       GoshipSettings__Token: ${GOSHIP_TOKEN}
       OpenRouterSettings__ApiKey: ${OPENROUTER_API_KEY}
     healthcheck:
-      # Requires curl inside the runtime image — see the runbook's note
-      # on the Dockerfile if this stays "unhealthy".
       test: ["CMD", "curl", "-f", "http://localhost:8080/swagger/v1/swagger.json"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
-    labels:
-      traefik.enable: "true"
-      traefik.http.routers.vcl-api.rule: "Host(`api-vcl.vnlogistic.click`)"
-      traefik.http.routers.vcl-api.entrypoints: "web"
-      traefik.http.services.vcl-api.loadbalancer.server.port: "8080"
+
+  # ---------------------------------------------------------------------
+  # Cloudflare Tunnel connector (tunnel "vcl-backend"). Token lấy từ GitHub
+  # secret CF_TUNNEL_TOKEN; hostname api-vcl.vnlogistic.click → http://vcl-api:8080
+  # được cấu hình một lần trên Cloudflare (Networking → Tunnels → Routes).
+  # ---------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required (GitHub secret CF_TUNNEL_TOKEN)}
+    networks:
+      - vcl-net
+    depends_on:
+      - vcl-api

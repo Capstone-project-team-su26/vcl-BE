@@ -38,7 +38,8 @@ jobs:
           cat > .env <<'EOF'
           IMAGE_TAG=${{ github.sha }}
           TUNNEL_TOKEN=${{ secrets.CF_TUNNEL_TOKEN }}
-          CONNECTIONSTRING=${{ secrets.CONNECTIONSTRING }}
+          MSSQL_SA_PASSWORD=${{ secrets.MSSQL_SA_PASSWORD }}
+          GOSHIP_ALLOW_STATUS_SIMULATION=${{ vars.GOSHIP_ALLOW_STATUS_SIMULATION }}
           JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
           PAYOS_CLIENT_ID=${{ secrets.PAYOS_CLIENT_ID }}
           PAYOS_API_KEY=${{ secrets.PAYOS_API_KEY }}
@@ -64,13 +65,13 @@ jobs:
         run: |
           set -eu
           attempt=1
-          until [ "$attempt" -gt 18 ]; do
+          until [ "$attempt" -gt 30 ]; do
             status="$(docker inspect --format='{{.State.Health.Status}}' vcl-api 2>/dev/null || echo starting)"
             if [ "$status" = "healthy" ]; then
               echo "vcl-api is healthy"
               exit 0
             fi
-            echo "Waiting for vcl-api health check ($attempt/18): $status"
+            echo "Waiting for vcl-api health check ($attempt/30): $status"
             sleep 5
             attempt=$((attempt + 1))
           done
@@ -83,6 +84,11 @@ jobs:
         if: always()
         working-directory: VietnamCrossBorderLogictisSystem
         run: docker compose ps
+
+      - name: Remove old API images
+        # Mỗi lần deploy build ra image vcl-api:<sha> mới; xoá các bản cũ không còn
+        # container nào dùng để ổ 50 GB không đầy dần. Image SQL Server/cloudflared không bị đụng.
+        run: docker image prune --all --force --filter "label=com.vcl.app=vcl-api"
 
       - name: Clean up deploy environment file
         if: always()
