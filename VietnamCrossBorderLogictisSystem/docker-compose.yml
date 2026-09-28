@@ -99,7 +99,9 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
-    command: tunnel --no-autoupdate run
+    # Nhà cung cấp VPS chặn UDP ra ngoài nên QUIC (UDP 7844) mặc định không kết nối được;
+    # ép dùng HTTP/2 qua TCP 443.
+    command: tunnel --no-autoupdate --protocol http2 run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required (GitHub secret CF_TUNNEL_TOKEN)}
     networks:
