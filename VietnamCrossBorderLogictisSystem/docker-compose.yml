@@ -2,8 +2,9 @@ name: vcl-backend
 
 # Luồng request (khớp sơ đồ Conceptual System Architecture):
 #   Người dùng → Cloudflare → cloudflared → vcl-api → sqlserver
-# Không service nào mở cổng ra máy chủ: VPS chỉ mở SSH, mọi request web đi vào qua
+# Không service nào mở cổng ra Internet: VPS chỉ mở SSH, mọi request web đi vào qua
 # Cloudflare Tunnel (cloudflared tự gọi ra Cloudflare nên firewall không cần mở 80/443).
+# Riêng SQL Server mở cổng trên 127.0.0.1 của VPS để quản trị qua đường hầm SSH.
 
 networks:
   vcl-net:
@@ -32,6 +33,10 @@ services:
       MSSQL_MEMORY_LIMIT_MB: "2048"
     volumes:
       - mssql-data:/var/opt/mssql
+    # Chỉ mở trên 127.0.0.1 của VPS (không ra Internet) để xem DB bằng SSMS qua đường hầm SSH:
+    #   ssh -N vcl-db   →   SSMS kết nối 127.0.0.1,14333 trên máy mình
+    ports:
+      - "127.0.0.1:14333:1433"
     networks:
       - vcl-net
     healthcheck:
