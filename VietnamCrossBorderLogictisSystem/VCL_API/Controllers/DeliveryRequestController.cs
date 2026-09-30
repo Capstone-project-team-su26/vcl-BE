@@ -1,3 +1,4 @@
+using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -42,7 +43,35 @@ namespace VCL_API.Controllers
             _ => StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message })
         };
 
-        /// <summary>Sale lập yêu cầu giao hàng cho đơn đã tất toán.</summary>
+        /// <summary>Sale ghi đã giao (kèm ảnh ký nhận DELIVERY_PROOF) khi hãng không báo về.</summary>
+        [HttpPost("{deliveryRequestId}/proof")]
+        public async Task<IActionResult> RecordProof(Guid deliveryRequestId, [FromBody] DeliveryProofRequest request)
+        {
+            if (!TryGetUser(out var userId, out var userRole))
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            try
+            {
+                var result = await _deliveryService.RecordProofAsync(deliveryRequestId, userId, userRole, request);
+                return Ok(new { message = "Đã ghi nhận giao hàng thành công.", data = result });
+            }
+            catch (Exception ex) { return Handle(ex); }
+        }
+
+        /// <summary>Kho nhận lại hàng hoàn sau giao thất bại — kiện về khu nhận, lập yêu cầu giao mới được.</summary>
+        [HttpPost("{deliveryRequestId}/receive-return")]
+        public async Task<IActionResult> ReceiveReturn(Guid deliveryRequestId, [FromBody] ReceiveReturnedDeliveryRequest request)
+        {
+            if (!TryGetUser(out var userId, out var userRole))
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+            try
+            {
+                var result = await _deliveryService.ReceiveReturnAsync(deliveryRequestId, userId, userRole, request);
+                return Ok(new { message = "Đã nhận lại hàng hoàn về kho.", data = result });
+            }
+            catch (Exception ex) { return Handle(ex); }
+        }
+
+        /// <summary>Sale (hoặc khách tự đặt cho đơn của mình) lập yêu cầu giao hàng cho đơn đã tất toán.</summary>
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateDeliveryRequestDto request)
         {
@@ -119,7 +148,7 @@ namespace VCL_API.Controllers
         /// </para>
         /// </summary>
         [HttpGet]
-        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> GetList([FromQuery] string? status = null, [FromQuery] Guid? orderId = null)
         {
             try
@@ -136,7 +165,9 @@ namespace VCL_API.Controllers
         {
             try
             {
-                var result = await _deliveryService.GetByIdAsync(deliveryRequestId);
+                if (!TryGetUser(out var userId, out var role))
+                    return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+                var result = await _deliveryService.GetByIdAsync(deliveryRequestId, userId, role);
                 return Ok(new { message = "Lấy chi tiết yêu cầu giao hàng thành công.", data = result });
             }
             catch (Exception ex) { return Handle(ex); }

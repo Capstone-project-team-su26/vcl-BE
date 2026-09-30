@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Enums;
 using VCL_DLL.Interface;
@@ -219,6 +220,18 @@ namespace VCL_BLL.Services
                 }
             }
 
+            // Nhân viên được gán vào kho đi theo vùng của kho: đổi vùng kho khi còn người được gán sẽ
+            // làm vùng tài khoản và kho được gán lệch nhau.
+            if (!WarehouseAccessPolicy.SameRegion(warehouse.Region, parsedRegion) && warehouse.Region != parsedRegion)
+            {
+                var assignedCount = (await _unitOfWork.Repository<UserWarehouse>().FindAsync(a => a.WarehouseId == id)).Count();
+                if (assignedCount > 0)
+                {
+                    throw new ArgumentException(
+                        $"Kho {warehouse.WarehouseName} đang có {assignedCount} nhân viên được gán. Bỏ gán nhân viên trước khi đổi vùng của kho.");
+                }
+            }
+
             warehouse.WarehouseName = request.Name;
             warehouse.WarehouseCode = request.Code;
             warehouse.Address = request.Address;
@@ -254,6 +267,10 @@ namespace VCL_BLL.Services
 
             if (warehouse == null)
                 throw new NotFoundException($"Không tìm thấy kho với ID: {id}");
+
+            var assignedStaff = (await _unitOfWork.Repository<UserWarehouse>().FindAsync(a => a.WarehouseId == id)).Count();
+            if (assignedStaff > 0)
+                throw new ArgumentException($"Kho đang có {assignedStaff} nhân viên được gán. Bỏ gán nhân viên trước khi xoá kho.");
 
             // Rule: check if there are active parcels in bins of this warehouse
             var binRepo = _unitOfWork.Repository<Bin>();
@@ -349,6 +366,7 @@ namespace VCL_BLL.Services
                     ShelfCode = shelf?.ShelfCode ?? string.Empty,
                     ZoneId = shelf?.ZoneId ?? Guid.Empty,
                     ZoneName = zone?.ZoneName ?? string.Empty,
+                    ZoneType = ZoneTypes.Normalize(zone?.ZoneType) ?? string.Empty,
                     WarehouseId = warehouseId,
                     WarehouseName = warehouse.WarehouseName ?? string.Empty,
                     MaxVolume = bin.MaxVolume ?? 500000m,
@@ -440,20 +458,7 @@ namespace VCL_BLL.Services
                 throw new ArgumentException($"Vị trí lưu trữ với mã '{request.BinCode}' đã tồn tại trong kho này.");
             }
 
-            // Tìm hoặc tạo Zone
-            var zoneRepo = _unitOfWork.Repository<WarehouseZone>();
-            var allZones = await zoneRepo.GetAllAsync();
-            var zone = allZones.FirstOrDefault(z => z.WarehouseId == warehouseId && string.Equals(z.ZoneName, request.ZoneName, StringComparison.OrdinalIgnoreCase));
-            if (zone == null)
-            {
-                zone = new WarehouseZone
-                {
-                    Id = Guid.NewGuid(),
-                    WarehouseId = warehouseId,
-                    ZoneName = request.ZoneName
-                };
-                await zoneRepo.AddAsync(zone);
-            }
+            var zone = await FindOrCreateZoneAsync(warehouseId, request);
 
             // Tìm hoặc tạo Shelf
             var shelfRepo = _unitOfWork.Repository<Shelf>();
@@ -494,6 +499,7 @@ namespace VCL_BLL.Services
                 ShelfCode = shelf.ShelfCode,
                 ZoneId = zone.Id,
                 ZoneName = zone.ZoneName,
+                ZoneType = ZoneTypes.Normalize(zone.ZoneType) ?? string.Empty,
                 WarehouseId = warehouseId,
                 WarehouseName = warehouse.WarehouseName,
                 MaxVolume = newBin.MaxVolume ?? 500000m,
@@ -553,20 +559,7 @@ namespace VCL_BLL.Services
                 }
             }
 
-            // Tìm hoặc tạo Zone
-            var zoneRepo = _unitOfWork.Repository<WarehouseZone>();
-            var allZones = await zoneRepo.GetAllAsync();
-            var zone = allZones.FirstOrDefault(z => z.WarehouseId == warehouseId && string.Equals(z.ZoneName, request.ZoneName, StringComparison.OrdinalIgnoreCase));
-            if (zone == null)
-            {
-                zone = new WarehouseZone
-                {
-                    Id = Guid.NewGuid(),
-                    WarehouseId = warehouseId,
-                    ZoneName = request.ZoneName
-                };
-                await zoneRepo.AddAsync(zone);
-            }
+            var zone = await FindOrCreateZoneAsync(warehouseId, request);
 
             // Tìm hoặc tạo Shelf
             var shelfRepo = _unitOfWork.Repository<Shelf>();
@@ -581,6 +574,15 @@ namespace VCL_BLL.Services
                     ShelfCode = request.ShelfCode
                 };
                 await shelfRepo.AddAsync(shelf);
+            }
+
+            // Ô đang chứa hàng mà dời sang khu khác thì khu mới vẫn phải là khu lưu kho đang dùng.
+            if (bin.ShelfId != shelf.Id
+                && (await BinPlacementPolicy.OccupancyAsync(_unitOfWork)).GetValueOrDefault(bin.Id).Count > 0
+                && !BinPlacementPolicy.IsStorageZone(zone))
+            {
+                throw new ArgumentException(
+                    $"Ô kệ {bin.BinCode} đang chứa hàng, không dời sang {ZoneTypes.Describe(zone.ZoneType)} \"{zone.ZoneName}\" được.");
             }
 
             bin.ShelfId = shelf.Id;
@@ -601,6 +603,7 @@ namespace VCL_BLL.Services
                 ShelfCode = shelf.ShelfCode,
                 ZoneId = zone.Id,
                 ZoneName = zone.ZoneName,
+                ZoneType = ZoneTypes.Normalize(zone.ZoneType) ?? string.Empty,
                 WarehouseId = warehouseId,
                 WarehouseName = warehouse?.WarehouseName ?? string.Empty,
                 MaxVolume = bin.MaxVolume,
@@ -608,6 +611,47 @@ namespace VCL_BLL.Services
                 IsActive = bin.IsActive,
                 Note = bin.Note ?? string.Empty
             };
+        }
+
+        /// <summary>
+        /// Khu theo tên trong kho; chưa có thì tạo mới và bắt buộc khai loại khu. Khu đã có mà gửi
+        /// loại khác thì từ chối — đổi loại khu đi qua PUT /api/warehouse-zones/{zoneId} để được kiểm
+        /// hàng đang nằm trong khu.
+        /// </summary>
+        private async Task<WarehouseZone> FindOrCreateZoneAsync(Guid warehouseId, CreateLocationRequestDto request)
+        {
+            var zoneRepo = _unitOfWork.Repository<WarehouseZone>();
+            var zone = (await zoneRepo.GetAllAsync())
+                .FirstOrDefault(z => z.WarehouseId == warehouseId && string.Equals(z.ZoneName?.Trim(), request.ZoneName.Trim(), StringComparison.OrdinalIgnoreCase));
+            var requestedType = ZoneTypes.Normalize(request.ZoneType);
+
+            if (!string.IsNullOrWhiteSpace(request.ZoneType) && requestedType == null)
+                throw new ArgumentException($"Loại khu phải là một trong: {string.Join(", ", ZoneTypes.All)}.");
+
+            if (zone != null)
+            {
+                if (requestedType != null && requestedType != ZoneTypes.Normalize(zone.ZoneType))
+                {
+                    throw new ArgumentException(
+                        $"Khu \"{zone.ZoneName}\" đang là {ZoneTypes.Describe(zone.ZoneType)}. Đổi loại khu qua PUT /api/warehouse-zones/{zone.Id}.");
+                }
+
+                return zone;
+            }
+
+            if (requestedType == null)
+                throw new ArgumentException($"Khu \"{request.ZoneName}\" chưa có, cần khai loại khu (zoneType): {string.Join(", ", ZoneTypes.All)}.");
+
+            zone = new WarehouseZone
+            {
+                Id = Guid.NewGuid(),
+                WarehouseId = warehouseId,
+                ZoneName = request.ZoneName.Trim(),
+                ZoneType = requestedType,
+                Status = "ACTIVE"
+            };
+            await zoneRepo.AddAsync(zone);
+            return zone;
         }
 
         public async Task DeleteWarehouseLocationAsync(Guid locationId)

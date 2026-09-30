@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -68,7 +69,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -95,7 +96,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -118,7 +119,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
     }

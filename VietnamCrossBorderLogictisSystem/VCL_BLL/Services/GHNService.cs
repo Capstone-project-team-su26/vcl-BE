@@ -56,14 +56,15 @@ namespace VCL_BLL.Services
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("GHN API returned error {StatusCode}: {Content}", response.StatusCode, responseContent);
-                throw new InvalidOperationException($"GHN API Error: {responseContent}");
+                // Chi tiết phản hồi của GHN chỉ nằm ở log (dòng trên) — người dùng nhận câu tiếng Việt.
+                throw new InvalidOperationException("GHN không tạo được đơn giao hàng. Vui lòng kiểm tra thông tin người nhận, địa chỉ rồi thử lại.");
             }
 
             var result = JsonSerializer.Deserialize<GHNOrderResponse>(responseContent);
             if (result == null || result.Code != 200 || result.Data == null)
             {
                 _logger.LogError("GHN Order Creation failed: {Message}", result?.Message ?? "Unknown Error");
-                throw new InvalidOperationException($"GHN Create Order Failed: {result?.Message}");
+                throw new InvalidOperationException("GHN không tạo được đơn giao hàng. Vui lòng kiểm tra thông tin người nhận, địa chỉ rồi thử lại.");
             }
 
             _logger.LogInformation("GHN Order Created Successfully: {OrderCode}", result.Data.OrderCode);
@@ -91,13 +92,14 @@ namespace VCL_BLL.Services
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("GHN Calculate Fee API returned error {StatusCode}: {Content}", response.StatusCode, responseContent);
-                throw new InvalidOperationException($"GHN Calculate Fee API Error: {responseContent}");
+                throw new InvalidOperationException("Không tính được phí giao hàng GHN. Vui lòng kiểm tra địa chỉ nhận rồi thử lại.");
             }
 
             var result = JsonSerializer.Deserialize<GHNFeeResponse>(responseContent);
             if (result == null || result.Code != 200 || result.Data == null)
             {
-                throw new InvalidOperationException($"GHN Calculate Fee Failed: {result?.Message}");
+                _logger.LogError("GHN Calculate Fee failed: {Message}", result?.Message ?? responseContent);
+                throw new InvalidOperationException("Không tính được phí giao hàng GHN. Vui lòng kiểm tra địa chỉ nhận rồi thử lại.");
             }
 
             return result.Data;
@@ -118,13 +120,14 @@ namespace VCL_BLL.Services
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("GHN Get Order Detail API returned error {StatusCode}: {Content}", response.StatusCode, responseContent);
-                throw new InvalidOperationException($"GHN Get Order Detail Error: {responseContent}");
+                throw new InvalidOperationException($"Không lấy được thông tin vận đơn {orderCode} từ GHN. Vui lòng thử lại sau.");
             }
 
             var result = JsonSerializer.Deserialize<GHNOrderDetailResponse>(responseContent);
             if (result == null || result.Code != 200 || result.Data == null)
             {
-                throw new InvalidOperationException($"GHN Get Order Detail Failed: {result?.Message}");
+                _logger.LogError("GHN Get Order Detail failed for {OrderCode}: {Message}", orderCode, result?.Message ?? responseContent);
+                throw new InvalidOperationException($"Không lấy được thông tin vận đơn {orderCode} từ GHN. Vui lòng thử lại sau.");
             }
 
             return result.Data;
@@ -173,22 +176,11 @@ namespace VCL_BLL.Services
                         parcel.PackageStatus = isDelivered ? "DELIVERED" : payload.Status.ToUpper();
                         parcelRepo.Update(parcel);
 
-                        // If parcel has parent Order (ConsignmentId), update Order Status to COMPLETED if all parcels are delivered
+                        // Giao xong thì đơn dừng ở DELIVERED (kiện đã huỷ theo sự cố không tính). Hoàn thành là
+                        // việc của bước đóng đơn — khách xác nhận hoặc hết hạn khiếu nại — không phải của hãng.
                         if (parcel.ConsignmentId.HasValue)
                         {
-                            var orderRepo = _unitOfWork.Repository<Order>();
-                            var order = await orderRepo.GetByIdAsync(parcel.ConsignmentId.Value);
-                            if (order != null)
-                            {
-                                var allParcels = await parcelRepo.GetAllAsync();
-                                var orderParcels = allParcels.Where(p => p.ConsignmentId == order.Id);
-                                if (orderParcels.Any() && orderParcels.All(p => p.PackageStatus == "DELIVERED"))
-                                {
-                                    order.Status = "COMPLETED";
-                                    orderRepo.Update(order);
-                                    _logger.LogInformation("All parcels delivered. Updated Order {OrderId} status to COMPLETED.", order.Id);
-                                }
-                            }
+                            await VCL_BLL.Helpers.OrderDeliveryProgress.RefreshAsync(_unitOfWork, parcel.ConsignmentId.Value, DateTime.UtcNow);
                         }
 
                         await _unitOfWork.SaveChangesAsync();

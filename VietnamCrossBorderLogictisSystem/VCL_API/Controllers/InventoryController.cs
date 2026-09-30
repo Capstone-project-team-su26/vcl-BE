@@ -1,11 +1,16 @@
+using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_BLL.Services;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -15,10 +20,51 @@ namespace VCL_API.Controllers
     public class InventoryController : ControllerBase
     {
         private readonly IInventoryService _inventoryService;
+        private readonly UserWarehouseService _userWarehouses;
 
-        public InventoryController(IInventoryService inventoryService)
+        public InventoryController(IInventoryService inventoryService, UserWarehouseService userWarehouses)
         {
             _inventoryService = inventoryService;
+            _userWarehouses = userWarehouses;
+        }
+
+        private Guid? CurrentUserId => Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
+        private string CurrentRole => User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+        /// <summary>
+        /// Phạm vi kho của danh sách: null = như cũ (lọc theo vùng); có giá trị = kho được gán.
+        /// Hỏi đích danh một kho ngoài phạm vi thì trả 403.
+        /// </summary>
+        private async Task<(IReadOnlyCollection<Guid>? Scope, IActionResult? Denied)> ListScopeAsync(Guid? warehouseId)
+        {
+            var scope = await _userWarehouses.GetListScopeAsync(CurrentUserId, CurrentRole);
+            if (scope != null && warehouseId.HasValue && !scope.Contains(warehouseId.Value))
+            {
+                try
+                {
+                    await _userWarehouses.EnsureAssignedWarehouseAsync(CurrentUserId, CurrentRole, warehouseId);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    return (scope, StatusCode(403, new { message = this.UserError(ex) }));
+                }
+            }
+
+            return (scope, null);
+        }
+
+        /// <summary>Chặn thao tác ở kho ngoài các kho được gán (tài khoản chưa gán kho thì như cũ).</summary>
+        private async Task<IActionResult?> DenyOutsideAssignedAsync(Guid? warehouseId)
+        {
+            try
+            {
+                await _userWarehouses.EnsureAssignedWarehouseAsync(CurrentUserId, CurrentRole, warehouseId);
+                return null;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
         }
 
         /// <summary>
@@ -26,7 +72,7 @@ namespace VCL_API.Controllers
         /// </summary>
         /// <param name="parcelId">ID của kiện hàng</param>
         [HttpPost("from-parcel/{parcelId}")]
-        [Authorize(Roles = "Admin,WarehouseStaff")]
+        [AuthorizeRoles("Admin,WarehouseStaff")]
         public async Task<IActionResult> RecordInventoryFromParcel(Guid parcelId)
         {
             try
@@ -40,11 +86,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -66,8 +112,11 @@ namespace VCL_API.Controllers
             [FromQuery] string? regionCode = null,
             [FromQuery] string? region = null)
         {
+            var (scope, denied) = await ListScopeAsync(warehouseId);
+            if (denied != null) return denied;
+
             var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
-            if (string.IsNullOrWhiteSpace(effectiveRegion))
+            if (string.IsNullOrWhiteSpace(effectiveRegion) && scope == null)
             {
                 var tokenRegion = User.FindFirst("region")?.Value;
                 if (!string.IsNullOrWhiteSpace(tokenRegion))
@@ -76,7 +125,7 @@ namespace VCL_API.Controllers
                 }
             }
 
-            var result = await _inventoryService.GetInventoriesAsync(status, customerId, warehouseId, effectiveRegion);
+            var result = await _inventoryService.GetInventoriesAsync(status, customerId, warehouseId, effectiveRegion, scope);
             return Ok(new { message = "Lấy danh sách tồn kho thành công.", items = result });
         }
 
@@ -86,11 +135,14 @@ namespace VCL_API.Controllers
         /// <param name="inventoryId">ID bản ghi tồn kho cần điều chuyển</param>
         /// <param name="request">Ô kệ đích và lý do điều chuyển</param>
         [HttpPost("{inventoryId}/relocate")]
-        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> RelocateInventory(Guid inventoryId, [FromBody] RelocateInventoryRequestDto request)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            var denied = await DenyOutsideAssignedAsync(await _userWarehouses.WarehouseOfInventoryAsync(inventoryId));
+            if (denied != null) return denied;
 
             try
             {
@@ -103,11 +155,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -144,8 +196,11 @@ namespace VCL_API.Controllers
             [FromQuery] string? regionCode = null,
             [FromQuery] string? region = null)
         {
+            var (scope, denied) = await ListScopeAsync(warehouseId);
+            if (denied != null) return denied;
+
             var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
-            if (string.IsNullOrWhiteSpace(effectiveRegion))
+            if (string.IsNullOrWhiteSpace(effectiveRegion) && scope == null)
             {
                 var tokenRegion = User.FindFirst("region")?.Value;
                 if (!string.IsNullOrWhiteSpace(tokenRegion))
@@ -154,7 +209,7 @@ namespace VCL_API.Controllers
                 }
             }
 
-            var result = await _inventoryService.GetLongStayAlertsAsync(warehouseId, customerId, minDays, criticalDays, limit, effectiveRegion);
+            var result = await _inventoryService.GetLongStayAlertsAsync(warehouseId, customerId, minDays, criticalDays, limit, effectiveRegion, scope);
             return Ok(new { message = "Lấy danh sách cảnh báo tồn kho lâu ngày thành công.", items = result });
         }
 
@@ -172,8 +227,11 @@ namespace VCL_API.Controllers
             [FromQuery] string? regionCode = null,
             [FromQuery] string? region = null)
         {
+            var (scope, denied) = await ListScopeAsync(warehouseId);
+            if (denied != null) return denied;
+
             var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
-            if (string.IsNullOrWhiteSpace(effectiveRegion))
+            if (string.IsNullOrWhiteSpace(effectiveRegion) && scope == null)
             {
                 var tokenRegion = User.FindFirst("region")?.Value;
                 if (!string.IsNullOrWhiteSpace(tokenRegion))
@@ -182,7 +240,7 @@ namespace VCL_API.Controllers
                 }
             }
 
-            var result = await _inventoryService.GetCustomerStorageReportAsync(warehouseId, customerId, effectiveRegion);
+            var result = await _inventoryService.GetCustomerStorageReportAsync(warehouseId, customerId, effectiveRegion, scope);
             return Ok(new { message = "Lấy báo cáo tồn kho theo khách hàng thành công.", items = result });
         }
 
@@ -191,11 +249,17 @@ namespace VCL_API.Controllers
         /// Số kiện hệ thống ghi nhận do server tự đếm, không lấy theo số client gửi lên.
         /// </summary>
         [HttpPost("cycle-counts")]
-        [Authorize(Roles = "Admin,WarehouseStaff")]
+        [AuthorizeRoles("Admin,WarehouseStaff")]
         public async Task<IActionResult> CreateCycleCount([FromBody] CreateCycleCountRequestDto request)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            if (request != null)
+            {
+                var denied = await DenyOutsideAssignedAsync(await _userWarehouses.WarehouseOfBinAsync(request.BinId));
+                if (denied != null) return denied;
+            }
 
             try
             {
@@ -208,11 +272,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -234,7 +298,7 @@ namespace VCL_API.Controllers
         /// Ghi nhận cách xử lý chênh lệch của một phiếu kiểm kê.
         /// </summary>
         [HttpPut("cycle-counts/{cycleCountId}/resolve")]
-        [Authorize(Roles = "Admin,WarehouseStaff,OperationsManager")]
+        [AuthorizeRoles("Admin,WarehouseStaff,OperationsManager")]
         public async Task<IActionResult> ResolveCycleCount(Guid cycleCountId, [FromBody] ResolveCycleCountRequestDto request)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -251,11 +315,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
     }

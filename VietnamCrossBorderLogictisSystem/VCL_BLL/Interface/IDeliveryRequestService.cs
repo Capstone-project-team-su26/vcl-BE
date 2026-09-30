@@ -17,7 +17,16 @@ namespace VCL_BLL.Interface
 
         Task<DeliveryRequestDto> DispatchAsync(Guid deliveryRequestId, Guid userId, string userRole, DispatchDeliveryRequestDto request);
 
+        /// <summary>Sale ghi đã giao kèm ảnh ký nhận khi hãng không báo về.</summary>
+        Task<DeliveryRequestDto> RecordProofAsync(Guid deliveryRequestId, Guid userId, string userRole, DeliveryProofRequest request);
+
+        /// <summary>Kho nhận lại hàng hoàn sau giao thất bại — kiện về khu nhận, giao lại được.</summary>
+        Task<DeliveryRequestDto> ReceiveReturnAsync(Guid deliveryRequestId, Guid userId, string userRole, ReceiveReturnedDeliveryRequest request);
+
         Task<DeliveryRequestDto> GetByIdAsync(Guid deliveryRequestId);
+
+        /// <summary>Như trên nhưng khách chỉ xem được yêu cầu giao của đơn mình.</summary>
+        Task<DeliveryRequestDto> GetByIdAsync(Guid deliveryRequestId, Guid userId, string userRole);
 
         /// <summary>
         /// Tiến trình giao hàng của MỘT đơn, dành cho khách theo dõi.

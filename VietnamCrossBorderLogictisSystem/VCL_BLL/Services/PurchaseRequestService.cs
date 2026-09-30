@@ -25,39 +25,12 @@ namespace VCL_BLL.Services
 
         private const int MaxProofImages = 3;
 
-        /// <summary>
-        /// Các trạng thái popup "Xác nhận mua hộ" được phép đặt, theo đúng 4 nấc bấm của FE.
-        /// <para>
-        /// <c>PENDING_REVIEW</c> và <c>PAID</c> bình thường do hệ thống tự đặt (PAID đến từ webhook
-        /// thanh toán). Mở cho bấm tay theo yêu cầu FE — không ảnh hưởng dòng tiền vì mọi điều kiện
-        /// thanh toán đều đọc bảng PURCHASE_PAYMENTS chứ không đọc trạng thái đơn. Mọi lần bấm đều
-        /// ghi vào PURCHASE_REQUEST_HISTORY nên truy được ai đặt tay.
-        /// </para>
-        /// Vẫn chặn <c>COMPLETED</c>: đó là trạng thái kết thúc, chỉ đặt khi đã thu đủ tiền.
-        /// </summary>
-        /// <summary>
-        /// 5 bước tiến độ mua hộ. Cố tình KHÔNG có <c>COMPLETED</c>: trạng thái đó thuộc luồng
-        /// thanh toán (webhook đặt khi khách trả đủ tiền). Chốt với FE 08/08/2026 — bước nhập kho
-        /// dừng ở <c>STORED</c> để một cột không mang hai nghĩa "đã thu đủ tiền" và "đã nhập kho".
-        /// </summary>
-        private static readonly string[] PurchaseProgressStatuses =
-        {
-            "PENDING_REVIEW", "DEPOSIT_PAID", "PAID", "PURCHASED", "SELLER_SHIPPED",
-            "ARRIVED_ORIGIN_WAREHOUSE", "WAITING_STORED", "STORED"
-        };
-
-        /// <summary>
-        /// Bước duyệt kiểm kê nhập kho — chỉ Manager/Ops được đặt, Sale không.
-        /// Khớp thiết kế FE: sang bước 4 thì nút bấm phía Sale ẩn đi.
-        /// </summary>
-        private static readonly string[] WarehouseApprovalStatuses = { "STORED" };
-
         // Danh sách vai trò duyệt kho nay ở StaffRoleHelper.CanApproveWarehouseStore
 
         /// <summary>Nhãn tiếng Việt của trạng thái yêu cầu mua hộ, dùng chung cho mọi response.</summary>
         private static readonly Dictionary<string, string> StatusDisplayNames = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["NEW"] = "Tạo đơn hàng",
+            ["NEW"] = "Đơn mới tạo",
             ["PENDING_REVIEW"] = "Chờ xác nhận",
             ["IN_REVIEW"] = "Đang xem xét",
             ["NEED_MORE_INFO"] = "Cần bổ sung thông tin",
@@ -66,22 +39,25 @@ namespace VCL_BLL.Services
             // Khách từ chối BÁO GIÁ — khác REJECTED là Sale từ chối cả YÊU CẦU.
             ["QUOTATION_REJECTED"] = "Đã từ chối báo giá",
             ["WAITING_PAYMENT"] = "Chờ thanh toán",
-            ["PAID"] = "Đã thanh toán",
+            ["PAID"] = "Đã trả trước, chờ đặt mua",
+            ["PURCHASING"] = "Đang mua hàng",
             ["DEPOSIT_PAID"] = "Đã đặt cọc",
-            ["PURCHASED"] = "Xác nhận mua hàng",
+            ["PURCHASED"] = "Đã mua hàng",
             ["SELLER_SHIPPED"] = "NCC đã phát hàng",
             ["ARRIVED_ORIGIN_WAREHOUSE"] = "Đã về kho nước ngoài",
             ["WAITING_STORED"] = "Chờ nhập kho",
             ["STORED"] = "Đã nhập kho",
             ["WAITING_FINAL_PAYMENT"] = "Chờ thanh toán cuối",
-            ["COMPLETED"] = "Hoàn tất nghiệp vụ",
+            ["COMPLETED"] = "Đơn đã hoàn tất",
             ["CANCELLED"] = "Đã hủy"
         };
 
-        private static string GetStatusDisplayName(string? status) =>
+        /// <remarks>internal: bảng tổng quan nhân viên dùng lại cùng nhãn.</remarks>
+        internal static string GetStatusDisplayName(string? status) =>
             !string.IsNullOrWhiteSpace(status) && StatusDisplayNames.TryGetValue(status.Trim(), out var label)
                 ? label
-                : status ?? string.Empty;
+                // Mã lạ: tên chung tiếng Việt (StatusNames), không trả lại mã thô cho màn hình.
+                : string.IsNullOrWhiteSpace(status) ? string.Empty : StatusNames.Of(status);
 
         private readonly IExchangeRateService _exchangeRateService;
         private readonly IConsignmentReceiptService _receiptService;
@@ -161,11 +137,30 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Danh sách sản phẩm cần mua hộ phải có ít nhất một sản phẩm.");
             }
 
+            // Web đã chặn trước; kiểm lại ở đây để gọi thẳng API (hoặc DTO dựng trong code) cũng không lọt
+            // và lỗi luôn là 400 tiếng Việt thay vì lỗi SQL (cột ngắn hơn chuỗi gửi lên) 500.
+            // Hạn mức số dòng / số lượng do Admin cấu hình (SYSTEM_SETTINGS nhóm ORDER_LIMITS).
+            var limits = await OrderLimitSettings.LoadAsync(_unitOfWork);
+            if (request.Items.Count > limits.MaxPurchaseItems)
+            {
+                throw new ArgumentException($"Mỗi yêu cầu mua hộ tối đa {limits.MaxPurchaseItems} dòng sản phẩm.");
+            }
+
+            var lineNo = 0;
             foreach (var item in request.Items)
             {
+                lineNo++;
+                if (item == null)
+                {
+                    throw new ArgumentException($"Sản phẩm thứ {lineNo} không có dữ liệu.");
+                }
                 if (string.IsNullOrWhiteSpace(item.ProductLink))
                 {
                     throw new ArgumentException("Link sản phẩm không được để trống.");
+                }
+                if (!InputLimits.IsHttpUrl(item.ProductLink))
+                {
+                    throw new ArgumentException($"Link sản phẩm thứ {lineNo} không hợp lệ — phải là địa chỉ web bắt đầu bằng http:// hoặc https://.");
                 }
                 if (string.IsNullOrWhiteSpace(item.ProductType))
                 {
@@ -173,9 +168,39 @@ namespace VCL_BLL.Services
                 }
                 if (item.Quantity <= 0)
                 {
-                    throw new ArgumentException("Số lượng sản phẩm phải lớn hơn 0.");
+                    throw new ArgumentException($"Số lượng sản phẩm thứ {lineNo} phải lớn hơn 0.");
+                }
+                if (limits.MaxPurchaseItemQuantity.HasValue && item.Quantity > limits.MaxPurchaseItemQuantity.Value)
+                {
+                    throw new ArgumentException($"Số lượng sản phẩm thứ {lineNo} phải từ 1 đến {limits.MaxPurchaseItemQuantity.Value}.");
+                }
+
+                EnsureMaxLength(item.ProductLink, InputLimits.ProductLinkLength, $"Link sản phẩm thứ {lineNo}");
+                EnsureMaxLength(item.SourceWebsite, InputLimits.SourceWebsiteLength, $"Website nguồn của sản phẩm thứ {lineNo}");
+                EnsureMaxLength(item.ProductType, InputLimits.ProductTypeLength, $"Loại hàng của sản phẩm thứ {lineNo}");
+                EnsureMaxLength(item.ProductName, InputLimits.ProductNameLength, $"Tên sản phẩm thứ {lineNo}");
+                EnsureMaxLength(item.Attributes, InputLimits.AttributesLength, $"Thuộc tính của sản phẩm thứ {lineNo}");
+                EnsureMaxLength(item.Note, InputLimits.ItemNoteLength, $"Ghi chú của sản phẩm thứ {lineNo}");
+                if ((item.ImageUrls?.Count(u => !string.IsNullOrWhiteSpace(u)) ?? 0) > InputLimits.MaxImagesPerPurchaseItem)
+                {
+                    throw new ArgumentException($"Sản phẩm thứ {lineNo} tối đa {InputLimits.MaxImagesPerPurchaseItem} ảnh tham khảo.");
+                }
+                if (CombineImageUrls(item).Length > InputLimits.ImageUrlsLength)
+                {
+                    throw new ArgumentException($"Danh sách ảnh của sản phẩm thứ {lineNo} quá dài (tối đa {InputLimits.ImageUrlsLength} ký tự) — bớt ảnh hoặc dùng ảnh tải lên hệ thống.");
                 }
             }
+
+            EnsureMaxLength(request.ReceiverName, InputLimits.ReceiverNameLength, "Tên người nhận");
+            EnsureMaxLength(request.ReceiverPhone, InputLimits.ReceiverPhoneLength, "Số điện thoại người nhận");
+            EnsureMaxLength(request.ReceiverAddress, InputLimits.ReceiverAddressLength, "Địa chỉ nhận hàng");
+
+            // Ghi chú chung được lưu kèm tên dịch vụ đã tick (+ dấu "Sale lên hộ") — kiểm tổng sau khi ghép,
+            // không để SQL cắt/báo lỗi 500.
+            var generalNote = createdByStaff
+                ? AppendStaffMark(BuildGeneralNote(request))
+                : BuildGeneralNote(request);
+            EnsureGeneralNoteFits(request.GeneralNote, generalNote);
 
             // 4. Validate tuyến hàng + phương án vận chuyển theo bảng cấu hình giá (giống luồng ký gửi)
             var (route, shippingOption) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
@@ -204,10 +229,8 @@ namespace VCL_BLL.Services
                 RequiresWoodenCrate = request.RequiresWoodenCrate,
                 RequiresInsurance = request.RequiresInsurance,
                 // Chưa có cột CreatedById trên PURCHASE_REQUESTS nên đánh dấu vào ghi chú
-                // để biết đơn do nhân viên lên hộ.
-                GeneralNote = createdByStaff
-                    ? AppendStaffMark(BuildGeneralNote(request))
-                    : BuildGeneralNote(request),
+                // để biết đơn do nhân viên lên hộ (đã ghép + kiểm độ dài ở trên).
+                GeneralNote = generalNote,
                 Status = "PENDING_REVIEW",
                 CreatedAt = DateTime.UtcNow
             };
@@ -227,6 +250,10 @@ namespace VCL_BLL.Services
             purchaseRequest.PricingRuleIds = pricingRuleIds.Any()
                 ? string.Join(ListSeparator, pricingRuleIds)
                 : null;
+            if (purchaseRequest.PricingRuleIds?.Length > InputLimits.PricingRuleIdsLength)
+            {
+                throw new ArgumentException("Chọn quá nhiều dịch vụ phụ cho một yêu cầu mua hộ.");
+            }
 
             await _unitOfWork.Repository<PurchaseRequest>().AddAsync(purchaseRequest);
 
@@ -298,7 +325,7 @@ namespace VCL_BLL.Services
                 Status = purchaseRequest.Status,
                 CreatedAt = purchaseRequest.CreatedAt ?? DateTime.UtcNow,
                 ItemCount = request.Items.Count,
-                TotalQuantity = request.Items.Sum(i => i.Quantity),
+                TotalQuantity = SafeTotalQuantity(request.Items.Select(i => i.Quantity)),
                 PricingRuleIds = pricingRuleIds,
                 Items = resultItems,
                 Warnings = warnings
@@ -502,6 +529,41 @@ namespace VCL_BLL.Services
 
         private const string StaffCreatedMark = "Đơn do nhân viên lên hộ khách";
 
+        /// <summary>Chuỗi vượt độ dài cột DB → 400 tiếng Việt (thay vì SQL báo "String or binary data would be truncated").</summary>
+        private static void EnsureMaxLength(string? value, int maxLength, string label)
+        {
+            var length = value?.Trim().Length ?? 0;
+            if (length > maxLength)
+                throw new ArgumentException($"{label} tối đa {maxLength} ký tự (đang có {length}).");
+        }
+
+        /// <summary>
+        /// Ghi chú chung lưu = ghi chú khách + tên các dịch vụ đã tick (+ dấu Sale lên hộ). Cột DB 1000 ký tự,
+        /// nên báo cho khách còn được gõ tối đa bao nhiêu thay vì để SQL lỗi 500.
+        /// </summary>
+        private static void EnsureGeneralNoteFits(string? userNote, string? storedNote)
+        {
+            var storedLength = storedNote?.Length ?? 0;
+            if (storedLength <= InputLimits.GeneralNoteLength)
+                return;
+
+            var userLength = userNote?.Trim().Length ?? 0;
+            var systemPart = storedLength - userLength;
+            var allowed = Math.Max(InputLimits.GeneralNoteLength - systemPart, 0);
+            throw new ArgumentException(
+                $"Ghi chú chung quá dài: tính cả tên dịch vụ đã chọn, ghi chú tối đa {InputLimits.GeneralNoteLength} ký tự. "
+                + $"Vui lòng rút gọn ghi chú còn tối đa {allowed} ký tự (đang có {userLength}).");
+        }
+
+        /// <summary>Cộng số lượng không tràn int (dữ liệu cũ có thể có dòng số lượng rất lớn).</summary>
+        internal static int SafeTotalQuantity(IEnumerable<int> quantities)
+        {
+            long total = 0;
+            foreach (var quantity in quantities)
+                total += Math.Max(quantity, 0);
+            return (int)Math.Min(total, int.MaxValue);
+        }
+
         private static string AppendStaffMark(string? note) =>
             string.IsNullOrWhiteSpace(note) ? StaffCreatedMark : $"{note}. {StaffCreatedMark}";
 
@@ -565,8 +627,17 @@ namespace VCL_BLL.Services
         }
 
         public async Task<PaginatedResponse<PurchaseRequestListItemDto>> GetPurchaseRequestsAsync(
-            Guid? userId, string userRole, int pageNumber, int pageSize, string? status, string? searchKeyword)
+            Guid? userId, string userRole, int pageNumber, int pageSize, string? status, string? searchKeyword, string? stage = null)
         {
+            // Lọc theo CHẶNG THẬT (PurchaseRequestStage) — kiểm mã trước khi đọc dữ liệu.
+            var stageFilter = stage?.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(stageFilter) && stageFilter != "ALL" && !PurchaseRequestStage.IsKnown(stageFilter))
+            {
+                throw new ArgumentException(
+                    $"Chặng không hợp lệ. Hợp lệ: {string.Join(", ", PurchaseRequestStage.All)}.");
+            }
+            if (stageFilter == "ALL") stageFilter = null;
+
             var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
             var itemRepo = _unitOfWork.Repository<PurchaseRequestItem>();
             var customerRepo = _unitOfWork.Repository<Customer>();
@@ -624,6 +695,21 @@ namespace VCL_BLL.Services
                     || (r.CustomerId.HasValue && matchedCustomerIds.Contains(r.CustomerId.Value)));
             }
 
+            var allQuotations = await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync();
+
+            // 3b. Lọc theo chặng thật: phải suy chặng cho mọi yêu cầu còn lại TRƯỚC khi phân trang.
+            Dictionary<Guid, PurchaseStageResult>? stageById = null;
+            if (stageFilter != null)
+            {
+                var candidates = query.ToList();
+                var candidateProgress = await BuildPurchaseProgressAsync(
+                    candidates.Select(r => r.Id).ToHashSet(), allQuotations, allItems);
+                stageById = await PurchaseRequestStage.ComputeAsync(_unitOfWork, candidates,
+                    candidateProgress.ToDictionary(kv => kv.Key, kv => kv.Value.OpenLineCount));
+                var matchedIds = stageById.Where(kv => kv.Value.Stage == stageFilter).Select(kv => kv.Key).ToHashSet();
+                query = candidates.Where(r => matchedIds.Contains(r.Id)).AsQueryable();
+            }
+
             var totalCount = query.Count();
 
             // 4. Ưu tiên PENDING_REVIEW lên đầu, sau đó theo ngày tạo mới nhất; rồi phân trang
@@ -636,7 +722,6 @@ namespace VCL_BLL.Services
 
             // 5. Mốc báo giá mới nhất của từng yêu cầu (chỉ tra cho trang hiện tại)
             var pagedRequestIds = pagedRequests.Select(r => r.Id).ToHashSet();
-            var allQuotations = await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync();
             var quotationCreatedAtByRequest = allQuotations
                 .Where(q => pagedRequestIds.Contains(q.PurchaseRequestId) && q.CreatedAt.HasValue)
                 .GroupBy(q => q.PurchaseRequestId)
@@ -652,6 +737,26 @@ namespace VCL_BLL.Services
                 : (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
                     .Where(w => warehouseIds.Contains(w.Id))
                     .ToDictionary(w => w.Id, w => (string?)w.WarehouseName);
+
+            // Khách + tình trạng lập đơn mua + tiền trả trước đã thu — tra một lần cho cả trang (web Sale trước đây
+            // phải gọi danh bạ khách + đơn mua của từng yêu cầu).
+            var customersById = allCustomers
+                .GroupBy(c => c.Id)
+                .ToDictionary(g => g.Key, g => g.First());
+            // Hồ sơ khách tạo từ đăng ký nhanh có thể trống tên/SĐT — lấy từ tài khoản đăng nhập của khách.
+            var pageUserIds = pagedRequests
+                .Select(r => r.CustomerId.HasValue && customersById.TryGetValue(r.CustomerId.Value, out var c) ? c.UserId : null)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToHashSet();
+            var usersById = pageUserIds.Count == 0
+                ? new Dictionary<Guid, User>()
+                : (await _unitOfWork.Repository<User>().GetAllAsync())
+                    .Where(u => pageUserIds.Contains(u.Id))
+                    .ToDictionary(u => u.Id);
+            var purchaseProgress = await BuildPurchaseProgressAsync(pagedRequestIds, allQuotations, allItems);
+            stageById ??= await PurchaseRequestStage.ComputeAsync(_unitOfWork, pagedRequests,
+                purchaseProgress.ToDictionary(kv => kv.Key, kv => kv.Value.OpenLineCount));
 
             // 6. Map sang DTO (kèm tên người nhận và danh sách sản phẩm tóm tắt)
             var resultItems = pagedRequests.Select(r =>
@@ -669,6 +774,12 @@ namespace VCL_BLL.Services
                     ? quotedAt
                     : (DateTime?)null;
 
+                var customer = r.CustomerId.HasValue && customersById.TryGetValue(r.CustomerId.Value, out var found)
+                    ? found
+                    : null;
+                var progress = purchaseProgress.TryGetValue(r.Id, out var p) ? p : default;
+                var account = customer?.UserId != null && usersById.TryGetValue(customer.UserId.Value, out var u) ? u : null;
+
                 return new PurchaseRequestListItemDto
                 {
                     PurchaseRequestId = r.Id,
@@ -678,18 +789,29 @@ namespace VCL_BLL.Services
                     ShippingOption = r.ShippingOption,
                     ReceiverName = r.ReceiverName ?? string.Empty,
                     ItemCount = products.Count,
-                    TotalQuantity = products.Sum(p => p.Quantity),
+                    TotalQuantity = SafeTotalQuantity(products.Select(p => p.Quantity)),
                     Status = r.Status ?? string.Empty,
                     GeneralNote = r.GeneralNote,
                     CreatedAt = r.CreatedAt ?? DateTime.MinValue,
                     QuotationCreatedAt = quotationCreatedAt,
                     StatusUpdatedAt = quotationCreatedAt ?? r.CreatedAt,
                     StatusDisplayName = GetStatusDisplayName(r.Status),
+                    OverallStage = stageById[r.Id].Stage,
+                    OverallStageText = stageById[r.Id].Text,
+                    IsFullyCompleted = stageById[r.Id].IsFullyCompleted,
                     WarehouseId = r.ExpectedWarehouseId,
                     WarehouseName = r.ExpectedWarehouseId.HasValue
                         && warehouseNames.TryGetValue(r.ExpectedWarehouseId.Value, out var whName)
                         ? whName
                         : null,
+                    CustomerName = FirstFilled(customer?.FullName, account?.FullName),
+                    CustomerCode = FirstFilled(customer?.CustomerCode),
+                    CustomerPhone = FirstFilled(customer?.Phone, account?.Phone),
+                    ActivePurchaseOrderCount = progress.ActiveOrderCount,
+                    OpenLineCount = progress.OpenLineCount,
+                    OpenQuantity = progress.OpenQuantity,
+                    ClosedQuantity = progress.ClosedQuantity,
+                    PrepaidAmount = progress.PrepaidAmount,
                     Items = products
                 };
             }).ToList();
@@ -701,6 +823,107 @@ namespace VCL_BLL.Services
                 PageNumber = pageNumber,
                 PageSize = pageSize
             };
+        }
+
+        private static string? FirstFilled(params string?[] values) =>
+            values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim();
+
+        private readonly record struct PurchaseProgress(
+            int ActiveOrderCount, int OpenLineCount, int OpenQuantity, int ClosedQuantity, decimal PrepaidAmount);
+
+        /// <summary>
+        /// Tình trạng lập đơn mua NCC + tiền trả trước đã thu cho các yêu cầu của trang hiện tại. Luật "còn mua
+        /// được" giống hệt PurchaseOrderService.ApplyContentAsync: mỗi sản phẩm chỉ nằm trong MỘT đơn mua chưa huỷ,
+        /// phải có trong báo giá khách đã chấp nhận, SL ≤ SL khách đặt − SL đã đóng "không mua được".
+        /// </summary>
+        private async Task<Dictionary<Guid, PurchaseProgress>> BuildPurchaseProgressAsync(
+            HashSet<Guid> requestIds, IEnumerable<PurchaseQuotation> allQuotations, IEnumerable<PurchaseRequestItem> allItems)
+        {
+            var result = new Dictionary<Guid, PurchaseProgress>();
+            if (requestIds.Count == 0)
+                return result;
+
+            var acceptedQuotationByRequest = allQuotations
+                .Where(q => requestIds.Contains(q.PurchaseRequestId)
+                    && string.Equals(q.Status, "ACCEPTED", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(q => q.PurchaseRequestId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(q => q.CreatedAt ?? DateTime.MinValue).First().Id);
+            var acceptedQuotationIds = acceptedQuotationByRequest.Values.ToHashSet();
+            var quotedItemIds = acceptedQuotationIds.Count == 0
+                ? new HashSet<(Guid, Guid)>()
+                : (await _unitOfWork.Repository<PurchaseQuotationItem>().GetAllAsync())
+                    .Where(qi => acceptedQuotationIds.Contains(qi.PurchaseQuotationId))
+                    .Select(qi => (qi.PurchaseQuotationId, qi.PurchaseRequestItemId))
+                    .ToHashSet();
+
+            var activeOrders = (await _unitOfWork.Repository<PurchaseOrder>().GetAllAsync())
+                .Where(o => requestIds.Contains(o.PurchaseRequestId) && PurchaseOrderStatuses.IsActive(o))
+                .ToList();
+            var activeOrderIds = activeOrders.Select(o => o.Id).ToHashSet();
+            var takenItemIds = activeOrderIds.Count == 0
+                ? new HashSet<Guid>()
+                : (await _unitOfWork.Repository<PurchaseOrderItem>().GetAllAsync())
+                    .Where(i => activeOrderIds.Contains(i.PurchaseOrderId))
+                    .Select(i => i.PurchaseRequestItemId)
+                    .ToHashSet();
+
+            var payments = (await _unitOfWork.Repository<PurchasePayment>().GetAllAsync())
+                .Where(p => requestIds.Contains(p.PurchaseRequestId))
+                .ToList();
+
+            // Phần đã đóng "không mua được": dòng hoàn tiền UNFULFILLED của khoản hoàn còn hiệu lực.
+            var liveRefundIds = payments
+                .Where(p => PurchasePaymentTypes.IsRefund(p)
+                    && !string.Equals(p.Status?.Trim(), PurchaseRefundStatuses.Cancelled, StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.Id)
+                .ToHashSet();
+            var closedQtyByItem = liveRefundIds.Count == 0
+                ? new Dictionary<Guid, int>()
+                : (await _unitOfWork.Repository<PurchaseRefundLine>().GetAllAsync())
+                    .Where(l => liveRefundIds.Contains(l.PurchasePaymentId) && l.PurchaseRequestItemId.HasValue
+                        && string.Equals(l.ReasonCode?.Trim(), PurchaseRefundReasons.Unfulfilled, StringComparison.OrdinalIgnoreCase))
+                    .GroupBy(l => l.PurchaseRequestItemId!.Value)
+                    .ToDictionary(g => g.Key, g => SafeTotalQuantity(g.Select(l => l.Quantity)));
+
+            var itemsByRequest = allItems
+                .Where(i => requestIds.Contains(i.PurchaseRequestId))
+                .GroupBy(i => i.PurchaseRequestId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var requestId in requestIds)
+            {
+                var items = itemsByRequest.TryGetValue(requestId, out var list) ? list : new List<PurchaseRequestItem>();
+                var hasAccepted = acceptedQuotationByRequest.TryGetValue(requestId, out var quotationId);
+
+                int openLines = 0;
+                long openQuantity = 0, closedQuantity = 0;
+                foreach (var item in items)
+                {
+                    var closed = closedQtyByItem.GetValueOrDefault(item.Id);
+                    closedQuantity += closed;
+                    if (!hasAccepted || !quotedItemIds.Contains((quotationId, item.Id)) || takenItemIds.Contains(item.Id))
+                        continue;
+                    var remaining = Math.Max(item.Quantity - closed, 0);
+                    if (remaining <= 0)
+                        continue;
+                    openLines++;
+                    openQuantity += remaining;
+                }
+
+                var prepaid = payments
+                    .Where(p => p.PurchaseRequestId == requestId
+                        && PurchasePaymentTypes.IsFirstInstalment(p) && PurchasePaymentTypes.IsPaid(p))
+                    .Sum(p => p.Amount);
+
+                result[requestId] = new PurchaseProgress(
+                    activeOrders.Count(o => o.PurchaseRequestId == requestId),
+                    openLines,
+                    (int)Math.Min(openQuantity, int.MaxValue),
+                    (int)Math.Min(closedQuantity, int.MaxValue),
+                    prepaid);
+            }
+
+            return result;
         }
 
         public async Task<PurchaseRequestDetailResponseDto> GetPurchaseRequestDetailAsync(Guid requestId, Guid? userId, string userRole)
@@ -778,6 +1001,14 @@ namespace VCL_BLL.Services
 
             // Hành trình lô của đơn — dựng lại bằng đúng hàm luồng ký gửi đang dùng, để Sale
             // nhìn hai loại đơn thấy cùng một khối thông tin.
+            // Chặng thật đầu–cuối (đơn mua NCC + đơn kho + khoản hoàn), không chỉ status của yêu cầu.
+            var detailProgress = await BuildPurchaseProgressAsync(
+                new HashSet<Guid> { request.Id },
+                await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync(),
+                relatedItems);
+            var overallStage = (await PurchaseRequestStage.ComputeAsync(_unitOfWork, new[] { request },
+                detailProgress.ToDictionary(kv => kv.Key, kv => kv.Value.OpenLineCount)))[request.Id];
+
             var shipmentGroups = warehouseOrder != null
                 ? await _orderService.GetOrderShipmentJourneyAsync(warehouseOrder.Id)
                 : new List<ConsignmentShipmentGroup>();
@@ -836,6 +1067,10 @@ namespace VCL_BLL.Services
                     ProductsSubtotal = quotation.ProductsSubtotal,
                     PurchaseFee = quotation.PurchaseFee,
                     ShippingFee = quotation.ShippingFee,
+                    DomesticShippingFee = quotation.DomesticShippingFee,
+                    FreightRatePerKg = quotation.FreightRatePerKg,
+                    EstimatedWeight = quotation.EstimatedWeight,
+                    VatRate = quotation.VatRate,
                     Vat = quotation.Vat ?? 0m,
                     ImportTax = quotation.ImportTax ?? 0m,
                     TotalAmount = quotation.TotalAmount,
@@ -848,6 +1083,7 @@ namespace VCL_BLL.Services
                     Items = quotationItemDtos,
                     AdditionalFees = feeDtos
                 };
+                PurchasePrepayRule.Fill(quotationDto, quotation);
             }
 
             return new PurchaseRequestDetailResponseDto
@@ -873,13 +1109,16 @@ namespace VCL_BLL.Services
                 QuotationCreatedAt = quotation?.CreatedAt,
                 StatusUpdatedAt = quotation?.CreatedAt ?? request.CreatedAt,
                 StatusDisplayName = GetStatusDisplayName(request.Status),
+                OverallStage = overallStage.Stage,
+                OverallStageText = overallStage.Text,
+                IsFullyCompleted = overallStage.IsFullyCompleted,
                 WarehouseId = request.ExpectedWarehouseId,
                 WarehouseName = expectedWarehouse?.WarehouseName,
                 ProofImages = SplitList(request.ProofImageUrls),
                 OrderCode = warehouseOrder?.ConsignmentCode,
                 ReceiptPdfUrl = warehouseOrder?.ReceiptPdfUrl,
                 ReceiptGeneratedAt = warehouseOrder?.ReceiptGeneratedAt,
-                TotalQuantity = relatedItems.Sum(i => i.Quantity),
+                TotalQuantity = SafeTotalQuantity(relatedItems.Select(i => i.Quantity)),
                 Items = itemDtos,
                 Quotation = quotationDto,
                 Shipments = shipmentGroups,
@@ -887,318 +1126,6 @@ namespace VCL_BLL.Services
                     .SelectMany(g => g.Parcels)
                     .Count(p => p.Inspection?.HasDiscrepancy == true)
             };
-        }
-
-        public async Task<ConfirmPurchaseResponseDto> ConfirmPurchaseAsync(
-            Guid requestId, Guid userId, string userRole, ConfirmPurchaseRequestDto request)
-        {
-            if (request == null)
-                throw new ArgumentException("Nội dung xác nhận mua hộ không được để trống.");
-
-            // 1. Phân quyền: chỉ Staff/Sales/Buying được cập nhật tiến độ mua hàng
-            if (!StaffRoleHelper.CanUpdatePurchaseProgress(userRole))
-                throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được xác nhận mua hộ.");
-
-            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
-            var purchaseRequest = await requestRepo.GetByIdAsync(requestId)
-                ?? throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
-
-            var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
-            if (currentStatus is "CANCELLED" or "REJECTED")
-                throw new ArgumentException($"Không thể cập nhật tiến độ do đơn đang ở trạng thái {purchaseRequest.Status}.");
-
-            // 2. Chỉ nhận nhóm trạng thái tiến độ mua hàng
-            var targetStatus = request.Status.Trim().ToUpperInvariant();
-            if (!PurchaseProgressStatuses.Contains(targetStatus))
-            {
-                throw new ArgumentException(
-                    $"Trạng thái '{request.Status}' không thuộc nhóm tiến độ mua hàng. " +
-                    $"Hợp lệ: {string.Join(", ", PurchaseProgressStatuses)}.");
-            }
-
-            // 2b. Bước duyệt nhập kho là việc của Manager/Ops, Sale không được tự đóng đơn
-            var isWarehouseApproval = WarehouseApprovalStatuses.Contains(targetStatus);
-            if (isWarehouseApproval && !StaffRoleHelper.CanApproveWarehouseStore(userRole))
-            {
-                throw new UnauthorizedAccessException(
-                    $"Chỉ Manager/Ops được duyệt kiểm kê nhập kho (trạng thái {targetStatus}).");
-            }
-
-            // 2c. Nhập kho hai lần thì đơn sẽ có hai phiếu cho cùng một lô hàng — chặn như approve-store
-            if (isWarehouseApproval && currentStatus is "STORED" or "COMPLETED")
-                throw new ArgumentException("Đơn đã được nhập kho trước đó.");
-
-            // 2d. Bước nhập kho nay sinh đơn kho thật + phiếu, nên không cho nhảy cóc từ đầu luồng:
-            // một đơn chưa mua, chưa thanh toán mà đã có đơn kho là hàng không tồn tại trong thực tế.
-            // Ràng buộc giữ đúng bằng approve-store để hai endpoint cùng một hợp đồng.
-            if (isWarehouseApproval
-                && currentStatus is not ("WAITING_STORED" or "ARRIVED_ORIGIN_WAREHOUSE"))
-            {
-                throw new ArgumentException(
-                    $"Chỉ nhập kho khi đơn đang ở WAITING_STORED hoặc ARRIVED_ORIGIN_WAREHOUSE (hiện tại: {purchaseRequest.Status}).");
-            }
-
-            // 3. Kho dự kiến nhận hàng — FE gửi warehouseId, kèm destinationWarehouseId cùng giá trị
-            var warehouseId = request.WarehouseId ?? request.DestinationWarehouseId;
-            Warehouse? warehouse = null;
-            if (warehouseId.HasValue)
-            {
-                warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(warehouseId.Value)
-                    ?? throw new NotFoundException($"Không tìm thấy kho với ID {warehouseId.Value}");
-
-                EnsureWarehouseMatchesRoute(warehouse, purchaseRequest.Route);
-            }
-
-            // 3. Validate ảnh bằng chứng ở phía server, không tin số client gửi
-            var proofImages = (request.ProofImages ?? new List<string>())
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .Select(u => u.Trim())
-                .Distinct()
-                .ToList();
-
-            if (proofImages.Count > MaxProofImages)
-                throw new ArgumentException($"Chỉ được tải tối đa {MaxProofImages} ảnh bằng chứng.");
-
-            if (proofImages.Any(u => u.Contains(ListSeparator)))
-                throw new ArgumentException($"URL ảnh không được chứa ký tự '{ListSeparator}'.");
-
-            // 4. Ghi nhật ký TRƯỚC khi đổi, để giữ được trạng thái cũ
-            var actor = (await _unitOfWork.Repository<User>().GetAllAsync())
-                .FirstOrDefault(u => u.Id == userId);
-
-            await _unitOfWork.Repository<PurchaseRequestHistory>().AddAsync(new PurchaseRequestHistory
-            {
-                Id = Guid.NewGuid(),
-                PurchaseRequestId = requestId,
-                FromStatus = purchaseRequest.Status,
-                ToStatus = targetStatus,
-                Note = request.GeneralNote?.Trim(),
-                ProofImageUrls = proofImages.Any() ? string.Join(ListSeparator, proofImages) : null,
-                ChangedBy = userId,
-                ChangedByName = actor?.FullName,
-                CreatedAt = DateTime.UtcNow
-            });
-
-            // 5. Cập nhật đơn. Ảnh chỉ ghi đè khi lần này có gửi, để không xoá mất ảnh cũ.
-            purchaseRequest.Status = targetStatus;
-            if (proofImages.Any())
-                purchaseRequest.ProofImageUrls = string.Join(ListSeparator, proofImages);
-            if (!string.IsNullOrWhiteSpace(request.GeneralNote))
-                purchaseRequest.GeneralNote = request.GeneralNote.Trim();
-            if (warehouse != null)
-                purchaseRequest.ExpectedWarehouseId = warehouse.Id;
-
-            requestRepo.Update(purchaseRequest);
-            await NotifyCustomerAsync(purchaseRequest, targetStatus, currentStatus);
-
-            // FE gọi thẳng confirm-purchase cho cả bước nhập kho thay vì approve-store, nên đường này
-            // phải vật chất hoá đơn kho y hệt. Chặn 400 ở đây sẽ làm vỡ màn hình đang chạy của FE,
-            // mà vẫn không giải quyết được gốc: đơn đi lối này trước đây kẹt vĩnh viễn ở STORED.
-            if (isWarehouseApproval)
-            {
-                var (orderCode, receiptPdfUrl) = await FinalizeStoredAsync(purchaseRequest, userId);
-
-                var storedResponse = await BuildConfirmResponseAsync(purchaseRequest);
-                storedResponse.OrderCode = orderCode;
-                storedResponse.ReceiptPdfUrl = receiptPdfUrl;
-                return storedResponse;
-            }
-
-            await _unitOfWork.SaveChangesAsync();
-
-            return await BuildConfirmResponseAsync(purchaseRequest);
-        }
-
-        /// <summary>
-        /// Manager/Ops duyệt kiểm kê và nhập kho chính thức (bước 5).
-        /// Tách khỏi <see cref="ConfirmPurchaseAsync"/> để phân quyền rõ ràng: Sale đẩy đơn tới
-        /// WAITING_STORED rồi dừng, kho duyệt xong mới sang STORED.
-        /// </summary>
-        public async Task<ConfirmPurchaseResponseDto> ApproveStoreAsync(
-            Guid requestId, Guid userId, string userRole, ApproveStoreRequestDto request)
-        {
-            request ??= new ApproveStoreRequestDto();
-
-            if (!StaffRoleHelper.CanApproveWarehouseStore(userRole))
-                throw new UnauthorizedAccessException("Chỉ Manager/Ops được duyệt kiểm kê nhập kho.");
-
-            var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
-            var purchaseRequest = await requestRepo.GetByIdAsync(requestId)
-                ?? throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
-
-            var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
-            if (currentStatus is "CANCELLED" or "REJECTED")
-                throw new ArgumentException($"Không thể duyệt nhập kho do đơn đang ở trạng thái {purchaseRequest.Status}.");
-
-            if (currentStatus is "STORED" or "COMPLETED")
-                throw new ArgumentException("Đơn đã được nhập kho trước đó.");
-
-            // Phải qua bước kho báo hàng tới thì mới duyệt được
-            if (currentStatus != "WAITING_STORED" && currentStatus != "ARRIVED_ORIGIN_WAREHOUSE")
-            {
-                throw new ArgumentException(
-                    $"Chỉ duyệt nhập kho khi đơn đang ở WAITING_STORED hoặc ARRIVED_ORIGIN_WAREHOUSE (hiện tại: {purchaseRequest.Status}).");
-            }
-
-            var warehouseId = request.WarehouseId ?? purchaseRequest.ExpectedWarehouseId;
-            Warehouse? warehouse = null;
-            if (warehouseId.HasValue)
-            {
-                warehouse = await _unitOfWork.Repository<Warehouse>().GetByIdAsync(warehouseId.Value)
-                    ?? throw new NotFoundException($"Không tìm thấy kho với ID {warehouseId.Value}");
-            }
-
-            var actor = (await _unitOfWork.Repository<User>().GetAllAsync())
-                .FirstOrDefault(u => u.Id == userId);
-
-            await _unitOfWork.Repository<PurchaseRequestHistory>().AddAsync(new PurchaseRequestHistory
-            {
-                Id = Guid.NewGuid(),
-                PurchaseRequestId = requestId,
-                FromStatus = purchaseRequest.Status,
-                ToStatus = "STORED",
-                Note = request.Note?.Trim(),
-                ChangedBy = userId,
-                ChangedByName = actor?.FullName,
-                CreatedAt = DateTime.UtcNow
-            });
-
-            purchaseRequest.Status = "STORED";
-            if (warehouse != null)
-                purchaseRequest.ExpectedWarehouseId = warehouse.Id;
-            if (!string.IsNullOrWhiteSpace(request.Note))
-                purchaseRequest.GeneralNote = request.Note.Trim();
-
-            requestRepo.Update(purchaseRequest);
-            await NotifyCustomerAsync(purchaseRequest, "STORED", currentStatus);
-
-            var (orderCode, receiptPdfUrl) = await FinalizeStoredAsync(purchaseRequest, userId);
-
-            var response = await BuildConfirmResponseAsync(purchaseRequest);
-            response.OrderCode = orderCode;
-            response.ReceiptPdfUrl = receiptPdfUrl;
-            return response;
-        }
-
-        /// <summary>
-        /// Phần việc chung của bước nhập kho: vật chất hoá đơn kho rồi phát hành phiếu PDF.
-        /// <para>
-        /// Dùng chung cho <c>approve-store</c> và cho <c>confirm-purchase</c> khi trạng thái đích là
-        /// <c>STORED</c>. Trước đây chỉ <c>approve-store</c> làm việc này, nên đơn đi qua
-        /// <c>confirm-purchase</c> sang <c>STORED</c> mà không sinh <see cref="Order"/> nào —
-        /// kho không có đơn để check-in, không có phiếu, và không quay lại được vì
-        /// <see cref="ApproveStoreAsync"/> chặn đơn đã <c>STORED</c>.
-        /// </para>
-        /// Gọi sau khi đã cập nhật đơn nhưng trước khi trả response; hàm tự lưu để có OrderId thật.
-        /// </summary>
-        private async Task<(string? OrderCode, string? ReceiptPdfUrl)> FinalizeStoredAsync(
-            PurchaseRequest purchaseRequest, Guid actorUserId)
-        {
-            var (orderCode, orderId) = await MaterializeWarehouseOrderAsync(purchaseRequest, actorUserId);
-
-            await _unitOfWork.SaveChangesAsync();
-
-            // Phiếu là chứng từ để kho đối chiếu khi nhận hàng, nên phát hành ngay khi duyệt.
-            // Lỗi sinh phiếu không được làm hỏng việc duyệt — Sale/OM tải lại sau vẫn được.
-            string? receiptPdfUrl = null;
-            if (orderId.HasValue)
-            {
-                try
-                {
-                    receiptPdfUrl = await _receiptService.GenerateAndStoreReceiptAsync(orderId.Value, actorUserId);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"GENERATE PURCHASE RECEIPT ERROR ({purchaseRequest.Id}): {ex.Message}");
-                }
-            }
-
-            return (orderCode, receiptPdfUrl);
-        }
-
-        /// <summary>
-        /// Biến yêu cầu mua hộ thành một <see cref="Order"/> loại "PURCHASE" khi hàng được duyệt nhập kho.
-        /// <para>
-        /// Từ mốc này hàng nằm trong kho VCL, nên nó dùng chung nguyên vẹn luồng kho đã có của ký gửi:
-        /// nhân viên kho check-in cân đo → sinh <c>Parcel</c> → put-away → <c>Inventory</c> → gom vào
-        /// WRO → lô quốc tế về VN. Không phải viết lại bất cứ bước kho nào.
-        /// </para>
-        /// Trả về mã đơn để kho tra cứu; null nếu đã vật chất hoá trước đó.
-        /// </summary>
-        private async Task<(string? Code, Guid? OrderId)> MaterializeWarehouseOrderAsync(PurchaseRequest purchaseRequest, Guid actorUserId)
-        {
-            var orderRepo = _unitOfWork.Repository<Order>();
-
-            var existing = (await orderRepo.GetAllAsync())
-                .FirstOrDefault(o => o.PurchaseRequestId == purchaseRequest.Id);
-            if (existing != null)
-                return (existing.ConsignmentCode, existing.Id);
-
-            var now = DateTime.UtcNow;
-            var order = new Order
-            {
-                Id = Guid.NewGuid(),
-                CustomerId = purchaseRequest.CustomerId,
-                PurchaseRequestId = purchaseRequest.Id,
-                // Dùng luôn mã mua hộ làm mã đơn kho. Sinh mã VCL- riêng sẽ khiến hàng mua hộ
-                // mang mã của ký gửi — sai nghĩa, và kho phải nhớ hai mã cho cùng một lô hàng.
-                ConsignmentCode = purchaseRequest.PurchaseCode,
-                ConsignmentType = purchaseRequest.ShippingOption,
-                Route = purchaseRequest.Route,
-                ReceiverName = purchaseRequest.ReceiverName,
-                ReceiverPhone = purchaseRequest.ReceiverPhone,
-                ReceiverAddress = purchaseRequest.ReceiverAddress,
-                RequiresInspection = purchaseRequest.RequiresInspection,
-                OrderType = "PURCHASE",
-                // Kho chỉ check-in được khi đơn ở trạng thái này (xem ParcelService.CheckInParcelAsync)
-                Status = "APPROVED",
-                Note = $"Sinh tự động từ yêu cầu mua hộ {purchaseRequest.PurchaseCode}.",
-                CreatedById = actorUserId,
-                CreatedAt = now
-            };
-            await orderRepo.AddAsync(order);
-
-            // Mỗi sản phẩm mua hộ thành một dòng hàng. Cân nặng/kích thước để trống —
-            // nhân viên kho điền lúc check-in, đó mới là số đo thật để tính cước.
-            var items = (await _unitOfWork.Repository<PurchaseRequestItem>().GetAllAsync())
-                .Where(i => i.PurchaseRequestId == purchaseRequest.Id)
-                .ToList();
-
-            // Giá trị khai báo của hàng mua hộ chính là giá sản phẩm trên báo giá đã chốt.
-            var acceptedQuotation = (await _unitOfWork.Repository<PurchaseQuotation>().GetAllAsync())
-                .Where(q => q.PurchaseRequestId == purchaseRequest.Id)
-                .OrderByDescending(q => q.CreatedAt)
-                .FirstOrDefault();
-
-            var lineTotalByItem = acceptedQuotation == null
-                ? new Dictionary<Guid, decimal>()
-                : (await _unitOfWork.Repository<PurchaseQuotationItem>().GetAllAsync())
-                    .Where(qi => qi.PurchaseQuotationId == acceptedQuotation.Id)
-                    .GroupBy(qi => qi.PurchaseRequestItemId)
-                    .ToDictionary(g => g.Key, g => g.Sum(qi => qi.LineTotal));
-
-            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            foreach (var item in items)
-            {
-                await orderItemRepo.AddAsync(new OrderItem
-                {
-                    Id = Guid.NewGuid(),
-                    OrderId = order.Id,
-                    ProductName = item.ProductName,
-                    ProductType = item.ProductType,
-                    Quantity = item.Quantity,
-                    DeclaredValue = lineTotalByItem.TryGetValue(item.Id, out var lineTotal) ? lineTotal : null,
-                    // ReferenceUrl là nơi phiếu PDF đọc ẢNH sản phẩm, không phải link trang bán hàng —
-                    // nhét ProductLink vào đây thì phiếu tải về HTML rồi vỡ lúc vẽ ảnh.
-                    ReferenceUrl = item.ImageUrl,
-                    Description = string.IsNullOrWhiteSpace(item.ProductLink)
-                        ? item.Note
-                        : $"{item.ProductLink}{(string.IsNullOrWhiteSpace(item.Note) ? "" : " — " + item.Note)}",
-                    CreatedAt = now
-                });
-            }
-
-            return (order.ConsignmentCode, order.Id);
         }
 
         /// <summary>
@@ -1222,8 +1149,14 @@ namespace VCL_BLL.Services
             var purchaseRequest = await requestRepo.GetByIdAsync(requestId)
                 ?? throw new NotFoundException($"Không tìm thấy yêu cầu mua hộ với ID {requestId}");
 
-            // Khách chỉ từ chối báo giá của chính mình; nhân viên nội bộ từ chối hộ được.
-            if (!StaffRoleHelper.IsInternalStaff(userRole))
+            // Khách chỉ từ chối báo giá của chính mình; nhân viên từ chối hộ khách thì chỉ Sale/Admin
+            // (cùng nhóm với lập báo giá) — kho, giao vận, OM không được đụng vào báo giá.
+            if (StaffRoleHelper.IsInternalStaff(userRole))
+            {
+                if (!StaffRoleHelper.CanQuotePurchase(userRole))
+                    throw new UnauthorizedAccessException("Chỉ Sale hoặc Admin được từ chối báo giá yêu cầu mua hộ thay khách.");
+            }
+            else
             {
                 var customer = (await _unitOfWork.Repository<Customer>().GetAllAsync())
                     .FirstOrDefault(c => c.UserId == userId);
@@ -1235,7 +1168,7 @@ namespace VCL_BLL.Services
             if (currentStatus is not ("QUOTED" or "WAITING_PAYMENT"))
             {
                 throw new ArgumentException(
-                    $"Chỉ từ chối được báo giá khi đơn đang ở QUOTED hoặc WAITING_PAYMENT (hiện tại: {purchaseRequest.Status}).");
+                    $"Chỉ từ chối được báo giá khi đơn đang ở {StatusNames.QuoteAny("QUOTED", "WAITING_PAYMENT")} (hiện tại: {StatusNames.Quote(purchaseRequest.Status)}).");
             }
 
             // Đã có tiền vào thì không cho từ chối âm thầm — dữ liệu thanh toán sẽ mồ côi.
@@ -1380,26 +1313,6 @@ namespace VCL_BLL.Services
             }
         }
 
-        private async Task<ConfirmPurchaseResponseDto> BuildConfirmResponseAsync(PurchaseRequest purchaseRequest)
-        {
-            Warehouse? warehouse = purchaseRequest.ExpectedWarehouseId.HasValue
-                ? await _unitOfWork.Repository<Warehouse>().GetByIdAsync(purchaseRequest.ExpectedWarehouseId.Value)
-                : null;
-
-            return new ConfirmPurchaseResponseDto
-            {
-                PurchaseRequestId = purchaseRequest.Id,
-                PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
-                Status = purchaseRequest.Status,
-                StatusDisplayName = GetStatusDisplayName(purchaseRequest.Status),
-                ProofImages = SplitList(purchaseRequest.ProofImageUrls),
-                GeneralNote = purchaseRequest.GeneralNote,
-                WarehouseId = purchaseRequest.ExpectedWarehouseId,
-                WarehouseName = warehouse?.WarehouseName,
-                UpdatedAt = DateTime.UtcNow
-            };
-        }
-
         public async Task<List<PurchaseRequestHistoryItemDto>> GetPurchaseRequestHistoryAsync(
             Guid requestId, Guid? userId, string userRole)
         {
@@ -1471,11 +1384,10 @@ namespace VCL_BLL.Services
             if (request == null)
                 throw new ArgumentException("Dữ liệu cập nhật không được để trống.");
 
-            // 1. Phân quyền: chỉ Staff/Sales được cập nhật trạng thái
-            bool isStaff = StaffRoleHelper.IsInternalStaff(userRole);
-            if (!isStaff)
+            // 1. Phân quyền: chỉ Sale/Admin được xem xét yêu cầu (kho, giao vận, OM chỉ xem).
+            if (!StaffRoleHelper.CanQuotePurchase(userRole))
             {
-                throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được cập nhật trạng thái yêu cầu mua hộ.");
+                throw new UnauthorizedAccessException("Chỉ Sale hoặc Admin được cập nhật trạng thái xem xét yêu cầu mua hộ.");
             }
 
             // 2. Tìm yêu cầu (404 nếu không có)
@@ -1488,9 +1400,10 @@ namespace VCL_BLL.Services
 
             // 3. Không cho cập nhật nếu đã sang bước báo giá hoặc đã hủy
             var currentStatus = purchaseRequest.Status?.Trim().ToUpperInvariant() ?? string.Empty;
-            if (currentStatus == "QUOTED" || currentStatus == "CANCELLED")
+            // Chỉ đổi tay ở giai đoạn xem xét; đã báo giá / trả tiền thì đi đường huỷ – hoàn tiền.
+            if (currentStatus is not ("PENDING_REVIEW" or "IN_REVIEW" or "NEED_MORE_INFO"))
             {
-                throw new ArgumentException($"Không thể cập nhật trạng thái do yêu cầu đã ở trạng thái {purchaseRequest.Status}.");
+                throw new ArgumentException($"Không thể cập nhật trạng thái do yêu cầu đã ở trạng thái {StatusNames.Quote(purchaseRequest.Status)}.");
             }
 
             // 4. Validate trạng thái mới
@@ -1498,7 +1411,7 @@ namespace VCL_BLL.Services
             var validStatuses = new[] { "PENDING_REVIEW", "IN_REVIEW", "NEED_MORE_INFO", "REJECTED" };
             if (!validStatuses.Contains(targetStatus))
             {
-                throw new ArgumentException("Trạng thái không hợp lệ. Hợp lệ: PENDING_REVIEW, IN_REVIEW, NEED_MORE_INFO, REJECTED.");
+                throw new ArgumentException($"Trạng thái không hợp lệ. Chỉ chuyển được sang {StatusNames.QuoteAny("PENDING_REVIEW", "IN_REVIEW", "NEED_MORE_INFO", "REJECTED")}.");
             }
 
             // 5. Lý do bắt buộc khi NEED_MORE_INFO hoặc REJECTED
@@ -1530,11 +1443,10 @@ namespace VCL_BLL.Services
             if (request == null)
                 throw new ArgumentException("Dữ liệu báo giá không được để trống.");
 
-            // 1. Phân quyền: chỉ Staff/Sales được tạo báo giá
-            bool isStaff = StaffRoleHelper.IsInternalStaff(userRole);
-            if (!isStaff)
+            // 1. Phân quyền: chỉ Sale/Admin được lập báo giá (kho, giao vận, OM chỉ xem).
+            if (!StaffRoleHelper.CanQuotePurchase(userRole))
             {
-                throw new UnauthorizedAccessException("Chỉ Staff hoặc Sales được tạo báo giá mua hộ.");
+                throw new UnauthorizedAccessException("Chỉ Sale hoặc Admin được lập báo giá yêu cầu mua hộ.");
             }
 
             // 2. Tìm yêu cầu (404 nếu không có)
@@ -1550,7 +1462,7 @@ namespace VCL_BLL.Services
             var quotableStatuses = new[] { "PENDING_REVIEW", "IN_REVIEW", "NEED_MORE_INFO" };
             if (!quotableStatuses.Contains(currentStatus))
             {
-                throw new ArgumentException($"Không thể tạo báo giá do yêu cầu đang ở trạng thái {purchaseRequest.Status}.");
+                throw new ArgumentException($"Không thể tạo báo giá do yêu cầu đang ở trạng thái {StatusNames.Quote(purchaseRequest.Status)}.");
             }
 
             // 4. Không cho tạo trùng báo giá đang hiệu lực
@@ -1695,6 +1607,11 @@ namespace VCL_BLL.Services
             var quotationFees = new List<QuotationFee>();
             decimal totalAdditionalFees = 0m;
 
+            // Ship nội địa (NCC → kho nguồn) chỉ tính MỘT lần: ô "Ship nội địa" Sale nhập là nguồn. Web cũ còn
+            // gửi kèm rule DOMESTIC_FEE như phụ phí → trước đây bị cộng hai lần vào phần trả trước.
+            // Ô trống (0) mà có phụ phí DOMESTIC_FEE thì lấy số đó làm ship nội địa (vẫn một dòng DOMESTIC_SHIPPING).
+            decimal domesticFeeFromRule = 0m;
+
             if (request.AdditionalFees != null && request.AdditionalFees.Any())
             {
                 foreach (var feeDto in request.AdditionalFees)
@@ -1716,6 +1633,20 @@ namespace VCL_BLL.Services
                         {
                             throw new ArgumentException($"Quy định phí '{rule.RuleName}' không còn hoạt động.");
                         }
+                    }
+
+                    // Thuế NK (theo loại hàng, thu ở chặng VN) và VAT (rule VAT) backend tự tính ở dưới.
+                    // Web nhân viên gửi kèm hai rule này như phụ phí thì bị cộng HAI lần vào bill và thuế NK
+                    // bị thu ngay ở phần trả trước — bỏ qua.
+                    if (PurchasePrepayRule.IsAutoComputedTax(rule, feeDto.FeeType))
+                    {
+                        continue;
+                    }
+
+                    if (PurchasePrepayRule.IsDomesticShippingFee(rule, feeDto.FeeType))
+                    {
+                        domesticFeeFromRule = Math.Max(domesticFeeFromRule, feeDto.Amount);
+                        continue;
                     }
 
                     totalAdditionalFees += feeDto.Amount;
@@ -1745,64 +1676,100 @@ namespace VCL_BLL.Services
                     CalculationType = "FIXED",
                     Value = request.PurchaseFee,
                     Amount = request.PurchaseFee,
-                    Note = "Phí dịch vụ mua hộ",
+                    Note = "Phí dịch vụ mua hộ — trả trước",
                     CreatedAt = DateTime.UtcNow
                 });
             }
 
-            if (request.ShippingFee > 0)
+            var domesticFee = request.DomesticShippingFee > 0m ? request.DomesticShippingFee : domesticFeeFromRule;
+            if (domesticFee > 0)
             {
                 quotationFees.Add(new QuotationFee
                 {
                     Id = Guid.NewGuid(),
-                    FeeName = "Phí vận chuyển",
-                    FeeType = "MAIN_SERVICE",
+                    FeeName = "Ship nội địa từ NCC tới kho",
+                    FeeType = DomesticShippingFeeType,
                     CalculationType = "FIXED",
-                    Value = request.ShippingFee,
-                    Amount = request.ShippingFee,
-                    Note = "Phí vận chuyển quốc tế / nội địa cho mua hộ",
+                    Value = domesticFee,
+                    Amount = domesticFee,
+                    Note = "Phí vận chuyển nội địa nước ngoài — trả trước",
                     CreatedAt = DateTime.UtcNow
                 });
             }
+
+            // Cước quốc tế chỉ là TẠM TÍNH theo cân ước lượng: số thật tính lại ở kho VN theo đúng
+            // đơn giá /kg này (VnSettlementService đọc dòng MAIN_SERVICE PER_KG của báo giá kho).
+            var (freightRate, pricingId) = await ResolveFreightRateAsync(purchaseRequest, request.FreightRatePerKg, request.ServicePricingId);
+            var totalQuantity = SafeTotalQuantity(requestItems.Where(i => request.Items.Any(l => l.PurchaseRequestItemId == i.Id)).Select(i => i.Quantity));
+            var estimatedWeight = request.EstimatedWeight is > 0m
+                ? request.EstimatedWeight.Value
+                : Math.Max(1.0m, totalQuantity * 0.2m);
+            var freightEstimate = Math.Round(estimatedWeight * freightRate, 0);
+            quotationFees.Add(new QuotationFee
+            {
+                Id = Guid.NewGuid(),
+                FeeName = "Cước vận chuyển quốc tế (tạm tính)",
+                FeeType = "MAIN_SERVICE",
+                CalculationType = "PER_KG",
+                Value = freightRate,
+                Amount = freightEstimate,
+                ChargeableWeight = estimatedWeight,
+                Note = $"Tạm tính {estimatedWeight:0.###} kg × {freightRate:#,##0}đ — thu ở VN theo cân đo thật",
+                CreatedAt = DateTime.UtcNow
+            });
 
             // 7. Tính tổng tiền báo giá
-            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
-            var allRules = await pricingRuleRepo.GetAllAsync();
-            var activeRules = allRules.Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)).ToList();
+            var vatRatePercent = await ResolveVatRatePercentAsync();
 
-            decimal vatRatePercent = 8m;
-            var vatRule = activeRules.FirstOrDefault(r =>
-                string.Equals(r.RuleCode, "VAT", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(r.RuleType, "VAT", StringComparison.OrdinalIgnoreCase) ||
-                (string.Equals(r.RuleType, "TAX", StringComparison.OrdinalIgnoreCase) && (r.RuleName ?? "").Contains("VAT", StringComparison.OrdinalIgnoreCase)));
-
-            if (vatRule != null && vatRule.Value > 0)
-            {
-                vatRatePercent = vatRule.Value <= 1.0m ? vatRule.Value * 100m : vatRule.Value;
-            }
-
-            decimal vatAmount = Math.Round((request.PurchaseFee + request.ShippingFee + totalAdditionalFees) * (vatRatePercent / 100m), 0);
-            if (vatAmount > 0)
+            // VAT phần phí dịch vụ thu trước; VAT cước thu ở VN cùng cước.
+            var vatOnFees = Math.Round((request.PurchaseFee + domesticFee + totalAdditionalFees) * (vatRatePercent / 100m), 0);
+            var vatOnFreight = Math.Round(freightEstimate * (vatRatePercent / 100m), 0);
+            if (vatOnFees > 0)
             {
                 quotationFees.Add(new QuotationFee
                 {
                     Id = Guid.NewGuid(),
-                    FeeName = $"Thuế giá trị gia tăng (VAT {vatRatePercent:G29}%)",
+                    FeeName = $"VAT {vatRatePercent:G29}% phí dịch vụ",
                     FeeType = "TAX",
                     CalculationType = "PERCENTAGE",
                     Value = vatRatePercent,
-                    Amount = vatAmount,
-                    Note = $"{vatRatePercent:G29}% phí dịch vụ mua hộ",
+                    Amount = vatOnFees,
+                    Note = $"{vatRatePercent:G29}% phí mua hộ, ship nội địa và phụ phí — trả trước",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            if (vatOnFreight > 0)
+            {
+                quotationFees.Add(new QuotationFee
+                {
+                    Id = Guid.NewGuid(),
+                    FeeName = $"VAT {vatRatePercent:G29}% cước quốc tế (tạm tính)",
+                    FeeType = "TAX",
+                    CalculationType = "PERCENTAGE",
+                    Value = vatRatePercent,
+                    Amount = vatOnFreight,
+                    Note = $"{vatRatePercent:G29}% cước quốc tế — thu ở VN",
                     CreatedAt = DateTime.UtcNow
                 });
             }
 
             quotationFees.AddRange(itemTaxFees);
 
+            var prepayAmount = productsSubtotal + request.PurchaseFee + domesticFee + totalAdditionalFees + vatOnFees;
+            var laterAmount = freightEstimate + vatOnFreight + importTax;
+
             quotation.ProductsSubtotal = productsSubtotal;
-            quotation.Vat = vatAmount;
+            quotation.ShippingFee = freightEstimate;
+            quotation.DomesticShippingFee = domesticFee;
+            quotation.FreightRatePerKg = freightRate;
+            quotation.EstimatedWeight = estimatedWeight;
+            quotation.ServicePricingId = pricingId;
+            quotation.VatRate = vatRatePercent;
+            quotation.Vat = vatOnFees + vatOnFreight;
             quotation.ImportTax = importTax;
-            quotation.TotalAmount = productsSubtotal + request.PurchaseFee + request.ShippingFee + totalAdditionalFees + vatAmount + importTax;
+            quotation.PrepayAmount = prepayAmount;
+            quotation.EstimatedLaterAmount = laterAmount;
+            quotation.TotalAmount = prepayAmount + laterAmount;
             await quotationRepo.AddAsync(quotation);
 
             // Save Quotation Fees to DB
@@ -1820,16 +1787,35 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            return new PurchaseQuotationResponseDto
+            var response = MapQuotation(quotation, purchaseRequest, quotationFees);
+            response.Items = itemDtos;
+            return response;
+        }
+
+        /// <summary>Loại phí ship nội địa nước ngoài (NCC → kho nguồn) trên báo giá mua hộ.</summary>
+        private const string DomesticShippingFeeType = "DOMESTIC_SHIPPING";
+
+        /// <summary>Phí nằm trong các cột riêng của báo giá, không liệt kê lại ở "phụ phí".</summary>
+        private static readonly HashSet<string> HeadlineFeeTypes = new(StringComparer.OrdinalIgnoreCase)
+        { "SERVICE_FEE", "MAIN_SERVICE", DomesticShippingFeeType };
+
+        private static PurchaseQuotationResponseDto MapQuotation(
+            PurchaseQuotation quotation, PurchaseRequest purchaseRequest, IEnumerable<QuotationFee> fees)
+        {
+            var dto = new PurchaseQuotationResponseDto
             {
                 QuotationId = quotation.Id,
-                PurchaseRequestId = requestId,
+                PurchaseRequestId = purchaseRequest.Id,
                 PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
                 ProductsSubtotal = quotation.ProductsSubtotal,
                 PurchaseFee = quotation.PurchaseFee,
                 ShippingFee = quotation.ShippingFee,
-                Vat = vatAmount,
-                ImportTax = importTax,
+                DomesticShippingFee = quotation.DomesticShippingFee,
+                FreightRatePerKg = quotation.FreightRatePerKg,
+                EstimatedWeight = quotation.EstimatedWeight,
+                VatRate = quotation.VatRate,
+                Vat = quotation.Vat ?? 0m,
+                ImportTax = quotation.ImportTax ?? 0m,
                 TotalAmount = quotation.TotalAmount,
                 Currency = quotation.Currency,
                 ExchangeRate = quotation.ExchangeRate,
@@ -1837,20 +1823,79 @@ namespace VCL_BLL.Services
                 Note = quotation.Note,
                 Status = quotation.Status,
                 CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
-                Items = itemDtos,
-                AdditionalFees = quotationFees.Where(f => f.PricingRuleId.HasValue || (f.FeeType != "SERVICE_FEE" && f.FeeType != "MAIN_SERVICE")).Select(f => new PurchaseQuotationAdditionalFeeResponseDto
-                {
-                    Id = f.Id,
-                    PricingRuleId = f.PricingRuleId,
-                    FeeName = f.FeeName,
-                    FeeType = f.FeeType,
-                    CalculationType = f.CalculationType,
-                    Value = f.Value,
-                    Amount = f.Amount,
-                    Note = f.Note,
-                    CreatedAt = f.CreatedAt
-                }).ToList()
+                AdditionalFees = fees
+                    .Where(f => f.PricingRuleId.HasValue || !HeadlineFeeTypes.Contains(f.FeeType ?? string.Empty))
+                    .Select(f => new PurchaseQuotationAdditionalFeeResponseDto
+                    {
+                        Id = f.Id,
+                        PricingRuleId = f.PricingRuleId,
+                        FeeName = f.FeeName,
+                        FeeType = f.FeeType,
+                        CalculationType = f.CalculationType,
+                        Value = f.Value,
+                        Amount = f.Amount,
+                        Note = f.Note,
+                        CreatedAt = f.CreatedAt
+                    }).ToList()
             };
+            PurchasePrepayRule.Fill(dto, quotation);
+            return dto;
+        }
+
+        /// <summary>% VAT hiện hành từ PricingRule (mặc định 8%).</summary>
+        private async Task<decimal> ResolveVatRatePercentAsync()
+        {
+            var activeRules = (await _unitOfWork.Repository<PricingRule>().GetAllAsync())
+                .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var vatRule = activeRules.FirstOrDefault(r =>
+                string.Equals(r.RuleCode, "VAT", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(r.RuleType, "VAT", StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(r.RuleType, "TAX", StringComparison.OrdinalIgnoreCase) && (r.RuleName ?? "").Contains("VAT", StringComparison.OrdinalIgnoreCase)));
+
+            if (vatRule != null && vatRule.Value > 0)
+                return vatRule.Value <= 1.0m ? vatRule.Value * 100m : vatRule.Value;
+            return 8m;
+        }
+
+        /// <summary>
+        /// Đơn giá cước quốc tế /kg cho báo giá: Sale nhập tay, hoặc chọn bảng giá, hoặc lấy bảng giá
+        /// khớp tuyến + loại dịch vụ của yêu cầu.
+        /// </summary>
+        private async Task<(decimal Rate, Guid? PricingId)> ResolveFreightRateAsync(
+            PurchaseRequest purchaseRequest, decimal? manualRate, Guid? servicePricingId)
+        {
+            var allPricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
+
+            if (servicePricingId.HasValue)
+            {
+                var chosen = allPricings.FirstOrDefault(p => p.Id == servicePricingId.Value)
+                    ?? throw new ArgumentException("Không tìm thấy bảng giá cước đã chọn.");
+                return (manualRate is > 0m ? manualRate.Value : chosen.Price ?? 0m, chosen.Id);
+            }
+
+            var matched = MatchServicePricing(purchaseRequest, allPricings);
+            if (manualRate is > 0m) return (manualRate.Value, matched?.Id);
+            if (matched?.Price is not > 0m)
+                throw new ArgumentException("Chưa có bảng giá cước cho tuyến / loại dịch vụ của yêu cầu này. Vui lòng nhập đơn giá cước /kg.");
+            return (matched!.Price!.Value, matched.Id);
+        }
+
+        private static ServicePricing? MatchServicePricing(PurchaseRequest purchaseRequest, List<ServicePricing> allPricings)
+        {
+            var shippingOption = purchaseRequest.ShippingOption ?? "Standard";
+            var routeStr = purchaseRequest.Route ?? string.Empty;
+
+            return allPricings
+                .Where(p => string.Equals(p.ServiceType, shippingOption, StringComparison.OrdinalIgnoreCase))
+                .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
+                .OrderByDescending(p => p.EffectiveDate)
+                .FirstOrDefault(p =>
+                    string.IsNullOrWhiteSpace(routeStr) ||
+                    string.Equals(OrderService.NormalizeRoute($"{p.OriginCountry}-{p.DestinationCountry}"), OrderService.NormalizeRoute(routeStr), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(OrderService.NormalizeRoute(p.OriginCountry), OrderService.NormalizeRoute(routeStr), StringComparison.OrdinalIgnoreCase)
+                ) ?? allPricings.FirstOrDefault(p => string.Equals(p.ServiceType, shippingOption, StringComparison.OrdinalIgnoreCase));
         }
 
         public async Task<PurchaseQuotationResponseDto> GetPurchaseQuotationByRequestIdAsync(Guid requestId)
@@ -1864,7 +1909,9 @@ namespace VCL_BLL.Services
 
             var quotationRepo = _unitOfWork.Repository<PurchaseQuotation>();
             var allQuotations = await quotationRepo.GetAllAsync();
-            var quotation = allQuotations.FirstOrDefault(q => q.PurchaseRequestId == requestId);
+            var quotation = allQuotations.Where(q => q.PurchaseRequestId == requestId)
+                .OrderByDescending(q => q.CreatedAt ?? DateTime.MinValue)
+                .FirstOrDefault();
             if (quotation == null)
             {
                 throw new NotFoundException("Yêu cầu mua hộ chưa được tạo báo giá.");
@@ -1894,39 +1941,9 @@ namespace VCL_BLL.Services
             var allFees = await feeRepo.GetAllAsync();
             var fees = allFees.Where(f => f.PurchaseQuotationId == quotation.Id).ToList();
 
-            var feeDtos = fees.Select(f => new PurchaseQuotationAdditionalFeeResponseDto
-            {
-                Id = f.Id,
-                PricingRuleId = f.PricingRuleId,
-                FeeName = f.FeeName,
-                FeeType = f.FeeType,
-                CalculationType = f.CalculationType,
-                Value = f.Value,
-                Amount = f.Amount,
-                Note = f.Note,
-                CreatedAt = f.CreatedAt
-            }).ToList();
-
-            return new PurchaseQuotationResponseDto
-            {
-                QuotationId = quotation.Id,
-                PurchaseRequestId = requestId,
-                PurchaseCode = purchaseRequest.PurchaseCode ?? string.Empty,
-                ProductsSubtotal = quotation.ProductsSubtotal,
-                PurchaseFee = quotation.PurchaseFee,
-                ShippingFee = quotation.ShippingFee,
-                Vat = quotation.Vat ?? 0m,
-                ImportTax = quotation.ImportTax ?? 0m,
-                TotalAmount = quotation.TotalAmount,
-                Currency = quotation.Currency,
-                ExchangeRate = quotation.ExchangeRate,
-                ExchangeRateAt = quotation.ExchangeRateAt,
-                Note = quotation.Note,
-                Status = quotation.Status,
-                CreatedAt = quotation.CreatedAt ?? DateTime.UtcNow,
-                Items = itemDtos,
-                AdditionalFees = feeDtos.Where(f => f.PricingRuleId.HasValue || (f.FeeType != "SERVICE_FEE" && f.FeeType != "MAIN_SERVICE")).ToList()
-            };
+            var response = MapQuotation(quotation, purchaseRequest, fees);
+            response.Items = itemDtos;
+            return response;
         }
 
         public async Task<CalculatePurchaseQuotationFeesResponseDto> CalculatePurchaseQuotationFeesAsync(
@@ -2001,27 +2018,13 @@ namespace VCL_BLL.Services
 
             calculatedPurchaseFee = Math.Round(calculatedPurchaseFee, 0);
 
-            // 3. Tra cứu Bảng giá Vận chuyển (ServicePricing) để ước tính Phí Vận Chuyển
-            int totalQuantity = request.Items.Sum(i => i.Quantity < 0 ? 0 : i.Quantity);
-            decimal estimatedWeightKg = Math.Max(1.0m, totalQuantity * 0.2m); // Ước tính 0.2kg / món
+            // 3. Cước quốc tế tạm tính theo bảng giá khớp tuyến (0,2 kg / món, tối thiểu 1 kg)
+            int totalQuantity = SafeTotalQuantity(request.Items.Select(i => i.Quantity));
+            decimal estimatedWeightKg = Math.Max(1.0m, totalQuantity * 0.2m);
 
-            var servicePricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = (await servicePricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
-
-            var shippingOption = purchaseRequest.ShippingOption ?? "Standard";
-            var routeStr = purchaseRequest.Route ?? string.Empty;
-
-            var matchedPricing = allPricings
-                .Where(p => string.Equals(p.ServiceType, shippingOption, StringComparison.OrdinalIgnoreCase))
-                .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
-                .OrderByDescending(p => p.EffectiveDate)
-                .FirstOrDefault(p =>
-                    string.IsNullOrWhiteSpace(routeStr) ||
-                    string.Equals(OrderService.NormalizeRoute($"{p.OriginCountry}-{p.DestinationCountry}"), OrderService.NormalizeRoute(routeStr), StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(OrderService.NormalizeRoute(p.OriginCountry), OrderService.NormalizeRoute(routeStr), StringComparison.OrdinalIgnoreCase)
-                ) ?? allPricings.FirstOrDefault(p => string.Equals(p.ServiceType, shippingOption, StringComparison.OrdinalIgnoreCase));
-
-            decimal freightUnitPrice = matchedPricing?.Price ?? 200000m; // Default 200k/kg nếu ko có cước
+            var allPricings = (await _unitOfWork.Repository<ServicePricing>().GetAllAsync()).Where(p => !p.IsDeleted).ToList();
+            var matchedPricing = MatchServicePricing(purchaseRequest, allPricings);
+            decimal freightUnitPrice = matchedPricing?.Price ?? 0m;
             decimal estimatedShippingFee = Math.Round(estimatedWeightKg * freightUnitPrice, 0);
 
             // 4. Tra cứu Phí Vận Chuyển Nội Địa (DOMESTIC_FEE - Mặc định 5,000đ)
@@ -2031,7 +2034,10 @@ namespace VCL_BLL.Services
 
             decimal domesticFee = domesticFeeRule != null && domesticFeeRule.Value > 0 ? domesticFeeRule.Value : 5000m;
 
-            decimal totalEstimatedCost = productsSubtotal + calculatedPurchaseFee + estimatedShippingFee + domesticFee;
+            var vatRate = await ResolveVatRatePercentAsync();
+            decimal prepay = productsSubtotal + calculatedPurchaseFee + domesticFee
+                + Math.Round((calculatedPurchaseFee + domesticFee) * vatRate / 100m, 0);
+            decimal totalEstimatedCost = prepay + estimatedShippingFee + Math.Round(estimatedShippingFee * vatRate / 100m, 0);
             string feeDescription = isFixedFee ? $"{calculatedPurchaseFee:N0}đ (cố định)" : $"{feePercent:G29}%";
 
             return new CalculatePurchaseQuotationFeesResponseDto
@@ -2042,8 +2048,13 @@ namespace VCL_BLL.Services
                 AppliedPurchaseFeePercent = feePercent,
                 EstimatedShippingFee = estimatedShippingFee,
                 DomesticShippingFee = domesticFee,
+                FreightRatePerKg = freightUnitPrice,
+                EstimatedWeight = estimatedWeightKg,
+                ServicePricingId = matchedPricing?.Id,
+                VatRate = vatRate,
+                EstimatedPrepayAmount = Math.Round(prepay, 0),
                 TotalEstimatedCost = Math.Round(totalEstimatedCost, 0),
-                Note = $"Phí mua hộ: {feeDescription}. Ship quốc tế ước tính: {estimatedShippingFee:N0}đ ({estimatedWeightKg}kg). Ship nội địa: {domesticFee:N0}đ."
+                Note = $"Phí mua hộ: {feeDescription}. Ship nội địa: {domesticFee:N0}đ (trả trước). Cước quốc tế tạm tính: {estimatedShippingFee:N0}đ ({estimatedWeightKg}kg × {freightUnitPrice:N0}đ) — thu ở VN theo cân đo thật."
             };
         }
     }

@@ -193,7 +193,7 @@ namespace VCL_BLL.Services
             }
 
             var orderByPurchaseRequest = orders
-                .Where(o => o.PurchaseRequestId.HasValue)
+                .Where(o => o.PurchaseRequestId.HasValue && !o.PurchaseOrderId.HasValue)
                 .GroupBy(o => o.PurchaseRequestId!.Value)
                 .ToDictionary(g => g.Key, g => g.First().Id);
 

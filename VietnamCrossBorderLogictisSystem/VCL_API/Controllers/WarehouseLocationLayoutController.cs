@@ -1,3 +1,4 @@
+using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers;
 
@@ -36,7 +38,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { message = ex.Message });
+            return StatusCode(403, new { message = this.UserError(ex) });
         }
         catch (NotFoundException ex)
         {
@@ -44,7 +46,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
         }
     }
 
@@ -63,7 +65,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { message = ex.Message });
+            return StatusCode(403, new { message = this.UserError(ex) });
         }
         catch (NotFoundException ex)
         {
@@ -71,7 +73,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
         }
     }
 
@@ -95,7 +97,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { message = ex.Message });
+            return StatusCode(403, new { message = this.UserError(ex) });
         }
         catch (NotFoundException ex)
         {
@@ -103,11 +105,11 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = this.UserError(ex) });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
         }
     }
 
@@ -131,7 +133,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { message = ex.Message });
+            return StatusCode(403, new { message = this.UserError(ex) });
         }
         catch (NotFoundException ex)
         {
@@ -139,11 +141,11 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = this.UserError(ex) });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
         }
     }
 
@@ -162,7 +164,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { message = ex.Message });
+            return StatusCode(403, new { message = this.UserError(ex) });
         }
         catch (NotFoundException ex)
         {
@@ -170,11 +172,11 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = this.UserError(ex) });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
         }
     }
 
@@ -183,7 +185,7 @@ public class WarehouseLocationLayoutController : ControllerBase
     /// GET /api/warehouses/{warehouseId}/layout/status
     /// </summary>
     [HttpGet("status")]
-    [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF")]
+    [AuthorizeRoles("Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF")]
     public async Task<IActionResult> GetLayoutStatus(Guid warehouseId)
     {
         var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
@@ -195,7 +197,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(403, new { message = ex.Message });
+            return StatusCode(403, new { message = this.UserError(ex) });
         }
         catch (NotFoundException ex)
         {
@@ -203,7 +205,7 @@ public class WarehouseLocationLayoutController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+            return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
         }
     }
 }

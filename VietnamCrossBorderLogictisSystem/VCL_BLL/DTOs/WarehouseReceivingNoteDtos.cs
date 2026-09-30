@@ -5,6 +5,12 @@ namespace VCL_BLL.DTOs
 {
     public class WarehouseReceivingNoteExpectedItemDto
     {
+        /// <summary>Thùng gỗ của kiện — kho đối chiếu đúng loại thùng.</summary>
+        public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
+
+        /// <summary>Dịch vụ khách chọn cho kiện (kiểm hàng, bảo hiểm...).</summary>
+        public List<ItemServiceDto> Services { get; set; } = new();
+
         /// <summary>
         /// Dòng hàng gốc trên đơn. Kho gửi lại đúng id này khi chốt số thực tế để hệ thống so
         /// được với khai báo.
@@ -45,6 +51,33 @@ namespace VCL_BLL.DTOs
         public Guid WarehouseId { get; set; }
         public string WarehouseName { get; set; } = string.Empty;
         public string WarehouseNote { get; set; } = string.Empty;
+
+        /// <summary>Nhãn trạng thái tiếng Việt (giống danh sách/chi tiết) để app không tự map.</summary>
+        public string StatusText { get; set; } = string.Empty;
+
+        /// <summary><c>CONSIGNMENT</c> (ký gửi) · <c>PURCHASE</c> (mua hộ — NCC giao tới kho).</summary>
+        public string OrderType { get; set; } = "CONSIGNMENT";
+
+        /// <summary>Phiếu của hàng mua hộ: NCC giao tới kho, phiếu tự mở khi Sale đặt NCC.</summary>
+        public bool IsPurchase { get; set; }
+
+        /// <summary>Mã yêu cầu mua hộ của khách (PUR-…). Rỗng với ký gửi.</summary>
+        public string? PurchaseCode { get; set; }
+
+        /// <summary>Mã đơn mua NCC nội bộ (PO-…). Rỗng với ký gửi / mua hộ đời cũ.</summary>
+        public string? PurchaseOrderCode { get; set; }
+
+        /// <summary>Tên NCC — chỉ nội bộ, ẩn với khách.</summary>
+        public string? SupplierName { get; set; }
+
+        /// <summary>Mã đơn thật bên NCC (Taobao/1688/Shopee…) — thứ in trên kiện NCC giao. Ẩn với khách.</summary>
+        public string? SupplierOrderCode { get; set; }
+
+        /// <summary>Hãng vận chuyển nội địa NCC dùng (khi NCC đã phát hàng).</summary>
+        public string? DomesticCarrier { get; set; }
+
+        /// <summary>Mã vận đơn nội địa NCC → kho (khi NCC đã phát hàng).</summary>
+        public string? DomesticTrackingCode { get; set; }
 
         public List<WarehouseReceivingNoteExpectedItemDto> ExpectedItems { get; set; } = new();
     }
@@ -152,6 +185,30 @@ namespace VCL_BLL.DTOs
         /// <summary>Tuyến của đơn, để in lên phiếu cho kho biết hàng đi đâu.</summary>
         public string Route { get; set; } = string.Empty;
 
+        /// <summary><c>CONSIGNMENT</c> (ký gửi) · <c>PURCHASE</c> (mua hộ — NCC giao tới kho).</summary>
+        public string OrderType { get; set; } = "CONSIGNMENT";
+
+        /// <summary>Phiếu của hàng mua hộ: NCC giao tới kho, phiếu tự mở khi Sale đặt NCC.</summary>
+        public bool IsPurchase { get; set; }
+
+        /// <summary>Mã yêu cầu mua hộ của khách (PUR-…). Rỗng với ký gửi.</summary>
+        public string? PurchaseCode { get; set; }
+
+        /// <summary>Mã đơn mua NCC nội bộ (PO-…). Rỗng với ký gửi / mua hộ đời cũ.</summary>
+        public string? PurchaseOrderCode { get; set; }
+
+        /// <summary>Tên NCC — chỉ nội bộ, ẩn với khách.</summary>
+        public string? SupplierName { get; set; }
+
+        /// <summary>Mã đơn thật bên NCC (Taobao/1688/Shopee…) — thứ in trên kiện NCC giao. Ẩn với khách.</summary>
+        public string? SupplierOrderCode { get; set; }
+
+        /// <summary>Hãng vận chuyển nội địa NCC dùng (khi NCC đã phát hàng).</summary>
+        public string? DomesticCarrier { get; set; }
+
+        /// <summary>Mã vận đơn nội địa NCC → kho (khi NCC đã phát hàng).</summary>
+        public string? DomesticTrackingCode { get; set; }
+
         /// <summary>
         /// Hàng KHÁCH KHAI BÁO trên đơn. Có ngay từ lúc phiếu vừa lập — đây là thứ kho cầm phiếu ra
         /// đối chiếu với hàng thật. Khác <see cref="Items"/> ở chỗ Items chỉ sinh ra sau khi kho
@@ -179,6 +236,32 @@ namespace VCL_BLL.DTOs
         /// <c>ParcelService.PutAwayParcelAsync</c>; field này để màn hình biết đường bật/tắt nút.
         /// </summary>
         public bool CanPutAway { get; set; }
+
+        /// <summary>Sale lập phiếu.</summary>
+        public string CreatedByName { get; set; } = string.Empty;
+
+        /// <summary>Quản lý kho cho phép nhận hàng theo phiếu. Rỗng nghĩa là phiếu chưa được duyệt.</summary>
+        public string ReceiveApprovedByName { get; set; } = string.Empty;
+        public DateTime? ReceiveApprovedAt { get; set; }
+        public string? ApprovalNote { get; set; }
+
+        public string ReceivedByName { get; set; } = string.Empty;
+        public DateTime? ReceivedAt { get; set; }
+
+        /// <summary>Biên bản có chênh lệch số lượng hoặc hàng ngoài khai báo, cần quản lý kho xem lại.</summary>
+        public bool RequiresReview { get; set; }
+
+        /// <summary>Link phiếu PDF khách mang tới kho, phát hành khi quản lý kho duyệt.</summary>
+        public string? ReceiptPdfUrl { get; set; }
+
+        /// <summary>Nhãn trạng thái đã tính cả bước chờ quyết lệch (giống danh sách).</summary>
+        public string StatusText { get; set; } = string.Empty;
+
+        /// <summary>Phiếu đang chờ quản lý kho quyết định (giống danh sách).</summary>
+        public bool AwaitingApproval { get; set; }
+
+        /// <summary><c>RECEIVE</c> · <c>DISCREPANCY</c> · <c>DISCREPANCY_ACK</c>; null khi không chờ ai.</summary>
+        public string? ApprovalStage { get; set; }
     }
 
     /// <summary>
@@ -198,6 +281,30 @@ namespace VCL_BLL.DTOs
 
         public string CustomerName { get; set; } = string.Empty;
         public string CustomerPhone { get; set; } = string.Empty;
+
+        /// <summary><c>CONSIGNMENT</c> (ký gửi) · <c>PURCHASE</c> (mua hộ — NCC giao tới kho).</summary>
+        public string OrderType { get; set; } = "CONSIGNMENT";
+
+        /// <summary>Phiếu của hàng mua hộ: NCC giao tới kho, phiếu tự mở khi Sale đặt NCC.</summary>
+        public bool IsPurchase { get; set; }
+
+        /// <summary>Mã yêu cầu mua hộ của khách (PUR-…). Rỗng với ký gửi.</summary>
+        public string? PurchaseCode { get; set; }
+
+        /// <summary>Mã đơn mua NCC nội bộ (PO-…). Rỗng với ký gửi / mua hộ đời cũ.</summary>
+        public string? PurchaseOrderCode { get; set; }
+
+        /// <summary>Tên NCC — chỉ nội bộ, ẩn với khách.</summary>
+        public string? SupplierName { get; set; }
+
+        /// <summary>Mã đơn thật bên NCC (Taobao/1688/Shopee…) — thứ in trên kiện NCC giao. Ẩn với khách.</summary>
+        public string? SupplierOrderCode { get; set; }
+
+        /// <summary>Hãng vận chuyển nội địa NCC dùng (khi NCC đã phát hàng).</summary>
+        public string? DomesticCarrier { get; set; }
+
+        /// <summary>Mã vận đơn nội địa NCC → kho (khi NCC đã phát hàng).</summary>
+        public string? DomesticTrackingCode { get; set; }
 
         /// <summary>ACTIVE · PARTIALLY_RECEIVED · RECEIVED · APPROVED · REJECTED.</summary>
         public string Status { get; set; } = string.Empty;
@@ -224,6 +331,13 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Phiếu đang chờ OM quyết, dùng để FE bật/tắt nút duyệt.</summary>
         public bool AwaitingApproval { get; set; }
+
+        /// <summary>
+        /// <c>RECEIVE</c>: chờ duyệt cho nhận hàng · <c>DISCREPANCY</c>: lệch số lượng sau kiểm đếm, chặn xếp kệ ·
+        /// <c>DISCREPANCY_ACK</c>: đã tự chốt (số lượng khớp) nhưng lệch cân, chờ chấp nhận số thực tế — không chặn xếp kệ.
+        /// Quyết định cả ba bước qua <c>PUT /api/warehouse-receiving-notes/{id}/status</c>; bước DISCREPANCY_ACK chỉ nhận APPROVED.
+        /// </summary>
+        public string? ApprovalStage { get; set; }
     }
 
     /// <summary>Kiện thật của đơn, hiện trên phiếu để đối chiếu và theo dõi.</summary>
@@ -257,5 +371,8 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Bắt buộc khi từ chối.</summary>
         public string? RejectionReason { get; set; }
+
+        /// <summary>Ghi chú duyệt. Bắt buộc khi Admin quyết định thay quản lý kho.</summary>
+        public string? Reason { get; set; }
     }
 }

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
@@ -88,9 +89,9 @@ public class AiService : IAiService
                                                            l.Status != "INACTIVE" && l.Status != "LOCKED" && l.Status != "DISABLED"))
                                             .ToList();
 
-        var binRepo = _unitOfWork.Repository<Bin>();
-        var activeBins = (await binRepo.FindAsync(b => b.WarehouseId == request.WarehouseId && b.IsActive))
-                                       .ToDictionary(b => b.Id);
+        // Chỉ gợi ý ô thuộc khu lưu kho đang dùng — cùng luật put-away kiểm, để gợi ý không trỏ vào khu nhận/khu xuất.
+        var activeBins = (await BinPlacementPolicy.StorageBinsAsync(_unitOfWork, request.WarehouseId))
+                                       .ToDictionary(x => x.Bin.Id, x => x.Bin);
 
         var storedParcels = (await parcelRepo.FindAsync(p => p.BinId.HasValue && p.PackageStatus != null && p.PackageStatus.ToUpper() == "STORED"))
                                             .ToList();
@@ -203,7 +204,7 @@ public class AiService : IAiService
             }
             else if (activeBins.Count == 0)
             {
-                response.Warnings.Add("Kho có sơ đồ layout nhưng không có ô kệ nào đang hoạt động (IsActive).");
+                response.Warnings.Add("Kho chưa có ô kệ nào đang hoạt động thuộc khu lưu kho (STORAGE). Cần khai loại khu cho kho trước khi dùng gợi ý.");
             }
             else if (binsWithoutLayout == validLayouts.Count)
             {
@@ -657,7 +658,7 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
 
                 if (totalPaid >= totalInvoiceAmount && totalInvoiceAmount > 0)
                 {
-                    response.PaymentStatus = "Đã thanh toán đủ (PAID)";
+                    response.PaymentStatus = "Đã thanh toán đủ";
                 }
                 else if (totalPaid > 0)
                 {
@@ -665,7 +666,7 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
                 }
                 else
                 {
-                    response.PaymentStatus = $"Chưa thanh toán ({orderInvoice.InvoiceStatus ?? "UNPAID"})";
+                    response.PaymentStatus = $"Chưa thanh toán ({StatusNames.Of(orderInvoice.InvoiceStatus ?? "UNPAID")})";
                 }
             }
             else
@@ -678,12 +679,12 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
             if (release != null)
             {
                 dataSources.Add("WroRequests");
-                response.WarehouseStatus = $"Yêu cầu xuất kho ({release.WroCode}): {release.Status}";
+                response.WarehouseStatus = $"Yêu cầu xuất kho ({release.WroCode}): {StatusNames.Quote(release.Status)}";
             }
             else if (note != null)
             {
                 dataSources.Add("WarehouseReceivingNotes");
-                response.WarehouseStatus = $"Đã tiếp nhận kho ({note.ReceivingNoteCode}): {note.Status}";
+                response.WarehouseStatus = $"Đã tiếp nhận kho ({note.ReceivingNoteCode}): {StatusNames.Quote(note.Status)}";
             }
             else
             {
@@ -705,7 +706,7 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
             if (shipment != null)
             {
                 dataSources.Add("Shipments");
-                response.ShipmentStatus = $"Lô vận chuyển quốc tế ({shipment.ShipmentCode}): {shipment.ShipmentStage ?? shipment.Status}";
+                response.ShipmentStatus = $"Lô vận chuyển quốc tế ({shipment.ShipmentCode}): {StatusNames.Of(shipment.Status ?? shipment.ShipmentStage)}";
             }
             else
             {
@@ -758,20 +759,20 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
             if (pPayments.Any(p => p.Status != null && (p.Status.ToUpper() == "PAID" || p.Status.ToUpper() == "SUCCESS")))
             {
                 dataSources.Add("PurchasePayments");
-                response.PaymentStatus = "Đã thanh toán (PAID)";
+                response.PaymentStatus = "Đã thanh toán";
             }
             else if (pPayments.Any())
             {
                 dataSources.Add("PurchasePayments");
-                response.PaymentStatus = $"Đang chờ thanh toán ({pPayments.First().Status})";
+                response.PaymentStatus = $"Đang chờ thanh toán ({StatusNames.Of(pPayments.First().Status)})";
             }
             else
             {
                 response.PaymentStatus = "Chưa tạo thanh toán mua hộ";
             }
 
-            response.WarehouseStatus = "N/A (Đơn mua hộ)";
-            response.ShipmentStatus = "N/A (Đơn mua hộ)";
+            response.WarehouseStatus = "Không áp dụng (đơn mua hộ)";
+            response.ShipmentStatus = "Không áp dụng (đơn mua hộ)";
 
             var pst = matchedPurchaseRequest.Status ?? string.Empty;
             if (pst.Contains("PENDING", StringComparison.OrdinalIgnoreCase))
@@ -801,7 +802,7 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
 
             response.CurrentStatus = matchedParcel.PackageStatus ?? "PENDING";
             response.PaymentStatus = "Tham chiếu theo đơn hàng gốc";
-            response.WarehouseStatus = $"Trạng thái kiện: {matchedParcel.PackageStatus}";
+            response.WarehouseStatus = $"Trạng thái kiện: {StatusNames.Quote(matchedParcel.PackageStatus)}";
             response.ShipmentStatus = "Vận chuyển theo đơn ký gửi liên quan";
             response.NextActionSuggestion = "Kiểm tra thông tin chi tiết kiện hàng và đơn ký gửi liên quan.";
         }
@@ -810,8 +811,8 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
         var custName = response.RelatedOrders.FirstOrDefault()?.CustomerName ?? matchedCustomer?.FullName ?? "Khách hàng";
 
         response.Answer = $"Thông tin tra cứu cho đơn/kiện hàng {mainCode} của khách hàng {custName}:\n" +
-                          $"- Trạng thái hiện tại: {response.CurrentStatus}\n" +
-                          $"- Trạng thái thanh toán: {response.PaymentStatus}\n" +
+                          $"- Trạng thái hiện tại: {StatusNames.Of(response.CurrentStatus)}\n" +
+                          $"- Trạng thái thanh toán: {StatusNames.Quote(response.PaymentStatus)}\n" +
                           $"- Trạng thái kho: {response.WarehouseStatus}\n" +
                           $"- Trạng thái vận chuyển: {response.ShipmentStatus}\n" +
                           $"- Gợi ý bước xử lý: {response.NextActionSuggestion}";

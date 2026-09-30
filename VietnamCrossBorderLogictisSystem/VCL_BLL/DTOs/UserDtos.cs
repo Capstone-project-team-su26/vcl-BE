@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace VCL_BLL.DTOs
@@ -34,6 +35,18 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; }
         public string? Region { get; set; }
         public DateTime? CreatedAt { get; set; }
+
+        /// <summary>Kho Admin đã gán cho tài khoản (rỗng = chưa gán, giới hạn theo vùng).</summary>
+        public List<AssignedWarehouseBriefDto> AssignedWarehouses { get; set; } = new();
+    }
+
+    /// <summary>Kho được gán, dạng rút gọn cho danh sách người dùng.</summary>
+    public class AssignedWarehouseBriefDto
+    {
+        public Guid WarehouseId { get; set; }
+        public string WarehouseCode { get; set; } = string.Empty;
+        public string WarehouseName { get; set; } = string.Empty;
+        public string? Region { get; set; }
     }
 
     public class UpdateUserRoleRequest

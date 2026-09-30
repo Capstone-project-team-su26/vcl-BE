@@ -1,3 +1,4 @@
+using VCL_API.Authorization;
 using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using VCL_BLL.DTOs;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -56,7 +58,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Không lấy được danh sách tỉnh/thành.", error = ex.Message });
+                return StatusCode(500, new { message = "Không lấy được danh sách tỉnh/thành.", error = this.UserError(ex) });
             }
         }
 
@@ -78,11 +80,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Không lấy được danh sách quận/huyện.", error = ex.Message });
+                return StatusCode(500, new { message = "Không lấy được danh sách quận/huyện.", error = this.UserError(ex) });
             }
         }
 
@@ -104,11 +106,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Không lấy được danh sách phường/xã.", error = ex.Message });
+                return StatusCode(500, new { message = "Không lấy được danh sách phường/xã.", error = this.UserError(ex) });
             }
         }
 
@@ -143,7 +145,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -151,7 +153,7 @@ namespace VCL_API.Controllers
         /// Đăng đơn tự động sang GoShip Express.
         /// </summary>
         [HttpPost("orders")]
-        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,Sale,SALE,Customer,CUSTOMER")]
+        [AuthorizeRoles("Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,Sale,SALE,Customer,CUSTOMER")]
         public async Task<IActionResult> CreateOrder([FromBody] GoshipOrderRequest request, [FromQuery] string? token = null)
         {
             try
@@ -178,7 +180,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -191,7 +193,7 @@ namespace VCL_API.Controllers
         /// có bản ghi trong hệ thống để đồng bộ.
         /// </remarks>
         [HttpPost("shipments/{trackingCode}/sync")]
-        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,Sale,SALE")]
+        [AuthorizeRoles("Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,Sale,SALE")]
         public async Task<IActionResult> SyncShipmentStatus(string trackingCode, [FromQuery] string? token = null)
         {
             try
@@ -207,7 +209,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -228,7 +230,7 @@ namespace VCL_API.Controllers
         /// </para>
         /// </remarks>
         [HttpPost("shipments/{trackingCode}/simulate")]
-        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF")]
+        [AuthorizeRoles("Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF")]
         public async Task<IActionResult> SimulateShipmentStatus(
             string trackingCode, [FromBody] SimulateGoshipStatusDto request)
         {
@@ -272,7 +274,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -311,7 +313,7 @@ namespace VCL_API.Controllers
                 // Trước đây lỗi bị nuốt rồi vẫn trả 200 "success": GoShip tưởng đã nhận xong nên
                 // không gửi lại, còn mình thì mất luôn cập nhật mà không ai biết. Trả 500 để bên
                 // kia retry và để lỗi hiện ra trong log.
-                return StatusCode(500, new { code = 500, status = "error", message = ex.Message });
+                return StatusCode(500, new { code = 500, status = "error", message = this.UserError(ex) });
             }
         }
     }

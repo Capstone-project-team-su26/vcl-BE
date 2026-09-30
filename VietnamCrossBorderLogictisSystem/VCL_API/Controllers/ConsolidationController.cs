@@ -1,3 +1,4 @@
+using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -14,7 +16,7 @@ namespace VCL_API.Controllers
     /// </summary>
     [Route("api/consolidation")]
     [ApiController]
-    [Authorize(Roles = "Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF,Admin,ADMIN,Administrator,ADMINISTRATOR,OperationsManager,OPERATIONSMANAGER")]
+    [AuthorizeRoles("Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF,Admin,ADMIN,Administrator,ADMINISTRATOR,OperationsManager,OPERATIONSMANAGER")]
     public class ConsolidationController : ControllerBase
     {
         private readonly IConsolidationService _consolidationService;
@@ -52,7 +54,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -60,7 +62,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Lỗi hệ thống.", details = ex.Message });
+                return StatusCode(500, new { message = "Lỗi hệ thống.", details = this.UserError(ex) });
             }
         }
 
@@ -89,7 +91,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Lỗi hệ thống.", details = ex.Message });
+                return StatusCode(500, new { message = "Lỗi hệ thống.", details = this.UserError(ex) });
             }
         }
 
@@ -113,7 +115,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Lỗi hệ thống.", details = ex.Message });
+                return StatusCode(500, new { message = "Lỗi hệ thống.", details = this.UserError(ex) });
             }
         }
 
@@ -146,7 +148,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -154,7 +156,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Lỗi hệ thống.", details = ex.Message });
+                return StatusCode(500, new { message = "Lỗi hệ thống.", details = this.UserError(ex) });
             }
         }
 
@@ -183,7 +185,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Lỗi hệ thống.", details = ex.Message });
+                return StatusCode(500, new { message = "Lỗi hệ thống.", details = this.UserError(ex) });
             }
         }
     }

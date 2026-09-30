@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_DLL.Models;
 
 namespace VCL_BLL.Services
@@ -124,7 +125,20 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Yêu cầu ký gửi này đã được hủy trước đó.");
 
             if (!CancellableStatuses.Contains(currentStatus))
-                throw new ArgumentException($"Không thể hủy yêu cầu khi đang ở trạng thái {order.Status}. Chỉ được hủy khi hàng chưa vào kho VN.");
+                throw new ArgumentException($"Không thể hủy yêu cầu khi đang ở trạng thái {StatusNames.Quote(order.Status)}. Chỉ được hủy khi hàng chưa vào kho VN.");
+
+            // Đã có tiền thực nhận thì không tự huỷ được: phải qua Sales đề nghị và Admin xử lý hoàn tiền.
+            var paidQuotationIds = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
+                .Where(q => q.OrderId == orderId).Select(q => q.Id).ToHashSet();
+            var paidInvoiceIds = (await _unitOfWork.Repository<Invoice>().GetAllAsync())
+                .Where(i => i.QuotationId.HasValue && paidQuotationIds.Contains(i.QuotationId.Value))
+                .Select(i => i.Id).ToHashSet();
+            var hasMoney = (await _unitOfWork.Repository<Payment>().GetAllAsync())
+                .Any(p => p.InvoiceId.HasValue && paidInvoiceIds.Contains(p.InvoiceId.Value)
+                          && (p.Amount ?? 0m) > 0m
+                          && string.Equals(p.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase));
+            if (hasMoney)
+                throw new ArgumentException("Đơn đã có khoản thanh toán được xác nhận nên không tự huỷ được. Vui lòng liên hệ Sales.");
 
             // Hủy Order
             order.Status = "CANCELLED";
@@ -150,6 +164,27 @@ namespace VCL_BLL.Services
                 quotation.Status = "CANCELLED";
                 quotationRepo.Update(quotation);
             }
+
+            // Link thanh toán còn treo phải huỷ theo đơn: trước đây khách vẫn trả được link cũ và
+            // webhook làm đơn đã huỷ "sống lại" thành DEPOSIT_PAID.
+            var quotationIds = allQuotations.Where(q => q.OrderId == orderId).Select(q => q.Id).ToHashSet();
+            var invoiceIds = (await _unitOfWork.Repository<Invoice>().GetAllAsync())
+                .Where(i => i.QuotationId.HasValue && quotationIds.Contains(i.QuotationId.Value))
+                .Select(i => i.Id)
+                .ToHashSet();
+            var paymentRepo = _unitOfWork.Repository<Payment>();
+            foreach (var pending in (await paymentRepo.GetAllAsync()).Where(p =>
+                         p.InvoiceId.HasValue && invoiceIds.Contains(p.InvoiceId.Value)
+                         && (string.Equals(p.PaymentStatus, "PENDING", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(p.PaymentStatus, "PENDING_RECONCILIATION", StringComparison.OrdinalIgnoreCase))))
+            {
+                pending.PaymentStatus = "CANCELLED";
+                pending.FailureReason = "Khách huỷ đơn.";
+                paymentRepo.Update(pending);
+            }
+
+            await OrderHistoryWriter.RecordAsync(_unitOfWork, order.Id, currentStatus, "CANCELLED",
+                "ORDER_CANCELLED_BY_CUSTOMER", reason, userId);
 
             // Tạo thông báo cho khách hàng
             var notification = new Notification
@@ -183,19 +218,28 @@ namespace VCL_BLL.Services
             };
         }
 
+        /// <summary>
+        /// Sale không phải bấm tiếp nhận trước khi báo giá (gửi báo giá là đã tiếp nhận). Endpoint
+        /// trạng thái chỉ còn để từ chối đơn hoặc yêu cầu khách bổ sung thông tin.
+        /// </summary>
+        private static readonly string[] ReviewDecisions = { "REJECTED", "NEED_MORE_INFO" };
+
+        /// <summary>Đơn chưa có báo giá được khách chấp nhận, chưa phát sinh tiền.</summary>
+        private static readonly string[] ReviewableStatuses =
+            { "PENDING_REVIEW", "NEED_MORE_INFO", "APPROVED", "QUOTATION_SENT", "QUOTATION_REJECTED" };
+
         public async Task<UpdateConsignmentStatusResponse> UpdateConsignmentStatusAsync(Guid orderId, UpdateConsignmentStatusRequest request, Guid? actorUserId = null)
         {
-            var validStatuses = new[] { "PENDING_REVIEW", "APPROVED", "REJECTED" };
-            if (string.IsNullOrWhiteSpace(request.Status) || !validStatuses.Contains(request.Status.ToUpper()))
+            var normalizedStatus = request?.Status?.Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(normalizedStatus) || !ReviewDecisions.Contains(normalizedStatus))
             {
-                throw new ArgumentException("Trạng thái không hợp lệ. Các trạng thái hợp lệ: PENDING_REVIEW, APPROVED, REJECTED.");
+                throw new ArgumentException("Trạng thái không hợp lệ. Chỉ được từ chối đơn hoặc yêu cầu bổ sung thông tin; Sale gửi báo giá trực tiếp, không cần duyệt đơn trước.");
             }
 
-            var normalizedStatus = request.Status.ToUpper();
-
-            if (normalizedStatus == "REJECTED" && string.IsNullOrWhiteSpace(request.RejectionReason))
+            // Từ chối hoặc xin bổ sung thông tin mà không nói lý do thì khách không biết phải làm gì.
+            if (string.IsNullOrWhiteSpace(request!.RejectionReason))
             {
-                throw new ArgumentException("Vui lòng cung cấp lý do từ chối (RejectionReason).");
+                throw new ArgumentException("Vui lòng ghi lý do (RejectionReason) khi từ chối hoặc yêu cầu bổ sung thông tin.");
             }
 
             var orderRepo = _unitOfWork.Repository<Order>();
@@ -206,97 +250,70 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy yêu cầu ký gửi với ID {orderId}");
             }
 
-            // Đạt xác nhận (PR#48): staff VẪN được đổi duyệt/từ chối khi đơn ở QUOTATION_SENT/CONFIRMED/REJECTED.
-            // Chỉ chặn khi đơn đã hủy hoặc đã nhập kho.
-            var invalidCurrentStatuses = new[] { "CANCELLED", "WAREHOUSE_RECEIVED", "CHECKED_IN" };
-            if (order.Status != null && invalidCurrentStatuses.Contains(order.Status.ToUpper()))
+            // Chỉ từ chối / xin bổ sung khi đơn chưa có báo giá được chấp nhận. Đơn đã thanh toán
+            // hoặc đã có hàng thì xử lý bằng luồng huỷ đơn.
+            var currentStatus = order.Status?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (!ReviewableStatuses.Contains(currentStatus))
             {
-                throw new ArgumentException($"Không thể cập nhật trạng thái yêu cầu khi yêu cầu đang ở trạng thái {order.Status}");
+                throw new ArgumentException(
+                    $"Không thể đổi kết quả tiếp nhận khi đơn đang ở trạng thái {StatusNames.Quote(order.Status)}. "
+                    + "Đơn đã thanh toán thì xử lý bằng luồng huỷ đơn.");
             }
 
-            if (normalizedStatus == "APPROVED" && string.IsNullOrEmpty(order.ConsignmentCode))
-            {
-                var allOrders = await orderRepo.GetAllAsync();
-                var random = new Random();
-                string generatedCode;
-                do
-                {
-                    var now = DateTime.UtcNow;
-                    var randomSuffix = random.Next(100000, 999999).ToString();
-                    generatedCode = $"VCL-{now:yyyyMMddHHmmss}-{randomSuffix}";
-                } while (allOrders.Any(o => o.ConsignmentCode == generatedCode));
+            var orderQuotations = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
+                .Where(q => q.OrderId == orderId)
+                .ToList();
 
-                order.ConsignmentCode = generatedCode;
+            if (orderQuotations.Any(q => string.Equals(q.Status, "ACCEPTED", StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ArgumentException("Đơn đã có báo giá được khách chấp nhận nên không đổi kết quả tiếp nhận được.");
             }
 
             var oldStatus = order.Status;
             order.Status = normalizedStatus;
-            
-            if (normalizedStatus == "REJECTED")
+            order.Note = request.RejectionReason;
+
+            // Báo giá đang chờ khách không còn giá trị khi đơn bị từ chối / trả lại bổ sung.
+            foreach (var quotation in orderQuotations.Where(q =>
+                         q.Status is not null
+                         && (q.Status.Equals("PENDING", StringComparison.OrdinalIgnoreCase)
+                             || q.Status.Equals("DRAFT", StringComparison.OrdinalIgnoreCase)
+                             || q.Status.Equals("PENDING_PRICE_APPROVAL", StringComparison.OrdinalIgnoreCase))))
             {
-                order.Note = request.RejectionReason;
+                quotation.Status = "SUPERSEDED";
+                _unitOfWork.Repository<Quotation>().Update(quotation);
             }
 
-            if (oldStatus != normalizedStatus)
-            {
-                if (normalizedStatus == "APPROVED" || normalizedStatus == "REJECTED")
-                {
-                    var customerRepo = _unitOfWork.Repository<Customer>();
-                    var customer = await customerRepo.GetByIdAsync(order.CustomerId);
-                    if (customer != null)
-                    {
-                        var notif = new Notification
-                        {
-                            Id = Guid.NewGuid(),
-                            UserId = customer.UserId,
-                            Title = normalizedStatus == "APPROVED" ? "Yêu cầu ký gửi đã được duyệt" : "Yêu cầu ký gửi bị từ chối",
-                            Content = normalizedStatus == "APPROVED"
-                                ? $"Yêu cầu ký gửi (Mã: {order.ConsignmentCode ?? order.Id.ToString()}) của bạn đã được duyệt."
-                                : $"Yêu cầu ký gửi (Mã: {order.ConsignmentCode ?? order.Id.ToString()}) của bạn đã bị từ chối.{(string.IsNullOrWhiteSpace(request.RejectionReason) ? "" : $" Lý do: {request.RejectionReason}")}",
-                            IsRead = false,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        var notificationRepo = _unitOfWork.Repository<Notification>();
-                        await notificationRepo.AddAsync(notif);
-                    }
+            await OrderHistoryWriter.RecordAsync(_unitOfWork, order.Id, oldStatus, normalizedStatus,
+                $"ORDER_{normalizedStatus}", request.RejectionReason, actorUserId);
 
-                    // Khi đơn ký gửi được duyệt, thông báo cho bộ phận Kho & Operations sẵn sàng tiếp nhận
-                    if (normalizedStatus == "APPROVED")
-                    {
-                        await _notificationService.NotifyRolesAsync(
-                            new[] { "WarehouseStaff", "OperationsManager", "Operations", "Warehouse" },
-                            "Đơn ký gửi đã được duyệt",
-                            $"Đơn ký gửi {order.ConsignmentCode ?? order.Id.ToString()} đã được duyệt, sẵn sàng tiếp nhận kiện hàng vào kho.",
-                            excludeUserId: actorUserId);
-                    }
-                }
+            var customer = await _unitOfWork.Repository<Customer>().GetByIdAsync(order.CustomerId);
+            if (customer != null)
+            {
+                var code = order.ConsignmentCode ?? order.Id.ToString();
+                await _unitOfWork.Repository<Notification>().AddAsync(new Notification
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = customer.UserId,
+                    Title = normalizedStatus == "NEED_MORE_INFO"
+                        ? "Yêu cầu ký gửi cần bổ sung thông tin"
+                        : "Yêu cầu ký gửi bị từ chối",
+                    Content = normalizedStatus == "NEED_MORE_INFO"
+                        ? $"Yêu cầu ký gửi (Mã: {code}) cần bổ sung: {request.RejectionReason}"
+                        : $"Yêu cầu ký gửi (Mã: {code}) của bạn đã bị từ chối. Lý do: {request.RejectionReason}",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
             }
 
             orderRepo.Update(order);
             await _unitOfWork.SaveChangesAsync();
 
-            string? receiptPdfUrl = order.ReceiptPdfUrl;
-
-            // Sale xác nhận yêu cầu là mốc phát hành phiếu cho kho. Lỗi sinh phiếu
-            // không được làm hỏng việc duyệt đơn, nên nuốt lỗi và để Sale sinh lại sau.
-            if (normalizedStatus == "APPROVED" && oldStatus != normalizedStatus)
-            {
-                try
-                {
-                    receiptPdfUrl = await _consignmentReceiptService.GenerateAndStoreReceiptAsync(orderId, actorUserId)
-                                    ?? receiptPdfUrl;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"GENERATE CONSIGNMENT RECEIPT ERROR ({orderId}): {ex.Message}");
-                }
-            }
-
             return new UpdateConsignmentStatusResponse
             {
                 Status = order.Status,
                 ConsignmentCode = order.ConsignmentCode,
-                ReceiptPdfUrl = receiptPdfUrl
+                ReceiptPdfUrl = order.ReceiptPdfUrl
             };
         }
     }

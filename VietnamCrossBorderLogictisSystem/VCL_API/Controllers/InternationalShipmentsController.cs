@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using VCL_API.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
@@ -6,7 +7,10 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
+using VCL_BLL.Services;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -16,10 +20,125 @@ namespace VCL_API.Controllers
     public class InternationalShipmentsController : ControllerBase
     {
         private readonly IInternationalShipmentService _shipmentService;
+        private readonly IExportShipmentService _exportService;
+        private readonly IExportDocumentService _documents;
+        private readonly IShipmentTrackingService _trackingService;
+        private readonly UserWarehouseService _userWarehouses;
 
-        public InternationalShipmentsController(IInternationalShipmentService shipmentService)
+        public InternationalShipmentsController(
+            IInternationalShipmentService shipmentService,
+            IExportShipmentService exportService,
+            IExportDocumentService documents,
+            IShipmentTrackingService trackingService,
+            UserWarehouseService userWarehouses)
         {
             _shipmentService = shipmentService;
+            _exportService = exportService;
+            _documents = documents;
+            _trackingService = trackingService;
+            _userWarehouses = userWarehouses;
+        }
+
+        /// <summary>Lô chứa kiện và tên khách của nhiều đơn — chỉ nhân viên nội bộ được xem.</summary>
+        private bool IsStaff => StaffRoleHelper.IsInternalStaff(CurrentRole);
+
+        /// <summary>
+        /// Hàng đợi của Sale: lô đã bàn giao mà chưa về kho đích. Lô quá ngày dự kiến hoặc lâu
+        /// không có mốc mới lên đầu. <c>attentionOnly=true</c> chỉ lấy lô cần xử lý.
+        /// </summary>
+        [HttpGet("tracking-queue")]
+        public Task<IActionResult> GetTrackingQueue([FromQuery] Guid? originWarehouseId = null, [FromQuery] bool attentionOnly = false) =>
+            RunExport("Lấy hàng đợi theo dõi lô thành công.",
+                () => _trackingService.GetInTransitQueueAsync(CurrentUserId, CurrentRole, originWarehouseId, attentionOnly));
+
+        /// <summary>
+        /// Dòng thời gian của lô cho Sale: mọi mốc (ai ghi, ghi chú nội bộ, lời nhắn cho khách),
+        /// các mốc được bấm tiếp và giấy tờ còn thiếu, các đơn bị ảnh hưởng, giấy tờ đã đính kèm.
+        /// </summary>
+        [HttpGet("{shipmentId}/timeline")]
+        public Task<IActionResult> GetTimeline(Guid shipmentId) =>
+            RunExport("Lấy hành trình lô thành công.",
+                () => _trackingService.GetShipmentTimelineAsync(CurrentUserId, CurrentRole, shipmentId));
+
+        private Guid CurrentUserId => Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : Guid.Empty;
+        private string CurrentRole => User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+        /// <summary>Phiếu xuất kho đã bốc xong, chờ đưa vào lô.</summary>
+        [HttpGet("ready-wro-requests")]
+        public Task<IActionResult> GetReadyWroRequests([FromQuery] Guid? originWarehouseId = null, [FromQuery] string? search = null) =>
+            !IsStaff ? Task.FromResult<IActionResult>(StatusCode(403, new { message = "Chỉ nhân viên mới xem được lô vận chuyển." })) :
+            RunExport("Lấy danh sách phiếu xuất kho chờ gom lô thành công.",
+                () => _exportService.GetReadyWroRequestsAsync(CurrentUserId, CurrentRole, originWarehouseId, search));
+
+        /// <summary>Lập lô nháp từ các phiếu đã bốc xong (cùng kho nguồn, cùng kho đích).</summary>
+        [HttpPost]
+        public Task<IActionResult> CreateShipment([FromBody] CreateExportShipmentRequest request) =>
+            RunExport("Lập lô vận chuyển thành công.",
+                () => _exportService.CreateAsync(CurrentUserId, CurrentRole, request), 201);
+
+        /// <summary>Thêm phiếu vào lô nháp.</summary>
+        [HttpPost("{shipmentId}/wro-requests")]
+        public Task<IActionResult> AddWroRequests(Guid shipmentId, [FromBody] AddWroRequestsToShipmentRequest request) =>
+            RunExport("Đã thêm phiếu vào lô.",
+                () => _exportService.AddWroRequestsAsync(CurrentUserId, CurrentRole, shipmentId, request));
+
+        /// <summary>Gỡ một phiếu khỏi lô nháp — phiếu về lại trạng thái chờ lập lô.</summary>
+        [HttpDelete("{shipmentId}/wro-requests/{wroRequestId}")]
+        public Task<IActionResult> RemoveWroRequest(Guid shipmentId, Guid wroRequestId) =>
+            RunExport("Đã gỡ phiếu khỏi lô.",
+                () => _exportService.RemoveWroRequestAsync(CurrentUserId, CurrentRole, shipmentId, wroRequestId));
+
+        /// <summary>Huỷ lô nháp — mọi phiếu về lại trạng thái chờ lập lô.</summary>
+        [HttpPost("{shipmentId}/cancel")]
+        public Task<IActionResult> CancelShipment(Guid shipmentId) =>
+            RunExport("Đã huỷ lô vận chuyển.", () => _exportService.CancelAsync(CurrentUserId, CurrentRole, shipmentId));
+
+        /// <summary>
+        /// Bàn giao lô cho hãng vận chuyển: hàng rời kho, trừ tồn, phiếu và kiện chuyển sang
+        /// đã bàn giao. Cần biên bản bàn giao + vận đơn đã đính kèm vào lô.
+        /// </summary>
+        [HttpPost("{shipmentId}/handover")]
+        public Task<IActionResult> Handover(Guid shipmentId, [FromBody] ShipmentHandoverRequest request) =>
+            RunExport("Bàn giao lô thành công.",
+                () => _exportService.HandoverAsync(CurrentUserId, CurrentRole, shipmentId, request));
+
+        /// <summary>Ghi mốc hành trình sau bàn giao (Sale).</summary>
+        [HttpPut("{shipmentId}/status")]
+        public Task<IActionResult> UpdateMilestone(Guid shipmentId, [FromBody] ShipmentMilestoneRequest request) =>
+            RunExport("Cập nhật hành trình lô thành công.",
+                () => _exportService.UpdateMilestoneAsync(CurrentUserId, CurrentRole, shipmentId, request));
+
+        /// <summary>Manifest lô bản PDF.</summary>
+        [HttpGet("{shipmentId}/manifest")]
+        public async Task<IActionResult> Manifest(Guid shipmentId)
+        {
+            if (!IsStaff)
+                return StatusCode(403, new { message = "Chỉ nhân viên mới xem được lô vận chuyển." });
+
+            try
+            {
+                var (content, fileName) = await _documents.BuildShipmentManifestAsync(shipmentId);
+                return File(content, "application/pdf", fileName);
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        private async Task<IActionResult> RunExport<T>(string message, Func<Task<T>> action, int successStatus = 200)
+        {
+            if (CurrentUserId == Guid.Empty)
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+
+            try
+            {
+                var data = await action();
+                return StatusCode(successStatus, new { message, data });
+            }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -39,6 +158,9 @@ namespace VCL_API.Controllers
             [FromQuery] Guid? originWarehouseId = null,
             [FromQuery] string? search = null)
         {
+            if (!IsStaff)
+                return StatusCode(403, new { message = "Chỉ nhân viên mới xem được lô vận chuyển." });
+
             try
             {
                 var result = await _shipmentService.GetListAsync(pageNumber, pageSize, statusTab, status, originWarehouseId, search);
@@ -46,36 +168,10 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
-        /// <summary>
-        /// Phiếu xuất kho còn gom lô được: kho đã bốc xong và phiếu còn kiện chưa lên chuyến nào.
-        /// </summary>
-        /// <remarks>
-        /// Màn gom lô không tự lọc được bằng trạng thái phiếu: gom lô xong phiếu vẫn đứng nguyên
-        /// ở <c>PICKED</c> vì mọi mốc sau đó thuộc về lô. Endpoint này trừ sẵn phần đã lên chuyến
-        /// nên màn hình khỏi phải tải toàn bộ lô về rồi tự đối chiếu.
-        /// </remarks>
-        /// <param name="originWarehouseId">Chỉ lấy phiếu đang giữ hàng ở kho này</param>
-        /// <param name="search">Tìm theo mã phiếu, tên khách hoặc tên người nhận</param>
-        [HttpGet("available-wro-requests")]
-        [ProducesResponseType(typeof(List<AvailableWroForShipmentDto>), 200)]
-        public async Task<IActionResult> GetAvailableWroRequests(
-            [FromQuery] Guid? originWarehouseId = null,
-            [FromQuery] string? search = null)
-        {
-            try
-            {
-                var result = await _shipmentService.GetAvailableWroRequestsAsync(originWarehouseId, search);
-                return Ok(new { message = "Lấy danh sách phiếu xuất kho chờ gom lô thành công.", data = result });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
-        }
 
         /// <summary>
         /// Chi tiết một lô vận chuyển quốc tế: kho đi/đến, tuyến, danh sách WRO, kiện hàng,
@@ -86,6 +182,9 @@ namespace VCL_API.Controllers
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetInternationalShipmentById(Guid shipmentId)
         {
+            if (!IsStaff)
+                return StatusCode(403, new { message = "Chỉ nhân viên mới xem được lô vận chuyển." });
+
             try
             {
                 var result = await _shipmentService.GetByIdAsync(shipmentId);
@@ -97,98 +196,11 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
-        /// <summary>
-        /// Nhân viên Kho Quốc tế (hoặc Staff/Operations) gom KIỆN đã bàn giao thành lô vận chuyển quốc tế
-        /// </summary>
-        [HttpPost]
-        public async Task<IActionResult> CreateInternationalShipment([FromBody] CreateInternationalShipmentDto request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
 
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-            {
-                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
-            }
-
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-            try
-            {
-                var result = await _shipmentService.CreateAsync(userId, userRole, request);
-                return Created(string.Empty, new { message = "Tạo lô vận chuyển quốc tế thành công.", data = result });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(403, new { message = ex.Message });
-            }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
-        }
-
-        /// <summary>
-        /// Cập nhật trạng thái lô: CREATED → READY_TO_SHIP → IN_TRANSIT → ARRIVED_VN → ARRIVED_DESTINATION.
-        /// </summary>
-        /// <remarks>
-        /// Hai mốc đầu là của kho (gom xong / đối tác đã lấy hàng), hai mốc sau của Sale
-        /// (đã về VN / đã về tới kho). ARRIVED_DESTINATION đi qua đúng thân xử lý của
-        /// <c>PUT /{shipmentId}/arrive</c> nên cập nhật cả lô lẫn từng kiện.
-        /// </remarks>
-        [HttpPut("{shipmentId}/status")]
-        public async Task<IActionResult> UpdateStatus(Guid shipmentId, [FromBody] UpdateInternationalShipmentStatusDto request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-            {
-                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
-            }
-
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-            try
-            {
-                var result = await _shipmentService.UpdateStatusAsync(shipmentId, userId, userRole, request);
-                return Ok(new { message = "Cập nhật trạng thái lô vận chuyển thành công.", data = result });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(403, new { message = ex.Message });
-            }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
-        }
 
         /// <summary>
         /// Staff/Operations xác nhận lô vận chuyển quốc tế đã đến kho đích (chỉ khi đang IN_TRANSIT).
@@ -212,7 +224,7 @@ namespace VCL_API.Controllers
         /// ghi đè bản cũ chứ không đẻ thêm dòng.
         /// </remarks>
         [HttpPut("~/api/parcels/{parcelId}/inspection")]
-        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         [ProducesResponseType(typeof(ParcelInspectionDto), 200)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> SaveParcelInspection(
@@ -234,7 +246,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -242,27 +254,28 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
         [HttpGet("~/api/parcel-inspections")]
-        [Authorize(Roles = "Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF")]
+        [AuthorizeRoles("Admin,ADMIN,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF")]
         [ProducesResponseType(typeof(ParcelInspectionListDto), 200)]
         public async Task<IActionResult> GetParcelInspections(
             [FromQuery] bool onlyDiscrepancy = true,
             [FromQuery] Guid? shipmentId = null)
         {
             var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+            Guid? userId = Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var uid) ? uid : null;
 
             try
             {
-                var result = await _shipmentService.GetParcelInspectionsAsync(onlyDiscrepancy, shipmentId, userRole);
+                var result = await _shipmentService.GetParcelInspectionsAsync(onlyDiscrepancy, shipmentId, userRole, userId);
                 return Ok(new { message = "Lấy biên bản kiểm đếm thành công.", data = result });
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
         }
 
@@ -279,12 +292,15 @@ namespace VCL_API.Controllers
 
             try
             {
+                // Nhân viên kho đã được gán kho chỉ nhận lô ở đúng kho đích được gán.
+                await _userWarehouses.EnsureAssignedWarehouseAsync(
+                    userId, userRole, await _userWarehouses.DestinationWarehouseOfShipmentAsync(shipmentId));
                 var result = await _shipmentService.ConfirmArrivalAsync(shipmentId, userId, userRole, request ?? new ConfirmShipmentArrivalDto());
                 return Ok(new { message = "Xác nhận lô đến kho đích thành công.", data = result });
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -292,11 +308,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -317,12 +333,15 @@ namespace VCL_API.Controllers
 
             try
             {
+                // Nhân viên kho đã được gán kho chỉ nhận lô ở đúng kho đích được gán.
+                await _userWarehouses.EnsureAssignedWarehouseAsync(
+                    userId, userRole, await _userWarehouses.DestinationWarehouseOfShipmentAsync(shipmentId));
                 var result = await _shipmentService.ConfirmDestinationReceivingAsync(shipmentId, userId, userRole, request ?? new DestinationReceivingDto());
                 return Ok(new { message = "Xác nhận nhận kiện tại kho đích thành công.", data = result });
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -330,11 +349,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
     }

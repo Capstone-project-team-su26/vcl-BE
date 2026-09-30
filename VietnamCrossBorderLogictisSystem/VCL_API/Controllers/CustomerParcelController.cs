@@ -4,6 +4,7 @@ using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -42,11 +43,11 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
     }

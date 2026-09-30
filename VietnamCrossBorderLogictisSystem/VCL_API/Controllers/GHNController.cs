@@ -1,3 +1,4 @@
+using VCL_API.Authorization;
 using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -5,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using VCL_BLL.DTOs;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -25,7 +27,7 @@ namespace VCL_API.Controllers
         /// Đăng đơn tự động sang Giao Hàng Nhanh (GHN API v2).
         /// </summary>
         [HttpPost("orders")]
-        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,WarehouseStaff,WAREHOUSESTAFF,OperationsManager,OPERATIONSMANAGER,Staff,STAFF,Customer,CUSTOMER")]
+        [AuthorizeRoles("Admin,ADMIN,Sale,SALE,WarehouseStaff,WAREHOUSESTAFF,OperationsManager,OPERATIONSMANAGER,Staff,STAFF,Customer,CUSTOMER")]
         public async Task<IActionResult> CreateOrder([FromBody] GHNOrderRequest request, [FromQuery] string? token = null, [FromQuery] int? shopId = null)
         {
             try
@@ -54,7 +56,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -91,7 +93,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -116,7 +118,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -142,7 +144,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 

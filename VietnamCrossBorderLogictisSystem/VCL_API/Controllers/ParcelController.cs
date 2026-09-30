@@ -1,3 +1,4 @@
+using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -6,6 +7,8 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_BLL.Services;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -15,10 +18,29 @@ namespace VCL_API.Controllers
     public class ParcelController : ControllerBase
     {
         private readonly IParcelService _parcelService;
+        private readonly UserWarehouseService _userWarehouses;
 
-        public ParcelController(IParcelService parcelService)
+        public ParcelController(IParcelService parcelService, UserWarehouseService userWarehouses)
         {
             _parcelService = parcelService;
+            _userWarehouses = userWarehouses;
+        }
+
+        private Guid? CurrentUserId => Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
+        private string CurrentRole => User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+        /// <summary>Chặn thao tác ở kho ngoài các kho được gán (tài khoản chưa gán kho thì như cũ).</summary>
+        private async Task<IActionResult?> DenyOutsideAssignedAsync(Guid? warehouseId)
+        {
+            try
+            {
+                await _userWarehouses.EnsureAssignedWarehouseAsync(CurrentUserId, CurrentRole, warehouseId);
+                return null;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
         }
 
         /// <summary>
@@ -32,7 +54,7 @@ namespace VCL_API.Controllers
         /// <response code="403">Không có quyền thao tác (yêu cầu role Staff hoặc WarehouseStaff)</response>
         /// <response code="404">Không tìm thấy yêu cầu ký gửi tương ứng</response>
         [HttpPost("check-in")]
-        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         [ProducesResponseType(typeof(ParcelCheckInResponse), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
@@ -53,9 +75,13 @@ namespace VCL_API.Controllers
                 var result = await _parcelService.CheckInParcelAsync(request, actorUserId);
                 return Ok(new { message = "Check-in kiện hàng thành công.", data = result });
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -63,7 +89,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -78,7 +104,7 @@ namespace VCL_API.Controllers
         /// <response code="403">Không có quyền truy cập (yêu cầu role Staff hoặc WarehouseStaff)</response>
         /// <response code="404">Không tìm thấy kiện hàng</response>
         [HttpGet("{parcelId:guid}")]
-        [Authorize(Roles = "Admin,ADMIN,Administrator,ADMINISTRATOR,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Sale,SALE,Customer,CUSTOMER")]
+        [AuthorizeRoles("Admin,ADMIN,Administrator,ADMINISTRATOR,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Sale,SALE,Customer,CUSTOMER")]
         [ProducesResponseType(typeof(ParcelDetailResponse), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(403)]
@@ -108,7 +134,7 @@ namespace VCL_API.Controllers
         /// <response code="401">Chưa đăng nhập</response>
         /// <response code="403">Không có quyền truy cập (yêu cầu role Staff hoặc WarehouseStaff)</response>
         [HttpGet("pending-putaway")]
-        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Sale,SALE")]
+        [AuthorizeRoles("Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Sale,SALE")]
         [ProducesResponseType(typeof(PaginatedResponse<PendingPutawayParcelDto>), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(403)]
@@ -125,8 +151,11 @@ namespace VCL_API.Controllers
 
             try
             {
+                // Nhân viên kho đã được gán kho: chỉ kiện của các kho được gán (không dựa vào vùng trong token).
+                var scope = await _userWarehouses.GetListScopeAsync(CurrentUserId, CurrentRole);
+
                 var effectiveRegion = !string.IsNullOrWhiteSpace(regionCode) ? regionCode : region;
-                if (string.IsNullOrWhiteSpace(effectiveRegion))
+                if (string.IsNullOrWhiteSpace(effectiveRegion) && scope == null)
                 {
                     var tokenRegion = User.FindFirst("region")?.Value;
                     if (!string.IsNullOrWhiteSpace(tokenRegion))
@@ -135,7 +164,7 @@ namespace VCL_API.Controllers
                     }
                 }
 
-                var result = await _parcelService.GetPendingPutawayParcelsAsync(pageNumber, pageSize, search, status, effectiveRegion);
+                var result = await _parcelService.GetPendingPutawayParcelsAsync(pageNumber, pageSize, search, status, effectiveRegion, scope);
                 return Ok(new
                 {
                     message = "Lấy danh sách kiện chờ nhập vị trí kho thành công.",
@@ -144,7 +173,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -160,7 +189,7 @@ namespace VCL_API.Controllers
         /// <response code="403">Không có quyền thao tác (yêu cầu role Staff hoặc WarehouseStaff)</response>
         /// <response code="404">Không tìm thấy kiện hàng hoặc vị trí kho</response>
         [HttpPut("{parcelId}/put-away")]
-        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         [ProducesResponseType(typeof(ParcelPutAwayResponse), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
@@ -173,6 +202,9 @@ namespace VCL_API.Controllers
                 return BadRequest(ModelState);
             }
 
+            var denied = await DenyOutsideAssignedAsync(request?.WarehouseId);
+            if (denied != null) return denied;
+
             try
             {
                 var result = await _parcelService.PutAwayParcelAsync(parcelId, request);
@@ -180,7 +212,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -188,7 +220,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -197,11 +229,14 @@ namespace VCL_API.Controllers
         /// các kiện con kế thừa yêu cầu ký gửi và trỏ về kiện gốc qua parentParcelId.
         /// </summary>
         [HttpPost("{parcelId}/split")]
-        [Authorize(Roles = "Admin,WarehouseStaff")]
+        [AuthorizeRoles("Admin,WarehouseStaff")]
         public async Task<IActionResult> SplitParcel(Guid parcelId, [FromBody] SplitParcelRequestDto request)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            var denied = await DenyOutsideAssignedAsync(await _userWarehouses.WarehouseOfParcelAsync(parcelId));
+            if (denied != null) return denied;
 
             try
             {
@@ -214,11 +249,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -227,11 +262,17 @@ namespace VCL_API.Controllers
         /// Các kiện gốc chuyển sang trạng thái MERGED và trỏ về kiện mới qua parentParcelId.
         /// </summary>
         [HttpPost("merge")]
-        [Authorize(Roles = "Admin,WarehouseStaff")]
+        [AuthorizeRoles("Admin,WarehouseStaff")]
         public async Task<IActionResult> MergeParcels([FromBody] MergeParcelsRequestDto request)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             Guid? userId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
+
+            foreach (var sourceId in request?.SourceParcelIds ?? new System.Collections.Generic.List<Guid>())
+            {
+                var denied = await DenyOutsideAssignedAsync(await _userWarehouses.WarehouseOfParcelAsync(sourceId));
+                if (denied != null) return denied;
+            }
 
             try
             {
@@ -244,11 +285,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
     }

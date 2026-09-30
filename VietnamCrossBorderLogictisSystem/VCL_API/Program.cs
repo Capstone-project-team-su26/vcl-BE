@@ -5,7 +5,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers()
+// Mỗi lệnh ghi chạy trong một transaction: lỗi giữa chừng thì rollback cả thao tác.
+builder.Services.AddScoped<VCL_API.Infrastructure.DbTransactionFilter>();
+builder.Services.AddControllers(options =>
+    {
+        options.Filters.AddService<VCL_API.Infrastructure.DbTransactionFilter>();
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new VCL_API.Helpers.DateTimeJsonConverter());

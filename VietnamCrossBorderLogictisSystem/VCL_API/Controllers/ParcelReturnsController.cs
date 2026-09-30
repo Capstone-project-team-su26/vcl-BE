@@ -1,3 +1,4 @@
+using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -42,7 +44,7 @@ namespace VCL_API.Controllers
         /// </param>
         /// <param name="warehouseId">Chỉ lấy hồ sơ của một kho. App kho truyền kho mình phụ trách.</param>
         [HttpGet]
-        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         [ProducesResponseType(typeof(ParcelReturnListDto), 200)]
         public async Task<IActionResult> List([FromQuery] string? status, [FromQuery] Guid? warehouseId)
         {
@@ -51,7 +53,7 @@ namespace VCL_API.Controllers
         }
 
         [HttpGet("{returnId}")]
-        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         [ProducesResponseType(typeof(ParcelReturnDto), 200)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> Detail(Guid returnId)
@@ -68,7 +70,7 @@ namespace VCL_API.Controllers
         /// Mở hồ sơ bằng tay — dùng khi hãng chưa kịp báo hoặc báo sai, hoặc khách tự mang trả.
         /// </summary>
         [HttpPost]
-        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> Open([FromBody] OpenParcelReturnRequest request)
         {
             try
@@ -76,9 +78,9 @@ namespace VCL_API.Controllers
                 var result = await _service.OpenManuallyAsync(request, CurrentUserId, CurrentRole);
                 return Ok(new { message = "Đã mở hồ sơ hàng hoàn.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -89,7 +91,7 @@ namespace VCL_API.Controllers
         /// ghi một lượt nhập kho mới, phí lưu kho của quãng hoàn về tính từ mốc đó.
         /// </remarks>
         [HttpPut("{returnId}/receive")]
-        [Authorize(Roles = "Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> Receive(Guid returnId, [FromBody] ReceiveParcelReturnRequest request)
         {
             try
@@ -97,9 +99,9 @@ namespace VCL_API.Controllers
                 var result = await _service.ConfirmReceivedAsync(returnId, request, CurrentUserId, CurrentRole);
                 return Ok(new { message = "Đã xác nhận nhận lại hàng hoàn.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -118,9 +120,9 @@ namespace VCL_API.Controllers
                 var result = await _service.ResolveAsync(returnId, request, CurrentUserId, CurrentRole);
                 return Ok(new { message = "Đã chốt hướng xử lý hàng hoàn.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -135,7 +137,7 @@ namespace VCL_API.Controllers
                 var result = await _service.ListByOrderAsync(orderId, CurrentUserId, CurrentRole);
                 return Ok(new { message = "Lấy hồ sơ hàng hoàn của đơn thành công.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
         }
     }

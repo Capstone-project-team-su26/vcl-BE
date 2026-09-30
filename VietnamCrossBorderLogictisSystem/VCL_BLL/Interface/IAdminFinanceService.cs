@@ -14,7 +14,7 @@ namespace VCL_BLL.Interface
         Task<PaginatedResponse<AdminPendingTransactionDto>> GetPendingManualTransactionsAsync(AdminPendingTransactionQueryDto query);
 
         /// <summary>Admin xác nhận đã nhận được tiền: đánh dấu đã thu và đẩy đơn đi tiếp.</summary>
-        Task<ManualTransactionResultDto> ApproveManualTransactionAsync(Guid paymentId, ApproveManualTransactionRequest request);
+        Task<ManualTransactionResultDto> ApproveManualTransactionAsync(Guid paymentId, ApproveManualTransactionRequest request, Guid actorId);
 
         /// <summary>Admin từ chối khoản treo (không thấy tiền về, khách khai sai...).</summary>
         Task<ManualTransactionResultDto> RejectManualTransactionAsync(Guid paymentId, RejectManualTransactionRequest request);

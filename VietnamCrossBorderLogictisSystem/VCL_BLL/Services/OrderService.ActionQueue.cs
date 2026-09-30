@@ -120,7 +120,8 @@ namespace VCL_BLL.Services
             var quotationsByOrder = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
                 .Where(q => q.OrderId.HasValue)
                 .GroupBy(q => q.OrderId!.Value)
-                .ToDictionary(g => g.Key, g => g.OrderByDescending(q => q.CreatedAt).First());
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(q => string.Equals(q.Status, "ACCEPTED", StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(q => q.CreatedAt).First());
 
             var warehouses = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
                 .ToDictionary(w => w.Id, w => w);
@@ -135,7 +136,7 @@ namespace VCL_BLL.Services
                     ? c
                     : null;
 
-                // Kho gốc suy từ báo giá mới nhất, cùng nguồn với chi tiết đơn (OrderService.Queries).
+                // Kho nhận hàng lấy từ báo giá khách đã chấp nhận.
                 Warehouse? warehouse = null;
                 if (quotationsByOrder.TryGetValue(order.Id, out var quotation)
                     && quotation.WarehouseId.HasValue)
@@ -162,14 +163,12 @@ namespace VCL_BLL.Services
                     RowKey = $"{order.Id}:RECEIVING_NOTE",
                     HandlingGroup = "RECEIVING_NOTE",
                     HandlingGroupText = "Tiếp nhận hàng tại kho gốc",
-                    ActionState = "AWAITING_WAREHOUSE_RECEIPT",
-                    ActionStateText = "Chờ kho nhận hàng",
+                    ActionState = "AWAITING_RECEIVING_NOTE",
+                    ActionStateText = "Khách đã thanh toán, chờ Sale lập phiếu nhập kho",
 
-                    // Phiếu tiếp nhận nay tự sinh lúc thu tiền, nên dòng này chỉ để Sale theo dõi
-                    // chứ không còn nút bấm. Đường lập tay POST /api/warehouse-receiving-notes vẫn
-                    // còn, dùng khi đơn cũ chưa có phiếu.
-                    NextAction = "NONE",
-                    CanAct = false,
+                    // Sale lập phiếu bằng POST /api/warehouse-receiving-notes; phiếu chờ quản lý kho duyệt.
+                    NextAction = "CREATE_RECEIVING_NOTE",
+                    CanAct = true,
                     ReceivingWarehouseId = warehouse?.Id,
                     ReceivingWarehouseName = warehouse?.WarehouseName,
                 });

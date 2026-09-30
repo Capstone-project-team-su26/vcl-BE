@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
@@ -8,9 +8,22 @@ namespace VCL_BLL.Interface
     public interface IOrderService
     {
         Task<CreateConsignmentResponse> CreateConsignmentAsync(CreateConsignmentRequest request, Guid userId);
+
+        /// <summary>
+        /// Ước tính chi phí đơn ký gửi TRƯỚC khi tạo — cùng phép tính với báo giá tạm tính
+        /// sinh ra lúc tạo đơn, nhưng không ghi gì xuống DB.
+        /// </summary>
+        Task<EstimateQuotationResponse> PreviewConsignmentAsync(CreateConsignmentRequest request, Guid userId);
+
+        /// <summary>Ước tính chi phí cho đơn Sale tạo hộ khách — không ghi gì xuống DB.</summary>
+        Task<EstimateQuotationResponse> PreviewConsignmentByStaffAsync(
+            CreateConsignmentByStaffRequest request, Guid staffUserId);
         Task<CreateConsignmentResponse> CreateConsignmentByStaffAsync(CreateConsignmentByStaffRequest request, Guid staffUserId);
         Task<CancelConsignmentResponse> CancelConsignmentAsync(Guid orderId, Guid userId, CancelConsignmentRequest request);
         Task<ConsignmentDetailResponse> GetConsignmentDetailAsync(Guid orderId, Guid? userId, string role);
+
+        /// <summary>Lịch sử chuyển trạng thái của đơn.</summary>
+        Task<List<OrderTimelineEntryDto>> GetOrderTimelineAsync(Guid orderId, Guid userId, string role);
 
         /// <summary>
         /// Hành trình vận chuyển quốc tế của một đơn: kiện đang đi lô nào, lô tới đâu, kho VN
@@ -39,6 +52,18 @@ namespace VCL_BLL.Interface
         Task<PaginatedResponse<ConsignmentResponseDto>> GetConsignmentsAsync(Guid? userId, string role, int pageNumber, int pageSize, string? status, string? searchCode, string? orderType = null);
         Task<List<string>> GetConsignmentRoutesAsync();
         Task<List<string>> GetShippingOptionsAsync(string? route);
+
+        /// <summary>
+        /// Dịch vụ khách chọn được cho từng kiện. Truyền cả tuyến và phương án vận chuyển thì bỏ các
+        /// dịch vụ chỉ áp cho phương án khác.
+        /// </summary>
+        Task<List<ItemServiceDto>> GetItemServicesAsync(string? route, string? shippingOption);
+
+        /// <summary>
+        /// Quy đổi các cờ dịch vụ phụ của yêu cầu mua hộ (kiểm hàng / đóng gói / thùng gỗ / bảo hiểm) sang
+        /// ID các PricingRule đang active tương ứng. Đơn ký gửi chọn dịch vụ theo từng kiện, không dùng cờ.
+        /// </summary>
+        Task<List<Guid>> ResolveServiceFlagRuleIdsAsync(bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance);
         List<ConsignmentStatusDto> GetConsignmentStatuses();
         Task<PublicTrackingResponse> TrackConsignmentByCodeAsync(string code);
 
@@ -48,17 +73,14 @@ namespace VCL_BLL.Interface
         /// <summary>
         /// OM chốt đơn hoàn thành. Cần khách xác nhận trước, hoặc đã quá thời hạn chờ khách.
         /// </summary>
+        /// <summary>Tự đóng đơn đã giao xong khi hết hạn khiếu nại và không còn vướng mắc.</summary>
+        Task<int> AutoCompleteDeliveredOrdersAsync(int complaintWindowDays);
+
         Task<OrderClosingResponseDto> CompleteConsignmentAsync(
             Guid orderId, Guid userId, string userRole, CompleteConsignmentRequestDto? request);
 
         /// <summary>Sale từ chối đơn vì khách quá hạn không trả đợt cuối; tiền cọc không hoàn.</summary>
         Task<OrderClosingResponseDto> RejectUnpaidConsignmentAsync(
             Guid orderId, Guid userId, string userRole, RejectUnpaidConsignmentRequestDto? request);
-
-        /// <summary>
-        /// Quy đổi các cờ dịch vụ phụ (kiểm hàng / đóng gói / thùng gỗ / bảo hiểm) sang ID các PricingRule
-        /// đang active tương ứng. Dùng chung cho ký gửi và mua hộ để một cờ luôn khớp cùng một quy định giá.
-        /// </summary>
-        Task<List<Guid>> ResolveServiceFlagRuleIdsAsync(bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance);
     }
 }

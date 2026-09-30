@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -57,7 +58,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = "Không thể mở phiếu xác nhận ký gửi.", error = ex.Message });
+                return BadRequest(new { message = "Không thể mở phiếu xác nhận ký gửi.", error = this.UserError(ex) });
             }
         }
     }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.Extensions.Configuration;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
@@ -23,7 +23,10 @@ namespace VCL_BLL.Services
         private static readonly string[] RestrictedRestrictionTypes = { "RESTRICTED", "LIMITED", "HẠN CHẾ", "HAN CHE" };
 
         // Các trạng thái Order mà khách được phép tự hủy.
-        private static readonly string[] CancellableStatuses = { "PENDING_REVIEW", "APPROVED" };
+        // Khách tự huỷ được khi đơn chưa có tiền thực nhận và chưa có hàng; bước huỷ kiểm thêm không có
+        // khoản thu nào đã PAID.
+        private static readonly string[] CancellableStatuses =
+            { "PENDING_REVIEW", "NEED_MORE_INFO", "APPROVED", "QUOTATION_SENT", "QUOTATION_REJECTED", "QUOTATION_CONFIRMED", "WAITING_DEPOSIT" };
 
         // Các role nội bộ được xem mọi yêu cầu ký gửi (không cần là chủ đơn).
         // Vai trò khai báo tập trung ở StaffRoleHelper

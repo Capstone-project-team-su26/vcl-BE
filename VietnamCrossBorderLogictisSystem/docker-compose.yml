@@ -12,11 +12,15 @@ services:
       com.vcl.upstream.revision: "47adffe"
     ports:
       - "8085:8080"
+    # Firewall chặn container gọi vòng ra IP public của chính server: nối thẳng mạng Docker của SQL Server.
+    networks:
+      - default
+      - sqlnet
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
 
-      ConnectionStrings__DefaultConnection: "Server=72.61.114.184,14333;Database=AppDb;User Id=sa;Password=RcYw6#thU3j=RLTi93bW;TrustServerCertificate=True;Encrypt=True;"
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=AppDb;User Id=sa;Password=RcYw6#thU3j=RLTi93bW;TrustServerCertificate=True;Encrypt=True;"
 
       JWT__SecretKey: "AED+rrS0VsY0p3SeFdZfzdi60IS/3QJEHGMWr+udAw8="
       JWT__ValidIssuer: "vcl-system"
@@ -80,3 +84,8 @@ services:
       OpenRouterSettings__ApiKey: "${OPENROUTER_API_KEY:-}"
       OpenRouterSettings__Model: "google/gemini-2.0-flash-exp:free"
       OpenRouterSettings__BaseUrl: "https://openrouter.ai/api/v1/chat/completions"
+
+networks:
+  sqlnet:
+    external: true
+    name: sqlserver-docker_default

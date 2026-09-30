@@ -104,8 +104,11 @@ namespace VCL_BLL.DTOs
     /// <summary>Yêu cầu điều chuyển kiện hàng sang ô kệ khác trong cùng kho</summary>
     public class RelocateInventoryRequestDto
     {
-        /// <summary>Ô kệ đích</summary>
-        public Guid ToBinId { get; set; }
+        /// <summary>Ô kệ đích chọn theo ID.</summary>
+        public Guid? ToBinId { get; set; }
+
+        /// <summary>Mã ô kệ đích quét được (tra trong kho hiện tại của kiện).</summary>
+        public string? ToBinCode { get; set; }
 
         /// <summary>Lý do điều chuyển</summary>
         public string Reason { get; set; } = string.Empty;

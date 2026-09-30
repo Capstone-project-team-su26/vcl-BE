@@ -48,6 +48,18 @@ namespace VCL_BLL.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime? ExpiredAt { get; set; }
 
+        /// <summary>
+        /// TOÀN BỘ dòng tiền của báo giá, theo thứ tự đọc của một tờ hoá đơn:
+        /// cước quốc tế → phí nội địa → dịch vụ theo kiện và phí đóng thùng → thuế.
+        ///
+        /// Khác <see cref="AdditionalFees"/> ở hai điểm: có cả cước, phí nội địa và thuế
+        /// (AdditionalFees chỉ có phụ phí và phí đóng thùng), và đã bỏ các dòng 0đ.
+        /// Dòng 0đ là bản ghi lưu vết trong DB, không phải thứ để in cho khách đọc — trước
+        /// đây khách nhìn thấy "Thuế nhập khẩu 0đ" trong khi vẫn bị thu thuế thật, vì hai
+        /// dòng đó là hai bản ghi khác nhau.
+        /// </summary>
+        public List<QuotationFeeResponseDto> InvoiceLines { get; set; } = new();
+
         /// <summary>Chi tiết từng sản phẩm trong đơn hàng</summary>
         public List<OrderItemDetail> Items { get; set; } = new();
 
@@ -80,23 +92,14 @@ namespace VCL_BLL.DTOs
         /// <summary>Chi tiết thùng đã áp (mã, tên, kích thước, phí) — để FE hiển thị ngay sau khi tạo đơn.</summary>
         public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
 
+        /// <summary>Dịch vụ khách chọn cho riêng kiện này.</summary>
+        public List<ItemServiceDto> Services { get; set; } = new();
+
         /// <summary>Thể tích item = Length × Width × Height (cm³)</summary>
         public decimal ItemVolume { get; set; }
 
         /// <summary>Cân nặng quy đổi của dòng sản phẩm = ItemVolume * Quantity / Divisor</summary>
         public decimal? VolumetricWeight { get; set; }
-    }
-
-    /// <summary>
-    /// Response trả về sau khi khách hàng xác nhận báo giá tạm tính.
-    /// </summary>
-    public class AcceptQuotationResponse
-    {
-        public Guid QuotationId { get; set; }
-        public Guid OrderId { get; set; }
-        public string QuotationStatus { get; set; } = string.Empty;
-        public string OrderStatus { get; set; } = string.Empty;
-        public DateTime AcceptedAt { get; set; }
     }
 
     public class CreateQuotationRequest
@@ -110,6 +113,22 @@ namespace VCL_BLL.DTOs
         public decimal? DeclaredValue { get; set; }
         public string? SalesNote { get; set; }
         public QuotationDetailsDto? Quotation { get; set; }
+
+        /// <summary>
+        /// Lý do Sales nhập giá khác bảng giá (phụ phí, thuế, cước). Có giá ngoại lệ thì bắt buộc
+        /// (hoặc ghi trong SalesNote); báo giá khi đó chờ Admin duyệt rồi mới tới khách.
+        /// </summary>
+        public string? OverrideReason { get; set; }
+    }
+
+    /// <summary>Admin duyệt hoặc từ chối giá ngoại lệ của một báo giá.</summary>
+    public class QuotationPriceDecisionRequest
+    {
+        /// <summary><c>APPROVED</c> hoặc <c>REJECTED</c>.</summary>
+        public string Decision { get; set; } = string.Empty;
+
+        /// <summary>Bắt buộc khi từ chối.</summary>
+        public string? Note { get; set; }
     }
 
     public class QuotationDetailsDto
@@ -143,6 +162,13 @@ namespace VCL_BLL.DTOs
     public class AdditionalFeeDto
     {
         public Guid? FeeId { get; set; }
+
+        /// <summary>
+        /// Kiện của phí. Gửi kèm FeeId là dịch vụ khách đã chọn cho kiện đó để Sale sửa số tiền
+        /// (khác bảng giá thì cần Admin duyệt). Dịch vụ theo kiện gửi lại mà không có OrderItemId
+        /// thì bỏ qua vì hệ thống đã tự tính.
+        /// </summary>
+        public Guid? OrderItemId { get; set; }
         public string? Code { get; set; }
         public string? Label { get; set; }
         public decimal Amount { get; set; }
@@ -153,6 +179,10 @@ namespace VCL_BLL.DTOs
     {
         public Guid Id { get; set; }
         public Guid? PricingRuleId { get; set; }
+
+        /// <summary>Kiện chịu phí (dịch vụ theo kiện, phí thùng). Null với phí của cả đơn.</summary>
+        public Guid? OrderItemId { get; set; }
+        public string? ItemName { get; set; }
         
         // Contract properties:
         public Guid? FeeId { get; set; }
@@ -238,6 +268,27 @@ namespace VCL_BLL.DTOs
         /// <summary>Tổng chi phí</summary>
         public decimal TotalEstimatedCost { get; set; }
 
+        /// <summary>NOT_REQUIRED · PENDING · APPROVED · REJECTED — duyệt giá ngoại lệ.</summary>
+        public string? PriceApprovalStatus { get; set; }
+
+        /// <summary>Các khoản Sales nhập khác bảng giá và lý do.</summary>
+        public string? OverrideReason { get; set; }
+
+        public DateTime? AcceptedAt { get; set; }
+
+        /// <summary>Khách có thể bấm xác nhận báo giá này ngay bây giờ hay không.</summary>
+        public bool CanCustomerAccept { get; set; }
+
+        /// <summary>Chỉ trả cho nhân viên: Sale còn lập/gửi báo giá mới cho đơn được không (null với khách).</summary>
+        public bool? CanSalesRequote { get; set; }
+
+        /// <summary>OPEN · REPLACE_PENDING_PRICE_APPROVAL · CUSTOMER_REJECTED · EXPIRED · PRICE_REJECTED ·
+        /// SENT_TO_CUSTOMER · APPROVED_SENT_TO_CUSTOMER · ACCEPTED · ORDER_NOT_QUOTABLE.</summary>
+        public string? RequoteState { get; set; }
+
+        /// <summary>Lý do không lập lại được (cùng câu API gửi báo giá trả về).</summary>
+        public string? RequoteBlockedReason { get; set; }
+
         /// <summary>Ngày tạo báo giá</summary>
         public DateTime CreatedAt { get; set; }
 
@@ -251,6 +302,17 @@ namespace VCL_BLL.DTOs
         public Guid? WarehouseId { get; set; }
 
         public List<QuotationFeeResponseDto> AdditionalFees { get; set; } = new();
+
+        /// <summary>
+        /// MỌI dòng tiền của báo giá, xếp theo thứ tự một tờ hoá đơn, đã bỏ dòng 0đ.
+        ///
+        /// Cùng nội dung và cùng thứ tự với <c>InvoiceLines</c> của
+        /// <see cref="EstimateQuotationResponse"/>: màn xem trước lúc tạo đơn và màn báo giá
+        /// sau khi tạo phải in RA CÙNG MỘT tờ, nếu không khách thấy hai bảng kê khác nhau cho
+        /// cùng một số tiền. <see cref="AdditionalFees"/> vẫn giữ nguyên (chỉ phụ phí và phí
+        /// đóng thùng) cho các màn cũ còn đọc nó.
+        /// </summary>
+        public List<QuotationFeeResponseDto> InvoiceLines { get; set; } = new();
 
         /// <summary>Chi tiết cước phí theo từng kiện hàng</summary>
         public List<ParcelQuotationDetailDto> Parcels { get; set; } = new();
@@ -278,7 +340,7 @@ namespace VCL_BLL.DTOs
         public string? CancelUrl { get; set; }
 
         /// <summary>
-        /// Phương thức thanh toán: PAYOS, SEPAY hoặc OFFLINE (chuyển khoản tay, chờ Sales đối soát).
+        /// Phương thức thanh toán: PAYOS, SEPAY hoặc OFFLINE (chuyển khoản tay, chờ Admin đối soát).
         /// Nếu trống, mặc định dùng PAYOS hoặc theo cấu hình hệ thống.
         /// </summary>
         public string? PaymentMethod { get; set; }

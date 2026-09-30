@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using VCL_BLL.DTOs;
+using VCL_BLL.Helpers;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
@@ -293,6 +294,13 @@ namespace VCL_BLL.Services
                 var bin = await _unitOfWork.Repository<Bin>().GetByIdAsync(binId)
                     ?? throw new ArgumentException("Ô kệ không tồn tại.");
 
+                // Hàng hoàn quay lại kệ cũng theo đúng luật xếp kệ: ô khu lưu kho đang dùng, còn đủ chỗ.
+                var placement = await BinPlacementPolicy.EnsureCanStoreAsync(
+                    _unitOfWork, bin, bin.WarehouseId ?? Guid.Empty, new[] { parcel });
+                bin.CurrentVolume = placement.OccupiedVolumeAfter;
+                _unitOfWork.Repository<Bin>().Update(bin);
+
+                var previousBinId = parcel.BinId;
                 parcel.BinId = bin.Id;
                 parcel.PutAwayTime = now;
                 warehouseId = bin.WarehouseId;
@@ -316,7 +324,7 @@ namespace VCL_BLL.Services
                     Id = Guid.NewGuid(),
                     InventoryId = inventory.Id,
                     ParcelId = parcel.Id,
-                    FromBinId = parcel.BinId,
+                    FromBinId = previousBinId,
                     ToBinId = bin.Id,
                     MovementType = "INBOUND",
                     Reason = $"Nhận lại hàng hoàn {found.ReturnCode}",
@@ -642,8 +650,8 @@ namespace VCL_BLL.Services
 
         private static void EnsureRole(string userRole, string[] allowed, string action)
         {
-            var normalized = userRole?.Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(normalized) || !allowed.Contains(normalized))
+            // Biến thể tên vai trò nhân viên kho ("Warehouse Staff VN"…) khớp WAREHOUSESTAFF.
+            if (!StaffRoleHelper.IsRoleAllowed(allowed, userRole))
             {
                 throw new UnauthorizedAccessException($"Vai trò hiện tại không được phép {action}.");
             }
@@ -657,7 +665,7 @@ namespace VCL_BLL.Services
                 "LOST" => "LOST",
                 "CANCELLED" => "CANCELLED",
                 _ => throw new ArgumentException(
-                    "Lý do hoàn không hợp lệ. Hợp lệ: FAILED_DELIVERY, RETURNING, LOST, CANCELLED."),
+                    $"Lý do hoàn không hợp lệ. Chỉ chọn: {StatusNames.QuoteAny("FAILED_DELIVERY", "RETURNING", "LOST", "CANCELLED")}."),
             };
 
         private static string NormalizeResolution(string? value) =>
@@ -668,7 +676,7 @@ namespace VCL_BLL.Services
                 ResolutionDispose => ResolutionDispose,
                 ResolutionCompensate => ResolutionCompensate,
                 _ => throw new ArgumentException(
-                    "Hướng xử lý không hợp lệ. Hợp lệ: REDELIVER, CUSTOMER_PICKUP, DISPOSE, COMPENSATE."),
+                    $"Hướng xử lý không hợp lệ. Chỉ chọn: {StatusNames.QuoteAny("REDELIVER", "CUSTOMER_PICKUP", "DISPOSE", "COMPENSATE")}."),
             };
 
         private static string? NormalizeFeeBearer(string? value) =>

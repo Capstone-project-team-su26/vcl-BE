@@ -1,3 +1,4 @@
+using VCL_BLL.Helpers;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -191,12 +192,16 @@ namespace VCL_BLL.Services
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             if (!roleSet.Any()) return;
+            var notifyWarehouseStaff = roleSet.Any(StaffRoleHelper.IsWarehouseStaffRole);
 
             try
             {
                 var allUsers = await _unitOfWork.Repository<User>().GetAllAsync();
                 var targetUserIds = allUsers
-                    .Where(u => !string.IsNullOrWhiteSpace(u.Role) && roleSet.Contains(u.Role.Trim()))
+                    .Where(u => !string.IsNullOrWhiteSpace(u.Role)
+                        && (roleSet.Contains(u.Role.Trim())
+                            // Gửi cho "WarehouseStaff" thì cả biến thể tên ("Warehouse Staff VN"…) cũng nhận.
+                            || (notifyWarehouseStaff && StaffRoleHelper.IsWarehouseStaffRole(u.Role))))
                     .Where(u => !excludeUserId.HasValue || u.Id != excludeUserId.Value)
                     .Select(u => u.Id)
                     .ToList();

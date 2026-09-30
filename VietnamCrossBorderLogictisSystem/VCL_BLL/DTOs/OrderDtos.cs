@@ -3,6 +3,16 @@ using System.Collections.Generic;
 
 namespace VCL_BLL.DTOs
 {
+    public class OrderTimelineEntryDto
+    {
+        public string Event { get; set; } = string.Empty;
+        public string? FromStatus { get; set; }
+        public string? ToStatus { get; set; }
+        public string? Note { get; set; }
+        public string ActorName { get; set; } = string.Empty;
+        public DateTime At { get; set; }
+    }
+
     public class UpdateConsignmentStatusRequest
     {
         public string Status { get; set; } = string.Empty;
@@ -14,7 +24,7 @@ namespace VCL_BLL.DTOs
         public string Status { get; set; } = string.Empty;
         public string? ConsignmentCode { get; set; }
 
-        /// <summary>Link phiếu xác nhận ký gửi (PDF) sinh khi duyệt đơn. Null nếu chưa sinh được.</summary>
+        /// <summary>Link phiếu xác nhận ký gửi (PDF), phát hành khi quản lý kho duyệt phiếu nhập kho.</summary>
         public string? ReceiptPdfUrl { get; set; }
     }
 

@@ -94,13 +94,22 @@ namespace VCL_BLL.Services
         public async Task<IEnumerable<UserResponse>> GetAllUsersAsync()
         {
             var users = await _unitOfWork.Repository<User>().GetAllAsync();
-            return users.Select(MapToResponse);
+            var assignments = await new UserWarehouseService(_unitOfWork).GetAllAssignmentsAsync();
+            return users.Select(u => WithAssignments(MapToResponse(u), assignments)).ToList();
         }
 
         public async Task<UserResponse> GetUserByIdAsync(Guid userId)
         {
             var user = await GetUserOrThrowAsync(userId);
-            return MapToResponse(user);
+            var assignments = await new UserWarehouseService(_unitOfWork).GetAllAssignmentsAsync();
+            return WithAssignments(MapToResponse(user), assignments);
+        }
+
+        private static UserResponse WithAssignments(UserResponse response, Dictionary<Guid, List<AssignedWarehouseBriefDto>> assignments)
+        {
+            if (assignments.TryGetValue(response.Id, out var list))
+                response.AssignedWarehouses = list;
+            return response;
         }
 
         public async Task UpdateUserRoleAsync(Guid userId, string role, string? region = null)
@@ -112,19 +121,26 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Không được phép gán quyền Admin cho tài khoản.");
 
             var user = await GetUserOrThrowAsync(userId);
-            user.Role = normalizedRole;
 
+            RegionCode? newRegion = user.Region;
             if (!string.IsNullOrWhiteSpace(region))
             {
                 if (Enum.TryParse<RegionCode>(region.Trim(), true, out var parsedRegion))
                 {
-                    user.Region = parsedRegion;
+                    newRegion = parsedRegion;
                 }
                 else
                 {
                     throw new ArgumentException($"Mã vùng/quốc gia '{region}' không hợp lệ.");
                 }
             }
+
+            // Tài khoản đang được gán kho: vai trò và vùng phải còn khớp với các kho đó, nếu không
+            // nhân viên sẽ bị giới hạn theo những kho mà hồ sơ đã nói là không phụ trách nữa.
+            await EnsureConsistentWithAssignmentsAsync(user, normalizedRole, newRegion);
+
+            user.Role = normalizedRole;
+            user.Region = newRegion;
 
             _unitOfWork.Repository<User>().Update(user);
             await _unitOfWork.SaveChangesAsync();
@@ -186,6 +202,9 @@ namespace VCL_BLL.Services
             {
                 if (Enum.TryParse<VCL_DLL.Enums.RegionCode>(request.Region, true, out var parsedRegion))
                 {
+                    // Nhân viên đã được Admin gán kho không tự đổi vùng được — vùng đi theo kho được gán.
+                    if (user.Region != parsedRegion)
+                        await EnsureConsistentWithAssignmentsAsync(user, user.Role, parsedRegion);
                     user.Region = parsedRegion;
                 }
             }
@@ -205,6 +224,27 @@ namespace VCL_BLL.Services
             }
 
             await _unitOfWork.SaveChangesAsync();
+        }
+
+        private async Task EnsureConsistentWithAssignmentsAsync(User user, string newRole, RegionCode? newRegion)
+        {
+            var assignedIds = await WarehouseAccessPolicy.GetAssignedWarehouseIdsAsync(_unitOfWork, user.Id);
+            if (assignedIds.Count == 0) return;
+
+            if (!StaffRoleHelper.IsWarehouseStaffRole(newRole))
+            {
+                throw new ArgumentException(
+                    $"Tài khoản {user.FullName} đang được gán kho. Bỏ gán kho trước khi đổi sang vai trò {newRole}.");
+            }
+
+            var warehouses = (await _unitOfWork.Repository<Warehouse>().FindAsync(w => assignedIds.Contains(w.Id))).ToList();
+            var mismatch = warehouses.Where(w => !WarehouseAccessPolicy.SameRegion(w.Region, newRegion)).ToList();
+            if (mismatch.Count > 0)
+            {
+                throw new ArgumentException(
+                    $"Tài khoản {user.FullName} đang được gán kho {string.Join(", ", mismatch.Select(w => $"{w.WarehouseName} ({w.Region})"))}; " +
+                    $"không đổi vùng sang {(newRegion?.ToString() ?? "trống")} được. Bỏ gán hoặc gán lại kho trước.");
+            }
         }
 
         private async Task<User> GetUserOrThrowAsync(Guid userId)

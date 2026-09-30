@@ -91,12 +91,8 @@ namespace VCL_BLL.Services
                 }
             }
 
-            // 3. Nếu không cấu hình cả ApiKey và WebhookSecret (môi trường dev/test) -> bỏ qua xác thực
-            if (string.IsNullOrWhiteSpace(apiKey) && string.IsNullOrWhiteSpace(webhookSecret))
-            {
-                return true;
-            }
-
+            // 3. Không khớp khoá nào (kể cả khi chưa cấu hình khoá): từ chối. Trước đây thiếu cấu hình
+            // thì bỏ qua xác thực, ai gửi webhook giả cũng đánh dấu được đơn đã thanh toán.
             return false;
         }
     }

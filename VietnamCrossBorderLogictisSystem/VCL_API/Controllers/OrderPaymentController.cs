@@ -1,3 +1,4 @@
+using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -56,11 +58,17 @@ namespace VCL_API.Controllers
         {
             try
             {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                    return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+                await _storageFeeService.EnsureCanViewAsync(orderId, userId, User.FindFirst(ClaimTypes.Role)?.Value);
+
                 var result = await _storageFeeService.CalculateForOrderAsync(orderId);
                 return Ok(new { message = "Lấy phí lưu kho thành công.", data = result });
             }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -72,7 +80,7 @@ namespace VCL_API.Controllers
         /// </para>
         /// </summary>
         [HttpPost("api/orders/{orderId}/payments/storage-fee")]
-        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
+        [AuthorizeRoles("Admin,ADMIN,Sale,SALE,Sales,SALES,WarehouseStaff,WAREHOUSESTAFF,Staff,STAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS")]
         public async Task<IActionResult> CreateStorageFeePayment(
             Guid orderId, [FromBody] CreateStorageFeePaymentRequest? request = null)
         {
@@ -99,11 +107,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -127,7 +135,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -135,11 +143,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -162,7 +170,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -170,43 +178,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
-        }
-
-        /// <summary>
-        /// Sale xác nhận đơn ký gửi đã thanh toán (chỉ khi khoản thanh toán đã SUCCESS).
-        /// Sau khi xác nhận, đơn đủ điều kiện để Sale tạo/gửi phiếu tiếp nhận kho.
-        /// </summary>
-        [HttpPut("api/orders/{orderId}/payment-confirmation")]
-        public async Task<IActionResult> ConfirmPayment(Guid orderId, [FromBody] ConfirmOrderPaymentRequest request)
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
-
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-            try
-            {
-                var result = await _consignmentPaymentService.ConfirmOrderPaymentAsync(orderId, userId, userRole, request);
-                return Ok(new { message = "Xác nhận thanh toán đơn ký gửi thành công.", data = result });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(403, new { message = ex.Message });
-            }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -230,7 +202,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -238,7 +210,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
     }

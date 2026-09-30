@@ -306,6 +306,9 @@ namespace VCL_BLL.DTOs
         public Guid? PackageConfigurationId { get; set; }
         public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
 
+        /// <summary>Dịch vụ khách chọn cho riêng kiện này.</summary>
+        public List<ItemServiceDto> Services { get; set; } = new();
+
         /// <summary>Cân nặng quy đổi của dòng sản phẩm = Length × Width × Height × Quantity / 5000</summary>
         public decimal? VolumetricWeight { get; set; }
     }
@@ -324,6 +327,17 @@ namespace VCL_BLL.DTOs
         public decimal TotalEstimatedCost { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? ExpiredAt { get; set; }
+
+        /// <summary>NOT_REQUIRED · PENDING · APPROVED · REJECTED — duyệt giá ngoại lệ.</summary>
+        public string? PriceApprovalStatus { get; set; }
+
+        /// <summary>Sale còn lập/gửi báo giá mới cho đơn được không (cùng luật với API gửi báo giá).</summary>
+        public bool CanSalesRequote { get; set; }
+
+        /// <summary>Xem QuotationDetailResponse.RequoteState.</summary>
+        public string? RequoteState { get; set; }
+
+        public string? RequoteBlockedReason { get; set; }
 
         /// <summary>Kho tiếp nhận hàng do Sale chọn khi lập báo giá (kho quốc tế đầu tuyến, VD kho Trung Quốc).</summary>
         public Guid? WarehouseId { get; set; }
@@ -360,24 +374,6 @@ namespace VCL_BLL.DTOs
         /// <summary>Địa chỉ giao hàng (người nhận cuối tại VN).</summary>
         public string? ReceiverAddress { get; set; }
 
-        /// <summary>Danh sách ID cấu hình bảng giá/dịch vụ phụ (ví dụ: đóng gỗ, kiểm hàng, bảo hiểm...).</summary>
-        public List<Guid> PricingRuleIds { get; set; } = new();
-
-        // --- Các cờ dịch vụ phụ dạng boolean (FE hiện gửi kiểu này thay vì PricingRuleIds).
-        // BE map cờ -> PricingRule active theo RuleType tương ứng, union với PricingRuleIds.
-
-        /// <summary>Khách yêu cầu kiểm hàng (map rule INSPECTION).</summary>
-        public bool RequiresInspection { get; set; }
-
-        /// <summary>Khách yêu cầu đóng gói lại (map rule PACKING).</summary>
-        public bool RequiresPacking { get; set; }
-
-        /// <summary>Khách yêu cầu đóng thùng gỗ (map rule WOODEN_BOX).</summary>
-        public bool RequiresWoodenCrate { get; set; }
-
-        /// <summary>Khách đăng ký bảo hiểm (map rule INSURANCE).</summary>
-        public bool RequiresInsurance { get; set; }
-
         /// <summary>
         /// Khách muốn xử lý thế nào khi hàng về Việt Nam:
         /// <c>DIRECT_DELIVERY</c> giao thẳng tới nhà · <c>STORE_AT_VN</c> gửi lại kho chờ nhận sau.
@@ -393,6 +389,7 @@ namespace VCL_BLL.DTOs
 
         [Required]
         [MinLength(1, ErrorMessage = "Yêu cầu ký gửi phải có ít nhất một mặt hàng.")]
+        [MaxLength(VCL_BLL.Helpers.InputLimits.HardMaxItemsPerRequest, ErrorMessage = "Mỗi đơn ký gửi tối đa 500 kiện hàng.")]
         public List<ConsignmentItemRequest> Items { get; set; } = new();
     }
 
@@ -408,7 +405,11 @@ namespace VCL_BLL.DTOs
         [Required]
         public string ProductType { get; set; } = string.Empty;
 
-        [Range(1, int.MaxValue, ErrorMessage = "Số lượng phải lớn hơn 0.")]
+        /// <summary>
+        /// Số sản phẩm trong kiện. Hạn mức nghiệp vụ (mặc định 5) do Admin cấu hình
+        /// (ORDER_MAX_PARCEL_QUANTITY) — service kiểm; ở đây chỉ chặn số vô lý.
+        /// </summary>
+        [Range(1, VCL_BLL.Helpers.InputLimits.HardMaxConsignmentItemQuantity, ErrorMessage = "Số lượng sản phẩm trên 1 kiện hàng phải từ 1 đến 100.000.")]
         public int Quantity { get; set; }
 
         public decimal? Weight { get; set; }
@@ -425,8 +426,17 @@ namespace VCL_BLL.DTOs
         /// <summary>Mã tracking nội địa (nếu có) — chỉ để kho đối soát, không tính phí.</summary>
         public string? DomesticTrackingCode { get; set; }
 
-        /// <summary>ID cấu hình thùng đóng gói khách chọn (nếu trống hệ thống sẽ tự gợi ý).</summary>
+        /// <summary>
+        /// Cấu hình thùng gỗ của kiện (GET /api/package-configurations). Khách tạo đơn bắt buộc chọn;
+        /// Sale tạo hộ mà để trống thì hệ thống gợi ý theo kích thước.
+        /// </summary>
         public Guid? PackageConfigurationId { get; set; }
+
+        /// <summary>
+        /// Dịch vụ đi kèm riêng kiện này (kiểm hàng, bảo hiểm, đóng lại carton...), lấy từ
+        /// GET /api/orders/consignments/item-services. Không chọn thì để trống.
+        /// </summary>
+        public List<ConsignmentItemServiceRequest>? Services { get; set; }
 
         /// <summary>Gộp ReferenceUrls thành 1 chuỗi lưu DB (phân cách "|"), bỏ trùng/rỗng.</summary>
         public string? CombinedReferenceUrls()
@@ -472,6 +482,7 @@ namespace VCL_BLL.DTOs
     {
         [Required]
         [MinLength(1, ErrorMessage = "Phải có ít nhất một mặt hàng để kiểm tra.")]
+        [MaxLength(VCL_BLL.Helpers.InputLimits.HardMaxItemsPerRequest, ErrorMessage = "Mỗi lần kiểm tra tối đa 500 mặt hàng.")]
         public List<ConsignmentItemRequest> Items { get; set; } = new();
     }
 
@@ -507,6 +518,42 @@ namespace VCL_BLL.DTOs
         public List<ItemValidationResult> Results { get; set; } = new();
     }
 
+    /// <summary>Một dịch vụ khách chọn cho kiện.</summary>
+    public class ConsignmentItemServiceRequest
+    {
+        public Guid PricingRuleId { get; set; }
+    }
+
+    /// <summary>Dịch vụ đi kèm một kiện, kèm cách tính phí theo bảng giá.</summary>
+    public class ItemServiceDto
+    {
+        public Guid PricingRuleId { get; set; }
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string RuleType { get; set; } = string.Empty;
+
+        /// <summary>FIXED (mỗi kiện) · PERCENTAGE (theo giá trị khai báo của kiện) · PER_KG · PER_CBM · PER_PRODUCT.</summary>
+        public string CalculationType { get; set; } = string.Empty;
+        public decimal Value { get; set; }
+        public decimal? MinAmount { get; set; }
+        public decimal? MaxAmount { get; set; }
+        public string? Description { get; set; }
+
+        /// <summary>
+        /// Điều kiện được chọn dịch vụ, lấy nguyên từ PRICING_RULES.condition_type.
+        /// Hiện dùng <c>MIN_DECLARED_VALUE</c> (bảo hiểm chỉ áp cho kiện khai giá từ mức này
+        /// trở lên) và <c>REQUIRES_INSPECTION</c> (cờ đánh dấu dịch vụ kiểm hàng, không phải ngưỡng).
+        /// </summary>
+        /// <remarks>
+        /// Trước đây hai cột này không được trả ra nên màn khách chỉ thấy mô tả tự do
+        /// ("từ 5tr trở lên") mà không có gì kiểm, khách vẫn chọn được cho kiện khai 100.000 đ.
+        /// </remarks>
+        public string? ConditionType { get; set; }
+
+        /// <summary>Ngưỡng của điều kiện (PRICING_RULES.condition_value), ví dụ "5000000".</summary>
+        public string? ConditionValue { get; set; }
+    }
+
     /// <summary>
     /// Response sau khi tạo ký gửi: thông tin đơn + báo giá tạm tính + cảnh báo (nếu có).
     /// </summary>
@@ -529,7 +576,7 @@ namespace VCL_BLL.DTOs
         public bool RequiresInspection { get; set; }
         public int ItemCount { get; set; }
 
-        /// <summary>Danh sách ID các quy định giá / dịch vụ phụ áp dụng cho đơn.</summary>
+        /// <summary>Các dịch vụ có trên ít nhất một kiện của đơn (chi tiết theo kiện ở quotation.items[].services).</summary>
         public List<Guid> PricingRuleIds { get; set; } = new();
 
         /// <summary>Báo giá tạm tính sinh tự động sau khi tạo.</summary>
@@ -570,24 +617,6 @@ namespace VCL_BLL.DTOs
         /// <summary>Địa chỉ giao hàng (người nhận cuối tại VN).</summary>
         public string? ReceiverAddress { get; set; }
 
-        /// <summary>Danh sách ID cấu hình bảng giá/dịch vụ phụ (ví dụ: đóng gỗ, kiểm hàng, bảo hiểm...).</summary>
-        public List<Guid> PricingRuleIds { get; set; } = new();
-
-        // --- Các cờ dịch vụ phụ dạng boolean (Sale tick hộ khách thay vì gửi PricingRuleIds).
-        // BE map cờ -> PricingRule active theo RuleType tương ứng, union với PricingRuleIds.
-
-        /// <summary>Khách yêu cầu kiểm hàng (map rule INSPECTION).</summary>
-        public bool RequiresInspection { get; set; }
-
-        /// <summary>Khách yêu cầu đóng gói lại (map rule PACKING).</summary>
-        public bool RequiresPacking { get; set; }
-
-        /// <summary>Khách yêu cầu đóng thùng gỗ (map rule WOODEN_BOX).</summary>
-        public bool RequiresWoodenCrate { get; set; }
-
-        /// <summary>Khách đăng ký bảo hiểm (map rule INSURANCE).</summary>
-        public bool RequiresInsurance { get; set; }
-
         /// <summary>Ghi chú từ Sales/Khách hàng.</summary>
         public string? Note { get; set; }
 
@@ -601,6 +630,7 @@ namespace VCL_BLL.DTOs
 
         [Required(ErrorMessage = "Yêu cầu ký gửi phải có ít nhất một mặt hàng.")]
         [MinLength(1, ErrorMessage = "Yêu cầu ký gửi phải có ít nhất một mặt hàng.")]
+        [MaxLength(VCL_BLL.Helpers.InputLimits.HardMaxItemsPerRequest, ErrorMessage = "Mỗi đơn ký gửi tối đa 500 kiện hàng.")]
         public List<ConsignmentItemRequest> Items { get; set; } = new();
     }
 

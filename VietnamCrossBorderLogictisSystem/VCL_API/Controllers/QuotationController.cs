@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
 using VCL_BLL.DTOs;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -27,15 +28,20 @@ namespace VCL_API.Controllers
         /// Cập nhật Order → QUOTATION_SENT.
         /// </summary>
         [HttpPost("api/orders/{orderId}/quotation/send")]
+        [Authorize(Roles = "Admin,ADMIN,Administrator,Sale,SALE,Sales,SALES")]
         [ProducesResponseType(typeof(QuotationActionResponse), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
+        [ProducesResponseType(409)]
         public async Task<IActionResult> SendQuotation(Guid orderId, [FromBody] CreateQuotationRequest request)
         {
+            if (!TryGetActor(out var actorId, out _))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
             try
             {
-                var result = await _quotationService.SendQuotationAsync(orderId, request);
+                var result = await _quotationService.SendQuotationAsync(orderId, request, actorId);
                 return Ok(new
                 {
                     message = result.Message,
@@ -43,30 +49,43 @@ namespace VCL_API.Controllers
                     consignment = result.Consignment
                 });
             }
+            catch (ConflictException ex)
+            {
+                // Báo giá đã tới tay khách (hoặc Admin đã duyệt) — không lập đè.
+                return Conflict(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
             catch (NotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
         /// <summary>
-        /// Từ chối báo giá ký gửi theo đơn hàng.
+        /// Từ chối báo giá ký gửi theo đơn hàng. Chỉ khách (chủ đơn) hoặc Admin; Sale/nhân viên khác → 403.
         /// Cập nhật Order → QUOTATION_REJECTED.
         /// </summary>
         [HttpPost("api/orders/{orderId}/quotation/reject")]
         [ProducesResponseType(typeof(QuotationActionResponse), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> RejectQuotationByOrderId(Guid orderId, [FromBody] RejectQuotationRequest request)
         {
+            if (!TryGetActor(out var actorId, out var actorRole))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
             try
             {
-                var result = await _quotationService.RejectQuotationByOrderIdAsync(orderId, request.RejectionReason);
+                var result = await _quotationService.RejectQuotationByOrderIdAsync(orderId, request?.RejectionReason ?? string.Empty, actorId, actorRole);
                 return Ok(new
                 {
                     message = result.Message,
@@ -75,30 +94,38 @@ namespace VCL_API.Controllers
                     consignment = result.Consignment
                 });
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
             catch (NotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
         /// <summary>
-        /// Từ chối báo giá ký gửi theo ID báo giá.
+        /// Từ chối báo giá ký gửi theo ID báo giá. Chỉ khách (chủ đơn) hoặc Admin; Sale/nhân viên khác → 403.
         /// Cập nhật Order → QUOTATION_REJECTED.
         /// </summary>
         [HttpPut("api/quotations/{quotationId}/reject")]
         [ProducesResponseType(typeof(QuotationActionResponse), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> RejectQuotationById(Guid quotationId, [FromBody] RejectQuotationRequest request)
         {
+            if (!TryGetActor(out var actorId, out var actorRole))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
             try
             {
-                var result = await _quotationService.RejectQuotationByIdAsync(quotationId, request.RejectionReason);
+                var result = await _quotationService.RejectQuotationByIdAsync(quotationId, request?.RejectionReason ?? string.Empty, actorId, actorRole);
                 return Ok(new
                 {
                     message = result.Message,
@@ -107,58 +134,17 @@ namespace VCL_API.Controllers
                     consignment = result.Consignment
                 });
             }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        /// <summary>
-        /// Khách hàng xác nhận báo giá tạm tính.
-        /// Cập nhật Quotation → ACCEPTED, Order → QUOTATION_CONFIRMED.
-        /// </summary>
-        /// <param name="quotationId">ID của báo giá cần xác nhận</param>
-        /// <returns>Thông tin sau khi xác nhận</returns>
-        /// <response code="200">Xác nhận báo giá thành công</response>
-        /// <response code="400">Báo giá đã hết hạn hoặc trạng thái không hợp lệ</response>
-        /// <response code="401">Chưa đăng nhập hoặc không phải chủ đơn hàng</response>
-        /// <response code="404">Không tìm thấy báo giá</response>
-        [HttpPut("api/quotations/{quotationId}/accept")]
-        [ProducesResponseType(typeof(object), 200)]
-        [ProducesResponseType(400)]
-        [ProducesResponseType(401)]
-        [ProducesResponseType(404)]
-        public async Task<IActionResult> AcceptQuotation(Guid quotationId)
-        {
-            try
-            {
-                // Lấy userId từ JWT claims
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-                    return Unauthorized(new { message = "Không thể xác định người dùng." });
-
-                var result = await _quotationService.AcceptQuotationAsync(quotationId, userId);
-                return Ok(new
-                {
-                    message = "Xác nhận báo giá thành công.",
-                    data = result
-                });
-            }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
             catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -183,7 +169,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -191,11 +177,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -209,14 +195,21 @@ namespace VCL_API.Controllers
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetQuotationByOrderId(Guid orderId)
         {
+            if (!TryGetActor(out var actorId, out var actorRole))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
             try
             {
-                var result = await _quotationService.GetQuotationByOrderIdAsync(orderId);
+                var result = await _quotationService.GetQuotationByOrderIdAsync(orderId, actorId, actorRole);
                 return Ok(new
                 {
                     message = "Lấy thông tin báo giá thành công.",
                     data = result
                 });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -233,19 +226,73 @@ namespace VCL_API.Controllers
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetQuotationById(Guid quotationId)
         {
+            if (!TryGetActor(out var actorId, out var actorRole))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
             try
             {
-                var result = await _quotationService.GetQuotationByIdAsync(quotationId);
+                var result = await _quotationService.GetQuotationByIdAsync(quotationId, actorId, actorRole);
                 return Ok(new
                 {
                     message = "Lấy thông tin báo giá thành công.",
                     data = result
                 });
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
             catch (NotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
             }
+        }
+    
+        /// <summary>
+        /// Admin duyệt hoặc từ chối giá ngoại lệ của báo giá (Sales nhập giá khác bảng giá).
+        /// Duyệt xong báo giá mới được gửi tới khách. Người lập báo giá không tự duyệt.
+        /// </summary>
+        [HttpPut("api/quotations/{quotationId}/price-approval")]
+        [Authorize(Roles = "Admin,ADMIN,Administrator,ADMINISTRATOR")]
+        [ProducesResponseType(typeof(QuotationActionResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> DecidePriceOverride(Guid quotationId, [FromBody] QuotationPriceDecisionRequest request)
+        {
+            if (!TryGetActor(out var actorId, out var actorRole))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            try
+            {
+                var result = await _quotationService.DecidePriceOverrideAsync(quotationId, actorId, actorRole, request);
+                return Ok(new
+                {
+                    message = result.Message,
+                    status = result.Status,
+                    rejectionReason = result.RejectionReason,
+                    consignment = result.Consignment
+                });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = this.UserError(ex) });
+            }
+        }
+
+        private bool TryGetActor(out Guid actorId, out string actorRole)
+        {
+            actorRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return Guid.TryParse(claim, out actorId);
         }
     }
 }

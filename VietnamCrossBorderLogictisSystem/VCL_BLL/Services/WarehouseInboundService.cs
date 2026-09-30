@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
@@ -75,8 +76,8 @@ namespace VCL_BLL.Services
             if (byOrder == byShipment)
             {
                 throw new ArgumentException(byOrder
-                    ? "Chi chon mot trong hai: don hang hoac lo van chuyen."
-                    : "Chon don hang hoac lo van chuyen de lap phieu nhap kho.");
+                    ? "Chỉ chọn một trong hai: đơn hàng hoặc lô vận chuyển."
+                    : "Chọn đơn hàng hoặc lô vận chuyển để lập phiếu nhập kho.");
             }
 
             Shipment? shipment = null;
@@ -85,7 +86,7 @@ namespace VCL_BLL.Services
             if (byShipment)
             {
                 shipment = await _unitOfWork.Repository<Shipment>().GetByIdAsync(request.ShipmentId!.Value)
-                    ?? throw new NotFoundException($"Khong tim thay lo van chuyen voi ID {request.ShipmentId}");
+                    ?? throw new NotFoundException($"Không tìm thấy lô vận chuyển với ID {request.ShipmentId}.");
 
                 var shipmentParcelIds = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
                     .Where(sp => sp.ShipmentId == shipment.Id)
@@ -104,7 +105,7 @@ namespace VCL_BLL.Services
 
                 if (candidates.Count == 0)
                 {
-                    throw new NotFoundException($"Khong tim thay kien nao cua don {request.OrderId}.");
+                    throw new NotFoundException($"Không tìm thấy kiện nào của đơn {request.OrderId}.");
                 }
             }
 
@@ -133,8 +134,8 @@ namespace VCL_BLL.Services
                 {
                     var parcel = candidates.FirstOrDefault(p => p.Id == pid)
                         ?? throw new ArgumentException(byShipment
-                            ? $"Kien {pid} khong thuoc lo van chuyen nay."
-                            : $"Kien {pid} khong thuoc don hang nay.");
+                            ? $"Kiện {pid} không thuộc lô vận chuyển này."
+                            : $"Kiện {pid} không thuộc đơn hàng này.");
 
                     EnsureParcelEligible(parcel, alreadyInRequest);
                     EnsureOrderReadyForInbound(parcel, orders, settledOrderIds);
@@ -150,8 +151,8 @@ namespace VCL_BLL.Services
                 if (pending.Count == 0)
                 {
                     throw new ArgumentException(byShipment
-                        ? "Lo nay khong con kien nao can nhap kho. Kien phai duoc kho kiem dem va phan loai la khach gui lai kho VN thi moi lap phieu duoc."
-                        : "Don nay khong con kien nao cho nhap kho.");
+                        ? "Lô này không còn kiện nào cần nhập kho. Kiện phải được kho kiểm đếm và phân loại là khách gửi lại kho VN thì mới lập phiếu được."
+                        : "Đơn này không còn kiện nào chờ nhập kho.");
                 }
 
                 targets = pending
@@ -395,7 +396,7 @@ namespace VCL_BLL.Services
             var target = request.Status?.Trim().ToUpperInvariant();
             if (target != StatusApproved && target != StatusRejected)
             {
-                throw new ArgumentException($"Trạng thái không hợp lệ. Chỉ nhận {StatusApproved} hoặc {StatusRejected}.");
+                throw new ArgumentException("Trạng thái không hợp lệ. Chỉ được duyệt hoặc từ chối.");
             }
 
             var current = inbound.Status?.Trim().ToUpperInvariant();
@@ -411,7 +412,7 @@ namespace VCL_BLL.Services
 
             if (current != StatusPending && !canRetryPutAway)
             {
-                throw new ArgumentException($"Phiếu đã được xử lý trước đó (hiện tại: {inbound.Status}), không duyệt lại được.");
+                throw new ArgumentException($"Phiếu đã được xử lý trước đó (hiện tại: {StatusNames.Quote(inbound.Status)}), không duyệt lại được.");
             }
 
             // Từ chối mà không nói lý do thì kho không biết phải sửa gì.
@@ -488,73 +489,28 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Tìm ô kệ còn chỗ trong kho nhận cho một kiện, kèm đủ cây kho/khu/kệ để put-away nhận.
+        /// Ô kệ khu lưu kho đầu tiên còn chỗ trong kho nhận cho một kiện. Put-away kiểm lại đúng
+        /// luật đó nên không chọn phải ô rồi bị chính nó từ chối.
         /// </summary>
         private async Task<ParcelPutAwayRequest> ResolveBinAsync(Guid warehouseId, Parcel parcel)
         {
-            var bins = (await _unitOfWork.Repository<Bin>().GetAllAsync())
-                .Where(b => b.WarehouseId == warehouseId && b.IsActive)
-                .OrderBy(b => b.BinCode)
-                .ToList();
-
+            var bins = await BinPlacementPolicy.StorageBinsAsync(_unitOfWork, warehouseId);
             if (bins.Count == 0)
             {
                 throw new ArgumentException(
-                    "Kho nhận chưa khai báo ô kệ nào đang hoạt động nên không xếp hàng vào được. " +
-                    "Khai báo ô kệ cho kho rồi duyệt lại phiếu.");
+                    "Kho nhận chưa có ô kệ nào thuộc khu lưu kho (STORAGE) đang hoạt động nên không xếp hàng vào được. " +
+                    "Khai báo khu lưu kho và ô kệ rồi duyệt lại phiếu.");
             }
 
-            var parcelVolume = (parcel.Length ?? 0) * (parcel.Width ?? 0) * (parcel.Height ?? 0);
-            var parcelWeight = parcel.ActualWeight ?? 0;
-
-            var allParcels = await _unitOfWork.Repository<Parcel>().GetAllAsync();
-            var weightInBin = allParcels
-                .Where(p => p.BinId.HasValue
-                            && string.Equals(p.PackageStatus, Stored, StringComparison.OrdinalIgnoreCase))
-                .GroupBy(p => p.BinId!.Value)
-                .ToDictionary(g => g.Key, g => g.Sum(p => p.ActualWeight ?? 0));
-
-            // Lặp đúng hai điều kiện put-away kiểm, để không chọn phải ô kệ rồi bị chính nó từ chối.
-            var bin = bins.FirstOrDefault(b =>
-            {
-                if (b.MaxVolume.HasValue && parcelVolume > b.MaxVolume.Value - (b.CurrentVolume ?? 0))
-                    return false;
-
-                if (b.MaxWeight.HasValue)
-                {
-                    weightInBin.TryGetValue(b.Id, out var used);
-                    if (parcelWeight > b.MaxWeight.Value - used) return false;
-                }
-
-                return true;
-            });
-
-            if (bin == null)
-            {
-                throw new ArgumentException(
-                    $"Kho nhận không còn ô kệ nào đủ chỗ cho kiện {parcel.PackageCode}. " +
+            var occupancy = await BinPlacementPolicy.OccupancyAsync(_unitOfWork);
+            var bin = bins
+                .Select(x => x.Bin)
+                .FirstOrDefault(b => BinPlacementPolicy.Fits(b, occupancy.GetValueOrDefault(b.Id), parcel))
+                ?? throw new ArgumentException(
+                    $"Khu lưu kho của kho nhận không còn ô kệ nào đủ chỗ cho kiện {parcel.PackageCode}. " +
                     "Dọn bớt hoặc mở thêm ô kệ rồi duyệt lại phiếu.");
-            }
 
-            var shelf = bin.ShelfId.HasValue
-                ? await _unitOfWork.Repository<Shelf>().GetByIdAsync(bin.ShelfId.Value)
-                : null;
-            if (shelf?.ZoneId == null)
-            {
-                throw new ArgumentException(
-                    $"Ô kệ {bin.BinCode} chưa gắn vào kệ/khu nào nên không xác định được vị trí kho.");
-            }
-
-            var zone = await _unitOfWork.Repository<WarehouseZone>().GetByIdAsync(shelf.ZoneId.Value)
-                ?? throw new ArgumentException($"Không tìm thấy khu kho của ô kệ {bin.BinCode}.");
-
-            return new ParcelPutAwayRequest
-            {
-                WarehouseId = warehouseId,
-                ZoneId = zone.Id,
-                ShelfId = shelf.Id,
-                BinId = bin.Id,
-            };
+            return new ParcelPutAwayRequest { WarehouseId = warehouseId, BinId = bin.Id };
         }
 
         public async Task<WarehouseInboundRequestDto> GetByIdAsync(Guid inboundRequestId)
@@ -592,8 +548,8 @@ namespace VCL_BLL.Services
 
         private static void EnsureRole(string userRole, string[] allowed, string message)
         {
-            var ok = !string.IsNullOrWhiteSpace(userRole)
-                && allowed.Contains(userRole.Trim().ToUpperInvariant());
+            // Biến thể tên vai trò nhân viên kho ("Warehouse Staff VN"…) khớp WAREHOUSESTAFF.
+            var ok = StaffRoleHelper.IsRoleAllowed(allowed, userRole);
             if (!ok) throw new UnauthorizedAccessException(message);
         }
 
@@ -615,7 +571,7 @@ namespace VCL_BLL.Services
             if (!IsReceived(parcel))
             {
                 throw new ArgumentException(
-                    $"Kiện {code} chưa được kho xác nhận nhận tại kho đích (hiện tại: {parcel.PackageStatus}).");
+                    $"Kiện {code} chưa được kho xác nhận nhận tại kho đích (hiện tại: {StatusNames.Quote(parcel.PackageStatus)}).");
             }
 
             if (!IsStoreAtVn(parcel))
@@ -662,16 +618,16 @@ namespace VCL_BLL.Services
             Order? order = null;
             if (parcel.ConsignmentId.HasValue) orders.TryGetValue(parcel.ConsignmentId.Value, out order);
 
-            var label = order?.ConsignmentCode ?? ("cua kien " + code);
+            var label = order?.ConsignmentCode ?? ("của kiện " + code);
 
             if (order == null || !settledOrderIds.Contains(order.Id))
             {
                 throw new ArgumentException(
-                    $"Don {label} chua tat toan. Khach tra not dot cuoi roi kho moi nhap hang vao kho duoc.");
+                    $"Đơn {label} chưa tất toán. Khách trả nốt đợt cuối rồi kho mới nhập hàng vào kho được.");
             }
 
             throw new ArgumentException(
-                $"Don {label} chua duoc Sale thong bao cho kho. Don chi vao muc Don hang can xu ly cua kho sau khi Sale bam thong bao.");
+                $"Đơn {label} chưa được Sale thông báo cho kho. Đơn chỉ vào mục Đơn hàng cần xử lý của kho sau khi Sale bấm thông báo.");
         }
 
         private static string DescribeStatus(string? status) => status?.Trim().ToUpperInvariant() switch

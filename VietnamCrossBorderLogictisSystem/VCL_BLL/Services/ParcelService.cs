@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
@@ -43,35 +44,10 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Lấy hệ số quy đổi thể tích từ activeRules (VOLUMETRIC_DIVISOR),
-        /// hoặc từ file cấu hình (PricingSettings:VolumetricDivisor),
-        /// hoặc mặc định là 5000.
+        /// Hệ số quy đổi thể tích — cùng nguồn với báo giá và tất toán VN (<see cref="VolumetricDivisorResolver"/>).
         /// </summary>
-        private async Task<decimal> GetVolumetricDivisorAsync()
-        {
-            var pricingRuleRepo = _unitOfWork.Repository<PricingRule>();
-            var allRules = await pricingRuleRepo.GetAllAsync();
-            var rule = allRules.FirstOrDefault(r =>
-                string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) &&
-                (string.Equals(r.RuleCode, "VOLUMETRIC_DIVISOR", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(r.RuleType, "VOLUMETRIC_DIVISOR", StringComparison.OrdinalIgnoreCase)));
-
-            if (rule != null && rule.Value > 0)
-            {
-                return rule.Value;
-            }
-
-            if (_configuration != null)
-            {
-                var configValStr = _configuration["PricingSettings:VolumetricDivisor"];
-                if (decimal.TryParse(configValStr, out var configVal) && configVal > 0)
-                {
-                    return configVal;
-                }
-            }
-
-            return 5000m;
-        }
+        private Task<decimal> GetVolumetricDivisorAsync() =>
+            VolumetricDivisorResolver.ResolveAsync(_unitOfWork, _configuration);
 
         public async Task<ParcelCheckInResponse> CheckInParcelAsync(ParcelCheckInRequest request, Guid? actorUserId = null)
         {
@@ -82,17 +58,29 @@ namespace VCL_BLL.Services
             // PUR- là mã yêu cầu mua hộ mà nhân viên kho quen cầm.
             if (string.IsNullOrWhiteSpace(request.ShippingCode) ||
                 (!request.ShippingCode.StartsWith("VCL-", StringComparison.OrdinalIgnoreCase)
-                 && !request.ShippingCode.StartsWith("PUR-", StringComparison.OrdinalIgnoreCase)))
+                 && !request.ShippingCode.StartsWith("PUR-", StringComparison.OrdinalIgnoreCase)
+                 && !request.ShippingCode.StartsWith("WRN-", StringComparison.OrdinalIgnoreCase)))
             {
-                throw new ArgumentException("Mã gửi hàng không hợp lệ. Mã hợp lệ bắt đầu bằng VCL- hoặc PUR-.");
+                throw new ArgumentException("Mã gửi hàng không hợp lệ. Mã hợp lệ bắt đầu bằng VCL-, PUR- hoặc mã phiếu nhập kho WRN-.");
+            }
+
+            // Khách mang phiếu nhập kho tới: kho quét mã phiếu WRN-, hàng nhận theo đúng phiếu đó.
+            WarehouseReceivingNote? scannedNote = null;
+            if (request.ShippingCode.StartsWith("WRN-", StringComparison.OrdinalIgnoreCase))
+            {
+                scannedNote = (await _unitOfWork.Repository<WarehouseReceivingNote>().GetAllAsync())
+                    .FirstOrDefault(n => string.Equals(n.ReceivingNoteCode, request.ShippingCode.Trim(), StringComparison.OrdinalIgnoreCase))
+                    ?? throw new NotFoundException($"Không tìm thấy phiếu nhập kho {request.ShippingCode}.");
             }
 
             // 2. Tìm đơn theo mã. Ký gửi dùng mã VCL-…; hàng mua hộ sau khi OM duyệt nhập kho
             // cũng có mã VCL-… riêng, nhưng kho quen cầm mã mua hộ PUR-… nên nhận luôn cả hai.
             var orderRepo = _unitOfWork.Repository<Order>();
             var allOrders = await orderRepo.GetAllAsync();
-            var order = allOrders.FirstOrDefault(o =>
-                string.Equals(o.ConsignmentCode, request.ShippingCode, StringComparison.OrdinalIgnoreCase));
+            var order = scannedNote != null
+                ? allOrders.FirstOrDefault(o => o.Id == scannedNote.ConsignmentOrderId)
+                : allOrders.FirstOrDefault(o =>
+                    string.Equals(o.ConsignmentCode, request.ShippingCode, StringComparison.OrdinalIgnoreCase));
 
             if (order == null)
             {
@@ -101,9 +89,13 @@ namespace VCL_BLL.Services
 
                 if (purchaseRequest != null)
                 {
-                    order = allOrders.FirstOrDefault(o => o.PurchaseRequestId == purchaseRequest.Id)
+                    var requestOrders = allOrders.Where(o => o.PurchaseRequestId == purchaseRequest.Id).ToList();
+                    if (requestOrders.Count > 1)
+                        throw new ArgumentException(
+                            $"Yêu cầu {purchaseRequest.PurchaseCode} có {requestOrders.Count} đơn mua NCC — vui lòng quét mã phiếu tiếp nhận WRN- hoặc mã đơn kho {purchaseRequest.PurchaseCode}-n.");
+                    order = requestOrders.FirstOrDefault()
                         ?? throw new ArgumentException(
-                            $"Đơn mua hộ {purchaseRequest.PurchaseCode} chưa được OM duyệt nhập kho nên chưa có đơn kho để check-in.");
+                            $"Yêu cầu mua hộ {purchaseRequest.PurchaseCode} chưa đặt NCC nên chưa có đơn kho để check-in.");
                 }
             }
 
@@ -112,11 +104,64 @@ namespace VCL_BLL.Services
                 throw new NotFoundException("Không tìm thấy đơn hàng theo mã đã nhập.");
             }
 
-            // 3. Cho phép check-in với các đơn đã chốt báo giá / đặt cọc hoặc đã duyệt
-            var checkInEligibleStatuses = new[] { "APPROVED", "CHECKED_IN", "DEPOSIT_PAID", "PAYMENT_CONFIRMED", "WAITING_DEPOSIT", "QUOTATION_CONFIRMED" };
-            if (!checkInEligibleStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
+            // 3. Điều kiện nhận hàng.
+            // Ký gửi: khách đã có cọc được xác nhận VÀ phiếu tiếp nhận đã được quản lý kho duyệt cho
+            // nhận hàng. Trước đây kho nhận cả đơn đang chờ cọc (WAITING_DEPOSIT, QUOTATION_CONFIRMED)
+            // hoặc đơn mới được Sales tiếp nhận (APPROVED) mà không cần phiếu nào.
+            // Mua hộ: đơn kho sinh ra sau bước OM duyệt nhập kho mua hộ (APPROVED), giữ như cũ.
+            // Đơn kho mua hộ luồng mới (sinh khi Sale đặt NCC) nhận hàng y hệt ký gửi: có phiếu tiếp
+            // nhận ACTIVE và khoản "cọc" 0đ đánh dấu đã trả trước ở luồng mua. Chỉ đơn mua hộ đời cũ
+            // (sinh từ approve-store, không có phiếu) mới đi nhánh riêng.
+            var isPurchaseOrder = string.Equals(order.OrderType, "PURCHASE", StringComparison.OrdinalIgnoreCase)
+                && !order.PurchaseOrderId.HasValue;
+            WarehouseReceivingNote? receivingNote = null;
+
+            if (isPurchaseOrder)
             {
-                throw new ArgumentException($"Yêu cầu ký gửi không ở trạng thái cho phép check-in (Hiện tại: {order.Status}).");
+                var purchaseEligibleStatuses = new[] { "APPROVED", "CHECKED_IN" };
+                if (!purchaseEligibleStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw new ArgumentException($"Đơn mua hộ không ở trạng thái cho phép check-in (Hiện tại: {StatusNames.Quote(order.Status)}).");
+                }
+            }
+            else
+            {
+                // Kiện nhận nhiều đợt: đơn có thể đã sang WAREHOUSE_RECEIVED sau khi xếp kệ kiện đầu,
+                // nên điều kiện tiền đọc từ khoản cọc thật chứ không từ trạng thái đơn.
+                var closedStatuses = new[] { "CANCELLED", "CANCELLED_FORFEITED", "REJECTED", "COMPLETED" };
+                if (closedStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw new ArgumentException($"Đơn {order.ConsignmentCode} đã đóng ({StatusNames.Quote(order.Status)}), không nhận hàng.");
+                }
+
+                if (!await DepositQuery.HasConfirmedDepositAsync(_unitOfWork, order.Id))
+                {
+                    throw new ArgumentException(
+                        $"Đơn {order.ConsignmentCode} chưa có cọc được xác nhận nên kho chưa nhận hàng được (Hiện tại: {StatusNames.Quote(order.Status)}).");
+                }
+
+                receivingNote = scannedNote ?? (await _unitOfWork.Repository<WarehouseReceivingNote>().GetAllAsync())
+                    .Where(n => n.ConsignmentOrderId == order.Id && WarehouseReceivingNoteService.IsApprovedToReceive(n))
+                    .OrderByDescending(n => n.CreatedAt)
+                    .FirstOrDefault();
+
+                if (receivingNote == null || !WarehouseReceivingNoteService.IsApprovedToReceive(receivingNote))
+                {
+                    throw new ArgumentException(
+                        receivingNote == null
+                            ? $"Đơn {order.ConsignmentCode} chưa có phiếu nhập kho được quản lý kho duyệt."
+                            : $"Phiếu {receivingNote.ReceivingNoteCode} chưa được quản lý kho duyệt (hiện tại: {StatusNames.Quote(receivingNote.Status)}).");
+                }
+
+                // Nhân viên kho đã được gán kho chỉ nhận hàng ở đúng kho của phiếu.
+                await WarehouseAccessPolicy.EnsureAssignedWarehouseAsync(_unitOfWork, actorUserId, null, receivingNote.WarehouseId);
+
+                if (!string.Equals(receivingNote.Status, WarehouseReceivingNoteService.StatusActive, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(receivingNote.Status, WarehouseReceivingNoteService.StatusPartiallyReceived, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ArgumentException(
+                        $"Phiếu tiếp nhận {receivingNote.ReceivingNoteCode} đã chốt kiểm đếm (hiện tại: {StatusNames.Quote(receivingNote.Status)}), không nhận thêm kiện theo phiếu này.");
+                }
             }
 
             // 4. Chuẩn hoá về danh sách kiện cần nhận. Request cũ (không có Packages) coi như nhận một kiện.
@@ -224,24 +269,42 @@ namespace VCL_BLL.Services
             var receivedPackageCount = existingParcels.Count + createdParcels.Count;
             var isFullyReceived = receivedItemIds.Count >= declaredPackageCount;
 
-            var priorStatuses = new[] { "APPROVED", "DEPOSIT_PAID", "PAYMENT_CONFIRMED", "WAITING_DEPOSIT", "QUOTATION_CONFIRMED" };
+            var priorStatuses = isPurchaseOrder
+                ? new[] { "APPROVED" }
+                : new[] { "DEPOSIT_PAID" };
             if (isFullyReceived && priorStatuses.Any(s => string.Equals(s, order.Status, StringComparison.OrdinalIgnoreCase)))
             {
                 order.Status = "CHECKED_IN";
                 orderRepo.Update(order);
             }
 
-            // 6b. Nếu có phiếu tiếp nhận kho đang hiệu lực (VCL-146) -> cập nhật sang RECEIVED
-            var wrnRepo = _unitOfWork.Repository<WarehouseReceivingNote>();
-            var allNotes = await wrnRepo.GetAllAsync();
-            var activeNote = allNotes.FirstOrDefault(n =>
-                n.ConsignmentOrderId == order.Id &&
-                (string.Equals(n.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(n.Status, "PARTIALLY_RECEIVED", StringComparison.OrdinalIgnoreCase)));
-            if (activeNote != null)
+            // 6b. Cập nhật phiếu tiếp nhận theo tiến độ nhận kiện. Nhận đủ và biên bản không có
+            // chênh lệch thì phiếu tự chốt APPROVED: phần khớp phiếu đã duyệt không duyệt lần hai.
+            if (receivingNote != null)
             {
-                activeNote.Status = isFullyReceived ? "RECEIVED" : "PARTIALLY_RECEIVED";
-                wrnRepo.Update(activeNote);
+                var noteLines = (await _unitOfWork.Repository<WarehouseReceivingNoteItem>().GetAllAsync())
+                    .Where(i => i.ReceivingNoteId == receivingNote.Id)
+                    .ToList();
+
+                receivingNote.ReceivedById ??= actorUserId;
+                receivingNote.ReceivedAt ??= DateTime.UtcNow;
+
+                if (isFullyReceived && !WarehouseReceivingNoteService.RequiresReview(noteLines))
+                {
+                    receivingNote.Status = WarehouseReceivingNoteService.StatusApproved;
+                    receivingNote.ApprovedAt = DateTime.UtcNow;
+                    receivingNote.ApprovalNote = string.IsNullOrWhiteSpace(receivingNote.ApprovalNote)
+                        ? "Nhận đủ kiện khớp phiếu đã duyệt, không cần duyệt lại."
+                        : receivingNote.ApprovalNote;
+                }
+                else
+                {
+                    receivingNote.Status = isFullyReceived
+                        ? WarehouseReceivingNoteService.StatusReceived
+                        : WarehouseReceivingNoteService.StatusPartiallyReceived;
+                }
+
+                _unitOfWork.Repository<WarehouseReceivingNote>().Update(receivingNote);
             }
 
             var customer = (await _unitOfWork.Repository<Customer>().GetAllAsync())
@@ -270,12 +333,17 @@ namespace VCL_BLL.Services
                 .GroupBy(p => p.OrderItemId!.Value)
                 .ToDictionary(g => g.Key, g => g.First());
 
+            var packageConfigs = await ItemServiceRules.LoadPackageConfigurationsAsync(_unitOfWork);
+            var servicesByItem = await ItemServiceRules.LoadDtosAsync(_unitOfWork, orderItems.Select(i => i.Id));
+
             var packageProgress = orderItems.Select(item =>
             {
                 parcelByItemId.TryGetValue(item.Id, out var matchedParcel);
 
                 return new ConsignmentPackageProgress
                 {
+                    PackageConfiguration = ItemServiceRules.MapPackageConfiguration(item.PackageConfigurationId, packageConfigs),
+                    Services = ItemServiceRules.For(servicesByItem, item.Id),
                     OrderItemId = item.Id,
                     ProductName = item.ProductName ?? string.Empty,
                     Quantity = item.Quantity ?? 0,
@@ -534,6 +602,7 @@ namespace VCL_BLL.Services
                     {
                         WarehouseName = warehouse?.WarehouseName ?? string.Empty,
                         ZoneName = zone?.ZoneName ?? string.Empty,
+                        ZoneType = ZoneTypes.Normalize(zone?.ZoneType) ?? string.Empty,
                         ShelfCode = shelf?.ShelfCode ?? string.Empty,
                         BinCode = bin.BinCode ?? string.Empty
                     };
@@ -544,9 +613,17 @@ namespace VCL_BLL.Services
             var allInventories = await _unitOfWork.Repository<Inventory>().GetAllAsync();
             bool hasInventory = allInventories.Any(i => i.ParcelId == parcel.Id);
 
+            var packageConfigs = await ItemServiceRules.LoadPackageConfigurationsAsync(_unitOfWork);
+            var services = parcelOrderItem != null
+                ? await ItemServiceRules.LoadDtosAsync(_unitOfWork, new[] { parcelOrderItem.Id })
+                : new Dictionary<Guid, List<ItemServiceDto>>();
+
             // 4. Map response
             return new ParcelDetailResponse
             {
+                PackageConfiguration = ItemServiceRules.MapPackageConfiguration(
+                    parcel.PackageConfigurationId ?? parcelOrderItem?.PackageConfigurationId, packageConfigs),
+                Services = ItemServiceRules.For(services, parcel.OrderItemId),
                 ParcelId = parcel.Id,
                 PackageCode = parcel.PackageCode ?? string.Empty,
                 PackageStatus = parcel.PackageStatus ?? string.Empty,
@@ -583,7 +660,8 @@ namespace VCL_BLL.Services
             int pageSize, 
             string? search, 
             string? status,
-            string? region = null)
+            string? region = null,
+            IReadOnlyCollection<Guid>? warehouseIds = null)
         {
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var orderRepo = _unitOfWork.Repository<Order>();
@@ -600,17 +678,66 @@ namespace VCL_BLL.Services
 
             var query = allParcels.Where(p => p.BinId == null).AsQueryable();
 
-            // Filter by status if provided; nếu không truyền, chỉ lấy kiện đã nhận tại kho đang chờ put-away
-            // (RECEIVED = check-in trực tiếp, RECEIVED_AT_DESTINATION = nhận từ lô vận chuyển quốc tế)
+            /*
+             * "Chờ xếp kệ" = kiện đang nằm ở MỘT kho cụ thể, chưa có ô, và kho đó xếp được nó ngay.
+             *
+             * Ô kệ bị gỡ khi kiện rời kho (bốc hàng xuất, bàn giao lô, giao khách…), nên chỉ nhìn
+             * BinId == null là sai: kiện đã xuất khỏi kho nguồn, bay về VN, kho VN nhận
+             * (RECEIVED_AT_DESTINATION) vẫn không có ô và trước đây còn bị gán về KHO NGUỒN qua
+             * phiếu tiếp nhận của đơn → hiện "Chờ xếp kệ" ở kho Trung Quốc dù hàng đã ở Việt Nam.
+             *
+             * Nay kho của kiện được xác định theo chặng hiện tại:
+             *   - RECEIVED (check-in ở kho nguồn): kho của phiếu tiếp nhận — như cũ.
+             *   - Kiện đã đi lô quốc tế / đã vào phiếu nhập kho VN: kho của phiếu nhập kho đã duyệt,
+             *     không có thì kho đích của lô; không bao giờ quy về kho nguồn nữa.
+             * Và RECEIVED_AT_DESTINATION chỉ tính là chờ xếp kệ khi phiếu nhập kho VN đã được duyệt
+             * (đúng chốt của put-away — chưa duyệt thì kho có muốn xếp cũng bị chặn; kiện giao thẳng
+             * thì không bao giờ lên kệ).
+             */
+            var inboundRequestsById = (await _unitOfWork.Repository<WarehouseInboundRequest>().GetAllAsync())
+                .ToDictionary(r => r.Id);
+            var inboundItems = (await _unitOfWork.Repository<WarehouseInboundItem>().GetAllAsync()).ToList();
+            var parcelsInInbound = inboundItems.Select(i => i.ParcelId).ToHashSet();
+            var approvedInboundWarehouse = new Dictionary<Guid, Guid?>();
+            foreach (var item in inboundItems)
+            {
+                if (!inboundRequestsById.TryGetValue(item.InboundRequestId, out var inbound)
+                    || !string.Equals(inbound.Status, "INBOUND_APPROVED", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!approvedInboundWarehouse.TryGetValue(item.ParcelId, out var existingWh) || existingWh == null)
+                    approvedInboundWarehouse[item.ParcelId] = inbound.WarehouseId;
+            }
+
+            var shipmentsById = (await _unitOfWork.Repository<Shipment>().GetAllAsync()).ToDictionary(s => s.Id);
+            var shipmentDestinationByParcel = (await _unitOfWork.Repository<ShipmentParcel>().GetAllAsync())
+                .Where(sp => shipmentsById.ContainsKey(sp.ShipmentId))
+                .Select(sp => (sp.ParcelId, Shipment: shipmentsById[sp.ShipmentId]))
+                .GroupBy(x => x.ParcelId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderByDescending(x => x.Shipment.ShippedAt ?? DateTime.MinValue)
+                          .Select(x => x.Shipment.DestinationWarehouseId)
+                          .FirstOrDefault(id => id.HasValue));
+
+            // Kiện đã qua chặng kho nguồn (đi lô quốc tế hoặc vào phiếu nhập kho VN) mà không còn ở
+            // trạng thái check-in kho nguồn.
+            bool IsPastOrigin(Parcel p) =>
+                !string.Equals(p.PackageStatus, "RECEIVED", StringComparison.OrdinalIgnoreCase)
+                && (shipmentDestinationByParcel.ContainsKey(p.Id) || parcelsInInbound.Contains(p.Id));
+
+            // Filter by status if provided; nếu không truyền, chỉ lấy kiện thật sự đang chờ put-away
+            // (RECEIVED = check-in trực tiếp ở kho nguồn; RECEIVED_AT_DESTINATION = kho VN đã nhận
+            // từ lô quốc tế VÀ phiếu nhập kho VN đã duyệt).
             if (!string.IsNullOrWhiteSpace(status))
             {
                 query = query.Where(p => string.Equals(p.PackageStatus, status, StringComparison.OrdinalIgnoreCase));
             }
             else
             {
-                var pendingStatuses = new[] { "RECEIVED", "RECEIVED_AT_DESTINATION" };
                 query = query.Where(p => p.PackageStatus != null
-                    && pendingStatuses.Any(s => string.Equals(s, p.PackageStatus, StringComparison.OrdinalIgnoreCase)));
+                    && (string.Equals(p.PackageStatus, "RECEIVED", StringComparison.OrdinalIgnoreCase)
+                        || (string.Equals(p.PackageStatus, "RECEIVED_AT_DESTINATION", StringComparison.OrdinalIgnoreCase)
+                            && approvedInboundWarehouse.ContainsKey(p.Id))));
             }
 
             // Search by package code or consignment code
@@ -635,10 +762,26 @@ namespace VCL_BLL.Services
             {
                 var order = allOrders.FirstOrDefault(o => o.Id == p.ConsignmentId);
                 var customer = order != null ? allCustomers.FirstOrDefault(c => c.Id == order.CustomerId) : null;
-                var wrn = order != null ? allWrns.FirstOrDefault(w => w.ConsignmentOrderId == order.Id) : null;
-                var warehouse = wrn != null ? allWarehouses.FirstOrDefault(w => w.Id == wrn.WarehouseId) : null;
+                Warehouse? warehouse;
+                string? warehouseRegion;
 
-                string? warehouseRegion = warehouse?.Region?.ToString();
+                if (IsPastOrigin(p))
+                {
+                    // Kiện đã rời kho nguồn: thuộc kho nhận ở VN, KHÔNG quy về kho nguồn theo phiếu tiếp nhận.
+                    approvedInboundWarehouse.TryGetValue(p.Id, out var inboundWarehouseId);
+                    shipmentDestinationByParcel.TryGetValue(p.Id, out var destinationWarehouseId);
+                    var currentWarehouseId = inboundWarehouseId ?? destinationWarehouseId;
+                    warehouse = currentWarehouseId.HasValue
+                        ? allWarehouses.FirstOrDefault(w => w.Id == currentWarehouseId.Value)
+                        : null;
+                    warehouseRegion = warehouse?.Region?.ToString() ?? "VN";
+                }
+                else
+                {
+                    var wrn = order != null ? allWrns.FirstOrDefault(w => w.ConsignmentOrderId == order.Id) : null;
+                    warehouse = wrn != null ? allWarehouses.FirstOrDefault(w => w.Id == wrn.WarehouseId) : null;
+                    warehouseRegion = warehouse?.Region?.ToString();
+                }
 
                 if (string.IsNullOrWhiteSpace(warehouseRegion) && order != null && !string.IsNullOrWhiteSpace(order.Route))
                 {
@@ -683,9 +826,23 @@ namespace VCL_BLL.Services
                     ChargeableWeight = p.ChargeableWeight.HasValue ? Math.Round(p.ChargeableWeight.Value, 4) : null,
                     PackageStatus = p.PackageStatus ?? string.Empty,
                     CheckInTime = p.CheckInTime,
+                    WarehouseId = warehouse?.Id,
                     WarehouseRegion = warehouseRegion
                 };
             }).AsQueryable();
+
+            // Nhân viên kho đã được gán kho: chỉ kiện của các kho đó. Kiện đời cũ không xác định được
+            // kho (không có phiếu tiếp nhận) thì lọc theo vùng của các kho được gán.
+            if (warehouseIds != null)
+            {
+                var assignedRegions = allWarehouses
+                    .Where(w => warehouseIds.Contains(w.Id) && w.Region.HasValue)
+                    .Select(w => w.Region!.Value.ToString())
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                allMappedItems = allMappedItems.Where(d => d.WarehouseId.HasValue
+                    ? warehouseIds.Contains(d.WarehouseId.Value)
+                    : d.WarehouseRegion != null && assignedRegions.Contains(d.WarehouseRegion));
+            }
 
             // Filter by Region if provided
             if (!string.IsNullOrWhiteSpace(region))
@@ -709,6 +866,24 @@ namespace VCL_BLL.Services
                 .Take(pageSize)
                 .ToList();
 
+            // Thùng gỗ và dịch vụ của từng kiện để kho biết kiện nào cần xử lý gì trước khi xếp kệ.
+            var pageConfigs = await ItemServiceRules.LoadPackageConfigurationsAsync(_unitOfWork);
+            var pageServices = await ItemServiceRules.LoadDtosAsync(
+                _unitOfWork, paginatedItems.Where(p => p.OrderItemId.HasValue).Select(p => p.OrderItemId!.Value));
+            var pageIds = paginatedItems.Select(p => p.Id).ToHashSet();
+            var pageParcels = (await parcelRepo.GetAllAsync())
+                .Where(p => pageIds.Contains(p.Id))
+                .ToDictionary(p => p.Id);
+            foreach (var dto in paginatedItems)
+            {
+                pageParcels.TryGetValue(dto.Id, out var pageParcel);
+                OrderItem? pageItem = null;
+                if (dto.OrderItemId.HasValue) orderItemMap.TryGetValue(dto.OrderItemId.Value, out pageItem);
+                dto.PackageConfiguration = ItemServiceRules.MapPackageConfiguration(
+                    pageParcel?.PackageConfigurationId ?? pageItem?.PackageConfigurationId, pageConfigs);
+                dto.Services = ItemServiceRules.For(pageServices, dto.OrderItemId);
+            }
+
             return new PaginatedResponse<PendingPutawayParcelDto>
             {
                 Items = paginatedItems,
@@ -731,54 +906,67 @@ namespace VCL_BLL.Services
         /// chốt này thì biên bản đối chiếu chênh lệch thành tờ giấy không ai đọc — hàng cứ lên kệ
         /// rồi mới có người hỏi sao thiếu.
         /// </remarks>
-        private async Task EnsureApprovedReceivingNoteAsync(Parcel parcel)
+        private async Task EnsureApprovedReceivingNoteAsync(Parcel parcel, Guid warehouseId)
         {
             if (!parcel.ConsignmentId.HasValue) return;
 
             var code = parcel.PackageCode ?? parcel.Id.ToString();
 
+            var order = await _unitOfWork.Repository<Order>().GetByIdAsync(parcel.ConsignmentId.Value);
+
+            // Hàng mua hộ vào kho qua bước OM duyệt nhập kho mua hộ, không có phiếu tiếp nhận ký gửi.
+            if (string.Equals(order?.OrderType, "PURCHASE", StringComparison.OrdinalIgnoreCase)) return;
+
             var notes = (await _unitOfWork.Repository<WarehouseReceivingNote>().GetAllAsync())
                 .Where(n => n.ConsignmentOrderId == parcel.ConsignmentId.Value)
+                .OrderByDescending(n => n.CreatedAt)
                 .ToList();
 
-            // Đơn cũ chạy từ trước khi có phiếu tiếp nhận thì không chặn — chặn ở đây là kẹt
-            // vĩnh viễn những kiện đã nằm sẵn trong kho mà không ai lập phiếu ngược lại được.
-            if (notes.Count == 0) return;
-
-            if (notes.Any(n => string.Equals(n.Status, WarehouseReceivingNoteService.StatusApproved,
-                    StringComparison.OrdinalIgnoreCase)))
+            if (notes.Count == 0)
             {
+                throw new ArgumentException(
+                    $"Kiện {code} không có phiếu tiếp nhận nào. Hàng ký gửi chỉ xếp kệ được theo phiếu đã được quản lý kho duyệt.");
+            }
+
+            var lines = (await _unitOfWork.Repository<WarehouseReceivingNoteItem>().GetAllAsync()).ToList();
+            var allowed = notes.FirstOrDefault(n =>
+                WarehouseReceivingNoteService.AllowsPutAway(n, lines.Where(l => l.ReceivingNoteId == n.Id)));
+
+            if (allowed != null)
+            {
+                // Xếp kệ đúng kho đã duyệt nhận hàng, không xếp nhầm sang kho khác.
+                if (allowed.WarehouseId != warehouseId)
+                {
+                    throw new ArgumentException(
+                        $"Kiện {code} được duyệt nhận tại kho khác với kho đang xếp kệ. Kiểm tra lại kho của phiếu {allowed.ReceivingNoteCode}.");
+                }
+
                 return;
             }
 
-            var rejected = notes.FirstOrDefault(n => string.Equals(n.Status,
-                WarehouseReceivingNoteService.StatusRejected, StringComparison.OrdinalIgnoreCase));
-            if (rejected != null && notes.Count == 1)
+            var latest = notes.First();
+
+            if (string.Equals(latest.Status, WarehouseReceivingNoteService.StatusRejected, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException(
-                    $"Phiếu tiếp nhận {rejected.ReceivingNoteCode} của kiện {code} đã bị từ chối"
-                    + (string.IsNullOrWhiteSpace(rejected.RejectionReason)
-                        ? "." : $": {rejected.RejectionReason}"));
+                    $"Phiếu tiếp nhận {latest.ReceivingNoteCode} của kiện {code} đã bị từ chối"
+                    + (string.IsNullOrWhiteSpace(latest.RejectionReason) ? "." : $": {latest.RejectionReason}"));
             }
 
-            var pending = notes.FirstOrDefault(n => !string.Equals(n.Status,
-                WarehouseReceivingNoteService.StatusRejected, StringComparison.OrdinalIgnoreCase));
-
-            var awaitingApproval = new[]
-            {
-                WarehouseReceivingNoteService.StatusReceived,
-                WarehouseReceivingNoteService.StatusPartiallyReceived
-            };
-
-            if (awaitingApproval.Contains(pending?.Status, StringComparer.OrdinalIgnoreCase))
+            if (string.Equals(latest.Status, WarehouseReceivingNoteService.StatusPendingApproval, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException(
-                    $"Phiếu tiếp nhận {pending!.ReceivingNoteCode} của kiện {code} đang chờ Operations Manager duyệt.");
+                    $"Phiếu tiếp nhận {latest.ReceivingNoteCode} của kiện {code} đang chờ quản lý kho duyệt cho nhận hàng.");
+            }
+
+            if (WarehouseReceivingNoteService.RequiresReview(lines.Where(l => l.ReceivingNoteId == latest.Id)))
+            {
+                throw new ArgumentException(
+                    $"Biên bản phiếu {latest.ReceivingNoteCode} có chênh lệch, đang chờ quản lý kho xem trước khi xếp kệ kiện {code}.");
             }
 
             throw new ArgumentException(
-                $"Phiếu tiếp nhận {pending?.ReceivingNoteCode} của kiện {code} chưa được xác nhận nhập kho "
-                + $"(hiện tại: {pending?.Status}). Kho nhập số thực tế rồi OM duyệt mới xếp kệ được.");
+                $"Phiếu tiếp nhận {latest.ReceivingNoteCode} của kiện {code} chưa cho phép xếp kệ (hiện tại: {StatusNames.Quote(latest.Status)}).");
         }
 
         private async Task EnsureApprovedInboundRequestAsync(Parcel parcel)
@@ -838,13 +1026,36 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Kiện hàng đã được nhập vị trí kho (STORED).");
             }
 
+            /*
+             * BẮT BUỘC CÓ ẢNH KIỆN NẰM TRONG Ô KỆ.
+             *
+             * Sổ sách nói kiện nằm ở ô nào thì phải có ảnh chứng minh nó thật sự nằm ở đó —
+             * cùng nguyên tắc với "đặt NCC phải có ảnh đơn" và "giao hàng phải có ảnh ký
+             * nhận": không có nút nào cho nhân viên bấm cho nó sang bước sau.
+             *
+             * Ảnh gắn vào CHÍNH KIỆN (entityType = PARCEL) chứ không gắn vào đơn: một đơn
+             * nhiều kiện, mỗi kiện nằm một ô khác nhau.
+             */
+            var putAwayPhotos = (await _unitOfWork.Repository<Attachment>().GetAllAsync())
+                .Count(a => a.EntityId == parcelId
+                            && string.Equals(a.EntityType, AttachmentEntityTypes.Parcel, StringComparison.OrdinalIgnoreCase)
+                            && string.Equals(a.DocumentType, AttachmentDocumentTypes.PutAwayProof, StringComparison.OrdinalIgnoreCase));
+
+            if (putAwayPhotos == 0)
+            {
+                throw new ArgumentException(
+                    "Phải chụp ảnh kiện trong ô kệ trước khi ghi nhận xếp kệ "
+                    + $"(documentType = {AttachmentDocumentTypes.PutAwayProof}, "
+                    + $"entityType = {AttachmentEntityTypes.Parcel}, entityId = {parcelId}).");
+            }
+
             // 3. Chỉ cho nhập vị trí kho với Parcel đã được nhận tại kho:
             //    - RECEIVED: check-in trực tiếp tại kho/điểm tập kết
             //    - RECEIVED_AT_DESTINATION: nhận từ lô vận chuyển quốc tế tại kho đích (VCL-118)
             var putAwayEligibleStatuses = new[] { "RECEIVED", "RECEIVED_AT_DESTINATION" };
             if (!putAwayEligibleStatuses.Any(s => string.Equals(s, parcel.PackageStatus, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new ArgumentException("Chỉ cho phép nhập vị trí kho với kiện hàng đã được nhận tại kho (RECEIVED hoặc RECEIVED_AT_DESTINATION).");
+                throw new ArgumentException("Chỉ cho phép nhập vị trí kho với kiện hàng đã được kho nhận (kho nguồn đã nhận hoặc kho Việt Nam đã kiểm đếm).");
             }
 
             // 3b. Kiện về từ lô quốc tế thì phải có phiếu nhập kho VN đã được OM duyệt mới
@@ -861,105 +1072,31 @@ namespace VCL_BLL.Services
             }
             else if (string.Equals(parcel.PackageStatus, "RECEIVED", StringComparison.OrdinalIgnoreCase))
             {
-                await EnsureApprovedReceivingNoteAsync(parcel);
+                await EnsureApprovedReceivingNoteAsync(parcel, request.WarehouseId);
             }
 
-            // 4. Tìm Warehouse, Zone, Shelf, Bin
-            var warehouseRepo = _unitOfWork.Repository<Warehouse>();
-            var warehouse = await warehouseRepo.GetByIdAsync(request.WarehouseId);
-            if (warehouse == null)
-            {
-                throw new NotFoundException("Không tìm thấy kho hàng.");
-            }
+            // 4. Ô kệ: quét mã (binCode) hoặc chọn theo ID; zoneId/shelfId cũ gửi kèm thì phải khớp.
+            var bin = await BinPlacementPolicy.ResolveBinAsync(_unitOfWork, request.WarehouseId, request.BinId, request.BinCode);
+            var placement = await BinPlacementPolicy.EnsureCanStoreAsync(_unitOfWork, bin, request.WarehouseId, new[] { parcel });
+            var (warehouse, zone, shelf) = (placement.Warehouse, placement.Zone, placement.Shelf);
 
-            var zoneRepo = _unitOfWork.Repository<WarehouseZone>();
-            var zone = await zoneRepo.GetByIdAsync(request.ZoneId);
-            if (zone == null)
-            {
-                throw new NotFoundException("Không tìm thấy khu vực kho (Zone).");
-            }
+            if (request.ZoneId.HasValue && request.ZoneId.Value != Guid.Empty && request.ZoneId.Value != zone.Id)
+                throw new ArgumentException($"Ô kệ {bin.BinCode} không thuộc khu vực kho đã chọn.");
+            if (request.ShelfId.HasValue && request.ShelfId.Value != Guid.Empty && request.ShelfId.Value != shelf.Id)
+                throw new ArgumentException($"Ô kệ {bin.BinCode} không thuộc kệ kho đã chọn.");
 
-            var shelfRepo = _unitOfWork.Repository<Shelf>();
-            var shelf = await shelfRepo.GetByIdAsync(request.ShelfId);
-            if (shelf == null)
-            {
-                throw new NotFoundException("Không tìm thấy kệ kho (Shelf).");
-            }
-
-            var binRepo = _unitOfWork.Repository<Bin>();
-            var bin = await binRepo.GetByIdAsync(request.BinId);
-            if (bin == null)
-            {
-                throw new NotFoundException("Không tìm thấy ô kệ (Bin).");
-            }
-
-            // 5. Kiểm tra tính hợp lệ của mối quan hệ vị trí kho (hierarchy validation)
-            if (zone.WarehouseId != warehouse.Id)
-            {
-                throw new ArgumentException("Khu vực kho không thuộc kho hàng đã chọn.");
-            }
-
-            if (shelf.ZoneId != zone.Id)
-            {
-                throw new ArgumentException("Kệ kho không thuộc khu vực kho đã chọn.");
-            }
-
-            if (bin.ShelfId != shelf.Id)
-            {
-                throw new ArgumentException("Ô kệ không thuộc kệ kho đã chọn.");
-            }
-
-            if (bin.WarehouseId != warehouse.Id)
-            {
-                throw new ArgumentException("Ô kệ không thuộc kho hàng đã chọn.");
-            }
-
-            // 6. Kiểm tra sức chứa của Bin trước khi gán
-            // Tính thể tích của parcel: Length * Width * Height
-            decimal parcelVolume = (parcel.Length ?? 0) * (parcel.Width ?? 0) * (parcel.Height ?? 0);
-            if (bin.MaxVolume.HasValue)
-            {
-                decimal availableVolume = bin.MaxVolume.Value - (bin.CurrentVolume ?? 0);
-                if (parcelVolume > availableVolume)
-                {
-                    // Nêu rõ đơn vị: ô kệ khai theo lít thay vì cm³ sẽ rơi vào đây dù còn trống.
-                    throw new ArgumentException(
-                        $"Ô kệ {bin.BinCode} không đủ sức chứa. Kiện cần {parcelVolume:N0} cm³, ô kệ còn {availableVolume:N0} cm³ " +
-                        $"(sức chứa khai báo {bin.MaxVolume.Value:N0} cm³). Nếu ô kệ thực tế lớn hơn, kiểm tra lại đơn vị của maxVolume — trường này tính bằng cm³.");
-                }
-            }
-
-            // Tính cân nặng của parcel: ActualWeight
-            if (bin.MaxWeight.HasValue)
-            {
-                var allParcels = await parcelRepo.GetAllAsync();
-                var currentWeightInBin = allParcels
-                    .Where(p => p.BinId == bin.Id && string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
-                    .Sum(p => p.ActualWeight ?? 0);
-
-                decimal availableWeight = bin.MaxWeight.Value - currentWeightInBin;
-                decimal parcelWeight = parcel.ActualWeight ?? 0;
-                if (parcelWeight > availableWeight)
-                {
-                    throw new ArgumentException(
-                        $"Ô kệ {bin.BinCode} không đủ tải trọng. Kiện nặng {parcelWeight:N2} kg, ô kệ còn chịu được {availableWeight:N2} kg " +
-                        $"(tải trọng khai báo {bin.MaxWeight!.Value:N2} kg).");
-                }
-            }
-
-            // 7. Cập nhật thông tin vị trí lưu trữ và trạng thái của Parcel
+            // 5. Cập nhật vị trí và trạng thái của kiện
+            var parcelVolume = BinPlacementPolicy.Volume(parcel);
             var putAwayTime = DateTime.UtcNow;
             parcel.BinId = bin.Id;
             parcel.PackageStatus = "STORED";
             parcel.PutAwayTime = putAwayTime;
-
-            // Cập nhật thể tích hiện tại của Bin
-            bin.CurrentVolume = (bin.CurrentVolume ?? 0) + parcelVolume;
+            bin.CurrentVolume = placement.OccupiedVolumeAfter;
 
             parcelRepo.Update(parcel);
-            binRepo.Update(bin);
+            _unitOfWork.Repository<Bin>().Update(bin);
 
-            // 7b. TỰ ĐỘNG GHI NHẬN TỒN KHO (INVENTORY) & CẬP NHẬT TRẠNG THÁI ORDER (TRONG CÙNG TRANSACTION)
+            // 6. TỰ ĐỘNG GHI NHẬN TỒN KHO (INVENTORY) & CẬP NHẬT TRẠNG THÁI ORDER (TRONG CÙNG TRANSACTION)
             if (parcel.ConsignmentId.HasValue)
             {
                 var orderRepo = _unitOfWork.Repository<Order>();
@@ -996,16 +1133,9 @@ namespace VCL_BLL.Services
 
                 if (existingInventory == null)
                 {
-                    var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-                    var allItems = await orderItemRepo.GetAllAsync();
-                    var consignmentItems = allItems.Where(i => i.OrderId == order.Id).ToList();
-
-                    Guid? orderItemId = consignmentItems.FirstOrDefault()?.Id;
-                    int quantity = consignmentItems.Sum(item => item.Quantity ?? 1);
-                    if (quantity <= 0)
-                    {
-                        quantity = 1;
-                    }
+                    // Tồn của MỘT kiện là lượng hàng trong kiện đó, không phải tổng cả đơn. Trước đây
+                    // mỗi kiện đều nhận tổng lượng mọi dòng của đơn nên đơn nhiều kiện bị nhân tồn.
+                    var (orderItemId, quantity) = await ParcelQuantityResolver.ResolveAsync(_unitOfWork, parcel, order.Id);
 
                     var newInventory = new Inventory
                     {
@@ -1072,12 +1202,13 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            // 8. Trả về thông tin kết quả
+            // 7. Trả về thông tin kết quả
             return new ParcelPutAwayResponse
             {
                 PackageCode = parcel.PackageCode ?? string.Empty,
                 WarehouseName = warehouse.WarehouseName ?? string.Empty,
                 ZoneName = zone.ZoneName ?? string.Empty,
+                ZoneType = ZoneTypes.Normalize(zone.ZoneType) ?? string.Empty,
                 ShelfCode = shelf.ShelfCode ?? string.Empty,
                 BinCode = bin.BinCode ?? string.Empty,
                 PackageStatus = parcel.PackageStatus,
@@ -1213,6 +1344,8 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Số lượng hàng trong kiện con không được nhỏ hơn 0.");
             }
 
+            await ExportLockGuard.EnsureNotInActiveReleaseAsync(_unitOfWork, new[] { parcelId }, "tách kiện");
+
             // 1. Kiện gốc phải tồn tại và đang ở trạng thái cho phép tách
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var source = await parcelRepo.GetByIdAsync(parcelId);
@@ -1223,7 +1356,7 @@ namespace VCL_BLL.Services
 
             if (!StructurableStatuses.Contains(source.PackageStatus, StringComparer.OrdinalIgnoreCase))
             {
-                throw new ArgumentException($"Không thể tách kiện đang ở trạng thái {source.PackageStatus}.");
+                throw new ArgumentException($"Không thể tách kiện đang ở trạng thái {StatusNames.Quote(source.PackageStatus)}.");
             }
 
             // 2. Không tách kiện đang được giữ cho phiếu xuất kho (BR-91)
@@ -1234,7 +1367,7 @@ namespace VCL_BLL.Services
             if (sourceInventory != null
                 && !string.Equals(sourceInventory.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase))
             {
-                throw new ArgumentException($"Không thể tách kiện vì hàng tồn đang ở trạng thái {sourceInventory.Status}.");
+                throw new ArgumentException($"Không thể tách kiện vì hàng tồn đang ở trạng thái {StatusNames.Quote(sourceInventory.Status)}.");
             }
 
             // 3. Tổng cân nặng các kiện con không được vượt cân nặng kiện gốc
@@ -1265,29 +1398,22 @@ namespace VCL_BLL.Services
             var allParcels = (await parcelRepo.GetAllAsync()).ToList();
             var usedCodes = allParcels.Select(p => p.PackageCode ?? string.Empty).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            var createdChildren = new List<Parcel>();
+            var createdChildren = new List<(Parcel Parcel, int Quantity)>();
 
             foreach (var child in request.Children)
             {
-                // Ô kệ của kiện con phải cùng kho với kiện gốc (BR-56)
+                // Kiện con để nguyên ô của kiện gốc, hoặc sang ô khác. Kiện chưa lên kệ thì tách
+                // xong mới xếp kệ từng kiện con qua put-away.
                 Bin? childBin = sourceBin;
                 if (child.BinId is Guid childBinId && childBinId != source.BinId)
                 {
-                    childBin = await binRepo.GetByIdAsync(childBinId);
-                    if (childBin == null)
+                    if (sourceBin == null)
                     {
-                        throw new NotFoundException("Không tìm thấy ô kệ được chọn cho kiện con.");
+                        throw new ArgumentException("Kiện gốc chưa xếp kệ nên kiện con chưa chọn ô được. Tách xong hãy xếp kệ từng kiện con.");
                     }
 
-                    if (!childBin.IsActive)
-                    {
-                        throw new ArgumentException($"Ô kệ {childBin.BinCode} đang ngừng sử dụng.");
-                    }
-
-                    if (sourceBin?.WarehouseId != null && childBin.WarehouseId != sourceBin.WarehouseId)
-                    {
-                        throw new ArgumentException("Kiện con phải được xếp trong cùng kho với kiện gốc.");
-                    }
+                    childBin = await binRepo.GetByIdAsync(childBinId)
+                        ?? throw new NotFoundException("Không tìm thấy ô kệ được chọn cho kiện con.");
                 }
 
                 var newParcel = new Parcel
@@ -1295,6 +1421,7 @@ namespace VCL_BLL.Services
                     Id = Guid.NewGuid(),
                     ConsignmentId = source.ConsignmentId,
                     ParentParcelId = source.Id,
+                    OrderItemId = source.OrderItemId,
                     PackageCode = ResolvePackageCode(child.PackageCode, usedCodes),
                     ActualWeight = child.ActualWeight,
                     Length = child.Length,
@@ -1303,21 +1430,35 @@ namespace VCL_BLL.Services
                     PackageStatus = source.PackageStatus,
                     CheckInTime = source.CheckInTime,
                     PutAwayTime = source.PutAwayTime,
-                    BinId = childBin?.Id ?? source.BinId,
+                    BinId = childBin?.Id,
                     PackageConfigurationId = source.PackageConfigurationId
                 };
 
                 ApplyWeights(newParcel, divisor);
+                createdChildren.Add((newParcel, child.Quantity));
+            }
 
+            // Mỗi ô nhận kiện con phải là ô khu lưu kho cùng kho, còn đủ chỗ sau khi kiện gốc rời đi.
+            var touchedBins = new Dictionary<Guid, Bin>();
+            foreach (var group in createdChildren.Where(c => c.Parcel.BinId.HasValue).GroupBy(c => c.Parcel.BinId!.Value))
+            {
+                var bin = group.Key == sourceBin?.Id ? sourceBin! : (await binRepo.GetByIdAsync(group.Key))!;
+                var placement = await BinPlacementPolicy.EnsureCanStoreAsync(
+                    _unitOfWork, bin, sourceBin!.WarehouseId ?? Guid.Empty,
+                    group.Select(c => c.Parcel).ToList(), new[] { source.Id });
+                bin.CurrentVolume = placement.OccupiedVolumeAfter;
+                touchedBins[bin.Id] = bin;
+            }
+
+            if (sourceBin != null && !touchedBins.ContainsKey(sourceBin.Id))
+            {
+                sourceBin.CurrentVolume = await BinPlacementPolicy.VolumeAfterLeavingAsync(_unitOfWork, sourceBin.Id, new[] { source.Id });
+                touchedBins[sourceBin.Id] = sourceBin;
+            }
+
+            foreach (var (newParcel, quantity) in createdChildren)
+            {
                 await parcelRepo.AddAsync(newParcel);
-                createdChildren.Add(newParcel);
-
-                // Cộng thể tích kiện con vào ô kệ chứa nó
-                if (childBin != null)
-                {
-                    childBin.CurrentVolume = (childBin.CurrentVolume ?? 0) + GetVolume(newParcel);
-                    binRepo.Update(childBin);
-                }
 
                 // Tách hàng tồn theo số lượng của từng kiện con
                 if (sourceInventory != null)
@@ -1330,19 +1471,16 @@ namespace VCL_BLL.Services
                         OrderItemId = sourceInventory.OrderItemId,
                         ParcelId = newParcel.Id,
                         BinId = newParcel.BinId ?? sourceInventory.BinId,
-                        Quantity = child.Quantity,
+                        Quantity = quantity,
                         Status = "AVAILABLE",
                         CreatedAt = DateTime.UtcNow
                     });
                 }
             }
 
-            // 5. Kiện gốc chuyển sang SPLIT và trả lại thể tích cho ô kệ
-            if (sourceBin != null)
+            foreach (var bin in touchedBins.Values)
             {
-                var remaining = (sourceBin.CurrentVolume ?? 0) - GetVolume(source);
-                sourceBin.CurrentVolume = remaining < 0 ? 0 : remaining;
-                binRepo.Update(sourceBin);
+                binRepo.Update(bin);
             }
 
             source.PackageStatus = "SPLIT";
@@ -1350,12 +1488,12 @@ namespace VCL_BLL.Services
 
             if (sourceInventory != null)
             {
-                inventoryRepo.Delete(sourceInventory);
+                await RetireInventoriesAsync(new[] { sourceInventory });
             }
 
             await _unitOfWork.SaveChangesAsync();
 
-            return await BuildStructureResponseAsync("SPLIT", source, createdChildren);
+            return await BuildStructureResponseAsync("SPLIT", source, createdChildren.Select(c => c.Parcel).ToList());
         }
 
         public async Task<ParcelStructureResponseDto> MergeParcelsAsync(MergeParcelsRequestDto request, Guid? userId)
@@ -1369,6 +1507,8 @@ namespace VCL_BLL.Services
             {
                 throw new ArgumentException("Cân nặng thực tế của kiện sau khi gộp phải lớn hơn 0.");
             }
+
+            await ExportLockGuard.EnsureNotInActiveReleaseAsync(_unitOfWork, request.SourceParcelIds, "gộp kiện");
 
             var parcelRepo = _unitOfWork.Repository<Parcel>();
             var allParcels = (await parcelRepo.GetAllAsync()).ToList();
@@ -1391,7 +1531,7 @@ namespace VCL_BLL.Services
             var invalidStatus = sources.FirstOrDefault(p => !StructurableStatuses.Contains(p.PackageStatus, StringComparer.OrdinalIgnoreCase));
             if (invalidStatus != null)
             {
-                throw new ArgumentException($"Không thể gộp kiện {invalidStatus.PackageCode} đang ở trạng thái {invalidStatus.PackageStatus}.");
+                throw new ArgumentException($"Không thể gộp kiện {invalidStatus.PackageCode} đang ở trạng thái {StatusNames.Quote(invalidStatus.PackageStatus)}.");
             }
 
             // 2. Hàng tồn của các kiện phải đang khả dụng (BR-91)
@@ -1402,7 +1542,7 @@ namespace VCL_BLL.Services
             var lockedInventory = sourceInventories.FirstOrDefault(i => !string.Equals(i.Status, "AVAILABLE", StringComparison.OrdinalIgnoreCase));
             if (lockedInventory != null)
             {
-                throw new ArgumentException($"Không thể gộp kiện vì có hàng tồn đang ở trạng thái {lockedInventory.Status}.");
+                throw new ArgumentException($"Không thể gộp kiện vì có hàng tồn đang ở trạng thái {StatusNames.Quote(lockedInventory.Status)}.");
             }
 
             // 3. Các kiện phải nằm trong cùng một kho
@@ -1416,25 +1556,12 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Chỉ được gộp các kiện hàng đang nằm trong cùng một kho.");
             }
 
-            // 4. Xác định ô kệ chứa kiện sau khi gộp
+            // 4. Ô kệ chứa kiện sau khi gộp: ô được chọn, hoặc ô của kiện đầu tiên đang nằm kệ.
             Bin? targetBin = null;
             if (request.BinId is Guid requestedBinId)
             {
-                targetBin = await binRepo.GetByIdAsync(requestedBinId);
-                if (targetBin == null)
-                {
-                    throw new NotFoundException("Không tìm thấy ô kệ đích cho kiện sau khi gộp.");
-                }
-
-                if (!targetBin.IsActive)
-                {
-                    throw new ArgumentException("Ô kệ đích đang ngừng sử dụng.");
-                }
-
-                if (warehouseIds.Count == 1 && targetBin.WarehouseId != warehouseIds[0])
-                {
-                    throw new ArgumentException("Ô kệ đích phải thuộc cùng kho với các kiện được gộp.");
-                }
+                targetBin = await binRepo.GetByIdAsync(requestedBinId)
+                    ?? throw new NotFoundException("Không tìm thấy ô kệ đích cho kiện sau khi gộp.");
             }
             else
             {
@@ -1466,27 +1593,30 @@ namespace VCL_BLL.Services
             };
 
             ApplyWeights(mergedParcel, divisor);
-            await parcelRepo.AddAsync(mergedParcel);
-
-            // 5. Trả thể tích của từng kiện gốc về ô kệ cũ và đánh dấu đã gộp
-            foreach (var source in sources)
-            {
-                if (source.BinId is Guid binId && sourceBins.TryGetValue(binId, out var bin))
-                {
-                    var remaining = (bin.CurrentVolume ?? 0) - GetVolume(source);
-                    bin.CurrentVolume = remaining < 0 ? 0 : remaining;
-                    binRepo.Update(bin);
-                }
-
-                source.PackageStatus = "MERGED";
-                source.ParentParcelId = mergedParcel.Id;
-                parcelRepo.Update(source);
-            }
 
             if (targetBin != null)
             {
-                targetBin.CurrentVolume = (targetBin.CurrentVolume ?? 0) + GetVolume(mergedParcel);
+                var warehouseId = warehouseIds.Count == 1 ? warehouseIds[0] : targetBin.WarehouseId ?? Guid.Empty;
+                var placement = await BinPlacementPolicy.EnsureCanStoreAsync(
+                    _unitOfWork, targetBin, warehouseId, new[] { mergedParcel }, sourceIds);
+                targetBin.CurrentVolume = placement.OccupiedVolumeAfter;
                 binRepo.Update(targetBin);
+            }
+
+            await parcelRepo.AddAsync(mergedParcel);
+
+            // 5. Trả chỗ ở các ô cũ và đánh dấu kiện gốc đã gộp
+            foreach (var bin in sourceBins.Values.Where(b => b.Id != targetBin?.Id))
+            {
+                bin.CurrentVolume = await BinPlacementPolicy.VolumeAfterLeavingAsync(_unitOfWork, bin.Id, sourceIds);
+                binRepo.Update(bin);
+            }
+
+            foreach (var source in sources)
+            {
+                source.PackageStatus = "MERGED";
+                source.ParentParcelId = mergedParcel.Id;
+                parcelRepo.Update(source);
             }
 
             // 6. Dồn hàng tồn của các kiện gốc về kiện sau khi gộp
@@ -1506,29 +1636,40 @@ namespace VCL_BLL.Services
                     CreatedAt = DateTime.UtcNow
                 });
 
-                // Dòng tồn kho của kiện nguồn đã gộp sang kiện mới. Dòng nào có nhật ký vận động
-                // trỏ vào thì giữ lại và cho về 0 — xoá sẽ phá khoá ngoại sang INVENTORY_MOVEMENTS
-                // và cả thao tác gộp kiện đổ lỗi hệ thống.
-                var movements = await _unitOfWork.Repository<InventoryMovement>().GetAllAsync();
-                var referenced = movements.Select(m => m.InventoryId).ToHashSet();
-
-                foreach (var inventory in sourceInventories)
-                {
-                    if (referenced.Contains(inventory.Id))
-                    {
-                        inventory.Quantity = 0;
-                        inventory.Status = "RELEASED";
-                        inventoryRepo.Update(inventory);
-                        continue;
-                    }
-
-                    inventoryRepo.Delete(inventory);
-                }
+                await RetireInventoriesAsync(sourceInventories);
             }
 
             await _unitOfWork.SaveChangesAsync();
 
             return await BuildStructureResponseAsync("MERGE", mergedParcel, sources);
+        }
+
+        /// <summary>
+        /// Bỏ dòng tồn kho của kiện gốc đã tách/gộp sang kiện mới. Dòng nào có nhật ký vận động trỏ vào
+        /// thì giữ lại, cho về 0 — xoá sẽ phá khoá ngoại sang INVENTORY_MOVEMENTS. Trước đây tách kiện
+        /// xoá thẳng nên kiện đã lên kệ (có nhật ký nhập kho) tách là lỗi hệ thống.
+        /// </summary>
+        private async Task RetireInventoriesAsync(IReadOnlyCollection<Inventory> inventories)
+        {
+            var inventoryRepo = _unitOfWork.Repository<Inventory>();
+            var ids = inventories.Select(i => i.Id).ToHashSet();
+            var referenced = (await _unitOfWork.Repository<InventoryMovement>().GetAllAsync())
+                .Where(m => ids.Contains(m.InventoryId))
+                .Select(m => m.InventoryId)
+                .ToHashSet();
+
+            foreach (var inventory in inventories)
+            {
+                if (referenced.Contains(inventory.Id))
+                {
+                    inventory.Quantity = 0;
+                    inventory.Status = "RELEASED";
+                    inventoryRepo.Update(inventory);
+                    continue;
+                }
+
+                inventoryRepo.Delete(inventory);
+            }
         }
 
         /// <summary>Thể tích của kiện hàng, cùng công thức với kiểm tra sức chứa ô kệ</summary>

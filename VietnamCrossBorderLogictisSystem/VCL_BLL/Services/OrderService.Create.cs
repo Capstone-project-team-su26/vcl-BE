@@ -13,10 +13,10 @@ namespace VCL_BLL.Services
     {
         public async Task<CreateConsignmentResponse> CreateConsignmentAsync(CreateConsignmentRequest request, Guid userId)
         {
-            var (route, shippingOption) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
+            var (route, shippingOption, shippingPricingId) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
             EnsureHasItems(request.Items);
-            EnsureItemsWithinLimits(request.Items!);
-            EnsureWoodenCrateSelected(request.RequiresWoodenCrate, request.Items!);
+            await EnsureItemsWithinLimitsAsync(request.Items!);
+            EnsureWoodenCrateSelected(request.Items!);
 
             // Map user → customer (cùng pattern với các service khác)
             var customerRepo = _unitOfWork.Repository<Customer>();
@@ -25,10 +25,7 @@ namespace VCL_BLL.Services
             if (customer == null)
                 throw new UnauthorizedAccessException("Không tìm thấy thông tin khách hàng tương ứng với tài khoản.");
 
-            var draft = await BuildConsignmentDraftAsync(
-                request.Items, request.PricingRuleIds, request.Note,
-                request.RequiresInspection, request.RequiresPacking,
-                request.RequiresWoodenCrate, request.RequiresInsurance);
+            var draft = await BuildConsignmentDraftAsync(request.Items, request.Note, shippingPricingId);
             draft.DefaultDestinationHandling = NormalizeDestinationHandling(request.DefaultDestinationHandling);
 
             return await PersistConsignmentAsync(
@@ -39,30 +36,181 @@ namespace VCL_BLL.Services
 
         public async Task<CreateConsignmentResponse> CreateConsignmentByStaffAsync(CreateConsignmentByStaffRequest request, Guid staffUserId)
         {
-            var (route, shippingOption) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
+            var (route, shippingOption, shippingPricingId) = await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
             EnsureHasItems(request.Items);
-            EnsureItemsWithinLimits(request.Items!);
+            await EnsureItemsWithinLimitsAsync(request.Items!);
 
             var customer = await ResolveCustomerForStaffAsync(request);
 
-            // Trạng thái ban đầu của đơn do nhân viên tạo, mặc định APPROVED
-            var initialStatus = _configuration["ConsignmentSettings:InitialStatusByStaff"] ?? "APPROVED";
-            initialStatus = initialStatus.Trim().ToUpperInvariant();
-            if (initialStatus != "PENDING_REVIEW" && initialStatus != "APPROVED")
-            {
-                initialStatus = "APPROVED";
-            }
+            // Sale tự tạo đơn cho khách là đã tiếp nhận; bước kế tiếp là Sale báo giá.
+            const string initialStatus = "APPROVED";
 
-            var draft = await BuildConsignmentDraftAsync(
-                request.Items, request.PricingRuleIds, request.Note,
-                request.RequiresInspection, request.RequiresPacking,
-                request.RequiresWoodenCrate, request.RequiresInsurance);
+            var draft = await BuildConsignmentDraftAsync(request.Items, request.Note, shippingPricingId);
             draft.DefaultDestinationHandling = NormalizeDestinationHandling(request.DefaultDestinationHandling);
 
             return await PersistConsignmentAsync(
                 customer, route, shippingOption, initialStatus, staffUserId,
                 request.ReceiverName, request.ReceiverPhone, request.ReceiverAddress,
                 request.Items, draft);
+        }
+
+        /// <summary>
+        /// ƯỚC TÍNH ĐƠN KÝ GỬI TRƯỚC KHI TẠO.
+        ///
+        /// Đi qua ĐÚNG các bước của lúc tạo đơn thật — chuẩn hoá tuyến + phương án, kiểm giới
+        /// hạn kiện, kiểm hàng cấm, dựng draft dịch vụ theo kiện, gợi ý cỡ thùng khi khách
+        /// chưa chọn — rồi gọi chung một hàm tính tiền. Khác duy nhất: không ghi gì xuống DB.
+        ///
+        /// Nhờ vậy số trên màn xác nhận và số trên hoá đơn phát hành ngay sau đó là CÙNG MỘT
+        /// phép tính, không phải hai đoạn mã chạy song song rồi lệch nhau.
+        /// </summary>
+        public async Task<EstimateQuotationResponse> PreviewConsignmentAsync(
+            CreateConsignmentRequest request, Guid userId)
+        {
+            var (route, shippingOption, shippingPricingId) =
+                await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
+            EnsureHasItems(request.Items);
+            await EnsureItemsWithinLimitsAsync(request.Items!);
+            EnsureWoodenCrateSelected(request.Items!);
+
+            var customer = (await _unitOfWork.Repository<Customer>().GetAllAsync())
+                .FirstOrDefault(c => c.UserId == userId);
+            if (customer == null)
+                throw new UnauthorizedAccessException("Không tìm thấy thông tin khách hàng tương ứng với tài khoản.");
+
+            var draft = await BuildConsignmentDraftAsync(request.Items, request.Note, shippingPricingId);
+            draft.DefaultDestinationHandling = NormalizeDestinationHandling(request.DefaultDestinationHandling);
+
+            var (order, orderItems, itemServices) = await BuildInMemoryConsignmentAsync(
+                customer, route, shippingOption, request.ReceiverName, request.ReceiverPhone,
+                request.ReceiverAddress, request.Items, draft);
+
+            return await _quotationService.PreviewEstimateAsync(order, orderItems, itemServices);
+        }
+
+        /// <summary>
+        /// ƯỚC TÍNH ĐƠN SALE TẠO HỘ KHÁCH — bản song sinh của PreviewConsignmentAsync.
+        ///
+        /// Đi qua đúng các bước của CreateConsignmentByStaffAsync, kể cả cách tra ra khách
+        /// (theo customerId / số điện thoại / email). Lưu ý: luồng Sale KHÔNG gọi
+        /// EnsureWoodenCrateSelected — ước tính cũng không gọi, vì hai bên phải kiểm giống
+        /// hệt nhau thì số mới giống nhau.
+        /// </summary>
+        public async Task<EstimateQuotationResponse> PreviewConsignmentByStaffAsync(
+            CreateConsignmentByStaffRequest request, Guid staffUserId)
+        {
+            var (route, shippingOption, shippingPricingId) =
+                await ResolveRouteAndShippingOptionAsync(request.Route, request.ShippingOption);
+            EnsureHasItems(request.Items);
+            await EnsureItemsWithinLimitsAsync(request.Items!);
+
+            var customer = await ResolveCustomerForStaffAsync(request);
+
+            var draft = await BuildConsignmentDraftAsync(request.Items, request.Note, shippingPricingId);
+            draft.DefaultDestinationHandling = NormalizeDestinationHandling(request.DefaultDestinationHandling);
+
+            var (order, orderItems, itemServices) = await BuildInMemoryConsignmentAsync(
+                customer, route, shippingOption, request.ReceiverName, request.ReceiverPhone,
+                request.ReceiverAddress, request.Items, draft);
+
+            return await _quotationService.PreviewEstimateAsync(order, orderItems, itemServices);
+        }
+
+        /// <summary>
+        /// Dựng Order + OrderItems trong BỘ NHỚ theo đúng cách PersistConsignmentAsync dựng
+        /// chúng trước khi ghi — kể cả bước gợi ý cỡ thùng khi khách không tự chọn, vì cỡ thùng
+        /// quyết định phí đóng gói.
+        ///
+        /// Không sinh mã đơn: mã chỉ cấp cho đơn thật, cấp ở đây sẽ đốt mất một số thứ tự.
+        /// </summary>
+        private async Task<(Order Order, List<OrderItem> Items, IReadOnlyDictionary<Guid, List<PricingRule>> ItemServices)>
+            BuildInMemoryConsignmentAsync(
+                Customer customer,
+                string route,
+                string shippingOption,
+                string? receiverName,
+                string? receiverPhone,
+                string? receiverAddress,
+                List<ConsignmentItemRequest> items,
+                ConsignmentDraft draft)
+        {
+            var now = DateTime.UtcNow;
+
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerId = customer.Id,
+                CompanyId = customer.CompanyId,
+                ConsignmentCode = string.Empty,
+                ConsignmentType = shippingOption,
+                Route = route,
+                ReceiverName = receiverName,
+                ReceiverPhone = receiverPhone,
+                ReceiverAddress = receiverAddress,
+                RequiresInspection = draft.RequiresInspection,
+                DefaultDestinationHandling = draft.DefaultDestinationHandling,
+                Status = "PREVIEW",
+                OrderType = "CONSIGNMENT",
+                Note = draft.Note,
+                CreatedAt = now
+            };
+
+            var orderItems = new List<OrderItem>();
+            var itemServices = new Dictionary<Guid, List<PricingRule>>();
+
+            for (var index = 0; index < items.Count; index++)
+            {
+                var item = items[index];
+
+                Guid? packageConfigId = item.PackageConfigurationId;
+                if (!packageConfigId.HasValue || packageConfigId.Value == Guid.Empty)
+                {
+                    packageConfigId = await SuggestPackageConfigurationIdAsync(
+                        item.Length, item.Width, item.Height, item.Weight);
+                }
+
+                var orderItemId = Guid.NewGuid();
+                orderItems.Add(new OrderItem
+                {
+                    Id = orderItemId,
+                    OrderId = order.Id,
+                    CompanyId = customer.CompanyId,
+                    ProductName = item.ProductName,
+                    ProductType = item.ProductType,
+                    Quantity = item.Quantity,
+                    Weight = item.Weight,
+                    Width = item.Width,
+                    Height = item.Height,
+                    Length = item.Length,
+                    DeclaredValue = item.DeclaredValue,
+                    ReferenceUrl = item.CombinedReferenceUrls(),
+                    DomesticTrackingCode = item.DomesticTrackingCode,
+                    PackageConfigurationId = packageConfigId,
+                    CreatedAt = now
+                });
+
+                itemServices[orderItemId] = draft.ItemServices[index];
+            }
+
+            return (order, orderItems, itemServices);
+        }
+
+        public async Task<List<ItemServiceDto>> GetItemServicesAsync(string? route, string? shippingOption)
+        {
+            var rules = (await _unitOfWork.Repository<PricingRule>().GetAllAsync())
+                .Where(ItemServiceRules.IsSelectable)
+                .ToList();
+
+            if (!string.IsNullOrWhiteSpace(route) && !string.IsNullOrWhiteSpace(shippingOption))
+            {
+                var (_, _, shippingPricingId) = await ResolveRouteAndShippingOptionAsync(route, shippingOption);
+                rules = rules.Where(r => !r.ServicePricingId.HasValue || r.ServicePricingId == shippingPricingId).ToList();
+            }
+
+            return rules
+                .OrderBy(r => r.RuleName)
+                .Select(ItemServiceRules.ToDto)
+                .ToList();
         }
 
         /// <summary>
@@ -90,7 +238,8 @@ namespace VCL_BLL.Services
 
         private sealed class ConsignmentDraft
         {
-            public List<PricingRule> SelectedRules { get; set; } = new();
+            /// <summary>Dịch vụ của từng kiện, cùng thứ tự với danh sách mặt hàng trong request.</summary>
+            public List<List<PricingRule>> ItemServices { get; set; } = new();
             public bool RequiresInspection { get; set; }
             public string? DefaultDestinationHandling { get; set; }
             public string? Note { get; set; }
@@ -99,9 +248,9 @@ namespace VCL_BLL.Services
 
         /// <summary>
         /// Validate tuyến hàng + phương án vận chuyển theo bảng cấu hình giá,
-        /// trả về giá trị đã chuẩn hoá theo cấu hình.
+        /// trả về giá trị đã chuẩn hoá theo cấu hình kèm dòng giá khớp (nếu có).
         /// </summary>
-        private async Task<(string Route, string ShippingOption)> ResolveRouteAndShippingOptionAsync(string? requestedRoute, string? requestedShippingOption)
+        private async Task<(string Route, string ShippingOption, Guid? ShippingPricingId)> ResolveRouteAndShippingOptionAsync(string? requestedRoute, string? requestedShippingOption)
         {
             if (string.IsNullOrWhiteSpace(requestedRoute))
                 throw new ArgumentException("Vui lòng chọn tuyến hàng (route).");
@@ -132,7 +281,7 @@ namespace VCL_BLL.Services
             }
 
             // Dùng đúng giá trị chuẩn hóa từ cấu hình
-            return (canonicalRoute, matchedPricing != null ? matchedPricing.ServiceType : requestedShippingOption);
+            return (canonicalRoute, matchedPricing != null ? matchedPricing.ServiceType : requestedShippingOption, matchedPricing?.Id);
         }
 
         private static void EnsureHasItems(List<ConsignmentItemRequest>? items)
@@ -142,92 +291,55 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Ngưỡng giới hạn kiện/đơn ký gửi. Giá trị mặc định khớp với validate phía web khách
-        /// (<c>ConsignmentOrder.jsx</c>); ghi đè được qua section <c>ConsignmentSettings:Limits</c>
-        /// để đổi hạn mức lúc demo mà không phải deploy lại.
+        /// Chặn kiện/đơn vượt hạn mức. Hạn mức do Admin cấu hình (SYSTEM_SETTINGS nhóm ORDER_LIMITS,
+        /// xem <see cref="OrderLimitSettings"/>); giới hạn để trống = không giới hạn. Kích thước và cân
+        /// nặng chỉ kiểm khi client có gửi, vì luồng Sale tạo hộ và mobile không bắt buộc nhập đủ.
         /// </summary>
-        private sealed class ConsignmentLimits
+        private async Task EnsureItemsWithinLimitsAsync(List<ConsignmentItemRequest> items)
         {
-            public decimal MaxItemWeightKg { get; init; }
-            public decimal MaxItemLengthCm { get; init; }
-            public decimal MaxItemWidthCm { get; init; }
-            public decimal MaxItemHeightCm { get; init; }
-            public int MaxItemQuantity { get; init; }
-            public decimal MaxItemDeclaredValue { get; init; }
-            public decimal MaxOrderWeightKg { get; init; }
-            public decimal MaxOrderDeclaredValue { get; init; }
-        }
+            var limits = await OrderLimitSettings.LoadAsync(_unitOfWork);
 
-        private ConsignmentLimits ResolveConsignmentLimits()
-        {
-            decimal Read(string key, decimal fallback) =>
-                decimal.TryParse(_configuration[$"ConsignmentSettings:Limits:{key}"], out var parsed) && parsed > 0
-                    ? parsed
-                    : fallback;
-
-            return new ConsignmentLimits
-            {
-                MaxItemWeightKg = Read(nameof(ConsignmentLimits.MaxItemWeightKg), 3m),
-                MaxItemLengthCm = Read(nameof(ConsignmentLimits.MaxItemLengthCm), 100m),
-                MaxItemWidthCm = Read(nameof(ConsignmentLimits.MaxItemWidthCm), 200m),
-                MaxItemHeightCm = Read(nameof(ConsignmentLimits.MaxItemHeightCm), 50m),
-                MaxItemQuantity = (int)Read(nameof(ConsignmentLimits.MaxItemQuantity), 5m),
-                MaxItemDeclaredValue = Read(nameof(ConsignmentLimits.MaxItemDeclaredValue), 6_000_000m),
-                MaxOrderWeightKg = Read(nameof(ConsignmentLimits.MaxOrderWeightKg), 5m),
-                MaxOrderDeclaredValue = Read(nameof(ConsignmentLimits.MaxOrderDeclaredValue), 10_000_000m)
-            };
-        }
-
-        /// <summary>
-        /// Chặn kiện/đơn vượt hạn mức. Kích thước và cân nặng chỉ kiểm khi client có gửi,
-        /// vì luồng Sale tạo hộ và mobile không bắt buộc nhập đủ các trường này.
-        /// </summary>
-        private void EnsureItemsWithinLimits(List<ConsignmentItemRequest> items)
-        {
-            var limits = ResolveConsignmentLimits();
+            if (items.Count > limits.MaxPackages)
+                throw new ArgumentException($"Mỗi đơn ký gửi tối đa {limits.MaxPackages} kiện hàng.");
 
             foreach (var item in items)
             {
                 var label = string.IsNullOrWhiteSpace(item.ProductName) ? "kiện hàng" : $"kiện \"{item.ProductName}\"";
 
-                if (item.Quantity > limits.MaxItemQuantity)
-                    throw new ArgumentException($"Số lượng tối đa {limits.MaxItemQuantity} sản phẩm trên 1 kiện hàng ({label}).");
+                if (limits.MaxParcelQuantity.HasValue && item.Quantity > limits.MaxParcelQuantity.Value)
+                    throw new ArgumentException($"Số lượng tối đa {limits.MaxParcelQuantity.Value} sản phẩm trên 1 kiện hàng ({label}).");
 
-                if (item.Weight.HasValue && item.Weight.Value > limits.MaxItemWeightKg)
-                    throw new ArgumentException($"Cân nặng tối đa {limits.MaxItemWeightKg:0.##} kg cho mỗi kiện hàng ({label}).");
+                if (limits.MaxParcelWeightKg.HasValue && item.Weight.HasValue && item.Weight.Value > limits.MaxParcelWeightKg.Value)
+                    throw new ArgumentException($"Cân nặng tối đa {OrderLimitSettings.Kg(limits.MaxParcelWeightKg.Value)} kg cho mỗi kiện hàng ({label}).");
 
-                if (item.Length.HasValue && item.Length.Value > limits.MaxItemLengthCm)
-                    throw new ArgumentException($"Chiều dài tối đa {limits.MaxItemLengthCm:0.##} cm ({label}).");
+                if (limits.MaxParcelLengthCm.HasValue && item.Length.HasValue && item.Length.Value > limits.MaxParcelLengthCm.Value)
+                    throw new ArgumentException($"Chiều dài tối đa {OrderLimitSettings.Cm(limits.MaxParcelLengthCm.Value)} cm ({label}).");
 
-                if (item.Width.HasValue && item.Width.Value > limits.MaxItemWidthCm)
-                    throw new ArgumentException($"Chiều rộng tối đa {limits.MaxItemWidthCm:0.##} cm ({label}).");
+                if (limits.MaxParcelWidthCm.HasValue && item.Width.HasValue && item.Width.Value > limits.MaxParcelWidthCm.Value)
+                    throw new ArgumentException($"Chiều rộng tối đa {OrderLimitSettings.Cm(limits.MaxParcelWidthCm.Value)} cm ({label}).");
 
-                if (item.Height.HasValue && item.Height.Value > limits.MaxItemHeightCm)
-                    throw new ArgumentException($"Chiều cao tối đa {limits.MaxItemHeightCm:0.##} cm ({label}).");
+                if (limits.MaxParcelHeightCm.HasValue && item.Height.HasValue && item.Height.Value > limits.MaxParcelHeightCm.Value)
+                    throw new ArgumentException($"Chiều cao tối đa {OrderLimitSettings.Cm(limits.MaxParcelHeightCm.Value)} cm ({label}).");
 
-                if (item.DeclaredValue.HasValue && item.DeclaredValue.Value > limits.MaxItemDeclaredValue)
-                    throw new ArgumentException($"Giá trị 1 kiện hàng không được vượt quá {limits.MaxItemDeclaredValue:#,##0} đ ({label}).");
+                if (limits.MaxItemDeclaredValue.HasValue && item.DeclaredValue.HasValue && item.DeclaredValue.Value > limits.MaxItemDeclaredValue.Value)
+                    throw new ArgumentException($"Giá trị 1 kiện hàng không được vượt quá {OrderLimitSettings.Money(limits.MaxItemDeclaredValue.Value)} đ ({label}).");
             }
 
             var totalWeight = items.Sum(i => i.Weight ?? 0m);
-            if (totalWeight > limits.MaxOrderWeightKg)
-                throw new ArgumentException($"Tổng cân nặng toàn bộ đơn hàng ({totalWeight:0.##} kg) vượt quá giới hạn tối đa {limits.MaxOrderWeightKg:0.##} kg.");
+            if (limits.MaxTotalWeightKg.HasValue && totalWeight > limits.MaxTotalWeightKg.Value)
+                throw new ArgumentException($"Tổng cân nặng toàn bộ đơn hàng ({OrderLimitSettings.Kg(totalWeight)} kg) vượt quá giới hạn tối đa {OrderLimitSettings.Kg(limits.MaxTotalWeightKg.Value)} kg.");
 
             var totalDeclaredValue = items.Sum(i => i.DeclaredValue ?? 0m);
-            if (totalDeclaredValue > limits.MaxOrderDeclaredValue)
-                throw new ArgumentException($"Tổng giá trị hàng hóa của đơn hàng ({totalDeclaredValue:#,##0} đ) vượt quá giới hạn tối đa {limits.MaxOrderDeclaredValue:#,##0} đ.");
+            if (limits.MaxTotalDeclaredValue.HasValue && totalDeclaredValue > limits.MaxTotalDeclaredValue.Value)
+                throw new ArgumentException($"Tổng giá trị hàng hóa của đơn hàng ({OrderLimitSettings.Money(totalDeclaredValue)} đ) vượt quá giới hạn tối đa {OrderLimitSettings.Money(limits.MaxTotalDeclaredValue.Value)} đ.");
         }
 
         /// <summary>
-        /// Web khách hàng bắt buộc đóng thùng gỗ và phải chọn cấu hình thùng cho từng kiện,
-        /// nên chặn luôn ở server thay vì để <c>SuggestPackageConfigurationIdAsync</c> đoán hộ.
-        /// Luồng Sale tạo hộ không áp ràng buộc này.
+        /// Khách tạo đơn bắt buộc chọn cấu hình thùng gỗ cho từng kiện, nên chặn luôn ở server thay
+        /// vì để <c>SuggestPackageConfigurationIdAsync</c> đoán hộ. Luồng Sale tạo hộ không áp ràng buộc này.
         /// </summary>
-        private static void EnsureWoodenCrateSelected(bool requiresWoodenCrate, List<ConsignmentItemRequest> items)
+        private static void EnsureWoodenCrateSelected(List<ConsignmentItemRequest> items)
         {
-            if (!requiresWoodenCrate)
-                throw new ArgumentException("Đóng thùng gỗ là dịch vụ bắt buộc. Vui lòng chọn cấu hình thùng cho từng kiện.");
-
             var missingCount = items.Count(i => !i.PackageConfigurationId.HasValue);
             if (missingCount > 0)
                 throw new ArgumentException($"Còn {missingCount} kiện chưa có cấu hình thùng gỗ. Vui lòng chọn cấu hình cho từng kiện.");
@@ -244,14 +356,10 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Đối chiếu hàng cấm/hạn chế, resolve các dịch vụ phụ được chọn (theo ID và theo cờ boolean)
-        /// và dựng ghi chú xử lý cho đơn.
+        /// Đối chiếu hàng cấm/hạn chế, kiểm cấu hình thùng và dịch vụ khách chọn cho từng kiện.
         /// </summary>
         private async Task<ConsignmentDraft> BuildConsignmentDraftAsync(
-            List<ConsignmentItemRequest> items,
-            List<Guid>? pricingRuleIds,
-            string? requestNote,
-            bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance)
+            List<ConsignmentItemRequest> items, string? requestNote, Guid? shippingPricingId)
         {
             // Đối chiếu hàng cấm / hạn chế (dùng chung logic với endpoint validate-items)
             var validationResults = await ValidateItemsAgainstRestrictedAsync(items);
@@ -274,77 +382,24 @@ namespace VCL_BLL.Services
                 })
                 .ToList();
 
-            // Resolve các quy định giá/dịch vụ phụ được chọn theo ID
-            var selectedOrderRules = new List<PricingRule>();
-            if (pricingRuleIds != null && pricingRuleIds.Any())
+            // Cấu hình thùng gửi lên phải có thật và còn dùng; trước đây ID sai rơi xuống lỗi khoá ngoại.
+            var configs = await ItemServiceRules.LoadPackageConfigurationsAsync(_unitOfWork);
+            foreach (var item in items.Where(i => i.PackageConfigurationId.HasValue && i.PackageConfigurationId.Value != Guid.Empty))
             {
-                foreach (var ruleId in pricingRuleIds)
+                if (!configs.TryGetValue(item.PackageConfigurationId!.Value, out var config)
+                    || !string.Equals(config.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
                 {
-                    var rule = await _unitOfWork.Repository<PricingRule>().GetByIdAsync(ruleId);
-                    if (rule != null && !string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) && !rule.IsRequired)
-                    {
-                        selectedOrderRules.Add(rule);
-                    }
+                    throw new ArgumentException($"Cấu hình thùng của kiện \"{item.ProductName}\" không tồn tại hoặc đã ngừng dùng.");
                 }
             }
 
-            // FE có thể gửi các cờ boolean thay vì PricingRuleIds -> map cờ sang PricingRule active
-            // theo RuleType tương ứng và union vào danh sách đã chọn (không trùng lặp).
-            await AddRulesFromServiceFlagsAsync(selectedOrderRules,
-                requiresInspection, requiresPacking, requiresWoodenCrate, requiresInsurance);
-
-            // Dịch vụ kiểm hàng: theo cờ FE gửi hoặc theo rule đã chọn
-            bool inspection = requiresInspection || selectedOrderRules.Any(r =>
-                string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase)
-            );
-
-            // Gom tất cả mã đóng gói (RuleCode)
-            var boxRuleCodes = new List<string>();
-            foreach (var rule in selectedOrderRules)
-            {
-                if (IsBoxRule(rule))
-                {
-                    if (!string.IsNullOrWhiteSpace(rule.RuleCode) && !boxRuleCodes.Contains(rule.RuleCode))
-                    {
-                        boxRuleCodes.Add(rule.RuleCode);
-                    }
-                }
-            }
-
-            // Gom tất cả mã dịch vụ phụ khác (non-box, non-inspection)
-            var otherRuleCodes = selectedOrderRules
-                .Where(r => !IsBoxRule(r) &&
-                            !string.Equals(r.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) &&
-                            !string.Equals(r.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
-                .Select(r => r.RuleCode)
-                .Where(code => !string.IsNullOrWhiteSpace(code))
-                .Distinct()
-                .ToList();
-
-            var noteParts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(requestNote))
-            {
-                noteParts.Add(requestNote);
-            }
-            if (boxRuleCodes.Any())
-            {
-                noteParts.Add("Yêu cầu đóng gói: " + string.Join(", ", boxRuleCodes));
-            }
-            if (inspection)
-            {
-                noteParts.Add("Yêu cầu kiểm hàng");
-            }
-            if (otherRuleCodes.Any())
-            {
-                noteParts.Add("Dịch vụ khác: " + string.Join(", ", otherRuleCodes));
-            }
+            var itemServices = await ItemServiceRules.ResolveForItemsAsync(_unitOfWork, items, shippingPricingId);
 
             return new ConsignmentDraft
             {
-                SelectedRules = selectedOrderRules,
-                RequiresInspection = inspection,
-                Note = noteParts.Any() ? string.Join(". ", noteParts) : null,
+                ItemServices = itemServices,
+                RequiresInspection = itemServices.Any(rules => rules.Any(ItemServiceRules.IsInspection)),
+                Note = string.IsNullOrWhiteSpace(requestNote) ? null : requestNote.Trim(),
                 Warnings = warnings
             };
         }
@@ -389,17 +444,20 @@ namespace VCL_BLL.Services
             await _unitOfWork.Repository<Order>().AddAsync(order);
 
             var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            foreach (var item in items)
+            var itemServiceRepo = _unitOfWork.Repository<OrderItemService>();
+            for (var index = 0; index < items.Count; index++)
             {
+                var item = items[index];
                 Guid? packageConfigId = item.PackageConfigurationId;
                 if (!packageConfigId.HasValue || packageConfigId.Value == Guid.Empty)
                 {
                     packageConfigId = await SuggestPackageConfigurationIdAsync(item.Length, item.Width, item.Height, item.Weight);
                 }
 
+                var orderItemId = Guid.NewGuid();
                 await orderItemRepo.AddAsync(new OrderItem
                 {
-                    Id = Guid.NewGuid(),
+                    Id = orderItemId,
                     OrderId = order.Id,
                     CompanyId = customer.CompanyId,
                     ProductName = item.ProductName,
@@ -415,6 +473,17 @@ namespace VCL_BLL.Services
                     PackageConfigurationId = packageConfigId,
                     CreatedAt = now
                 });
+
+                foreach (var rule in draft.ItemServices[index])
+                {
+                    await itemServiceRepo.AddAsync(new OrderItemService
+                    {
+                        Id = Guid.NewGuid(),
+                        OrderItemId = orderItemId,
+                        PricingRuleId = rule.Id,
+                        CreatedAt = now
+                    });
+                }
             }
 
             await _unitOfWork.SaveChangesAsync();
@@ -429,10 +498,9 @@ namespace VCL_BLL.Services
                     $"Khách hàng {customerName} vừa tạo đơn ký gửi mới (Mã: {order.ConsignmentCode}). Vui lòng tiếp nhận và lập báo giá.");
             }
 
-            // Sinh báo giá tạm tính (tái sử dụng QuotationService).
-            // Truyền danh sách phụ phí đã tick để báo giá chỉ áp các phí được chọn.
-            var ruleIds = draft.SelectedRules.Select(r => r.Id).ToList();
-            var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id, ruleIds);
+            // Sinh báo giá tạm tính (tái sử dụng QuotationService); phí dịch vụ tính theo từng kiện.
+            var ruleIds = draft.ItemServices.SelectMany(rules => rules).Select(r => r.Id).Distinct().ToList();
+            var quotation = await _quotationService.CreateEstimateQuotationAsync(order.Id);
 
             return new CreateConsignmentResponse
             {

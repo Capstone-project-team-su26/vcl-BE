@@ -88,17 +88,8 @@ namespace VCL_BLL.Services
         public async Task<List<Guid>> ResolveServiceFlagRuleIdsAsync(
             bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance)
         {
-            var rules = new List<PricingRule>();
-            await AddRulesFromServiceFlagsAsync(rules, requiresInspection, requiresPacking, requiresWoodenCrate, requiresInsurance);
-            return rules.Select(r => r.Id).ToList();
-        }
-
-        private async Task AddRulesFromServiceFlagsAsync(
-            List<PricingRule> selectedRules,
-            bool requiresInspection, bool requiresPacking, bool requiresWoodenCrate, bool requiresInsurance)
-        {
             if (!requiresInspection && !requiresPacking && !requiresWoodenCrate && !requiresInsurance)
-                return;
+                return new List<Guid>();
 
             var activeRules = (await _unitOfWork.Repository<PricingRule>().GetAllAsync())
                 .Where(r => string.Equals(r.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
@@ -112,12 +103,13 @@ namespace VCL_BLL.Services
                 return keywords.Any(k => ruleType.Contains(k) || condType.Contains(k) || code.Contains(k));
             }
 
+            var selected = new List<PricingRule>();
             void AddMatches(Func<PricingRule, bool> predicate)
             {
                 foreach (var rule in activeRules.Where(predicate))
                 {
-                    if (selectedRules.All(x => x.Id != rule.Id))
-                        selectedRules.Add(rule);
+                    if (selected.All(x => x.Id != rule.Id))
+                        selected.Add(rule);
                 }
             }
 
@@ -125,21 +117,8 @@ namespace VCL_BLL.Services
             if (requiresPacking) AddMatches(r => MatchType(r, "PACKING", "REPACK", "CARTON"));
             if (requiresWoodenCrate) AddMatches(r => MatchType(r, "WOODEN_BOX", "WOODEN", "CRATE"));
             if (requiresInsurance) AddMatches(r => MatchType(r, "INSURANCE"));
-        }
 
-        private bool IsBoxRule(PricingRule rule)
-        {
-            if (rule == null) return false;
-            var code = rule.RuleCode?.ToUpperInvariant() ?? string.Empty;
-            var name = rule.RuleName?.ToUpperInvariant() ?? string.Empty;
-            var ruleType = rule.RuleType?.ToUpperInvariant() ?? string.Empty;
-            var condType = rule.ConditionType?.ToUpperInvariant() ?? string.Empty;
-
-            return ruleType.Contains("BOX") || ruleType.Contains("CRATE") ||
-                   condType.Contains("BOX") ||
-                   code.Contains("SMALL") || code.Contains("MEDIUM") || code.Contains("LARGE") || code.Contains("BUBBLE") ||
-                   name.Contains("SMALL") || name.Contains("MEDIUM") || name.Contains("LARGE") || name.Contains("BUBBLE") ||
-                   name.Contains("NHỎ") || name.Contains("VỪA") || name.Contains("LỚN") || name.Contains("XỐP HƠI") || name.Contains("BÓP NỔ") || name.Contains("MÀNG XỐP") || name.Contains("THÙNG GỖ") || name.Contains("ĐÔNG GỖ") || name.Contains("ĐÓNG GỖ");
+            return selected.Select(r => r.Id).ToList();
         }
 
         private async Task<Guid?> SuggestPackageConfigurationIdAsync(decimal? length, decimal? width, decimal? height, decimal? weight)

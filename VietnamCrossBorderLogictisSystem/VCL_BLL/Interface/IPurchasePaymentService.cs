@@ -1,4 +1,6 @@
+using VCL_DLL.Models;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 
@@ -9,12 +11,39 @@ namespace VCL_BLL.Interface
         Task<ConfirmQuotationAndPayResponseDto> ConfirmQuotationAndPayAsync(
             Guid requestId, Guid userId, string userRole, ConfirmQuotationAndPayRequestDto request);
 
+
         /// <summary>
-        /// Staff chốt chi phí phát sinh sau khi hàng về và tạo đợt thanh toán cuối.
-        /// Không phát sinh gì thì đơn chuyển COMPLETED luôn, không bắt khách thanh toán thêm.
+        /// Tạo khoản thu phần chênh giá của một đơn mua NCC (chưa SaveChanges — người gọi tự lưu).
         /// </summary>
-        Task<CreatePurchaseFinalPaymentResponseDto> CreateFinalPaymentAsync(
-            Guid requestId, Guid userId, string userRole, CreatePurchaseFinalPaymentRequestDto request);
+        Task<PurchasePayment> CreatePriceDifferencePaymentAsync(
+            PurchaseRequest purchaseRequest, PurchaseOrder purchaseOrder, decimal amount, string? paymentMethod, string? returnUrl,
+            string? cancelUrl = null);
+
+        /// <summary>
+        /// Ghi nhận một khoản PHẢI HOÀN cho khách (chờ kế toán chuyển) kèm chi tiết từng dòng; số
+        /// tiền = tổng các dòng. Gắn với đơn mua + cùng lý do và <paramref name="mergeWithPending"/>
+        /// thì CẬP NHẬT khoản đang chờ, không đẻ thêm dòng. Chặn tổng hoàn vượt tổng đã thu.
+        /// Chưa SaveChanges — người gọi tự lưu.
+        /// </summary>
+        Task<PurchasePayment> UpsertRefundAsync(
+            PurchaseRequest purchaseRequest, PurchaseOrder? purchaseOrder, string refundType,
+            List<PurchaseRefundLine> lines, Guid? actorId, bool mergeWithPending = true);
+
+        /// <summary>
+        /// Kế toán đã chuyển trả khách: đóng đúng khoản hoàn (theo đơn mua hoặc theo yêu cầu),
+        /// đối chiếu số tiền nếu có, lưu mã giao dịch.
+        /// </summary>
+        Task<PurchasePayment> MarkRefundDoneAsync(
+            Guid? purchaseOrderId, Guid? purchaseRequestId, Guid? refundId, string? transactionCode, decimal? amount);
+
+        /// <summary>DTO các khoản hoàn kèm chi tiết.</summary>
+        Task<List<PurchaseRefundDto>> BuildRefundDtosAsync(IEnumerable<PurchasePayment> refunds);
+
+        /// <summary>Tổng hợp tiền hoàn của yêu cầu (không kiểm quyền).</summary>
+        Task<PurchaseRefundSummaryDto> BuildRefundSummaryAsync(PurchaseRequest purchaseRequest);
+
+        /// <summary>Tổng hợp tiền hoàn của yêu cầu — khách xem yêu cầu của mình, nhân viên xem tất cả.</summary>
+        Task<PurchaseRefundSummaryDto> GetRefundSummaryAsync(Guid requestId, Guid userId, string userRole);
 
         /// <summary>Lịch sử thanh toán của một đơn mua hộ (Customer xem đơn của mình, Staff xem tất cả).</summary>
         Task<PurchasePaymentHistoryResponseDto> GetPaymentHistoryAsync(Guid requestId, Guid userId, string userRole);

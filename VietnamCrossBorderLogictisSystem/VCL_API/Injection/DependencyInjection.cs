@@ -17,6 +17,10 @@ namespace VCL_API.Injection
     {
         public static IServiceCollection AddProjectServices(this IServiceCollection services, IConfiguration configuration)
         {
+            // Lỗi 400 do kiểm dữ liệu tự động ([ApiController]) trả câu tiếng Việt, có trường "message".
+            services.PostConfigure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+                options.InvalidModelStateResponseFactory = VCL_API.Infrastructure.VietnameseValidationResponse.Create);
+
             services.AddDbContext<VCLDBContext>(options =>
                 options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
@@ -39,12 +43,23 @@ namespace VCL_API.Injection
             services.AddScoped<IServicePricingService, ServicePricingService>();
             services.AddScoped<IParcelService, ParcelService>();
             services.AddScoped<IInventoryService, InventoryService>();
-            services.AddScoped<IWroService, WroService>();
+            services.AddScoped<IWarehouseReleaseService, WarehouseReleaseService>();
+            services.AddScoped<IAttachmentService, AttachmentService>();
+            services.AddScoped<IExportDocumentService, ExportDocumentService>();
+            services.AddScoped<IExportShipmentService, ExportShipmentService>();
+            services.AddScoped<IExportHoldService, ExportHoldService>();
+            services.AddScoped<IShipmentTrackingService, ShipmentTrackingService>();
+            services.AddScoped<IVnSettlementService, VnSettlementService>();
+            services.AddScoped<IVnArrivalService, VnArrivalService>();
+            services.AddScoped<IParcelIncidentService, ParcelIncidentService>();
+            services.AddHostedService<VCL_API.Workers.OrderAutoCompleteWorker>();
             services.AddScoped<IPickingListService, PickingListService>();
             services.AddScoped<ICustomerService, CustomerService>();
             services.AddScoped<IWarehouseReceivingNoteService, WarehouseReceivingNoteService>();
             services.AddScoped<IWarehouseService, WarehouseService>();
             services.AddScoped<IDeliveryAddressService, DeliveryAddressService>();
+            services.AddScoped<ICustomerDashboardService, CustomerDashboardService>();
+            services.AddScoped<IStaffDashboardService, StaffDashboardService>();
             services.AddScoped<IFileUploadService, CloudinaryFileUploadService>();
             services.AddScoped<IConsignmentReceiptService, ConsignmentReceiptService>();
             services.AddScoped<IConsolidationService, ConsolidationService>();
@@ -54,6 +69,10 @@ namespace VCL_API.Injection
             services.AddScoped<ISePayService, SePayService>();
             services.AddScoped<IPurchasePaymentService, PurchasePaymentService>();
             services.AddScoped<IConsignmentPaymentService, ConsignmentPaymentService>();
+            services.AddScoped<IPaymentConfirmationService, PaymentConfirmationService>();
+            services.AddScoped<WarehouseManagerService>();
+            services.AddScoped<UserWarehouseService>();
+            services.AddScoped<WarehouseZoneService>();
             services.AddScoped<IStorageFeeService, StorageFeeService>();
             services.AddScoped<ISettlementQueryService, SettlementQueryService>();
             services.AddScoped<IWarehouseInboundService, WarehouseInboundService>();
@@ -67,6 +86,7 @@ namespace VCL_API.Injection
             services.AddScoped<IInternationalShipmentService, InternationalShipmentService>();
             services.AddScoped<IShippingMethodService, ShippingMethodService>();
             services.AddScoped<IAdditionalServiceFeeService, AdditionalServiceFeeService>();
+            services.AddScoped<IOrderLimitSettingsService, OrderLimitSettingsService>();
             services.AddScoped<IConversationService, ConversationService>();
             services.AddScoped<IWarehouseLocationLayoutService, WarehouseLocationLayoutService>();
             services.AddScoped<IAiService, AiService>();

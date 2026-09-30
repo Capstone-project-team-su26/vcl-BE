@@ -46,18 +46,18 @@ namespace VCL_BLL.Services
             var now = DateTime.UtcNow;
 
             if (user is not null && user.IsEmailVerified)
-                throw new InvalidOperationException("Email da duoc su dung.");
+                throw new InvalidOperationException("Email đã được sử dụng.");
 
             if (user is not null &&
                 !string.Equals(user.UserType, "Customer", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Email da duoc su dung.");
+                throw new InvalidOperationException("Email đã được sử dụng.");
             }
 
             if (user?.LastOtpSentAt is DateTime lastSentAt &&
                 now - lastSentAt < TimeSpan.FromMinutes(1))
             {
-                throw new AuthException("Vui long cho 60 giay truoc khi gui lai OTP.");
+                throw new AuthException("Vui lòng chờ 60 giây trước khi gửi lại OTP.");
             }
 
             var customerRepo = _unitOfWork.Repository<Customer>();
@@ -94,7 +94,7 @@ namespace VCL_BLL.Services
             else
             {
                 customer = customers.FirstOrDefault(c => c.UserId == user.Id)
-                    ?? throw new InvalidOperationException("Khong tim thay ho so khach hang.");
+                    ?? throw new InvalidOperationException("Không tìm thấy hồ sơ khách hàng.");
             }
 
             user.FullName = request.FullName.Trim();
@@ -133,19 +133,19 @@ namespace VCL_BLL.Services
                 string.Equals(u.UserType, "Customer", StringComparison.OrdinalIgnoreCase));
 
             if (user is null || user.IsEmailVerified)
-                throw new AuthException("Khong tim thay yeu cau dang ky.");
+                throw new AuthException("Không tìm thấy yêu cầu đăng ký.");
 
             if (user.EmailVerificationOtpExpiry is null ||
                 user.EmailVerificationOtpExpiry < DateTime.UtcNow)
             {
-                throw new AuthException("Ma OTP da het han. Vui long yeu cau gui lai.");
+                throw new AuthException("Mã OTP đã hết hạn. Vui lòng yêu cầu gửi lại.");
             }
 
             if (user.EmailVerificationFailedAttempts >= maxFailedAttempts)
-                throw new AuthException("Ban da nhap sai OTP qua so lan cho phep. Vui long gui lai OTP.");
+                throw new AuthException("Bạn đã nhập sai OTP quá số lần cho phép. Vui lòng yêu cầu gửi lại OTP.");
 
             if (string.IsNullOrEmpty(user.EmailVerificationOtpHash))
-                throw new AuthException("Ma OTP khong hop le.");
+                throw new AuthException("Mã OTP không hợp lệ.");
 
             var suppliedHash = HashOtp(email, request.Otp);
             if (!CryptographicOperations.FixedTimeEquals(
@@ -155,13 +155,13 @@ namespace VCL_BLL.Services
                 user.EmailVerificationFailedAttempts++;
                 userRepo.Update(user);
                 await _unitOfWork.SaveChangesAsync();
-                throw new AuthException("Ma OTP khong chinh xac.");
+                throw new AuthException("Mã OTP không chính xác.");
             }
 
             var customerRepo = _unitOfWork.Repository<Customer>();
             var customers = await customerRepo.GetAllAsync();
             var customer = customers.FirstOrDefault(c => c.UserId == user.Id)
-                ?? throw new InvalidOperationException("Khong tim thay ho so khach hang.");
+                ?? throw new InvalidOperationException("Không tìm thấy hồ sơ khách hàng.");
 
             user.IsEmailVerified = true;
             user.Status = "Active";
@@ -189,13 +189,13 @@ namespace VCL_BLL.Services
                 string.Equals(u.UserType, "Customer", StringComparison.OrdinalIgnoreCase));
 
             if (user is null || user.IsEmailVerified)
-                throw new AuthException("Khong tim thay yeu cau dang ky.");
+                throw new AuthException("Không tìm thấy yêu cầu đăng ký.");
 
             var now = DateTime.UtcNow;
             if (user.LastOtpSentAt.HasValue &&
                 now - user.LastOtpSentAt.Value < TimeSpan.FromMinutes(1))
             {
-                throw new AuthException("Vui long cho 60 giay truoc khi gui lai OTP.");
+                throw new AuthException("Vui lòng chờ 60 giây trước khi gửi lại OTP.");
             }
 
             var otp = GenerateOtp();
@@ -222,7 +222,7 @@ namespace VCL_BLL.Services
         private string HashOtp(string email, string otp)
         {
             var secret = _configuration["JWT:SecretKey"]
-                ?? throw new InvalidOperationException("JWT:SecretKey is not configured.");
+                ?? throw new InvalidOperationException("Hệ thống xác thực chưa được cấu hình. Vui lòng liên hệ VCL để được hỗ trợ.");
             using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
             return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{email}:{otp}")));
         }
@@ -234,7 +234,7 @@ namespace VCL_BLL.Services
             var user = users.FirstOrDefault(u => u.Email.Equals(request.Email, StringComparison.OrdinalIgnoreCase));
 
             if (user == null || !PasswordHelper.VerifyPassword(request.Password, user.Password))
-                throw new UnauthorizedAccessException("Invalid credentials");
+                throw new UnauthorizedAccessException("Email hoặc mật khẩu không đúng.");
 
             if (user.Status == "Locked")
                 throw new UnauthorizedAccessException("Tài khoản của bạn đã bị khóa.");
@@ -243,7 +243,7 @@ namespace VCL_BLL.Services
                 (string.Equals(user.UserType, "Customer", StringComparison.OrdinalIgnoreCase) &&
                  !user.IsEmailVerified))
             {
-                throw new UnauthorizedAccessException("Tai khoan chua duoc xac thuc.");
+                throw new UnauthorizedAccessException("Tài khoản chưa được xác thực.");
             }
 
             var role = user.Role ?? string.Empty;

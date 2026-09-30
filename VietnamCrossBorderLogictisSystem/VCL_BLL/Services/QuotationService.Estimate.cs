@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_DLL.Models;
 
 namespace VCL_BLL.Services
@@ -11,22 +12,62 @@ namespace VCL_BLL.Services
     public partial class QuotationService
     {
         /// <inheritdoc/>
-        public async Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId, IReadOnlyCollection<Guid>? selectedPricingRuleIds = null)
+        public async Task<EstimateQuotationResponse> CreateEstimateQuotationAsync(Guid orderId)
         {
             // 1. Tìm Order theo orderId
-            var orderRepo = _unitOfWork.Repository<Order>();
-            var order = await orderRepo.GetByIdAsync(orderId);
+            var order = await _unitOfWork.Repository<Order>().GetByIdAsync(orderId);
 
             if (order == null)
                 throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
 
             // 2. Lấy danh sách OrderItems thuộc Order
-            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            var allItems = await orderItemRepo.GetAllAsync();
+            var allItems = await _unitOfWork.Repository<OrderItem>().GetAllAsync();
             var orderItems = allItems.Where(i => i.OrderId == orderId).ToList();
 
             if (!orderItems.Any())
                 throw new ArgumentException("Đơn hàng chưa có sản phẩm nào. Vui lòng thêm sản phẩm trước khi tạo báo giá.");
+
+            var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => p.ConsignmentId == orderId)
+                .ToList();
+
+            var itemServices = await ItemServiceRules.LoadRulesAsync(_unitOfWork, orderItems.Select(i => i.Id));
+
+            return await BuildEstimateAsync(order, orderItems, parcels, itemServices, persist: true);
+        }
+
+        /// <summary>
+        /// ƯỚC TÍNH TRƯỚC KHI TẠO ĐƠN — chạy ĐÚNG hàm tính của báo giá tạm tính, chỉ khác
+        /// một điều duy nhất: không ghi gì xuống cơ sở dữ liệu.
+        ///
+        /// Vì sao phải dùng chung hàm: màn xác nhận trước đây tự cộng phí ở trình duyệt nên
+        /// số nó hiện lệch với hoá đơn hệ thống phát hành ngay sau đó (ví dụ phí đóng thùng
+        /// gỗ báo 60.000đ trong khi thu 25.000đ). Chỉ cần hai nơi tính bằng hai đoạn mã khác
+        /// nhau là sớm muộn cũng lệch — nên chỉ để lại MỘT đoạn mã tính tiền.
+        ///
+        /// Đơn và mặt hàng truyền vào là đối tượng nằm trong bộ nhớ, chưa có trong DB; dịch
+        /// vụ theo kiện vì thế cũng phải truyền theo, không đọc từ bảng được.
+        /// </summary>
+        public Task<EstimateQuotationResponse> PreviewEstimateAsync(
+            Order order,
+            List<OrderItem> orderItems,
+            IReadOnlyDictionary<Guid, List<PricingRule>> itemServices)
+        {
+            if (orderItems == null || orderItems.Count == 0)
+                throw new ArgumentException("Chưa có mặt hàng nào để ước tính.");
+
+            /* Đơn chưa tạo thì chưa thể có kiện nào ở kho — cân đo thật chỉ có sau khi kho nhận. */
+            return BuildEstimateAsync(order, orderItems, new List<Parcel>(), itemServices, persist: false);
+        }
+
+        private async Task<EstimateQuotationResponse> BuildEstimateAsync(
+            Order order,
+            List<OrderItem> orderItems,
+            List<Parcel> parcels,
+            IReadOnlyDictionary<Guid, List<PricingRule>> itemServices,
+            bool persist)
+        {
+            var orderId = order.Id;
 
             // 3. Tính toán cân nặng & thể tích
             var itemDetails = new List<OrderItemDetail>();
@@ -37,6 +78,9 @@ namespace VCL_BLL.Services
             // Map cấu hình thùng để trả kèm kích thước/phí trong response (FE hiển thị ngay sau khi tạo đơn)
             var packageConfigMap = (await _unitOfWork.Repository<PackageConfiguration>().GetAllAsync())
                 .ToDictionary(c => c.Id, c => c);
+            var servicesByItem = itemServices.ToDictionary(
+                kv => kv.Key,
+                kv => kv.Value.Select(ItemServiceRules.ToDto).ToList());
 
             foreach (var item in orderItems)
             {
@@ -64,6 +108,7 @@ namespace VCL_BLL.Services
                     ReferenceUrls = ConsignmentItemRequest.SplitReferenceUrls(item.ReferenceUrl),
                     PackageConfigurationId = item.PackageConfigurationId,
                     PackageConfiguration = MapPackageConfig(item.PackageConfigurationId, packageConfigMap),
+                    Services = ItemServiceRules.For(servicesByItem, item.Id),
                     ItemVolume = itemVolume
                 });
             }
@@ -116,13 +161,10 @@ namespace VCL_BLL.Services
                 .ToList();
 
             // 4. Tính Volumetric Weight, Minimum Weight & Net Weight (Chargeable Weight)
-            var divisor = GetVolumetricDivisor(activeRules);
-            var freightRate = matchedPricing?.Price ?? (IsExpressServiceType(consignmentType) ? DefaultExpressRate : DefaultStandardRate);
-
-            var parcelRepo = _unitOfWork.Repository<Parcel>();
-            var parcels = (await parcelRepo.GetAllAsync())
-                .Where(p => p.ConsignmentId == orderId)
-                .ToList();
+            var divisor = GetVolumetricDivisor(activeRules, matchedPricing?.Id);
+            // Không có bảng giá thì tạm tính cước 0 thay vì giá cứng: báo giá tạm tính chỉ để tham khảo,
+            // Sales phải có bảng giá hợp lệ mới gửi được báo giá chính thức.
+            var freightRate = matchedPricing?.Price ?? 0m;
 
             var quotationFees = new List<QuotationFee>();
             var now = DateTime.UtcNow;
@@ -219,9 +261,7 @@ namespace VCL_BLL.Services
             }
             else
             {
-                baseServiceFee = IsExpressServiceType(consignmentType)
-                    ? ExpressServiceFee
-                    : StandardServiceFee;
+                baseServiceFee = 0m;
 
                 quotationFees.Add(new QuotationFee
                 {
@@ -239,6 +279,13 @@ namespace VCL_BLL.Services
             decimal totalSurcharges = 0m;
             foreach (var rule in activeRules)
             {
+                // Rule hệ thống (VAT, thuế NK, hệ số DIM, cân tối thiểu) là tham số tính toán,
+                // không phải phụ phí — đã dùng ở phần cân quy đổi / thuế phía trên.
+                if (ItemServiceRules.IsSystemRule(rule))
+                {
+                    continue;
+                }
+
                 // Nếu là đơn ký gửi (consignment), bỏ qua quy tắc phí nội địa trong vòng lặp phụ phí vì đã add riêng ở trên
                 if (isConsignment && (string.Equals(rule.RuleType, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
                                       string.Equals(rule.RuleCode, "DOMESTIC_FEE", StringComparison.OrdinalIgnoreCase) ||
@@ -249,9 +296,13 @@ namespace VCL_BLL.Services
                 }
 
                 // Phí mua hộ chỉ thuộc luồng PurchaseRequest và được sale nhập tay ở đó.
-                // Rule PURCHASE_FEE không gắn ServicePricing nên nếu không loại ra sẽ hiện thành
-                // ô tick phụ phí trên form ký gửi, khách tick vào là bị tính thêm tiền.
                 if (string.Equals(rule.RuleType, "PURCHASE_FEE", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                // Rule tùy chọn là dịch vụ khách chọn theo từng kiện, tính riêng ở dưới.
+                if (!rule.IsRequired)
                 {
                     continue;
                 }
@@ -297,48 +348,8 @@ namespace VCL_BLL.Services
                 {
                     isConditionMet = order.RequiresInspection;
                 }
-                else if (string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
-                {
-                    var note = order.Note?.ToLower() ?? string.Empty;
-                    isConditionMet = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
-                }
 
-                // Xác định xem rule có được áp dụng hay không
-                bool isApplicable = false;
-                if (rule.IsRequired)
-                {
-                    isApplicable = isConditionMet;
-                }
-                else if (selectedPricingRuleIds != null)
-                {
-                    // Khách tự tick phụ phí (yêu cầu thầy Long): chỉ áp các rule tùy chọn khách đã chọn
-                    isApplicable = selectedPricingRuleIds.Contains(rule.Id);
-                }
-                else
-                {
-                    // Client cũ chưa gửi selectedPricingRuleIds - giữ logic đoán theo note như trước
-                    if (string.Equals(rule.RuleType, "INSPECTION", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(rule.ConditionType, "REQUIRES_INSPECTION", StringComparison.OrdinalIgnoreCase))
-                    {
-                        isApplicable = order.RequiresInspection;
-                    }
-                    else if (string.Equals(rule.RuleType, "WOODEN_BOX", StringComparison.OrdinalIgnoreCase) ||
-                             string.Equals(rule.ConditionType, "REQUIRES_WOODEN_BOX", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var note = order.Note?.ToLower() ?? string.Empty;
-                        isApplicable = note.Contains("wood") || note.Contains("đóng gỗ") || note.Contains("thùng gỗ");
-                    }
-                    else if (string.Equals(rule.RuleType, "INSURANCE", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var note = order.Note?.ToLower() ?? string.Empty;
-                        isApplicable = note.Contains("insurance") || note.Contains("bảo hiểm") || isConditionMet;
-                    }
-                    else
-                    {
-                        var note = order.Note?.ToLower() ?? string.Empty;
-                        isApplicable = !string.IsNullOrWhiteSpace(rule.RuleCode) && note.Contains(rule.RuleCode.ToLower());
-                    }
-                }
+                bool isApplicable = isConditionMet;
 
                 decimal surchargeAmount = 0m;
                 if (isApplicable)
@@ -394,6 +405,10 @@ namespace VCL_BLL.Services
                 });
             }
 
+            var itemServiceFees = CalculateItemServiceFees(orderItems, parcels, itemServices, now);
+            quotationFees.AddRange(itemServiceFees);
+            totalSurcharges += itemServiceFees.Sum(f => f.Amount);
+
             var packageFees = await CalculatePackageFeesAsync(orderItems, now);
             quotationFees.AddRange(packageFees);
             decimal totalPackageFees = packageFees.Sum(f => f.Amount);
@@ -429,28 +444,44 @@ namespace VCL_BLL.Services
                 ServicePricingId = matchedPricing?.Id
             };
 
-            var quotationRepo = _unitOfWork.Repository<Quotation>();
-            await quotationRepo.AddAsync(quotation);
-
-            // Save Quotation Fees to DB
-            foreach (var qf in quotationFees)
+            /*
+             * ƯỚC TÍNH thì dừng ở đây: không ghi báo giá, không ghi dòng phí, không đụng vào
+             * đơn. Mọi con số phía trên đã tính xong và chính là con số hệ thống sẽ phát hành
+             * khi khách bấm tạo đơn thật.
+             */
+            if (persist)
             {
-                qf.QuotationId = quotation.Id;
-                await _unitOfWork.Repository<QuotationFee>().AddAsync(qf);
+                var quotationRepo = _unitOfWork.Repository<Quotation>();
+                await quotationRepo.AddAsync(quotation);
+
+                // Save Quotation Fees to DB
+                foreach (var qf in quotationFees)
+                {
+                    qf.QuotationId = quotation.Id;
+                    await _unitOfWork.Repository<QuotationFee>().AddAsync(qf);
+                }
+
+                // Cập nhật tổng cân nặng & thể tích trên Order
+                order.TotalWeight = totalWeight;
+                order.TotalVolume = totalVolume;
+                _unitOfWork.Repository<Order>().Update(order);
+
+                await _unitOfWork.SaveChangesAsync();
             }
-
-            // Cập nhật tổng cân nặng & thể tích trên Order
-            order.TotalWeight = totalWeight;
-            order.TotalVolume = totalVolume;
-            orderRepo.Update(order);
-
-            await _unitOfWork.SaveChangesAsync();
+            else
+            {
+                foreach (var qf in quotationFees)
+                {
+                    qf.QuotationId = quotation.Id;
+                }
+            }
 
             // 8. Trả về response
             return new EstimateQuotationResponse
             {
-                QuotationId = quotation.Id,
-                OrderId = orderId,
+                /* Ước tính chưa lưu gì nên không có mã báo giá lẫn mã đơn để trả về. */
+                QuotationId = persist ? quotation.Id : Guid.Empty,
+                OrderId = persist ? orderId : Guid.Empty,
                 ConsignmentType = consignmentType,
                 QuoteType = quotation.QuoteType,
                 Status = quotation.Status,
@@ -469,12 +500,58 @@ namespace VCL_BLL.Services
                 ExpiredAt = quotation.ExpiredAt,
                 Items = itemDetails,
                 Parcels = parcelCalculationDetails,
+                InvoiceLines = BuildInvoiceLines(
+                    quotationFees,
+                    activeRules.ToDictionary(r => r.Id, r => r),
+                    orderItems),
                 AdditionalFees = quotationFees
                     .Where(f => string.Equals(f.FeeType, "SURCHARGE", StringComparison.OrdinalIgnoreCase) || 
                                 string.Equals(f.FeeType, "PACKING_FEE", StringComparison.OrdinalIgnoreCase))
-                    .Select(f => MapToFeeResponseDto(f, activeRules.ToDictionary(r => r.Id, r => r), orderItems.Sum(item => item.Quantity ?? 1)))
+                    .Select(f => MapToFeeResponseDto(f, activeRules.ToDictionary(r => r.Id, r => r), orderItems.Sum(item => item.Quantity ?? 1),
+                        orderItems.ToDictionary(i => i.Id, i => i.ProductName ?? string.Empty)))
                     .ToList()
             };
         }
+        /// <summary>
+        /// Xếp các dòng tiền theo thứ tự một tờ hoá đơn và bỏ dòng 0đ.
+        ///
+        /// Thứ tự cố định để khách đọc từ trên xuống hiểu được câu chuyện: đi quốc tế bao
+        /// nhiêu → giao trong nước bao nhiêu → mình chọn thêm dịch vụ gì → nhà nước thu bao
+        /// nhiêu. Trong nhóm dịch vụ theo kiện thì gom theo kiện, vì khách nhớ theo kiện
+        /// chứ không nhớ theo tên phí.
+        /// </summary>
+        private List<QuotationFeeResponseDto> BuildInvoiceLines(
+            List<QuotationFee> fees,
+            Dictionary<Guid, PricingRule> ruleMap,
+            List<OrderItem> orderItems)
+        {
+            var itemNames = orderItems.ToDictionary(i => i.Id, i => i.ProductName ?? string.Empty);
+            var itemOrder = orderItems.Select((item, index) => (item.Id, index))
+                .ToDictionary(x => x.Id, x => x.index);
+            var packageCount = orderItems.Sum(i => i.Quantity ?? 1);
+
+            int SectionOf(QuotationFee fee) => (fee.FeeType ?? string.Empty).ToUpperInvariant() switch
+            {
+                "MAIN_SERVICE" => 0,
+                "DOMESTIC_FEE" => 1,
+                "SERVICE_FEE" => 1,
+                "SURCHARGE" => 2,
+                "PACKING_FEE" => 2,
+                "TAX" => 3,
+                _ => 2,
+            };
+
+            return fees
+                .Where(f => f.Amount > 0m)
+                .OrderBy(SectionOf)
+                .ThenBy(f => f.OrderItemId.HasValue && itemOrder.TryGetValue(f.OrderItemId.Value, out var idx)
+                    ? idx
+                    : int.MaxValue)
+                .ThenBy(f => f.FeeName)
+                .Select(f => MapToFeeResponseDto(f, ruleMap, packageCount, itemNames))
+                .ToList();
+        }
+
+
     }
 }

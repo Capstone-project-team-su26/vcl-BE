@@ -37,7 +37,6 @@ namespace VCL_BLL.Services
         private const string Line = "#cbd5e1";
         private const string Head = "#1e293b";
         private const string Soft = "#f1f5f9";
-        private const decimal DefaultVolumetricDivisor = 5000m;
         private const int MaxImagesPerItem = 2;
         private const int ImageDownloadTimeoutSeconds = 10;
 
@@ -230,9 +229,17 @@ namespace VCL_BLL.Services
                 .Where(i => i.OrderId == orderId)
                 .ToList();
 
-            var quotation = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
+            // Phiếu in đúng báo giá khách đã chấp nhận; bản chờ duyệt giá hay bị thay thế không phải chứng từ.
+            var orderQuotations = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
                 .Where(q => q.OrderId == orderId)
                 .OrderByDescending(q => q.CreatedAt)
+                .ToList();
+            var quotation = orderQuotations.FirstOrDefault(q => string.Equals(q.Status, "ACCEPTED", StringComparison.OrdinalIgnoreCase))
+                ?? orderQuotations.FirstOrDefault();
+
+            var receivingNote = (await _unitOfWork.Repository<WarehouseReceivingNote>().GetAllAsync())
+                .Where(n => n.ConsignmentOrderId == orderId && !string.Equals(n.Status, "REJECTED", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(n => n.CreatedAt)
                 .FirstOrDefault();
 
             // Đơn sinh từ mua hộ: lấy thêm mã yêu cầu, người mua (Sale) và người duyệt nhập kho (OM)
@@ -282,7 +289,7 @@ namespace VCL_BLL.Services
 
             Warehouse? warehouse = null;
             // Ký gửi lấy kho từ báo giá; mua hộ lấy kho Sale đã chọn lúc xác nhận mua hàng.
-            var warehouseId = quotation?.WarehouseId ?? purchaseRequest?.ExpectedWarehouseId;
+            var warehouseId = receivingNote?.WarehouseId ?? quotation?.WarehouseId ?? purchaseRequest?.ExpectedWarehouseId;
             if (warehouseId != null)
             {
                 warehouse = (await _unitOfWork.Repository<Warehouse>().GetAllAsync())
@@ -364,6 +371,7 @@ namespace VCL_BLL.Services
 
             var packageConfigurations = (await _unitOfWork.Repository<PackageConfiguration>().GetAllAsync())
                 .ToDictionary(p => p.Id, p => p);
+            var itemServices = await VCL_BLL.Helpers.ItemServiceRules.LoadRulesAsync(_unitOfWork, items.Select(i => i.Id));
 
             // Kiện đã check-in: dùng để in số thực nhận và tên nhân viên kho lên phiếu.
             var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
@@ -415,7 +423,9 @@ namespace VCL_BLL.Services
                 Customer = customer,
                 Items = items,
                 Quotation = quotation,
+                VolumetricDivisor = await VCL_BLL.Helpers.VolumetricDivisorResolver.ResolveAsync(_unitOfWork, _configuration, quotation?.ServicePricingId),
                 Warehouse = warehouse,
+                ReceivingNote = receivingNote,
                 IsPurchase = isPurchase,
                 PurchaseCode = purchaseRequest?.PurchaseCode,
                 PurchasePaidAt = purchasePaidAt,
@@ -426,7 +436,8 @@ namespace VCL_BLL.Services
                 Payment = payment,
                 PreparedBy = preparedBy,
                 DomesticFee = domesticFee,
-                PackageConfigurations = packageConfigurations
+                PackageConfigurations = packageConfigurations,
+                ItemServices = itemServices
             };
         }
 
@@ -632,7 +643,7 @@ namespace VCL_BLL.Services
             var totalQuantity = data.Items.Sum(i => i.Quantity ?? 0);
             var totalDeclaredValue = data.Items.Sum(i => i.DeclaredValue ?? 0m);
             var totalWeight = order.TotalWeight ?? data.Items.Sum(i => i.Weight ?? 0m);
-            var totalVolumetric = data.Items.Sum(GetVolumetricWeight);
+            var totalVolumetric = data.Items.Sum(i => GetVolumetricWeight(i, data.VolumetricDivisor));
 
             // Nguồn số tiền tự chọn theo loại đơn — xem các thuộc tính trong ReceiptData.
             var freight = data.FreightCharge;
@@ -798,6 +809,8 @@ namespace VCL_BLL.Services
                         Field(x, "Kho nhập", data.Warehouse?.WarehouseName
                             ?? (data.IsPurchase ? "Chưa chọn kho nhận hàng" : "Chưa chọn kho ở báo giá"));
                         Field(x, "Mã kho", data.Warehouse?.WarehouseCode);
+                        if (!data.IsPurchase)
+                            Field(x, "Mã phiếu nhập kho", data.ReceivingNote?.ReceivingNoteCode ?? "Chưa lập phiếu");
                     });
                 });
 
@@ -874,7 +887,7 @@ namespace VCL_BLL.Services
                                     {
                                         Field(a, "Trọng lượng", $"{FormatNumber(item.Weight ?? 0m)} kg");
                                         Field(a, "Kích thước", $"{FormatDimensions(item.Length, item.Width, item.Height)} cm");
-                                        Field(a, "DIM", $"{FormatNumber(GetVolumetricWeight(item))} kg");
+                                        Field(a, "DIM", $"{FormatNumber(GetVolumetricWeight(item, data.VolumetricDivisor))} kg");
                                     }
                                 });
                                 rr.ConstantItem(10);
@@ -886,8 +899,11 @@ namespace VCL_BLL.Services
                                     // Mua hộ không chọn thùng đóng gói; khoản tương ứng là phí dịch vụ mua hộ.
                                     if (!data.IsPurchase)
                                     {
-                                        Field(a, "Cấu hình đóng gói", GetPackageConfigName(data, item));
-                                        Field(a, "Phí đóng gói", FormatCurrency(GetPackageFee(data, item)));
+                                        Field(a, "Thùng gỗ", GetPackageConfigName(data, item));
+                                        Field(a, "Phí đóng thùng", FormatCurrency(GetPackageFee(data, item)));
+                                        Field(a, "Dịch vụ kèm kiện", data.ItemServices.TryGetValue(item.Id, out var services) && services.Count > 0
+                                            ? string.Join(", ", services.Select(r => r.RuleName))
+                                            : "Không");
                                     }
                                 });
                             });
@@ -1152,16 +1168,12 @@ namespace VCL_BLL.Services
         /// Cân nặng quy đổi của một kiện. Mỗi dòng hàng là một kiện nên kích thước đã là của
         /// cả kiện, không nhân số lượng — giữ đúng công thức của API chi tiết đơn và báo giá.
         /// </summary>
-        private decimal GetVolumetricWeight(OrderItem item)
+        private static decimal GetVolumetricWeight(OrderItem item, decimal divisor)
         {
-            if (item.Length is not > 0 || item.Width is not > 0 || item.Height is not > 0)
+            if (item.Length is not > 0 || item.Width is not > 0 || item.Height is not > 0 || divisor <= 0m)
             {
                 return 0m;
             }
-
-            var divisor = decimal.TryParse(_configuration["PricingSettings:VolumetricDivisor"], out var configured) && configured > 0
-                ? configured
-                : DefaultVolumetricDivisor;
 
             return Math.Round(item.Length.Value * item.Width.Value * item.Height.Value / divisor, 4);
         }
@@ -1249,7 +1261,13 @@ namespace VCL_BLL.Services
             public Customer? Customer { get; init; }
             public List<OrderItem> Items { get; init; } = new();
             public Quotation? Quotation { get; init; }
+
+            /// <summary>Hệ số DIM đọc cùng nguồn với báo giá (rule → cấu hình → 5000).</summary>
+            public decimal VolumetricDivisor { get; init; } = VCL_BLL.Helpers.VolumetricDivisorResolver.Default;
             public Warehouse? Warehouse { get; init; }
+
+            /// <summary>Phiếu nhập kho khách mang tới kho; kho quét mã này khi nhận hàng.</summary>
+            public WarehouseReceivingNote? ReceivingNote { get; init; }
 
             /// <summary>Đơn sinh từ yêu cầu mua hộ — phiếu đổi tiêu đề và thêm ô người mua/người duyệt.</summary>
             public bool IsPurchase { get; init; }
@@ -1334,6 +1352,9 @@ namespace VCL_BLL.Services
             /// <summary>Đợt thanh toán của mua hộ (đặt cọc / tất toán) — khách trả làm hai lần.</summary>
             public string? PaymentInstallment => IsPurchase ? PurchasePayment?.PaymentType : null;
             public Dictionary<Guid, PackageConfiguration> PackageConfigurations { get; init; } = new();
+
+            /// <summary>Dịch vụ khách chọn cho từng kiện, theo OrderItemId.</summary>
+            public Dictionary<Guid, List<PricingRule>> ItemServices { get; init; } = new();
             public Dictionary<Guid, List<byte[]>> ItemImages { get; init; } = new();
 
             /// <summary>Kiện đã check-in theo từng dòng hàng, rỗng nếu kho chưa nhận.</summary>

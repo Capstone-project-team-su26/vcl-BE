@@ -111,6 +111,12 @@ namespace VCL_BLL.DTOs
         public string? TransactionCode { get; set; }
 
         public string? Note { get; set; }
+
+        /// <summary>
+        /// Số tiền thực nhận theo sao kê. Bỏ trống thì coi bằng số phải thu; nhỏ hơn số phải thu
+        /// thì không xác nhận được.
+        /// </summary>
+        public decimal? ReceivedAmount { get; set; }
     }
 
     public class RejectManualTransactionRequest

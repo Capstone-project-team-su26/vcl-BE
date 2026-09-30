@@ -1,33 +1,42 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using VCL_BLL.Helpers;
 
 namespace VCL_BLL.DTOs
 {
     public class CreatePurchaseRequestItemDto
     {
         [Required(ErrorMessage = "Link sản phẩm không được để trống.")]
+        [StringLength(InputLimits.ProductLinkLength, ErrorMessage = "Link sản phẩm tối đa 1000 ký tự.")]
         public string ProductLink { get; set; } = string.Empty;
 
         /// <summary>Website/sàn nguồn sản phẩm — tùy tuyến (VD: Taobao, 1688, Amazon, Coupang, Rakuten).</summary>
+        [StringLength(InputLimits.SourceWebsiteLength, ErrorMessage = "Website nguồn tối đa 500 ký tự.")]
         public string? SourceWebsite { get; set; }
 
         /// <summary>Loại hàng (lấy từ dropdown /api/product-types) — dùng để đối chiếu hàng cấm/hạn chế.</summary>
         [Required(ErrorMessage = "Vui lòng chọn loại hàng.")]
+        [StringLength(InputLimits.ProductTypeLength, ErrorMessage = "Loại hàng tối đa 100 ký tự.")]
         public string ProductType { get; set; } = string.Empty;
 
+        [StringLength(InputLimits.ProductNameLength, ErrorMessage = "Tên sản phẩm tối đa 255 ký tự.")]
         public string? ProductName { get; set; }
 
-        [Range(1, int.MaxValue, ErrorMessage = "Số lượng phải lớn hơn 0.")]
+        // Hạn mức nghiệp vụ (mặc định 999) do Admin cấu hình — service kiểm; ở đây chỉ chặn số vô lý.
+        [Range(1, InputLimits.HardMaxPurchaseItemQuantity, ErrorMessage = "Số lượng mỗi sản phẩm phải từ 1 đến 1.000.000.")]
         public int Quantity { get; set; }
 
         /// <summary>Thuộc tính sản phẩm như size, màu, mẫu mã (nếu có).</summary>
+        [StringLength(InputLimits.AttributesLength, ErrorMessage = "Thuộc tính sản phẩm tối đa 500 ký tự.")]
         public string? Attributes { get; set; }
 
         /// <summary>Ghi chú riêng cho từng sản phẩm (nếu có).</summary>
+        [StringLength(InputLimits.ItemNoteLength, ErrorMessage = "Ghi chú sản phẩm tối đa 500 ký tự.")]
         public string? Note { get; set; }
 
         /// <summary>Danh sách hình ảnh tham khảo (upload qua POST /api/uploads/images).</summary>
+        [MaxLength(InputLimits.MaxImagesPerPurchaseItem, ErrorMessage = "Mỗi sản phẩm tối đa 5 ảnh tham khảo.")]
         public List<string>? ImageUrls { get; set; }
     }
 
@@ -49,12 +58,15 @@ namespace VCL_BLL.DTOs
         public string ShippingOption { get; set; } = string.Empty;
 
         /// <summary>Tên người nhận.</summary>
+        [StringLength(InputLimits.ReceiverNameLength, ErrorMessage = "Tên người nhận tối đa 255 ký tự.")]
         public string? ReceiverName { get; set; }
 
         /// <summary>Số điện thoại người nhận.</summary>
+        [StringLength(InputLimits.ReceiverPhoneLength, ErrorMessage = "Số điện thoại người nhận tối đa 50 ký tự.")]
         public string? ReceiverPhone { get; set; }
 
         /// <summary>Địa chỉ nhận hàng.</summary>
+        [StringLength(InputLimits.ReceiverAddressLength, ErrorMessage = "Địa chỉ nhận hàng tối đa 500 ký tự.")]
         public string? ReceiverAddress { get; set; }
 
         /// <summary>
@@ -72,11 +84,17 @@ namespace VCL_BLL.DTOs
         /// <summary>Khách đăng ký bảo hiểm (map rule INSURANCE).</summary>
         public bool RequiresInsurance { get; set; }
 
-        /// <summary>Ghi chú mua hộ chung cho cả yêu cầu (nếu có).</summary>
+        /// <summary>
+        /// Ghi chú mua hộ chung cho cả yêu cầu (nếu có). Lưu kèm tên các dịch vụ khách tick (xem
+        /// BuildGeneralNote) nên tổng sau khi ghép còn phải ≤ 1000 ký tự — service kiểm lại.
+        /// </summary>
+        [StringLength(InputLimits.GeneralNoteLength, ErrorMessage = "Ghi chú chung tối đa 1000 ký tự.")]
         public string? GeneralNote { get; set; }
 
-        [Required]
+        [Required(ErrorMessage = "Danh sách sản phẩm cần mua hộ phải có ít nhất một sản phẩm.")]
         [MinLength(1, ErrorMessage = "Danh sách sản phẩm cần mua hộ phải có ít nhất một sản phẩm.")]
+        // Hạn mức nghiệp vụ (mặc định 50 dòng) do Admin cấu hình — service kiểm; ở đây là trần cứng.
+        [MaxLength(InputLimits.HardMaxItemsPerRequest, ErrorMessage = "Mỗi yêu cầu mua hộ tối đa 500 dòng sản phẩm.")]
         public List<CreatePurchaseRequestItemDto> Items { get; set; } = new();
     }
 
@@ -177,6 +195,20 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Nhãn tiếng Việt của <see cref="Status"/>, FE hiển thị thẳng.</summary>
         public string StatusDisplayName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// CHẶNG THẬT đầu–cuối (VCL_BLL.Helpers.PurchaseRequestStage): AWAITING_QUOTE, NEED_MORE_INFO,
+        /// AWAITING_PAYMENT, PREPAID, ORDERING_SUPPLIER, IN_TRANSIT, ARRIVED_VN, DELIVERED, AWAITING_REFUND,
+        /// COMPLETED, CANCELLED, REJECTED. Suy từ đơn mua NCC + đơn kho + khoản hoàn — khác <see cref="Status"/>
+        /// (COMPLETED của Status có thể chỉ là tất toán đợt cuối đời cũ).
+        /// </summary>
+        public string OverallStage { get; set; } = string.Empty;
+
+        /// <summary>Nhãn tiếng Việt của <see cref="OverallStage"/>.</summary>
+        public string OverallStageText { get; set; } = string.Empty;
+
+        /// <summary>True khi mọi phần hàng đã giao / đóng đơn và không còn khoản hoàn chờ chuyển.</summary>
+        public bool IsFullyCompleted { get; set; }
 
         /// <summary>Kho dự kiến nhận hàng Sale đã chọn ở bước xác nhận mua hàng. Null nếu chưa chọn.</summary>
         public Guid? WarehouseId { get; set; }
@@ -378,9 +410,27 @@ namespace VCL_BLL.DTOs
         [Range(0, double.MaxValue, ErrorMessage = "Phí mua hộ không được âm.")]
         public decimal PurchaseFee { get; set; }
 
-        /// <summary>Phí vận chuyển dự kiến (nếu có).</summary>
+        /// <summary>
+        /// Không còn dùng: cước quốc tế tạm tính = <see cref="EstimatedWeight"/> × <see cref="FreightRatePerKg"/>.
+        /// Giữ để FE cũ gửi lên không bị lỗi.
+        /// </summary>
         [Range(0, double.MaxValue, ErrorMessage = "Phí vận chuyển không được âm.")]
         public decimal ShippingFee { get; set; }
+
+        /// <summary>Ship nội địa từ NCC tới kho nguồn (VND) — khách trả trước.</summary>
+        [Range(0, double.MaxValue, ErrorMessage = "Ship nội địa không được âm.")]
+        public decimal DomesticShippingFee { get; set; }
+
+        /// <summary>Đơn giá cước quốc tế /kg (VND). Bỏ trống thì lấy theo bảng giá khớp tuyến.</summary>
+        [Range(0, double.MaxValue, ErrorMessage = "Đơn giá cước không được âm.")]
+        public decimal? FreightRatePerKg { get; set; }
+
+        /// <summary>Bảng giá cước Sale chọn (tuỳ chọn).</summary>
+        public Guid? ServicePricingId { get; set; }
+
+        /// <summary>Cân ước tính (kg). Bỏ trống thì 0,2 kg / món, tối thiểu 1 kg.</summary>
+        [Range(0, double.MaxValue, ErrorMessage = "Cân ước tính không được âm.")]
+        public decimal? EstimatedWeight { get; set; }
 
         /// <summary>Ghi chú báo giá (nếu có).</summary>
         public string? Note { get; set; }
@@ -415,10 +465,50 @@ namespace VCL_BLL.DTOs
         public string PurchaseCode { get; set; } = string.Empty;
         public decimal ProductsSubtotal { get; set; }
         public decimal PurchaseFee { get; set; }
+
+        /// <summary>Cước quốc tế TẠM TÍNH (thu ở VN theo cân đo thật).</summary>
         public decimal ShippingFee { get; set; }
+
+        /// <summary>Ship nội địa NCC → kho nguồn (trả trước).</summary>
+        public decimal DomesticShippingFee { get; set; }
+
+        public decimal? FreightRatePerKg { get; set; }
+        public decimal? EstimatedWeight { get; set; }
+        public decimal? VatRate { get; set; }
+
+        /// <summary>Tổng VAT (phần phí trả trước + phần cước tạm tính).</summary>
         public decimal Vat { get; set; }
+
+        /// <summary>Thuế nhập khẩu TẠM TÍNH (thu ở VN, tính lại theo giá mua thật).</summary>
         public decimal ImportTax { get; set; }
+
+        /// <summary>Tổng dự kiến = <see cref="PrepayAmount"/> + <see cref="EstimatedLaterAmount"/>.</summary>
         public decimal TotalAmount { get; set; }
+
+        /// <summary>Báo giá đời cũ (thu cọc theo tỷ lệ) — không có phần trả trước tách riêng.</summary>
+        public bool IsLegacy { get; set; }
+
+        /// <summary>Khách trả 100% khi chấp nhận: tiền hàng + phí mua + ship nội địa + phụ phí + VAT phần phí.</summary>
+        public decimal PrepayAmount { get; set; }
+
+        /// <summary>Tạm tính thu ở VN: cước quốc tế + VAT cước + thuế nhập khẩu.</summary>
+        public decimal EstimatedLaterAmount { get; set; }
+
+        /// <summary>
+        /// Số khách trả khi xác nhận báo giá — ĐÚNG số confirm-and-pay tạo khoản thu (= PrepayAmount).
+        /// FE hiện số này, không tự tính cọc. Báo giá đời cũ: 0 (không thanh toán online được).
+        /// </summary>
+        public decimal DepositAmount { get; set; }
+
+        /// <summary>Phần còn lại sau khoản trả trước (tạm tính, thu ở VN theo cân đo thật).</summary>
+        public decimal RemainingAmount { get; set; }
+
+        /// <summary>Diễn giải khoản trả trước (hoặc lý do không thanh toán được với báo giá đời cũ).</summary>
+        public string DepositDescription { get; set; } = string.Empty;
+
+        /// <summary>false: báo giá đời cũ — confirm-and-pay sẽ từ chối, khách liên hệ Sale lập lại báo giá.</summary>
+        public bool CanPayOnline { get; set; }
+
         public string? Note { get; set; }
         public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
@@ -468,66 +558,50 @@ namespace VCL_BLL.DTOs
         /// <summary>Nhãn tiếng Việt của <see cref="Status"/>, FE hiển thị thẳng.</summary>
         public string StatusDisplayName { get; set; } = string.Empty;
 
+        /// <summary>
+        /// CHẶNG THẬT đầu–cuối (VCL_BLL.Helpers.PurchaseRequestStage): AWAITING_QUOTE, NEED_MORE_INFO,
+        /// AWAITING_PAYMENT, PREPAID, ORDERING_SUPPLIER, IN_TRANSIT, ARRIVED_VN, DELIVERED, AWAITING_REFUND,
+        /// COMPLETED, CANCELLED, REJECTED. Suy từ đơn mua NCC + đơn kho + khoản hoàn — khác <see cref="Status"/>
+        /// (COMPLETED của Status có thể chỉ là tất toán đợt cuối đời cũ).
+        /// </summary>
+        public string OverallStage { get; set; } = string.Empty;
+
+        /// <summary>Nhãn tiếng Việt của <see cref="OverallStage"/>.</summary>
+        public string OverallStageText { get; set; } = string.Empty;
+
+        /// <summary>True khi mọi phần hàng đã giao / đóng đơn và không còn khoản hoàn chờ chuyển.</summary>
+        public bool IsFullyCompleted { get; set; }
+
         /// <summary>Kho dự kiến nhận hàng Sale đã chọn. Null nếu chưa chọn.</summary>
         public Guid? WarehouseId { get; set; }
 
         public string? WarehouseName { get; set; }
 
+        /// <summary>Tên / mã / SĐT khách (hồ sơ Customer) — web Sale không phải gọi thêm danh bạ khách.</summary>
+        public string? CustomerName { get; set; }
+        public string? CustomerCode { get; set; }
+        public string? CustomerPhone { get; set; }
+
+        /// <summary>Số đơn mua NCC chưa huỷ của yêu cầu.</summary>
+        public int ActivePurchaseOrderCount { get; set; }
+
+        /// <summary>
+        /// Số dòng sản phẩm còn đưa được vào một đơn mua MỚI — đúng luật PurchaseOrderService.ApplyContentAsync:
+        /// có trong báo giá khách đã chấp nhận, chưa nằm trong đơn mua nào chưa huỷ, và
+        /// SL khách đặt − SL đã đóng "không mua được" &gt; 0. Chưa có báo giá ACCEPTED thì 0.
+        /// </summary>
+        public int OpenLineCount { get; set; }
+
+        /// <summary>Tổng số lượng còn mua được của các dòng tính trong <see cref="OpenLineCount"/>.</summary>
+        public int OpenQuantity { get; set; }
+
+        /// <summary>Tổng số lượng đã đóng "không mua được" (đã/đang hoàn tiền cho khách).</summary>
+        public int ClosedQuantity { get; set; }
+
+        /// <summary>Tiền trả trước đã thu (khoản PREPAYMENT, hoặc cọc/trả một lần đời cũ, trạng thái PAID).</summary>
+        public decimal PrepaidAmount { get; set; }
+
         public List<PurchaseRequestListProductDto> Items { get; set; } = new();
-    }
-
-    public class CreatePurchaseOrderDto
-    {
-        /// <summary>Nhà cung cấp (nếu có).</summary>
-        public string? SupplierName { get; set; }
-
-        /// <summary>Ghi chú mua hàng (nếu có).</summary>
-        public string? PurchaseNote { get; set; }
-    }
-
-    public class PurchaseOrderItemResponseDto
-    {
-        public Guid OrderItemId { get; set; }
-        public Guid PurchaseRequestItemId { get; set; }
-        public string? ProductName { get; set; }
-        public decimal UnitPrice { get; set; }
-        public int Quantity { get; set; }
-        public decimal LineTotal { get; set; }
-    }
-
-    public class PurchaseOrderResponseDto
-    {
-        public Guid PurchaseOrderId { get; set; }
-        public string PurchaseOrderCode { get; set; } = string.Empty;
-        public Guid PurchaseRequestId { get; set; }
-        public string PurchaseCode { get; set; } = string.Empty;
-        public Guid? PurchaseQuotationId { get; set; }
-        public string? SupplierName { get; set; }
-        public string? PurchaseNote { get; set; }
-        public decimal TotalAmount { get; set; }
-        public string Status { get; set; } = string.Empty;
-        public string? StatusNote { get; set; }
-        public DateTime CreatedAt { get; set; }
-        public DateTime? UpdatedAt { get; set; }
-        public List<PurchaseOrderItemResponseDto> Items { get; set; } = new();
-    }
-
-    public class UpdatePurchaseOrderStatusRequestDto
-    {
-        [Required(ErrorMessage = "Trạng thái không được để trống.")]
-        public string Status { get; set; } = string.Empty;
-
-        /// <summary>Ghi chú xử lý (nếu có).</summary>
-        public string? StatusNote { get; set; }
-    }
-
-    public class UpdatePurchaseOrderStatusResponseDto
-    {
-        public Guid PurchaseOrderId { get; set; }
-        public string PurchaseOrderCode { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
-        public string? StatusNote { get; set; }
-        public DateTime? UpdatedAt { get; set; }
     }
 
     public class ConfirmQuotationAndPayRequestDto
@@ -592,8 +666,11 @@ namespace VCL_BLL.DTOs
         public Guid PaymentId { get; set; }
         public long OrderCode { get; set; }
 
-        /// <summary>FULL_PAYMENT | FINAL_PAYMENT.</summary>
+        /// <summary>PREPAYMENT | PRICE_DIFFERENCE (đời cũ: DEPOSIT | FULL_PAYMENT | FINAL_PAYMENT).</summary>
         public string PaymentType { get; set; } = string.Empty;
+
+        /// <summary>Đơn mua NCC của khoản chênh giá.</summary>
+        public Guid? PurchaseOrderId { get; set; }
 
         public decimal Amount { get; set; }
         public string? PaymentMethod { get; set; }
@@ -631,7 +708,22 @@ namespace VCL_BLL.DTOs
         /// <summary>Diễn giải cách tính cọc để FE hiển thị.</summary>
         public string DepositDescription { get; set; } = string.Empty;
 
+        /// <summary>Báo giá đời cũ (thu cọc theo tỷ lệ).</summary>
+        public bool IsLegacy { get; set; }
+
+        /// <summary>Luồng mới: phần tạm tính (cước quốc tế + VAT + thuế NK) thu ở VN theo cân đo thật.</summary>
+        public decimal EstimatedLaterAmount { get; set; }
+
         public List<PurchasePaymentHistoryItemDto> Payments { get; set; } = new();
+
+        /// <summary>Tổng đã chuyển trả khách.</summary>
+        public decimal TotalRefunded { get; set; }
+
+        /// <summary>Tổng đang chờ chuyển trả khách.</summary>
+        public decimal TotalPendingRefund { get; set; }
+
+        /// <summary>Các khoản hoàn kèm chi tiết từng dòng (tiền hàng, chênh giá, phí, VAT, phí huỷ).</summary>
+        public List<PurchaseRefundDto> Refunds { get; set; } = new();
     }
 
     public class ConfirmQuotationAndPayResponseDto
@@ -697,6 +789,15 @@ namespace VCL_BLL.DTOs
         public decimal AppliedPurchaseFeePercent { get; set; }
         public decimal EstimatedShippingFee { get; set; }
         public decimal DomesticShippingFee { get; set; }
+        public decimal FreightRatePerKg { get; set; }
+        public decimal EstimatedWeight { get; set; }
+        public Guid? ServicePricingId { get; set; }
+        public decimal VatRate { get; set; }
+
+        /// <summary>Phần trả trước dự kiến (chưa gồm phụ phí Sale thêm).</summary>
+        public decimal EstimatedPrepayAmount { get; set; }
+
+        /// <summary>Tổng dự kiến (trả trước + cước quốc tế + VAT; chưa gồm thuế nhập khẩu và phụ phí).</summary>
         public decimal TotalEstimatedCost { get; set; }
         public string? Note { get; set; }
     }

@@ -1,3 +1,4 @@
+using VCL_BLL.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -24,8 +25,7 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
         if (!string.Equals(userRole, "Admin", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "OperationsManager", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(userRole, "Operations", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(userRole, "WarehouseStaff", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(userRole, "Warehouse Staff", StringComparison.OrdinalIgnoreCase) &&
+            !StaffRoleHelper.IsWarehouseStaffRole(userRole) &&
             !string.Equals(userRole, "Staff", StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException("Bạn không có quyền truy cập sơ đồ kho.");
@@ -395,12 +395,12 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
                 ZoneId = zone.Id,
                 ZoneCode = zone.ZoneCode ?? string.Empty,
                 ZoneName = zone.ZoneName ?? string.Empty,
-                ZoneType = zone.ZoneType ?? string.Empty,
+                ZoneType = VCL_BLL.Helpers.ZoneTypes.Normalize(zone.ZoneType) ?? string.Empty,
                 RowIndex = zoneLayout?.RowIndex,
                 ColumnIndex = zoneLayout?.ColumnIndex,
                 Width = zoneLayout?.Width,
                 Height = zoneLayout?.Height,
-                Status = zone.Status ?? "Active",
+                Status = VCL_BLL.Helpers.BinPlacementPolicy.IsZoneActive(zone) ? "ACTIVE" : "INACTIVE",
                 Shelves = new List<ShelfLayoutDto>()
             };
 
@@ -586,8 +586,7 @@ public class WarehouseLocationLayoutService : IWarehouseLocationLayoutService
             }
 
             // Ẩn thông tin nhạy cảm cho Warehouse Staff hoặc Staff chung
-            if (string.Equals(userRole, "WarehouseStaff", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(userRole, "Warehouse Staff", StringComparison.OrdinalIgnoreCase) ||
+            if (StaffRoleHelper.IsWarehouseStaffRole(userRole) ||
                 string.Equals(userRole, "Staff", StringComparison.OrdinalIgnoreCase))
             {
                 dto.ParcelIds = null;

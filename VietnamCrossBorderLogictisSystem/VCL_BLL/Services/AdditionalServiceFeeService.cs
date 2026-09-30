@@ -7,6 +7,7 @@ using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
+using VCL_BLL.Helpers;
 
 namespace VCL_BLL.Services
 {
@@ -158,7 +159,7 @@ namespace VCL_BLL.Services
 
             if (!ValidCalculationTypes.Contains(calcType.Trim().ToUpper()))
             {
-                throw new ArgumentException($"Cách tính phí '{calcType}' không hợp lệ. Phải là 'FIXED' hoặc 'PERCENTAGE'.");
+                throw new ArgumentException($"Cách tính phí {StatusNames.Quote(calcType)} không hợp lệ. Chỉ chọn {StatusNames.QuoteAny("FIXED", "PERCENTAGE")}.");
             }
 
             if (value < 0)

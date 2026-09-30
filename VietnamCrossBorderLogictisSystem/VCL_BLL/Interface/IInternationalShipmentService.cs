@@ -7,25 +7,13 @@ namespace VCL_BLL.Interface
 {
     public interface IInternationalShipmentService
     {
-        Task<InternationalShipmentResponseDto> CreateAsync(Guid userId, string userRole, CreateInternationalShipmentDto request);
-
         /// <summary>Danh sách lô vận chuyển quốc tế, lọc theo tab/trạng thái/kho.</summary>
         Task<PaginatedResponse<InternationalShipmentResponseDto>> GetListAsync(
             int pageNumber, int pageSize, string? statusTab, string? status, Guid? originWarehouseId, string? search);
 
-        /// <summary>
-        /// Phiếu xuất kho còn gom lô được: đã bốc xong và còn kiện chưa thuộc lô nào.
-        /// </summary>
-        /// <remarks>
-        /// Trạng thái phiếu đứng yên ở <c>PICKED</c> sau khi gom lô, nên màn hình không thể tự
-        /// suy ra phiếu nào đã đi. Tính ở đây một lần thay vì bắt FE tải hết lô về rồi trừ.
-        /// </remarks>
-        Task<List<AvailableWroForShipmentDto>> GetAvailableWroRequestsAsync(
-            Guid? originWarehouseId, string? search);
 
         /// <summary>Chi tiết một lô vận chuyển quốc tế.</summary>
         Task<InternationalShipmentResponseDto> GetByIdAsync(Guid shipmentId);
-        Task<UpdateInternationalShipmentStatusResponseDto> UpdateStatusAsync(Guid shipmentId, Guid userId, string userRole, UpdateInternationalShipmentStatusDto request);
         Task<ConfirmShipmentArrivalResponseDto> ConfirmArrivalAsync(Guid shipmentId, Guid userId, string userRole, ConfirmShipmentArrivalDto request);
         Task<DestinationReceivingResponseDto> ConfirmDestinationReceivingAsync(Guid shipmentId, Guid userId, string userRole, DestinationReceivingDto request);
 
@@ -37,7 +25,7 @@ namespace VCL_BLL.Interface
         /// </para>
         /// </summary>
         Task<ParcelInspectionListDto> GetParcelInspectionsAsync(
-            bool onlyDiscrepancy, Guid? shipmentId, string userRole);
+            bool onlyDiscrepancy, Guid? shipmentId, string userRole, Guid? userId = null);
 
         /// <summary>
         /// Kho lưu kết quả đối chiếu một kiện ngay khi cân đếm xong, không đợi chốt cả lô.

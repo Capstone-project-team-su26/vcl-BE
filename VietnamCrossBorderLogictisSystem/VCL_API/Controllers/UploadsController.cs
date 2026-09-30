@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -55,11 +56,11 @@ namespace VCL_API.Controllers
             catch (InvalidOperationException ex)
             {
                 // Cloudinary chưa được cấu hình
-                return StatusCode(500, new { message = ex.Message });
+                return StatusCode(500, new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -110,11 +111,11 @@ namespace VCL_API.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                return StatusCode(500, new { message = ex.Message });
+                return StatusCode(500, new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
     }

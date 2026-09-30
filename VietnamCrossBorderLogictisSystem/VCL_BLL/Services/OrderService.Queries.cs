@@ -36,13 +36,11 @@ namespace VCL_BLL.Services
 
             var packageConfigs = await _unitOfWork.Repository<PackageConfiguration>().GetAllAsync();
             var configMap = packageConfigs.ToDictionary(c => c.Id, c => c);
+            var servicesByItem = await ItemServiceRules.LoadDtosAsync(
+                _unitOfWork, allItems.Where(i => i.OrderId == orderId).Select(i => i.Id));
 
-            var divisorSection = _configuration.GetSection("PricingSettings:VolumetricDivisor");
-            decimal divisor = 5000m;
-            if (divisorSection.Value != null && decimal.TryParse(divisorSection.Value, out var div))
-            {
-                divisor = div;
-            }
+            // Cùng nguồn với báo giá / check-in: rule VOLUMETRIC_DIVISOR trước, cấu hình sau.
+            var divisor = await VolumetricDivisorResolver.ResolveAsync(_unitOfWork, _configuration);
 
             var items = allItems
                 .Where(i => i.OrderId == orderId)
@@ -91,6 +89,7 @@ namespace VCL_BLL.Services
                         DomesticTrackingCode = i.DomesticTrackingCode,
                         PackageConfigurationId = i.PackageConfigurationId,
                         PackageConfiguration = packageDto,
+                        Services = ItemServiceRules.For(servicesByItem, i.Id),
                         VolumetricWeight = volumetricWeight
                     };
                 })
@@ -160,8 +159,15 @@ namespace VCL_BLL.Services
                     TotalVolume = latestQuotation.TotalVolume,
                     TotalEstimatedCost = freight + service + tax,
                     CreatedAt = latestQuotation.CreatedAt,
-                    ExpiredAt = latestQuotation.ExpiredAt
+                    ExpiredAt = latestQuotation.ExpiredAt,
+                    PriceApprovalStatus = latestQuotation.PriceApprovalStatus
                 };
+
+                var requote = QuotationAcceptanceRules.EvaluateRequote(
+                    order, allQuotations.Where(q => q.OrderId == orderId), DateTime.UtcNow);
+                quotationSummary.CanSalesRequote = requote.Allowed;
+                quotationSummary.RequoteState = requote.State;
+                quotationSummary.RequoteBlockedReason = requote.Reason;
             }
 
             var allInvoices = await _unitOfWork.Repository<Invoice>().GetAllAsync();

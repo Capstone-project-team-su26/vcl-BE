@@ -16,6 +16,9 @@ namespace VCL_BLL.Interface
     {
         Task<StorageFeeDto> CalculateForOrderAsync(Guid orderId);
 
+        /// <summary>Khách chỉ xem phí lưu kho của đơn mình (403 nếu không phải).</summary>
+        Task EnsureCanViewAsync(Guid orderId, Guid userId, string? userRole);
+
         /// <summary>
         /// Bảng phí ước tính để khách cân nhắc trước khi chọn gửi lại kho.
         /// <para>

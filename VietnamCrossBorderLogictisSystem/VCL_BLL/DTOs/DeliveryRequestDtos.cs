@@ -44,6 +44,12 @@ namespace VCL_BLL.DTOs
 
         [MaxLength(500)]
         public string? Note { get; set; }
+
+        /// <summary>
+        /// Phí giao lại (Sale báo khi giao lại sau lần giao thất bại). &gt; 0 thì hệ thống phát hành
+        /// khoản thu REDELIVERY_FEE và kho chỉ đặt giao được sau khi khách trả.
+        /// </summary>
+        public decimal? RedeliveryFee { get; set; }
     }
 
     /// <summary>OM duyệt hoặc từ chối yêu cầu giao hàng.</summary>
@@ -101,6 +107,16 @@ namespace VCL_BLL.DTOs
         public DateTime? CreatedAt { get; set; }
         public string? ApprovedByName { get; set; }
         public DateTime? ApprovedAt { get; set; }
+
+        /// <summary>Phiếu giao lại của phiếu nào (phiếu trước bị hoàn hàng).</summary>
+        public Guid? SourceDeliveryRequestId { get; set; }
+        public decimal? RedeliveryFee { get; set; }
+        public Guid? RedeliveryFeePaymentId { get; set; }
+        public string? RedeliveryFeePaymentStatus { get; set; }
+        public string? RedeliveryFeeCheckoutUrl { get; set; }
+        public DateTime? ReturnedAt { get; set; }
+        public string? ProofReceivedBy { get; set; }
+        public DateTime? ProofAt { get; set; }
 
         public int TotalParcels { get; set; }
 

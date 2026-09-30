@@ -1,10 +1,13 @@
+using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -19,17 +22,30 @@ namespace VCL_API.Controllers
     public class WarehouseReceivingNoteController : ControllerBase
     {
         private readonly IWarehouseReceivingNoteService _wrnService;
+        private readonly VCL_BLL.Services.UserWarehouseService _userWarehouses;
 
-        public WarehouseReceivingNoteController(IWarehouseReceivingNoteService wrnService)
+        private Guid? CurrentUserId =>
+            Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
+
+        private string CurrentRole => User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
+
+        /// <summary>Sale / OM: xem phiếu mọi kho, không áp phạm vi kho được gán.</summary>
+        private static bool IsOfficeRole(string? role) =>
+            role?.Replace(" ", string.Empty).Trim().ToUpperInvariant() is "SALE" or "OPERATIONSMANAGER" or "OPERATIONS";
+
+        public WarehouseReceivingNoteController(
+            IWarehouseReceivingNoteService wrnService,
+            VCL_BLL.Services.UserWarehouseService userWarehouses)
         {
             _wrnService = wrnService;
+            _userWarehouses = userWarehouses;
         }
 
         /// <summary>
         /// Lấy phiếu tiếp nhận kho đang hoạt động của đơn hàng ký gửi.
         /// </summary>
         [HttpGet("api/warehouse-receiving-notes/by-consignment/{consignmentOrderId}")]
-        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager")]
+        [AuthorizeRoles("Admin,Sale,WarehouseStaff,OperationsManager")]
         public async Task<IActionResult> GetReceivingNoteByConsignment(Guid consignmentOrderId)
         {
             try
@@ -48,35 +64,44 @@ namespace VCL_API.Controllers
         /// yêu cầu ký gửi và danh sách hàng dự kiến nhận.
         /// </summary>
         [HttpGet("api/warehouse-receiving-notes/scan")]
-        [Authorize(Roles = "WarehouseStaff,Admin")]
+        [AuthorizeRoles("WarehouseStaff,Admin")]
         public async Task<IActionResult> ScanReceivingNote([FromQuery] string code)
         {
             try
             {
-                var result = await _wrnService.ScanReceivingNoteAsync(code);
+                var result = await _wrnService.ScanReceivingNoteAsync(code, CurrentUserId, CurrentRole);
                 return Ok(new { message = "Quét phiếu tiếp nhận kho thành công.", data = result });
             }
             catch (NotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Phiếu của kho không được gán cho tài khoản này.
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
         /// <summary>
-        /// Tạo mới phiếu tiếp nhận kho cho đơn ký gửi đang ở APPROVED, DEPOSIT_PAID hoặc
-        /// PAYMENT_CONFIRMED — tức đơn nhân viên tạo, hoặc đơn khách đã trả cọc.
+        /// Sale lập phiếu nhập kho cho đơn khách đã thanh toán cọc (DEPOSIT_PAID). Phiếu chờ quản lý
+        /// kho duyệt; duyệt xong khách mang phiếu và hàng tới kho.
         /// </summary>
         [HttpPost("api/warehouse-receiving-notes")]
         [Authorize(Roles = "Admin,Sale")]
         public async Task<IActionResult> CreateReceivingNote([FromBody] CreateWarehouseReceivingNoteRequestDto request)
         {
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var actorId))
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+
             try
             {
-                var result = await _wrnService.CreateReceivingNoteAsync(request);
+                var result = await _wrnService.CreateReceivingNoteAsync(request, actorId);
                 return StatusCode(201, new
                 {
                     message = "Gửi phiếu tiếp nhận kho thành công.",
@@ -93,7 +118,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -102,7 +127,7 @@ namespace VCL_API.Controllers
         /// khách hàng khai báo với số liệu thực tế tại kho.
         /// </summary>
         [HttpGet("api/warehouse-receiving-notes/{receivingNoteId}")]
-        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager")]
+        [AuthorizeRoles("Admin,Sale,WarehouseStaff,OperationsManager")]
         public async Task<IActionResult> GetReceivingNoteDetail(Guid receivingNoteId)
         {
             try
@@ -121,12 +146,29 @@ namespace VCL_API.Controllers
         /// Hệ thống tự tính chênh lệch so với khai báo và chuyển phiếu sang trạng thái RECEIVED.
         /// </summary>
         [HttpPost("api/warehouse-receiving-notes/{receivingNoteId}/confirm-receipt")]
-        [Authorize(Roles = "Admin,WarehouseStaff")]
+        [AuthorizeRoles("Admin,WarehouseStaff")]
         public async Task<IActionResult> ConfirmReceipt(Guid receivingNoteId, [FromBody] ConfirmReceiptRequestDto request)
         {
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var actorId))
+                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
+
+            // Nhân viên kho đã được gán kho chỉ xác nhận nhận hàng ở đúng kho của phiếu.
             try
             {
-                var result = await _wrnService.ConfirmReceiptAsync(receivingNoteId, request);
+                await _userWarehouses.EnsureAssignedWarehouseAsync(
+                    actorId,
+                    User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value,
+                    await _userWarehouses.WarehouseOfReceivingNoteAsync(receivingNoteId));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
+
+            try
+            {
+                var result = await _wrnService.ConfirmReceiptAsync(receivingNoteId, request, actorId);
                 return Ok(new { message = "Xác nhận nhập kho thành công.", data = result });
             }
             catch (NotFoundException ex)
@@ -139,7 +181,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -177,7 +219,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -191,31 +233,60 @@ namespace VCL_API.Controllers
         /// </summary>
         /// <param name="status">ACTIVE · PARTIALLY_RECEIVED · RECEIVED · APPROVED · REJECTED</param>
         /// <param name="warehouseId">Lọc theo kho tiếp nhận</param>
-        /// <param name="search">Tìm theo mã phiếu, mã đơn, tên hoặc số điện thoại khách</param>
+        /// <param name="search">
+        /// Tìm theo mã phiếu, mã đơn, tên hoặc số điện thoại khách; với hàng mua hộ còn tìm được theo
+        /// mã đơn NCC, mã đơn mua (PO-), mã yêu cầu mua hộ và mã vận đơn nội địa (bỏ khoảng trắng,
+        /// không phân biệt hoa thường).
+        /// </param>
+        /// <param name="orderType">CONSIGNMENT (ký gửi) / PURCHASE (mua hộ). Bỏ trống = tất cả.</param>
         [HttpGet("api/warehouse-receiving-notes")]
-        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Manager,MANAGER")]
+        [AuthorizeRoles("Admin,ADMIN,Sale,SALE,Staff,STAFF,WarehouseStaff,WAREHOUSESTAFF,OperationsManager,OPERATIONSMANAGER,Operations,OPERATIONS,Manager,MANAGER")]
         [ProducesResponseType(typeof(PaginatedResponse<WarehouseReceivingNoteListItemDto>), 200)]
         public async Task<IActionResult> GetReceivingNotes(
             [FromQuery] string? status = null,
             [FromQuery] Guid? warehouseId = null,
             [FromQuery] string? search = null,
             [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 20)
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? orderType = null)
         {
             try
             {
-                var result = await _wrnService.GetReceivingNotesAsync(status, warehouseId, search, pageNumber, pageSize);
+                // Nhân viên kho đã được gán kho chỉ thấy phiếu của các kho được gán; Sale / OM / Admin
+                // xem toàn bộ như cũ. Tài khoản chưa gán kho giữ hành vi cũ.
+                IReadOnlyCollection<Guid>? scope = null;
+                if (!IsOfficeRole(CurrentRole))
+                {
+                    scope = await _userWarehouses.GetListScopeAsync(CurrentUserId, CurrentRole);
+                    if (scope != null && warehouseId.HasValue && warehouseId != Guid.Empty && !scope.Contains(warehouseId.Value))
+                    {
+                        try
+                        {
+                            await _userWarehouses.EnsureAssignedWarehouseAsync(CurrentUserId, CurrentRole, warehouseId);
+                        }
+                        catch (UnauthorizedAccessException ex)
+                        {
+                            return StatusCode(403, new { message = this.UserError(ex) });
+                        }
+                    }
+                }
+
+                var result = await _wrnService.GetReceivingNotesAsync(
+                    status, warehouseId, search, pageNumber, pageSize, scope, orderType);
                 return Ok(new { message = "Lấy danh sách phiếu tiếp nhận thành công.", data = result });
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
         /// <summary>
-        /// Operations Manager duyệt hoặc từ chối biên bản đối chiếu của phiếu tiếp nhận.
-        /// Phiếu phải đang ở RECEIVED. Từ chối thì bắt buộc ghi lý do.
+        /// Quản lý kho / Operations Manager quyết định phiếu tiếp nhận ở một trong ba bước
+        /// (<c>approvalStage</c> của danh sách): RECEIVE (duyệt cho nhận hàng), DISCREPANCY (biên bản lệch
+        /// số lượng, phiếu ở RECEIVED/PARTIALLY_RECEIVED) và DISCREPANCY_ACK (phiếu đã tự chốt APPROVED
+        /// nhưng lệch cân — chỉ nhận APPROVED = chấp nhận số thực tế). Từ chối thì bắt buộc ghi lý do.
+        /// Quyết định lần hai trả 409.
         /// </summary>
         /// <remarks>
         /// Duyệt xong kho mới xếp được hàng lên kệ — chốt nằm ở
@@ -227,6 +298,7 @@ namespace VCL_API.Controllers
         [ProducesResponseType(400)]
         [ProducesResponseType(403)]
         [ProducesResponseType(404)]
+        [ProducesResponseType(409)]
         public async Task<IActionResult> UpdateStatus(
             Guid receivingNoteId, [FromBody] UpdateReceivingNoteStatusDto request)
         {
@@ -245,15 +317,19 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
             }
+            catch (ConflictException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
     }

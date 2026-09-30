@@ -78,6 +78,56 @@ namespace VCL_BLL.Services
             return MapToResponse(address);
         }
 
+        /// <summary>
+        /// Nhân viên thêm địa chỉ HỘ khách. Sale tạo đơn hộ khách mà khách chưa có địa chỉ
+        /// nào thì trước đây tắc ở đây: sổ địa chỉ đọc được nhưng không có đường ghi.
+        ///
+        /// Khách phải TỒN TẠI — không tự tạo khách mới từ endpoint này, để một thao tác
+        /// gõ nhầm customerId không đẻ ra hồ sơ khách rác.
+        /// </summary>
+        public async Task<DeliveryAddressResponse> CreateForCustomerAsync(Guid customerId, CreateDeliveryAddressRequest request)
+        {
+            var customers = await _unitOfWork.Repository<Customer>().GetAllAsync();
+            var customer = customers.FirstOrDefault(c => c.Id == customerId);
+            if (customer == null)
+                throw new NotFoundException($"Không tìm thấy khách hàng với ID {customerId}");
+
+            var address = (request?.Address ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(address))
+                throw new ArgumentException("Địa chỉ không được để trống.");
+
+            var repo = _unitOfWork.Repository<DeliveryAddress>();
+
+            /*
+             * Trùng y hệt thì trả lại địa chỉ đã có thay vì thêm dòng thứ hai.
+             * Sale hay bấm lại khi mạng chậm, và sổ địa chỉ nhân đôi thì khách khó chọn.
+             */
+            var all = await repo.GetAllAsync();
+            var existing = all.FirstOrDefault(a =>
+                a.CustomerId == customer.Id &&
+                string.Equals((a.Address ?? string.Empty).Trim(), address, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null)
+                return MapToResponse(existing);
+
+            var created = new DeliveryAddress
+            {
+                Id = Guid.NewGuid(),
+                CustomerId = customer.Id,
+                Address = address,
+                // Hai cột dưới vẫn còn trong DB nhưng FE không gửi (giống CreateAsync).
+                ReceiverName = string.Empty,
+                ReceiverPhone = string.Empty,
+                IsDefault = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await repo.AddAsync(created);
+            await _unitOfWork.SaveChangesAsync();
+
+            return MapToResponse(created);
+        }
+
         public async Task UpdateAsync(Guid userId, Guid addressId, UpdateDeliveryAddressRequest request)
         {
             var customer = await GetCustomerOrThrowAsync(userId);

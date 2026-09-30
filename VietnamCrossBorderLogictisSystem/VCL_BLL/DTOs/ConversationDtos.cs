@@ -134,7 +134,7 @@ namespace VCL_BLL.DTOs
         /// <summary>
         /// Loại thực thể muốn liên kết trò chuyện (chọn một trong: CONSIGNMENT, PURCHASE_REQUEST, QUOTATION). Để null nếu muốn chat chung.
         /// </summary>
-        [RegularExpression("^(CONSIGNMENT|PURCHASE_REQUEST|QUOTATION)$", ErrorMessage = "Loại liên kết chỉ nhận: CONSIGNMENT, PURCHASE_REQUEST, QUOTATION.")]
+        [RegularExpression("^(CONSIGNMENT|PURCHASE_REQUEST|QUOTATION)$", ErrorMessage = "Chỉ liên kết được với đơn ký gửi, yêu cầu mua hộ hoặc báo giá.")]
         public string? RelatedType { get; set; }
 
         /// <summary>

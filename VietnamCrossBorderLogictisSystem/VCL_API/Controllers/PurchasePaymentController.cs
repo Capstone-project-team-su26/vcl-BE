@@ -13,6 +13,8 @@ using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
 using VCL_API.Helpers;
+using VCL_BLL.Helpers;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -64,7 +66,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -72,58 +74,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
-        }
-
-        /// <summary>
-        /// Staff/Sales chốt chi phí phát sinh (lưu kho, giao lại...) và tạo đợt thanh toán cuối cho đơn mua hộ.
-        /// Không có phát sinh thì đơn chuyển COMPLETED luôn.
-        /// </summary>
-        [HttpPost("api/purchase-requests/{requestId}/final-payment")]
-        [Authorize]
-        public async Task<IActionResult> CreateFinalPayment(Guid requestId, [FromBody] CreatePurchaseFinalPaymentRequestDto request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-            {
-                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
-            }
-
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-            try
-            {
-                var result = await _purchasePaymentService.CreateFinalPaymentAsync(requestId, userId, userRole, request);
-                var message = result.FinalAmount > 0
-                    ? "Tạo thanh toán cuối thành công."
-                    : "Không có chi phí phát sinh, đơn mua hộ đã hoàn tất.";
-                return Ok(new { message, data = result });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(403, new { message = ex.Message });
-            }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -149,7 +104,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -157,7 +112,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -195,7 +150,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -455,7 +410,7 @@ namespace VCL_API.Controllers
         /// </summary>
         [HttpGet("api/payments/sepay/checkout/{orderCode}")]
         [AllowAnonymous]
-        public async Task<IActionResult> SePayCheckout(long orderCode)
+        public async Task<IActionResult> SePayCheckout(long orderCode, [FromQuery] string? returnUrl = null, [FromQuery] string? cancelUrl = null)
         {
             decimal amount = 0m;
             string paymentMethod = "";
@@ -489,30 +444,18 @@ namespace VCL_API.Controllers
                 return NotFound("Không tìm thấy thông tin thanh toán SePay hợp lệ.");
             }
 
-            // Determine frontend base URL dynamically
-            var referer = Request.Headers["Referer"].ToString();
-            var frontendBaseUrl = "https://logictic.site";
-            if (!string.IsNullOrEmpty(referer) && (referer.Contains("localhost") || referer.Contains("127.0.0.1")))
-            {
-                frontendBaseUrl = "http://localhost:5173";
-            }
-            else
-            {
-                var host = Request.Host.Host;
-                if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) || host == "127.0.0.1")
-                {
-                    frontendBaseUrl = "http://localhost:5173";
-                }
-            }
+            // URL quay về: ưu tiên returnUrl/cancelUrl web gửi lúc tạo khoản thu (nằm trên query của link này) —
+            // lọc lại theo danh sách origin cho phép vì ai cũng tự gõ được query (chống open-redirect).
+            // Không có thì như cũ: origin lấy từ Referer (localhost hoặc đúng tên miền web khách cấu hình) +
+            // trang lịch sử cũ. Luôn gắn ?orderCode=&status=success|cancelled để web biết giao dịch nào.
+            var frontendBaseUrl = ResolveFrontendOrigin(Request.Headers["Referer"].ToString());
+            var legacyPath = isConsignment ? PaymentReturnUrls.ConsignmentHistoryPath : PaymentReturnUrls.PurchaseHistoryPath;
+            var (successUrl, cancelledUrl) = PaymentReturnUrls.Build(
+                _configuration, returnUrl, cancelUrl, legacyPath, orderCode, frontendBaseUrl);
 
-            var returnUrl = isConsignment 
-                ? $"{frontendBaseUrl}/history/consignment" 
-                : $"{frontendBaseUrl}/history/buy-on-behalf";
-
-            var cancelUrl = returnUrl;
             if (string.Equals(status, "PAID", StringComparison.OrdinalIgnoreCase))
             {
-                return Redirect(returnUrl);
+                return Redirect(successUrl);
             }
 
             var accNumber = _configuration["SePay:AccountNumber"] ?? string.Empty;
@@ -521,8 +464,23 @@ namespace VCL_API.Controllers
 
             var qrUrl = _sePayService.GenerateQrUrl((int)Math.Round(amount, MidpointRounding.AwayFromZero), $"VCL{orderCode}");
 
-            var html = GetSePayCheckoutHtml(accName, bankName, accNumber, amount, orderCode, qrUrl, returnUrl, cancelUrl);
+            // URL chèn vào HTML/JS phải mã hoá (dấu ' trong query hợp lệ theo URI nhưng phá chuỗi JS).
+            var html = GetSePayCheckoutHtml(accName, bankName, accNumber, amount, orderCode, qrUrl,
+                System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(successUrl),
+                System.Net.WebUtility.HtmlEncode(cancelledUrl));
             return Content(html, "text/html", Encoding.UTF8);
+        }
+
+        /// <summary>
+        /// Origin web khách đã mở trang QR (Referer) nếu thuộc danh sách cho phép (localhost, CORS, cấu hình
+        /// SePay/PayOS ReturnUrl, Payment:AllowedReturnOrigins); không thì origin mặc định trong cấu hình.
+        /// </summary>
+        private string ResolveFrontendOrigin(string referer)
+        {
+            var allowed = PaymentReturnUrls.Sanitize(_configuration, referer);
+            return allowed != null && Uri.TryCreate(allowed, UriKind.Absolute, out var refUri)
+                ? refUri.GetLeftPart(UriPartial.Authority)
+                : PaymentReturnUrls.DefaultOrigin(_configuration);
         }
 
         private static string GetSePayCheckoutHtml(string accountName, string bankName, string accountNumber, decimal amount, long orderCode, string qrUrl, string returnUrl, string cancelUrl)
@@ -839,7 +797,7 @@ namespace VCL_API.Controllers
                     document.querySelector('.status-container span').style.color = '#2ea44f';
                     document.querySelector('.pulse-loader').style.backgroundColor = '#2ea44f';
                     setTimeout(() => {{
-                        window.location.href = returnUrl || 'https://localhost:3000/payment/success';
+                        window.location.href = returnUrl;
                     }}, 1500);
                 }} else {{
                     setTimeout(checkStatus, 3000);

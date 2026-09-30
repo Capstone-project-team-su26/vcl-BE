@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -48,10 +49,10 @@ namespace VCL_API.Controllers
                 var result = await _inboundService.CreateAsync(userId, userRole, request);
                 return StatusCode(201, new { message = "Lập phiếu nhập kho thành công.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
-            catch (Exception ex) { return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -69,10 +70,10 @@ namespace VCL_API.Controllers
                 var result = await _inboundService.UpdateStatusAsync(inboundRequestId, userId, userRole, request);
                 return Ok(new { message = "Cập nhật phiếu nhập kho thành công.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
-            catch (Exception ex) { return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -93,10 +94,10 @@ namespace VCL_API.Controllers
             {
                 var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
                 var result = await _inboundService.GetPendingInboundOrdersAsync(userRole);
-                return Ok(new { message = "Lay danh sach don cho nhap kho thanh cong.", data = result });
+                return Ok(new { message = "Lấy danh sách đơn chờ nhập kho thành công.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         [HttpGet]
@@ -107,7 +108,7 @@ namespace VCL_API.Controllers
                 var result = await _inboundService.GetListAsync(status, shipmentId);
                 return Ok(new { message = "Lấy danh sách phiếu nhập kho thành công.", data = new { items = result, totalCount = result.Count } });
             }
-            catch (Exception ex) { return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -122,7 +123,7 @@ namespace VCL_API.Controllers
                 return Ok(new { message = "Lấy chi tiết phiếu nhập kho thành công.", data = result });
             }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (Exception ex) { return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message }); }
+            catch (Exception ex) { return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) }); }
         }
     }
 }

@@ -120,6 +120,12 @@ namespace VCL_BLL.DTOs
     /// <summary>Tiến độ nhận của một kiện trong đơn.</summary>
     public class ConsignmentPackageProgress
     {
+        /// <summary>Thùng gỗ của kiện.</summary>
+        public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
+
+        /// <summary>Dịch vụ khách chọn cho kiện.</summary>
+        public List<ItemServiceDto> Services { get; set; } = new();
+
         public Guid OrderItemId { get; set; }
         public string ProductName { get; set; } = string.Empty;
         public int Quantity { get; set; }
@@ -218,6 +224,12 @@ namespace VCL_BLL.DTOs
 
     public class PendingPutawayParcelDto
     {
+        /// <summary>Thùng gỗ của kiện.</summary>
+        public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
+
+        /// <summary>Dịch vụ khách chọn cho kiện.</summary>
+        public List<ItemServiceDto> Services { get; set; } = new();
+
         public Guid Id { get; set; }
         public string PackageCode { get; set; } = string.Empty;
         public string ConsignmentCode { get; set; } = string.Empty;
@@ -230,6 +242,9 @@ namespace VCL_BLL.DTOs
         public decimal? ChargeableWeight { get; set; }
         public string PackageStatus { get; set; } = string.Empty;
         public DateTime? CheckInTime { get; set; }
+
+        /// <summary>Kho nhận kiện (theo phiếu tiếp nhận). Null với kiện đời cũ không có phiếu.</summary>
+        public Guid? WarehouseId { get; set; }
         public string? WarehouseRegion { get; set; }
         public string? RegionCode => WarehouseRegion;
 
@@ -255,10 +270,20 @@ namespace VCL_BLL.DTOs
 
     public class ParcelPutAwayRequest
     {
+        /// <summary>Kho đang xếp — phải đúng kho của phiếu nhập kho.</summary>
         public Guid WarehouseId { get; set; }
-        public Guid ZoneId { get; set; }
-        public Guid ShelfId { get; set; }
-        public Guid BinId { get; set; }
+
+        /// <summary>Mã ô kệ quét được. Gửi mã thì không cần zoneId/shelfId/binId.</summary>
+        public string? BinCode { get; set; }
+
+        /// <summary>Ô kệ chọn theo ID (khi không quét mã).</summary>
+        public Guid? BinId { get; set; }
+
+        /// <summary>Không bắt buộc. Gửi kèm thì phải khớp khu của ô kệ.</summary>
+        public Guid? ZoneId { get; set; }
+
+        /// <summary>Không bắt buộc. Gửi kèm thì phải khớp kệ của ô kệ.</summary>
+        public Guid? ShelfId { get; set; }
     }
 
     /// <summary>
@@ -266,6 +291,12 @@ namespace VCL_BLL.DTOs
     /// </summary>
     public class ParcelDetailResponse
     {
+        /// <summary>Thùng gỗ của kiện.</summary>
+        public PackageConfigurationResponseDto? PackageConfiguration { get; set; }
+
+        /// <summary>Dịch vụ khách chọn cho kiện.</summary>
+        public List<ItemServiceDto> Services { get; set; } = new();
+
         public Guid ParcelId { get; set; }
         public string PackageCode { get; set; } = string.Empty;
         public string PackageStatus { get; set; } = string.Empty;
@@ -322,6 +353,7 @@ namespace VCL_BLL.DTOs
     {
         public string WarehouseName { get; set; } = string.Empty;
         public string ZoneName { get; set; } = string.Empty;
+        public string ZoneType { get; set; } = string.Empty;
         public string ShelfCode { get; set; } = string.Empty;
         public string BinCode { get; set; } = string.Empty;
     }
@@ -369,6 +401,7 @@ namespace VCL_BLL.DTOs
         public string PackageCode { get; set; } = string.Empty;
         public string WarehouseName { get; set; } = string.Empty;
         public string ZoneName { get; set; } = string.Empty;
+        public string ZoneType { get; set; } = string.Empty;
         public string ShelfCode { get; set; } = string.Empty;
         public string BinCode { get; set; } = string.Empty;
         public string PackageStatus { get; set; } = string.Empty;

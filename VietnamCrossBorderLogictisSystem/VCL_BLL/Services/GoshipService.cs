@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using VCL_BLL.DTOs;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
@@ -152,7 +153,8 @@ namespace VCL_BLL.Services
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("GoShip location API error {StatusCode}: {Content}", response.StatusCode, responseContent);
-                throw new InvalidOperationException($"Không tra được danh mục địa chỉ GoShip: {responseContent}");
+                // Chi tiết phản hồi của GoShip chỉ nằm ở log (dòng trên) — người dùng nhận câu tiếng Việt.
+                throw new InvalidOperationException("Không tra được danh mục địa chỉ từ GoShip. Vui lòng thử lại sau.");
             }
 
             // GoShip không nhất quán kiểu của "id": tỉnh và quận trả chuỗi ("700000"), phường trả
@@ -254,13 +256,14 @@ namespace VCL_BLL.Services
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("GoShip Rates API error {StatusCode}: {Content}", response.StatusCode, responseContent);
-                throw new InvalidOperationException($"GoShip Rates Error: {responseContent}");
+                throw new InvalidOperationException("Không lấy được bảng giá giao hàng từ GoShip. Vui lòng kiểm tra địa chỉ nhận rồi thử lại.");
             }
 
             var result = JsonSerializer.Deserialize<GoshipRateResponse>(responseContent);
             if (result == null || result.Data == null)
             {
-                throw new InvalidOperationException("GoShip Rates API returned invalid response.");
+                _logger.LogError("GoShip Rates API trả phản hồi không đọc được: {Content}", responseContent);
+                throw new InvalidOperationException("GoShip trả bảng giá không hợp lệ. Vui lòng thử lại sau.");
             }
 
             return result.Data;
@@ -290,7 +293,7 @@ namespace VCL_BLL.Services
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("GoShip Create Order API error {StatusCode}: {Content}", response.StatusCode, responseContent);
-                throw new InvalidOperationException($"GoShip Create Order Error: {responseContent}");
+                throw new InvalidOperationException("GoShip không tạo được vận đơn giao hàng. Vui lòng kiểm tra thông tin người nhận, địa chỉ rồi thử lại.");
             }
 
             using var doc = JsonDocument.Parse(responseContent);
@@ -332,7 +335,7 @@ namespace VCL_BLL.Services
             {
                 var msg = root.TryGetProperty("message", out var mElem) ? GetJsonStringValue(mElem) : "Unknown Error";
                 _logger.LogError("GoShip Order Creation failed: {Message}", msg);
-                throw new InvalidOperationException($"GoShip Create Order Failed: {msg}");
+                throw new InvalidOperationException("GoShip không tạo được vận đơn giao hàng. Vui lòng kiểm tra thông tin người nhận, địa chỉ rồi thử lại.");
             }
 
             _logger.LogInformation("GoShip Order Created Successfully: {Code} (ID: {Id})", orderData.Code, orderData.Id);
@@ -530,7 +533,7 @@ namespace VCL_BLL.Services
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("GoShip tra trạng thái lỗi {StatusCode}: {Content}", response.StatusCode, responseContent);
-                throw new InvalidOperationException($"GoShip không tra được vận đơn {trackingCode}: {responseContent}");
+                throw new InvalidOperationException($"GoShip không tra được vận đơn {trackingCode}. Vui lòng thử lại sau.");
             }
 
             var (statusCode, statusText) = ReadStatusFromSearchResponse(responseContent);
@@ -682,17 +685,10 @@ namespace VCL_BLL.Services
                 var order = await orderRepo.GetByIdAsync(orderId);
                 if (order == null) continue;
 
-                var orderParcels = allParcels.Where(p => p.ConsignmentId == order.Id).ToList();
-
-                // Giao xong thì đơn dừng ở DELIVERED. COMPLETED là của bước OM xác nhận cuối
-                // luồng, không phải của hãng vận chuyển.
-                if (orderParcels.Count > 0 && orderParcels.All(p =>
-                        string.Equals(p.PackageStatus, "DELIVERED", StringComparison.OrdinalIgnoreCase)))
+                // Giao xong thì đơn dừng ở DELIVERED (kiện đã huỷ theo sự cố không tính). Hoàn thành
+                // là việc của bước đóng đơn, không phải của hãng vận chuyển.
+                if (await OrderDeliveryProgress.RefreshAsync(_unitOfWork, order.Id, DateTime.UtcNow))
                 {
-                    order.Status = "DELIVERED";
-                    // Mốc bắt đầu đếm thời hạn chờ khách xác nhận; hết hạn thì OM chốt thay.
-                    order.DeliveredAt ??= DateTime.UtcNow;
-                    orderRepo.Update(order);
                     orderStatus = order.Status;
                 }
                 else if (NeedsHumanAttention.Contains(packageStatus))
@@ -750,7 +746,7 @@ namespace VCL_BLL.Services
                     Id = Guid.NewGuid(),
                     UserId = userId,
                     Title = $"Giao hàng cần xử lý — đơn {order.ConsignmentCode}",
-                    Content = $"GoShip báo trạng thái \"{statusText}\" ({packageStatus}) cho đơn {order.ConsignmentCode}. "
+                    Content = $"GoShip báo trạng thái \"{statusText}\" ({StatusNames.Of(packageStatus)}) cho đơn {order.ConsignmentCode}. "
                             + "Đơn đang dừng chờ nhân viên xử lý thủ công.",
                     IsRead = false,
                     CreatedAt = DateTime.UtcNow

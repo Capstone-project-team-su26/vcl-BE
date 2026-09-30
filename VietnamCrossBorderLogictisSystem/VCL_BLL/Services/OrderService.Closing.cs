@@ -10,13 +10,16 @@ using VCL_DLL.Models;
 namespace VCL_BLL.Services
 {
     /// <summary>
-    /// Ba bước cuối luồng, đi tuần tự và không được nhảy cóc:
-    /// hãng giao xong đặt đơn về <c>DELIVERED</c> → khách xác nhận (<c>CUSTOMER_CONFIRMED</c>)
-    /// → OM chốt (<c>COMPLETED</c>).
-    /// <para>
-    /// Thực tế phần lớn khách nhận hàng xong không vào web bấm gì, nên quá
-    /// <see cref="CustomerConfirmGraceDays"/> ngày thì OM được chốt thay.
-    /// </para>
+    /// Đóng đơn sau khi giao xong (<c>DELIVERED</c>):
+    /// <list type="bullet">
+    /// <item>khách xác nhận đã nhận → <c>COMPLETED</c> ngay;</item>
+    /// <item>khách không bấm gì → tự <c>COMPLETED</c> khi hết hạn khiếu nại
+    /// (<c>Closing:ComplaintWindowDays</c>, mặc định 3 ngày);</item>
+    /// <item>OM chốt tay được cho trường hợp đặc biệt.</item>
+    /// </list>
+    /// Cả ba đường đều bị chặn khi còn sự cố/khiếu nại mở, chưa chi bồi thường hoặc còn khoản thu
+    /// treo (<see cref="OrderClosingPolicy"/>). Khi đó khách xác nhận chỉ ghi nhận
+    /// <c>CUSTOMER_CONFIRMED</c>, đơn đóng khi vướng mắc được gỡ.
     /// </summary>
     public partial class OrderService
     {
@@ -48,17 +51,30 @@ namespace VCL_BLL.Services
 
             if (current != StatusDelivered)
                 throw new ArgumentException(
-                    $"Chỉ xác nhận được khi hãng vận chuyển đã báo giao xong. Trạng thái hiện tại: {order.Status}.");
+                    $"Chỉ xác nhận được khi hãng vận chuyển đã báo giao xong. Trạng thái hiện tại: {StatusNames.Quote(order.Status)}.");
 
             var now = DateTime.UtcNow;
-            order.Status = StatusCustomerConfirmed;
             order.CustomerConfirmedAt = now;
+
+            var blockers = await OrderClosingPolicy.BlockersAsync(_unitOfWork, order);
+            if (blockers.Count == 0)
+            {
+                // Khách đã nhận đủ và không còn vướng gì: đóng đơn luôn, không bắt chờ OM.
+                order.Status = StatusCompleted;
+                order.CompletedAt = now;
+                await OrderHistoryWriter.RecordAsync(_unitOfWork, order.Id, current, order.Status,
+                    "ORDER_COMPLETED_BY_CUSTOMER", "Khách xác nhận đã nhận hàng.", userId);
+                await PurchaseRequestProgress.SyncAfterOrderClosedAsync(_unitOfWork, order);
+            }
+            else
+            {
+                order.Status = StatusCustomerConfirmed;
+                await NotifyOrderStaffAsync(order,
+                    $"Khách đã xác nhận nhận hàng — đơn {order.ConsignmentCode}",
+                    $"Khách đã xác nhận nhận hàng của đơn {order.ConsignmentCode} nhưng đơn chưa đóng được: {string.Join(" ", blockers)}");
+            }
+
             orderRepo.Update(order);
-
-            await NotifyOrderStaffAsync(order,
-                $"Khách đã xác nhận nhận hàng — đơn {order.ConsignmentCode}",
-                $"Khách hàng đã xác nhận nhận đủ hàng của đơn {order.ConsignmentCode}. Đơn chờ OM chốt hoàn thành.");
-
             await _unitOfWork.SaveChangesAsync();
 
             return BuildClosingResponse(order, customer.FullName ?? string.Empty, now, null);
@@ -87,7 +103,7 @@ namespace VCL_BLL.Services
                 if (current != StatusDelivered)
                     throw new ArgumentException(
                         $"Chỉ chốt hoàn thành sau khi khách xác nhận, hoặc sau {CustomerConfirmGraceDays} ngày kể từ khi giao xong. "
-                        + $"Trạng thái hiện tại: {order.Status}.");
+                        + $"Trạng thái hiện tại: {StatusNames.Quote(order.Status)}.");
 
                 if (!order.DeliveredAt.HasValue)
                     throw new ArgumentException(
@@ -102,12 +118,17 @@ namespace VCL_BLL.Services
                 }
             }
 
+            var blockers = await OrderClosingPolicy.BlockersAsync(_unitOfWork, order);
+            if (blockers.Count > 0)
+                throw new ArgumentException("Chưa đóng được đơn: " + string.Join(" ", blockers));
+
             order.Status = StatusCompleted;
             order.CompletedAt = now;
             order.CompletedById = userId;
             if (!string.IsNullOrWhiteSpace(request?.Note))
                 order.Note = request.Note;
             orderRepo.Update(order);
+            await PurchaseRequestProgress.SyncAfterOrderClosedAsync(_unitOfWork, order);
 
             await NotifyCustomerOfOrderAsync(order,
                 $"Đơn {order.ConsignmentCode} đã hoàn thành",
@@ -117,6 +138,46 @@ namespace VCL_BLL.Services
 
             var actor = await _unitOfWork.Repository<User>().GetByIdAsync(userId);
             return BuildClosingResponse(order, actor?.FullName ?? string.Empty, now, request?.Note);
+        }
+
+        /// <summary>
+        /// Tự đóng các đơn đã giao xong mà hết hạn khiếu nại và không còn vướng mắc. Chạy định kỳ
+        /// từ tiến trình nền; trả về số đơn vừa đóng.
+        /// </summary>
+        public async Task<int> AutoCompleteDeliveredOrdersAsync(int complaintWindowDays)
+        {
+            var now = DateTime.UtcNow;
+            var deadline = now.AddDays(-complaintWindowDays);
+            var orderRepo = _unitOfWork.Repository<Order>();
+
+            var candidates = (await orderRepo.GetAllAsync())
+                .Where(o => (string.Equals(o.Status, StatusDelivered, StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(o.Status, StatusCustomerConfirmed, StringComparison.OrdinalIgnoreCase))
+                            && o.DeliveredAt.HasValue && o.DeliveredAt.Value <= deadline)
+                .ToList();
+
+            var closed = 0;
+            foreach (var order in candidates)
+            {
+                if ((await OrderClosingPolicy.BlockersAsync(_unitOfWork, order)).Count > 0) continue;
+
+                var before = order.Status;
+                order.Status = StatusCompleted;
+                order.CompletedAt = now;
+                order.CompletedAutomatically = true;
+                orderRepo.Update(order);
+                await PurchaseRequestProgress.SyncAfterOrderClosedAsync(_unitOfWork, order);
+
+                await OrderHistoryWriter.RecordAsync(_unitOfWork, order.Id, before, order.Status,
+                    "ORDER_AUTO_COMPLETED", $"Tự hoàn thành sau {complaintWindowDays} ngày kể từ khi giao, không có khiếu nại.", null);
+                await NotifyCustomerOfOrderAsync(order,
+                    $"Đơn {order.ConsignmentCode} đã hoàn thành",
+                    $"Đơn ký gửi {order.ConsignmentCode} đã tự hoàn thành sau {complaintWindowDays} ngày kể từ khi giao. Cảm ơn quý khách.");
+                closed++;
+            }
+
+            if (closed > 0) await _unitOfWork.SaveChangesAsync();
+            return closed;
         }
 
         /// <summary>
@@ -136,7 +197,7 @@ namespace VCL_BLL.Services
 
             var current = order.Status?.Trim().ToUpperInvariant() ?? string.Empty;
             if (current is StatusCompleted or StatusCancelledForfeited or "CANCELLED")
-                throw new ArgumentException($"Đơn hàng đang ở trạng thái {order.Status}, không từ chối được nữa.");
+                throw new ArgumentException($"Đơn hàng đang ở trạng thái {StatusNames.Quote(order.Status)}, không từ chối được nữa.");
 
             var quotationIds = (await _unitOfWork.Repository<Quotation>().GetAllAsync())
                 .Where(q => q.OrderId == orderId)

@@ -106,6 +106,11 @@ namespace VCL_BLL.DTOs
         public string PackageCode { get; set; } = string.Empty;
         public decimal? Weight { get; set; }
 
+        /// <summary>Kích thước đo lúc nhận ở kho nguồn (cm) — kho VN dùng làm số gốc để đối chiếu / điền sẵn.</summary>
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
+
         /// <summary>
         /// Đơn hàng và khách hàng của kiện này.
         /// <para>
@@ -118,6 +123,13 @@ namespace VCL_BLL.DTOs
         public Guid? OrderId { get; set; }
 
         public string? OrderCode { get; set; }
+
+        /// <summary>Kiện thuộc đơn mua hộ (Order.OrderType = PURCHASE). FE hiện nhãn "Mua hộ" / "Ký gửi".</summary>
+        public bool IsPurchase { get; set; }
+        /// <summary>PURCHASE hoặc CONSIGNMENT.</summary>
+        public string OrderType { get; set; } = "CONSIGNMENT";
+        /// <summary>Mã yêu cầu mua hộ (PUR-…); null với đơn ký gửi.</summary>
+        public string? PurchaseCode { get; set; }
 
         public Guid? CustomerId { get; set; }
 
@@ -147,6 +159,12 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Nhãn tiếng Việt của <see cref="CustomerIntent"/>, null khi khách chưa chọn.</summary>
         public string? CustomerIntentText { get; set; }
+
+        /// <summary>
+        /// Ảnh kho VN chụp lúc tiếp nhận kiện (VN_ARRIVAL_PROOF). Kiện chờ tiếp nhận có thể đã có
+        /// ảnh từ lần bấm xác nhận trước bị lỗi — các ảnh này vẫn được tính cho lần xác nhận sau.
+        /// </summary>
+        public List<AttachmentDto> ArrivalPhotos { get; set; } = new();
     }
 
     public class UpdateInternationalShipmentStatusDto
@@ -200,6 +218,9 @@ namespace VCL_BLL.DTOs
     {
         /// <summary>Ghi chú khi xác nhận đến kho đích (nếu có).</summary>
         public string? Note { get; set; }
+
+        /// <summary>Lời nhắn hiển thị cho khách. Bỏ trống thì khách nhận câu mặc định.</summary>
+        public string? CustomerMessage { get; set; }
     }
 
     public class ConfirmShipmentArrivalResponseDto
@@ -253,9 +274,19 @@ namespace VCL_BLL.DTOs
         [Range(0, 100000, ErrorMessage = "Số lượng thực tế không hợp lệ.")]
         public int? ActualQuantity { get; set; }
 
-        /// <summary>Cân nặng kho cân lại thực tế (kg). Bỏ trống là không cân lại.</summary>
+        /// <summary>Cân nặng kho VN cân lại (kg) — bắt buộc, là số dùng để tính cước cuối.</summary>
         [Range(0, 100000, ErrorMessage = "Cân nặng thực tế không hợp lệ.")]
         public decimal? ActualWeight { get; set; }
+
+        /// <summary>Kích thước kho VN đo lại (cm) — bắt buộc, dùng tính cân quy đổi.</summary>
+        [Range(0, 100000, ErrorMessage = "Chiều dài không hợp lệ.")]
+        public decimal? Length { get; set; }
+
+        [Range(0, 100000, ErrorMessage = "Chiều rộng không hợp lệ.")]
+        public decimal? Width { get; set; }
+
+        [Range(0, 100000, ErrorMessage = "Chiều cao không hợp lệ.")]
+        public decimal? Height { get; set; }
 
         /// <summary>
         /// Tình trạng kiện: <c>INTACT</c> · <c>MISSING</c> · <c>DAMAGED</c> · <c>WET</c> ·
@@ -280,6 +311,10 @@ namespace VCL_BLL.DTOs
         /// và vẫn ghi đè được nếu khách gọi đổi ý. Null nghĩa là khách chưa chọn.
         /// </summary>
         public string? CustomerIntent { get; set; }
+
+        /// <summary>Sự cố tự mở khi tiếp nhận (hàng hỏng/sai/thiếu, hoặc cân lệch > 10%). Null là không có.</summary>
+        public string? IncidentCode { get; set; }
+        public string? IncidentType { get; set; }
         public string? CustomerIntentText { get; set; }
 
         /// <summary>
@@ -299,6 +334,9 @@ namespace VCL_BLL.DTOs
         public int? ActualQuantity { get; set; }
         public decimal? DeclaredWeight { get; set; }
         public decimal? ActualWeight { get; set; }
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
 
         public string? Condition { get; set; }
         public string? ConditionText { get; set; }
@@ -315,6 +353,9 @@ namespace VCL_BLL.DTOs
 
         public string? InspectedByName { get; set; }
         public DateTime? InspectedAt { get; set; }
+
+        /// <summary>Ảnh tiếp nhận của kiện (VN_ARRIVAL_PROOF) — bằng chứng kho đã nhận kiện trong tình trạng nào.</summary>
+        public List<AttachmentDto> Photos { get; set; } = new();
     }
 
     public class DestinationReceivingResponseDto
@@ -375,5 +416,8 @@ namespace VCL_BLL.DTOs
 
         public List<InternationalShipmentWroDto> WroRequests { get; set; } = new();
         public List<InternationalShipmentParcelDto> Parcels { get; set; } = new();
+
+        /// <summary>Ảnh toàn lô lúc kho VN mở container / tiếp nhận (SHIPMENT + VN_ARRIVAL_PROOF, không bắt buộc).</summary>
+        public List<AttachmentDto> ArrivalPhotos { get; set; } = new();
     }
 }

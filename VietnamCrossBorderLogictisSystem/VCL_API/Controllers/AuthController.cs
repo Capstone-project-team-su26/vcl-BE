@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -30,11 +31,11 @@ namespace VCL_API.Controllers
             try
             {
                 await _authService.RegisterCustomerAsync(request);
-                return Ok(new { message = "OTP da duoc gui den email cua ban." });
+                return Ok(new { message = "OTP đã được gửi đến email của bạn." });
             }
             catch (InvalidOperationException ex)
             {
-                return Conflict(new { message = ex.Message });
+                return Conflict(new { message = this.UserError(ex) });
             }
             catch (AuthException ex)
             {
@@ -52,7 +53,7 @@ namespace VCL_API.Controllers
             try
             {
                 var customerId = await _authService.VerifyCustomerOtpAsync(request);
-                return Ok(new { message = "Dang ky tai khoan thanh cong.", customerId });
+                return Ok(new { message = "Đăng ký tài khoản thành công.", customerId });
             }
             catch (AuthException ex)
             {
@@ -60,7 +61,7 @@ namespace VCL_API.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                return Conflict(new { message = ex.Message });
+                return Conflict(new { message = this.UserError(ex) });
             }
         }
 
@@ -74,7 +75,7 @@ namespace VCL_API.Controllers
             try
             {
                 await _authService.ResendCustomerOtpAsync(request);
-                return Ok(new { message = "OTP moi da duoc gui den email cua ban." });
+                return Ok(new { message = "OTP mới đã được gửi đến email của bạn." });
             }
             catch (AuthException ex)
             {
@@ -94,9 +95,13 @@ namespace VCL_API.Controllers
                 var response = await _authService.LoginAsync(request);
                 return Ok(response);
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = "Invalid credentials" });
+                // AuthService.LoginAsync chỉ ném câu tiếng Việt (sai email/mật khẩu, bị khoá, chưa xác
+                // thực) — trả đúng câu đó thay vì một câu tiếng Anh chung; vẫn 401 như cũ.
+                return Unauthorized(new { message = UserFacingErrors.IsUserFacing(ex)
+                    ? ex.Message
+                    : "Email hoặc mật khẩu không đúng." });
             }
         }
 
@@ -117,16 +122,16 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = ex.Message });
+                return Unauthorized(new { message = this.UserError(ex) });
             }
             catch (InvalidOperationException ex)
             {
                 // Chưa cấu hình ClientId — lỗi phía mình, không phải người dùng gõ sai.
-                return StatusCode(500, new { message = ex.Message });
+                return StatusCode(500, new { message = this.UserError(ex) });
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 

@@ -24,6 +24,9 @@ namespace VCL_BLL.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
 
+        public Task EnsureCanViewAsync(Guid orderId, Guid userId, string? userRole) =>
+            VCL_BLL.Helpers.OrderAccess.EnsureCanViewAsync(_unitOfWork, orderId, userId, userRole);
+
         public StorageFeeService(IUnitOfWork unitOfWork, IConfiguration configuration)
         {
             _unitOfWork = unitOfWork;
@@ -281,7 +284,7 @@ namespace VCL_BLL.Services
             }).ToList();
 
             var note = unitPrice <= 0m
-                ? $"Chưa cấu hình đơn giá lưu kho (SERVICE_PRICINGS, ServiceType = {StorageServiceType}) nên tạm tính 0đ."
+                ? "Chưa cấu hình đơn giá lưu kho trong bảng giá dịch vụ nên tạm tính 0đ."
                 : $"Miễn phí {freeDays} ngày kể từ khi hàng về kho Việt Nam, cộng {graceDays} ngày ân hạn để bạn thu xếp đến lấy. "
                   + $"Từ ngày thứ {coveredDays + 1} tính {unitPrice:#,##0}đ mỗi kiện mỗi ngày, thu một lần khi nhận hàng.";
 
@@ -320,7 +323,7 @@ namespace VCL_BLL.Services
         {
             if (unitPrice <= 0m)
             {
-                return $"Chưa cấu hình đơn giá lưu kho (SERVICE_PRICINGS, ServiceType = {StorageServiceType}) nên tạm tính 0đ.";
+                return "Chưa cấu hình đơn giá lưu kho trong bảng giá dịch vụ nên tạm tính 0đ.";
             }
 
             if (result.Parcels.All(p => p.StoredAt == null))

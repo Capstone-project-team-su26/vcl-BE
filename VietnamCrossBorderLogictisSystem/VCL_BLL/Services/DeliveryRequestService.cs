@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Enums;
 using VCL_DLL.Interface;
@@ -25,9 +26,14 @@ namespace VCL_BLL.Services
         /// <summary>Một chỗ duy nhất quyết định "đơn này đã tất toán chưa".</summary>
         private readonly ISettlementQueryService _settlementQueryService;
         private readonly ILogger<DeliveryRequestService> _logger;
+        private readonly IConsignmentPaymentService _paymentService;
+        private readonly IAttachmentService _attachmentService;
 
-        // Lập phiếu: sale là người liên hệ khách, nắm địa chỉ giao và biết khách trả tiền chưa.
-        private static readonly string[] CreateRoles = { "SALE", "SALES", "ADMIN" };
+        // Lập phiếu: sale (liên hệ khách, nắm địa chỉ) hoặc chính khách tự đặt giao cho đơn của mình.
+        private static readonly string[] CreateRoles = { "SALE", "SALES", "ADMIN", "CUSTOMER" };
+
+        // Ghi bằng chứng giao tay khi hãng không báo về: Sale là người gọi xác nhận với khách.
+        private static readonly string[] ProofRoles = { "SALE", "SALES", "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
 
         // Duyệt phiếu: chỉ OM.
         private static readonly string[] ApproveRoles = { "OPERATIONSMANAGER", "OPERATIONS", "ADMIN" };
@@ -40,6 +46,14 @@ namespace VCL_BLL.Services
         public const string StatusApproved = "DELIVERY_APPROVED";
         public const string StatusRejected = "DELIVERY_REJECTED";
         public const string StatusDispatched = "DELIVERY_DISPATCHED";
+
+        /// <summary>Giao thất bại, kho đã nhận lại hàng hoàn về khu nhận. Kiện được lập yêu cầu giao mới.</summary>
+        public const string StatusReturned = "DELIVERY_RETURNED";
+
+        /// <summary>Phiếu không còn giữ kiện: bị từ chối, hoặc hàng đã hoàn về kho.</summary>
+        public static bool IsClosedWithoutDelivery(string? status) =>
+            string.Equals(status, StatusRejected, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, StatusReturned, StringComparison.OrdinalIgnoreCase);
 
         private const string PickFromShelf = "FROM_SHELF";
         private const string PickFromStaging = "FROM_STAGING";
@@ -59,8 +73,12 @@ namespace VCL_BLL.Services
             IConfiguration configuration,
             IStorageFeeService storageFeeService,
             ISettlementQueryService settlementQueryService,
-            ILogger<DeliveryRequestService> logger)
+            ILogger<DeliveryRequestService> logger,
+            IConsignmentPaymentService paymentService,
+            IAttachmentService attachmentService)
         {
+            _paymentService = paymentService;
+            _attachmentService = attachmentService;
             _unitOfWork = unitOfWork;
             _goshipService = goshipService;
             _notificationService = notificationService;
@@ -80,6 +98,18 @@ namespace VCL_BLL.Services
             var order = await _unitOfWork.Repository<Order>().GetByIdAsync(request.OrderId)
                 ?? throw new NotFoundException($"Không tìm thấy đơn hàng với ID {request.OrderId}");
 
+            var isCustomer = string.Equals(userRole?.Trim(), "Customer", StringComparison.OrdinalIgnoreCase);
+            if (isCustomer)
+            {
+                var owner = order.CustomerId.HasValue
+                    ? await _unitOfWork.Repository<Customer>().GetByIdAsync(order.CustomerId.Value)
+                    : null;
+                if (owner?.UserId != userId)
+                    throw new UnauthorizedAccessException("Bạn chỉ đặt giao được cho đơn của mình.");
+                if (request.RedeliveryFee is > 0m)
+                    throw new UnauthorizedAccessException("Phí giao lại do Sale báo, khách không tự nhập.");
+            }
+
             await EnsureFinalPaymentSettledAsync(order);
 
             var orderParcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
@@ -89,9 +119,17 @@ namespace VCL_BLL.Services
             // Chỉ phiếu CÒN HIỆU LỰC mới giữ chỗ kiện. Phiếu bị OM từ chối phải nhả kiện ra —
             // không thì hàng đợi của Sale trả đơn về (nó đã loại phiếu bị từ chối) nhưng bấm nút
             // lại báo "kiện đã nằm trong một yêu cầu giao hàng khác", Sale không có đường đi tiếp.
-            var rejectedDeliveryIds = (await _unitOfWork.Repository<DeliveryRequest>().GetAllAsync())
-                .Where(d => string.Equals(d.Status, StatusRejected, StringComparison.OrdinalIgnoreCase))
+            // Phiếu bị từ chối hoặc đã hoàn hàng về kho thì nhả kiện — kiện hoàn về phải giao lại được.
+            var allDeliveries = (await _unitOfWork.Repository<DeliveryRequest>().GetAllAsync()).ToList();
+            var rejectedDeliveryIds = allDeliveries
+                .Where(d => IsClosedWithoutDelivery(d.Status))
                 .Select(d => d.Id)
+                .ToHashSet();
+
+            // Kiện đang có sự cố chưa xử lý xong thì chưa giao.
+            var parcelsWithOpenIncident = (await _unitOfWork.Repository<ParcelIncident>().GetAllAsync())
+                .Where(i => !string.Equals(i.Status, IncidentStatuses.Resolved, StringComparison.OrdinalIgnoreCase))
+                .Select(i => i.ParcelId)
                 .ToHashSet();
 
             var alreadyRequested = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
@@ -109,13 +147,15 @@ namespace VCL_BLL.Services
                         ?? throw new ArgumentException($"Kiện {pid} không thuộc đơn hàng này.");
 
                     EnsureParcelReadyToDeliver(parcel, alreadyRequested);
+                    if (parcelsWithOpenIncident.Contains(parcel.Id))
+                        throw new ArgumentException($"Kiện {parcel.PackageCode} đang có sự cố chưa xử lý xong, chưa giao được.");
                     targets.Add(parcel);
                 }
             }
             else
             {
                 targets = orderParcels
-                    .Where(p => IsReadyToDeliver(p) && !alreadyRequested.Contains(p.Id))
+                    .Where(p => IsReadyToDeliver(p) && !alreadyRequested.Contains(p.Id) && !parcelsWithOpenIncident.Contains(p.Id))
                     .ToList();
 
                 if (targets.Count == 0)
@@ -144,6 +184,20 @@ namespace VCL_BLL.Services
                 CreatedBy = userId,
                 CreatedAt = now
             };
+
+            // Giao lại: kiện từng nằm trong phiếu đã hoàn hàng về kho.
+            var targetIds = targets.Select(t => t.Id).ToHashSet();
+            var returnedDeliveries = allDeliveries
+                .Where(d => string.Equals(d.Status, StatusReturned, StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(d => d.Id);
+            var sourceDelivery = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
+                .Where(i => targetIds.Contains(i.ParcelId) && returnedDeliveries.ContainsKey(i.DeliveryRequestId))
+                .Select(i => returnedDeliveries[i.DeliveryRequestId])
+                .OrderByDescending(d => d.ReturnedAt ?? d.CreatedAt)
+                .FirstOrDefault();
+            delivery.SourceDeliveryRequestId = sourceDelivery?.Id;
+            delivery.RedeliveryFee = request.RedeliveryFee is > 0m ? request.RedeliveryFee : null;
+
             await _unitOfWork.Repository<DeliveryRequest>().AddAsync(delivery);
 
             var itemRepo = _unitOfWork.Repository<DeliveryRequestItem>();
@@ -158,6 +212,13 @@ namespace VCL_BLL.Services
                     // khu tạm, không có mã ô nào để đi tới.
                     PickSource = parcel.BinId.HasValue ? PickFromShelf : PickFromStaging
                 });
+            }
+
+            if (delivery.RedeliveryFee is > 0m)
+            {
+                var feePayment = await _paymentService.IssueRedeliveryFeePaymentAsync(
+                    order.Id, delivery.Id, delivery.DeliveryCode, delivery.RedeliveryFee.Value);
+                delivery.RedeliveryFeePaymentId = feePayment.Id;
             }
 
             await _unitOfWork.SaveChangesAsync();
@@ -187,12 +248,12 @@ namespace VCL_BLL.Services
             var target = request.Status?.Trim().ToUpperInvariant();
             if (target != StatusApproved && target != StatusRejected)
             {
-                throw new ArgumentException($"Trạng thái không hợp lệ. Chỉ nhận {StatusApproved} hoặc {StatusRejected}.");
+                throw new ArgumentException("Trạng thái không hợp lệ. Chỉ được duyệt hoặc từ chối.");
             }
 
             if (!string.Equals(delivery.Status, StatusPending, StringComparison.OrdinalIgnoreCase))
             {
-                throw new ArgumentException($"Phiếu đã được xử lý trước đó (hiện tại: {delivery.Status}), không duyệt lại được.");
+                throw new ArgumentException($"Phiếu đã được xử lý trước đó (hiện tại: {StatusNames.Quote(delivery.Status)}), không duyệt lại được.");
             }
 
             if (target == StatusRejected && string.IsNullOrWhiteSpace(request.RejectionReason))
@@ -246,8 +307,11 @@ namespace VCL_BLL.Services
             if (!string.Equals(delivery.Status, StatusApproved, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException(
-                    $"Phiếu phải được Operations Manager duyệt mới đặt giao được (hiện tại: {delivery.Status}).");
+                    $"Phiếu phải được Operations Manager duyệt mới đặt giao được (hiện tại: {StatusNames.Quote(delivery.Status)}).");
             }
+
+            // Luật nghiệp vụ kiểm trước khi đụng tới bên giao hàng.
+            await EnsureRedeliveryFeePaidAsync(delivery);
 
             var items = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
                 .Where(i => i.DeliveryRequestId == delivery.Id)
@@ -348,6 +412,19 @@ namespace VCL_BLL.Services
 
             await _unitOfWork.SaveChangesAsync();
             return await BuildDtoAsync(delivery);
+        }
+
+        public async Task<DeliveryRequestDto> GetByIdAsync(Guid deliveryRequestId, Guid userId, string userRole)
+        {
+            if (!StaffRoleHelper.IsInternalStaff(userRole))
+            {
+                var delivery = await _unitOfWork.Repository<DeliveryRequest>().GetByIdAsync(deliveryRequestId)
+                    ?? throw new NotFoundException($"Không tìm thấy yêu cầu giao hàng {deliveryRequestId}.");
+                if (!delivery.OrderId.HasValue)
+                    throw new UnauthorizedAccessException("Bạn chỉ xem được yêu cầu giao của đơn mình.");
+                await OrderAccess.EnsureCanViewAsync(_unitOfWork, delivery.OrderId.Value, userId, userRole);
+            }
+            return await GetByIdAsync(deliveryRequestId);
         }
 
         public async Task<DeliveryRequestDto> GetByIdAsync(Guid deliveryRequestId)
@@ -532,7 +609,8 @@ namespace VCL_BLL.Services
             // nên chặn ở đây sẽ khoá cứng luồng giao mà kho không có nút nào gỡ. Cảnh báo trong
             // log để còn lần ra, và thu tay cho tới khi dựng xong Pay-at-Pickup cho mua hộ.
             var order = await _unitOfWork.Repository<Order>().GetByIdAsync(delivery.OrderId.Value);
-            if (order?.PurchaseRequestId is not null)
+            // Đơn kho mua hộ luồng mới có hoá đơn chặng VN như ký gửi nên đi tiếp bên dưới.
+            if (order?.PurchaseRequestId is not null && order.PurchaseOrderId is null)
             {
                 _logger.LogWarning(
                     "Đơn mua hộ {ConsignmentCode} phát sinh {Amount} phí lưu kho nhưng chưa có "
@@ -780,10 +858,174 @@ namespace VCL_BLL.Services
             return cheapest.Id;
         }
 
+        // ── Giao lại, bằng chứng giao, hàng hoàn ─────────────────────────────────────────────
+
+        /// <summary>Phí giao lại đã báo thì phải trả xong mới đặt giao — không giao chịu lần hai.</summary>
+        private async Task EnsureRedeliveryFeePaidAsync(DeliveryRequest delivery)
+        {
+            if (!delivery.RedeliveryFeePaymentId.HasValue) return;
+
+            var payment = await _unitOfWork.Repository<Payment>().GetByIdAsync(delivery.RedeliveryFeePaymentId.Value);
+            if (!string.Equals(payment?.PaymentStatus, "PAID", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"Khách chưa trả phí giao lại {delivery.RedeliveryFee:#,##0}đ của yêu cầu {delivery.DeliveryCode}.");
+            }
+        }
+
+        /// <summary>
+        /// Sale ghi đã giao khi hãng không báo về (giao tay, hãng không có webhook). Bắt buộc có ảnh
+        /// ký nhận — đây là chứng cứ duy nhất nếu khách khiếu nại chưa nhận được hàng.
+        /// </summary>
+        public async Task<DeliveryRequestDto> RecordProofAsync(
+            Guid deliveryRequestId, Guid userId, string userRole, DeliveryProofRequest request)
+        {
+            EnsureRole(userRole, ProofRoles, "Chỉ Sale / Operations ghi được bằng chứng giao hàng.");
+            if (string.IsNullOrWhiteSpace(request?.ReceivedBy))
+                throw new ArgumentException("Phải ghi tên người nhận hàng.");
+
+            var repo = _unitOfWork.Repository<DeliveryRequest>();
+            var delivery = await repo.GetByIdAsync(deliveryRequestId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu giao hàng với ID {deliveryRequestId}");
+
+            if (!string.Equals(delivery.Status, StatusDispatched, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException($"Chỉ ghi bằng chứng cho phiếu đã đặt giao (hiện tại: {StatusNames.Quote(delivery.Status)}).");
+
+            var documents = await _attachmentService.DocumentTypesOfAsync(AttachmentEntityTypes.DeliveryRequest, delivery.Id);
+            if (!documents.Contains(AttachmentDocumentTypes.DeliveryProof))
+            {
+                throw new ArgumentException(
+                    $"Phải đính kèm ảnh ký nhận (documentType = {AttachmentDocumentTypes.DeliveryProof}, "
+                    + $"entityType = {AttachmentEntityTypes.DeliveryRequest}, entityId = {delivery.Id}).");
+            }
+
+            var parcelIds = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
+                .Where(i => i.DeliveryRequestId == delivery.Id)
+                .Select(i => i.ParcelId)
+                .ToHashSet();
+            var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => parcelIds.Contains(p.Id))
+                .ToList();
+
+            var now = DateTime.UtcNow;
+            foreach (var parcel in parcels.Where(p => !VnParcelStatuses.FailedOrReturning.Contains(p.PackageStatus ?? string.Empty)))
+            {
+                parcel.PackageStatus = VnParcelStatuses.Delivered;
+                _unitOfWork.Repository<Parcel>().Update(parcel);
+            }
+
+            delivery.ProofReceivedBy = request!.ReceivedBy.Trim();
+            delivery.ProofAt = now;
+            delivery.ProofById = userId;
+            if (!string.IsNullOrWhiteSpace(request.Note))
+                delivery.Note = string.IsNullOrWhiteSpace(delivery.Note) ? request.Note.Trim() : $"{delivery.Note} · {request.Note.Trim()}";
+            repo.Update(delivery);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            if (delivery.OrderId.HasValue && await OrderDeliveryProgress.RefreshAsync(_unitOfWork, delivery.OrderId.Value, now))
+            {
+                await _unitOfWork.SaveChangesAsync();
+                await NotifyOrderCustomerAsync(delivery.OrderId.Value,
+                    order => $"Đơn {order.ConsignmentCode} đã giao xong",
+                    order => $"Hàng của đơn {order.ConsignmentCode} đã được giao. Vui lòng xác nhận đã nhận hàng; "
+                             + "nếu có vấn đề, bạn có thể khiếu nại trong vài ngày tới.");
+            }
+
+            return await BuildDtoAsync(delivery);
+        }
+
+        /// <summary>
+        /// Kho nhận lại hàng hãng trả về sau khi giao thất bại. Hàng về khu nhận (không lên lại
+        /// kệ), yêu cầu giao cũ đóng lại để kiện được lập yêu cầu giao mới.
+        /// </summary>
+        public async Task<DeliveryRequestDto> ReceiveReturnAsync(
+            Guid deliveryRequestId, Guid userId, string userRole, ReceiveReturnedDeliveryRequest request)
+        {
+            EnsureRole(userRole, DispatchRoles, "Chỉ nhân viên kho / Operations nhận được hàng hoàn.");
+
+            var repo = _unitOfWork.Repository<DeliveryRequest>();
+            var delivery = await repo.GetByIdAsync(deliveryRequestId)
+                ?? throw new NotFoundException($"Không tìm thấy yêu cầu giao hàng với ID {deliveryRequestId}");
+
+            if (!string.Equals(delivery.Status, StatusDispatched, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException($"Chỉ nhận hàng hoàn của phiếu đã đặt giao (hiện tại: {StatusNames.Quote(delivery.Status)}).");
+
+            var itemParcelIds = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
+                .Where(i => i.DeliveryRequestId == delivery.Id)
+                .Select(i => i.ParcelId)
+                .ToHashSet();
+            var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
+                .Where(p => itemParcelIds.Contains(p.Id))
+                .ToList();
+
+            var notDelivered = parcels
+                .Where(p => !string.Equals(p.PackageStatus, VnParcelStatuses.Delivered, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            List<Parcel> returning;
+            if (request?.ParcelIds is { Count: > 0 })
+            {
+                var wanted = request.ParcelIds.ToHashSet();
+                returning = notDelivered.Where(p => wanted.Contains(p.Id)).ToList();
+                if (returning.Count != wanted.Count)
+                    throw new ArgumentException("Có kiện không thuộc phiếu này hoặc đã giao thành công.");
+            }
+            else
+            {
+                returning = notDelivered;
+            }
+
+            if (returning.Count == 0)
+                throw new ArgumentException("Phiếu không còn kiện nào chưa giao để nhận lại.");
+
+            var now = DateTime.UtcNow;
+            foreach (var parcel in returning)
+            {
+                parcel.PackageStatus = VnParcelStatuses.ReceivedAtDestination;
+                parcel.DestinationHandling = DirectDelivery;
+                parcel.BinId = null;
+                _unitOfWork.Repository<Parcel>().Update(parcel);
+            }
+
+            delivery.Status = StatusReturned;
+            delivery.ReturnedAt = now;
+            delivery.ReturnedById = userId;
+            if (!string.IsNullOrWhiteSpace(request?.Note))
+                delivery.Note = string.IsNullOrWhiteSpace(delivery.Note) ? request.Note.Trim() : $"{delivery.Note} · {request.Note.Trim()}";
+            repo.Update(delivery);
+
+            await _unitOfWork.SaveChangesAsync();
+
+            if (delivery.OrderId.HasValue)
+            {
+                await NotifyOrderCustomerAsync(delivery.OrderId.Value,
+                    order => $"Đơn {order.ConsignmentCode}: giao hàng chưa thành công",
+                    order => $"{returning.Count} kiện của đơn {order.ConsignmentCode} chưa giao được và đã về lại kho. "
+                             + "Bạn có thể đặt giao lại (xác nhận lại địa chỉ, có thể phát sinh phí giao lại).");
+            }
+
+            await _notificationService.NotifyRolesAsync(new[] { "Sale", "Sales" },
+                $"Hàng hoàn về kho — {delivery.DeliveryCode}",
+                $"{returning.Count} kiện của phiếu {delivery.DeliveryCode} đã về lại khu nhận. Liên hệ khách để giao lại.",
+                userId);
+
+            return await BuildDtoAsync(delivery);
+        }
+
+        private async Task NotifyOrderCustomerAsync(Guid orderId, Func<Order, string> title, Func<Order, string> content)
+        {
+            var order = await _unitOfWork.Repository<Order>().GetByIdAsync(orderId);
+            if (order?.CustomerId == null) return;
+            var customer = await _unitOfWork.Repository<Customer>().GetByIdAsync(order.CustomerId.Value);
+            if (customer?.UserId is Guid customerUserId && customerUserId != Guid.Empty)
+                await _notificationService.NotifyUserAsync(customerUserId, title(order), content(order));
+        }
+
         private static void EnsureRole(string userRole, string[] allowed, string message)
         {
-            var ok = !string.IsNullOrWhiteSpace(userRole)
-                && allowed.Contains(userRole.Trim().ToUpperInvariant());
+            // Biến thể tên vai trò nhân viên kho ("Warehouse Staff VN"…) khớp WAREHOUSESTAFF.
+            var ok = StaffRoleHelper.IsRoleAllowed(allowed, userRole);
             if (!ok) throw new UnauthorizedAccessException(message);
         }
 
@@ -813,7 +1055,7 @@ namespace VCL_BLL.Services
             if (!IsReadyToDeliver(parcel))
             {
                 throw new ArgumentException(
-                    $"Kiện {code} chưa sẵn sàng giao (trạng thái {parcel.PackageStatus}, " +
+                    $"Kiện {code} chưa sẵn sàng giao (trạng thái {StatusNames.Quote(parcel.PackageStatus)}, " +
                     $"hướng xử lý {parcel.DestinationHandling ?? "chưa phân loại"}). " +
                     "Kiện giao thẳng phải được kho mở lô xác nhận, kiện gửi kho phải xếp lên kệ xong.");
             }
@@ -933,6 +1175,7 @@ namespace VCL_BLL.Services
             StatusApproved => "Đã duyệt",
             StatusRejected => "Bị từ chối",
             StatusDispatched => "Đã đặt giao",
+            StatusReturned => "Giao thất bại, hàng đã về lại kho",
             _ => status ?? string.Empty
         };
 
@@ -952,12 +1195,16 @@ namespace VCL_BLL.Services
             public Dictionary<Guid, User> Users { get; init; } = new();
             public Dictionary<Guid, Order> Orders { get; init; } = new();
             public Dictionary<Guid, Customer> Customers { get; init; } = new();
+            public Dictionary<Guid, Payment> RedeliveryPayments { get; init; } = new();
         }
 
         private async Task<DeliveryLookups> LoadLookupsAsync()
         {
             return new DeliveryLookups
             {
+                RedeliveryPayments = (await _unitOfWork.Repository<Payment>().GetAllAsync())
+                    .Where(pm => string.Equals(pm.InstallmentType, "REDELIVERY_FEE", StringComparison.OrdinalIgnoreCase))
+                    .ToDictionary(pm => pm.Id),
                 ItemsByDelivery = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
                     .ToLookup(i => i.DeliveryRequestId),
                 Parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
@@ -1044,6 +1291,20 @@ namespace VCL_BLL.Services
                 CreatedAt = delivery.CreatedAt,
                 ApprovedByName = NameOf(delivery.ApprovedBy),
                 ApprovedAt = delivery.ApprovedAt,
+                SourceDeliveryRequestId = delivery.SourceDeliveryRequestId,
+                RedeliveryFee = delivery.RedeliveryFee,
+                RedeliveryFeePaymentId = delivery.RedeliveryFeePaymentId,
+                RedeliveryFeePaymentStatus = delivery.RedeliveryFeePaymentId.HasValue
+                    && lookups.RedeliveryPayments.TryGetValue(delivery.RedeliveryFeePaymentId.Value, out var feePayment)
+                        ? feePayment.PaymentStatus
+                        : null,
+                RedeliveryFeeCheckoutUrl = delivery.RedeliveryFeePaymentId.HasValue
+                    && lookups.RedeliveryPayments.TryGetValue(delivery.RedeliveryFeePaymentId.Value, out var feePayment2)
+                        ? feePayment2.CheckoutUrl
+                        : null,
+                ReturnedAt = delivery.ReturnedAt,
+                ProofReceivedBy = delivery.ProofReceivedBy,
+                ProofAt = delivery.ProofAt,
                 TotalParcels = lines.Count,
                 HasShelfPick = lines.Any(l => string.Equals(l.PickSource, PickFromShelf, StringComparison.OrdinalIgnoreCase)),
                 Parcels = lines

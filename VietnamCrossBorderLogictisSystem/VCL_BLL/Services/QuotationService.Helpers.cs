@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
+using VCL_BLL.Helpers;
 using VCL_DLL.Models;
 
 namespace VCL_BLL.Services
@@ -10,32 +11,11 @@ namespace VCL_BLL.Services
     public partial class QuotationService
     {
         /// <summary>
-        /// Lấy hệ số quy đổi thể tích từ activeRules (VOLUMETRIC_DIVISOR),
-        /// hoặc từ file cấu hình (PricingSettings:VolumetricDivisor),
-        /// hoặc mặc định là 5000.
+        /// Hệ số quy đổi thể tích — đọc qua <see cref="VolumetricDivisorResolver"/> (rule đúng bảng giá →
+        /// rule chung → cấu hình → 5000), cùng một nguồn với check-in, tách/gộp kiện và tất toán VN.
         /// </summary>
-        private decimal GetVolumetricDivisor(IEnumerable<PricingRule> activeRules)
-        {
-            var rule = activeRules.FirstOrDefault(r =>
-                string.Equals(r.RuleCode, "VOLUMETRIC_DIVISOR", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(r.RuleType, "VOLUMETRIC_DIVISOR", StringComparison.OrdinalIgnoreCase));
-
-            if (rule != null && rule.Value > 0)
-            {
-                return rule.Value;
-            }
-
-            if (_configuration != null)
-            {
-                var configValStr = _configuration["PricingSettings:VolumetricDivisor"];
-                if (decimal.TryParse(configValStr, out var configVal) && configVal > 0)
-                {
-                    return configVal;
-                }
-            }
-
-            return 5000m;
-        }
+        private decimal GetVolumetricDivisor(IEnumerable<PricingRule> activeRules, Guid? servicePricingId = null) =>
+            VolumetricDivisorResolver.Resolve(activeRules, _configuration, servicePricingId);
 
         /// <summary>
         /// Lấy tỷ lệ thuế VAT (%) từ activeRules (RuleCode/RuleType: VAT),
@@ -133,47 +113,18 @@ namespace VCL_BLL.Services
             return domesticFee;
         }
 
-        /// <summary>
-        /// Tra bảng giá ServicePricing theo loại dịch vụ (ConsignmentType).
-        /// Nếu không tìm thấy, trả về giá mặc định.
-        /// </summary>
-        private async Task<decimal> GetFreightRateAsync(string consignmentType)
-        {
-            var pricingRepo = _unitOfWork.Repository<ServicePricing>();
-            var allPricings = (await pricingRepo.GetAllAsync()).Where(p => !p.IsDeleted).ToList();
-
-            // Tìm bảng giá khớp với ConsignmentType và còn hiệu lực
-            var pricing = allPricings
-                .Where(p => string.Equals(p.ServiceType, consignmentType, StringComparison.OrdinalIgnoreCase))
-                .Where(p => p.EffectiveDate == null || p.EffectiveDate <= DateTime.UtcNow)
-                .OrderByDescending(p => p.EffectiveDate)
-                .FirstOrDefault();
-
-            if (pricing?.Price != null)
-                return pricing.Price.Value;
-
-            // Fallback: giá mặc định
-            return IsExpressServiceType(consignmentType)
-                ? DefaultExpressRate
-                : DefaultStandardRate;
-        }
-
-        /// <summary>
-        /// Trả về phí dịch vụ cố định theo loại ký gửi.
-        /// </summary>
-        private static decimal GetServiceFee(string consignmentType)
-        {
-            return IsExpressServiceType(consignmentType)
-                ? ExpressServiceFee
-                : StandardServiceFee;
-        }
-
-        private QuotationFeeResponseDto MapToFeeResponseDto(QuotationFee f, Dictionary<Guid, PricingRule> ruleMap, int packageCount)
+        private QuotationFeeResponseDto MapToFeeResponseDto(
+            QuotationFee f, Dictionary<Guid, PricingRule> ruleMap, int packageCount,
+            IReadOnlyDictionary<Guid, string>? itemNames = null)
         {
             var dto = new QuotationFeeResponseDto
             {
                 Id = f.Id,
                 PricingRuleId = f.PricingRuleId,
+                OrderItemId = f.OrderItemId,
+                ItemName = f.OrderItemId.HasValue && itemNames != null && itemNames.TryGetValue(f.OrderItemId.Value, out var itemName)
+                    ? itemName
+                    : null,
                 FeeId = f.PricingRuleId ?? f.Id,
                 FeeName = f.FeeName,
                 Label = f.FeeName,
@@ -229,7 +180,8 @@ namespace VCL_BLL.Services
             }
             else // FIXED, PER_KG, PER_CBM, PER_PRODUCT
             {
-                if (string.Equals(dto.FeeCalculationType, "FIXED", StringComparison.OrdinalIgnoreCase))
+                // Phí của riêng một kiện là một đơn vị; phí cả đơn nhân theo số kiện như trước.
+                if (string.Equals(dto.FeeCalculationType, "FIXED", StringComparison.OrdinalIgnoreCase) && !f.OrderItemId.HasValue)
                 {
                     dto.Quantity = packageCount > 0 ? packageCount : 1;
                 }
@@ -468,6 +420,7 @@ namespace VCL_BLL.Services
                         fees.Add(new QuotationFee
                         {
                             Id = Guid.NewGuid(),
+                            OrderItemId = item.Id,
                             FeeName = $"Phí đóng thùng ({config.ConfigName})",
                             FeeType = "PACKING_FEE",
                             CalculationType = "PER_VOLUME",
@@ -483,6 +436,7 @@ namespace VCL_BLL.Services
                         fees.Add(new QuotationFee
                         {
                             Id = Guid.NewGuid(),
+                            OrderItemId = item.Id,
                             FeeName = $"Phí đóng thùng ({config.ConfigName})",
                             FeeType = "PACKING_FEE",
                             CalculationType = "FIXED",
@@ -492,6 +446,57 @@ namespace VCL_BLL.Services
                             CreatedAt = now
                         });
                     }
+                }
+            }
+
+            return fees;
+        }
+
+        /// <summary>
+        /// Phí các dịch vụ khách chọn cho từng kiện, mỗi dịch vụ của mỗi kiện một dòng phí gắn OrderItemId.
+        /// Kiện đã được kho cân đo thì tính theo số đo thật của kiện.
+        /// </summary>
+        /// <summary>
+        /// Phí của các dịch vụ khách chọn cho TỪNG KIỆN.
+        ///
+        /// Bản đồ dịch vụ truyền từ ngoài vào (không tự đọc DB) để hàm này dùng được cho cả
+        /// hai đường: báo giá của đơn đã lưu, và ƯỚC TÍNH trước khi tạo đơn — lúc đó mặt hàng
+        /// chỉ nằm trong bộ nhớ, chưa có dòng nào trong bảng dịch vụ theo kiện.
+        /// </summary>
+        private List<QuotationFee> CalculateItemServiceFees(
+            IReadOnlyCollection<OrderItem> orderItems,
+            IEnumerable<Parcel> parcels,
+            IReadOnlyDictionary<Guid, List<PricingRule>> rulesByItem,
+            DateTime now)
+        {
+            var parcelByItem = parcels
+                .Where(p => p.OrderItemId.HasValue
+                            && !string.Equals(p.PackageStatus, "SPLIT", StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(p.PackageStatus, "MERGED", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(p => p.OrderItemId!.Value)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var fees = new List<QuotationFee>();
+            foreach (var item in orderItems)
+            {
+                if (!rulesByItem.TryGetValue(item.Id, out var rules)) continue;
+                parcelByItem.TryGetValue(item.Id, out var parcel);
+
+                foreach (var rule in rules)
+                {
+                    fees.Add(new QuotationFee
+                    {
+                        Id = Guid.NewGuid(),
+                        PricingRuleId = rule.Id,
+                        OrderItemId = item.Id,
+                        FeeName = rule.RuleName,
+                        FeeType = "SURCHARGE",
+                        CalculationType = rule.CalculationType,
+                        Value = rule.Value,
+                        Amount = ItemServiceRules.CalculateAmount(rule, item, parcel),
+                        Note = $"{rule.RuleName} cho kiện {item.ProductName}",
+                        CreatedAt = now
+                    });
                 }
             }
 

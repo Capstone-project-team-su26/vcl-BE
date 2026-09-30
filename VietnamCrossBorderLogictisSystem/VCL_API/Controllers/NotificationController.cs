@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -110,11 +111,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(new { success = false, message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = "Lỗi khi gửi thông báo: " + ex.Message });
+                return StatusCode(500, new { success = false, message = "Lỗi khi gửi thông báo: " + this.UserError(ex) });
             }
         }
     }

@@ -16,10 +16,6 @@ namespace VCL_BLL.Interface
         /// <summary>Lấy danh sách các đợt thanh toán của một đơn ký gửi.</summary>
         Task<OrderPaymentsResponse> GetOrderPaymentsAsync(Guid orderId, Guid userId, string userRole);
 
-        /// <summary>Sale xác nhận thanh toán đơn ký gửi (chỉ khi payment đã SUCCESS).</summary>
-        Task<ConfirmOrderPaymentResponse> ConfirmOrderPaymentAsync(
-            Guid orderId, Guid userId, string userRole, ConfirmOrderPaymentRequest request);
-
         /// <summary>Lấy lịch sử thanh toán chi tiết (kèm Customer + báo giá) của một đơn ký gửi.</summary>
         Task<PaymentHistoryResponse> GetPaymentHistoryAsync(Guid orderId, Guid userId, string userRole);
 
@@ -47,6 +43,9 @@ namespace VCL_BLL.Interface
         /// tiền phải khớp thời điểm quét mã, không phải thời điểm bấm nút lần đầu.
         /// </para>
         /// </summary>
+        /// <summary>Phí giao lại sau giao thất bại: ghi lên hoá đơn và phát hành khoản thu riêng.</summary>
+        Task<VCL_DLL.Models.Payment> IssueRedeliveryFeePaymentAsync(Guid orderId, Guid deliveryRequestId, string deliveryCode, decimal amount);
+
         Task<CreateStorageFeePaymentResponse> CreateStorageFeePaymentAsync(
             Guid orderId, Guid userId, string userRole, CreateStorageFeePaymentRequest request);
     }

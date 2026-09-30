@@ -50,6 +50,12 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Kho đích nơi phát hiện chênh lệch.</summary>
         public string? WarehouseName { get; set; }
+
+        /// <summary>
+        /// Ảnh kho VN chụp lúc tiếp nhận kiện (VN_ARRIVAL_PROOF, gắn vào PARCEL). Tải ảnh qua
+        /// <c>downloadUrl</c> kèm token — không có link công khai.
+        /// </summary>
+        public List<AttachmentDto> Photos { get; set; } = new();
     }
 
     /// <summary>
@@ -66,6 +72,11 @@ namespace VCL_BLL.DTOs
 
         [Range(0, 100000, ErrorMessage = "Cân nặng thực tế không hợp lệ.")]
         public decimal? ActualWeight { get; set; }
+
+        /// <summary>Kích thước đo lại (cm) — cân đo lại thì số mới thay số cũ khi tính cước cuối.</summary>
+        public decimal? Length { get; set; }
+        public decimal? Width { get; set; }
+        public decimal? Height { get; set; }
 
         /// <summary><c>INTACT</c> · <c>MISSING</c> · <c>DAMAGED</c> · <c>WET</c> · <c>SEAL_BROKEN</c>.</summary>
         [MaxLength(30, ErrorMessage = "Tình trạng kiện tối đa 30 ký tự.")]

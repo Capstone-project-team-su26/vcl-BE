@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
+using VCL_BLL.Helpers;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
@@ -14,17 +15,15 @@ namespace VCL_BLL.Services
     {
         private readonly IUnitOfWork _unitOfWork;
 
-        /// <summary>
-        /// Duyệt tay cũng là một lần thu tiền, nên phải sinh phiếu tiếp nhận như các nhánh khác.
-        /// </summary>
-        private readonly IWarehouseReceivingNoteService _receivingNoteService;
+        /// <summary>Admin duyệt chuyển khoản tay đi qua cùng luồng xác nhận tiền với cổng thanh toán.</summary>
+        private readonly IPaymentConfirmationService _paymentConfirmation;
 
         public AdminFinanceService(
             IUnitOfWork unitOfWork,
-            IWarehouseReceivingNoteService receivingNoteService)
+            IPaymentConfirmationService paymentConfirmation)
         {
             _unitOfWork = unitOfWork;
-            _receivingNoteService = receivingNoteService;
+            _paymentConfirmation = paymentConfirmation;
         }
 
         public async Task<AdminFinanceSummaryDto> GetFinanceSummaryAsync(DateTime? from, DateTime? to)
@@ -325,7 +324,9 @@ namespace VCL_BLL.Services
                 // Đơn mua hộ chạy trên bộ bảng tiền riêng: báo giá và khoản thu đều không nằm ở
                 // QUOTATIONS/PAYMENTS. Không cộng thêm ở đây thì mọi đơn mua hộ hiện 0đ và bị
                 // xếp UNPAID dù khách đã trả — báo cáo dòng tiền hụt đúng phần doanh thu đó.
-                if (order.PurchaseRequestId.HasValue
+                // Đơn kho mua hộ luồng mới (có PurchaseOrderId) thu chặng VN qua QUOTATIONS/PAYMENTS như
+                // ký gửi; khoản trả trước là của cả yêu cầu nên không cộng vào từng đơn kho.
+                if (order.PurchaseRequestId.HasValue && !order.PurchaseOrderId.HasValue
                     && purchasePaymentsByRequest.TryGetValue(order.PurchaseRequestId.Value, out var purchasePaid))
                 {
                     var purchaseSuccessful = purchasePaid
@@ -411,15 +412,9 @@ namespace VCL_BLL.Services
         // =====================================================================
         // DUYỆT GIAO DỊCH THỦ CÔNG
         //
-        // Vì sao cần: khách chọn OFFLINE thì khoản tiền sinh ra ở PENDING_RECONCILIATION, mà trong
-        // toàn hệ thống không có đường nào đưa nó sang PAID — chỉ webhook SePay/PayOS mới làm được.
-        // Khoản PENDING của cổng thanh toán cũng kẹt y vậy khi webhook không bắn về. Hệ quả là
-        // Sale không bấm được PUT /orders/{id}/payment-confirmation (nó đòi khoản đã SUCCESS),
-        // đơn nằm mãi ở WAITING_DEPOSIT. Đây là chỗ Admin gỡ tay sau khi đối chiếu sao kê.
-        //
-        // Side-effect ở dưới cố ý chép đúng HandleSePayWebhookAsync (ConsignmentPaymentService) và
-        // MarkPaymentAsPaidAsync (PurchasePaymentService). Lệch một nhánh là đơn duyệt tay và đơn
-        // duyệt qua webhook rẽ hai hướng khác nhau.
+        // Khách chọn OFFLINE (chuyển khoản tay) thì khoản thu ở PENDING_RECONCILIATION; khoản PENDING
+        // của cổng thanh toán cũng kẹt khi webhook không bắn về. Admin đối chiếu sao kê rồi xác nhận
+        // tại đây. Khoản ký gửi đi qua PaymentConfirmationService — cùng luật với webhook.
         // =====================================================================
 
         private const string PendingReconciliation = "PENDING_RECONCILIATION";
@@ -539,13 +534,13 @@ namespace VCL_BLL.Services
         }
 
         public async Task<ManualTransactionResultDto> ApproveManualTransactionAsync(
-            Guid paymentId, ApproveManualTransactionRequest request)
+            Guid paymentId, ApproveManualTransactionRequest request, Guid actorId)
         {
             request ??= new ApproveManualTransactionRequest();
 
             var consignmentPayment = await _unitOfWork.Repository<Payment>().GetByIdAsync(paymentId);
             if (consignmentPayment != null)
-                return await ApproveConsignmentPaymentAsync(consignmentPayment, request);
+                return await ApproveConsignmentPaymentAsync(consignmentPayment, request, actorId);
 
             var purchasePayment = await _unitOfWork.Repository<PurchasePayment>().GetByIdAsync(paymentId);
             if (purchasePayment != null)
@@ -555,83 +550,51 @@ namespace VCL_BLL.Services
         }
 
         private async Task<ManualTransactionResultDto> ApproveConsignmentPaymentAsync(
-            Payment payment, ApproveManualTransactionRequest request)
+            Payment payment, ApproveManualTransactionRequest request, Guid actorId)
         {
             if (IsSuccessfulPayment(payment.PaymentStatus))
                 throw new ArgumentException("Giao dịch này đã được ghi nhận thanh toán trước đó.");
 
             if (!IsAwaitingManualReview(payment.PaymentStatus))
                 throw new ArgumentException(
-                    $"Chỉ duyệt được khoản đang PENDING hoặc {PendingReconciliation}. Khoản này đang ở: {payment.PaymentStatus}.");
+                    $"Chỉ duyệt được khoản đang {StatusNames.QuoteAny("PENDING", PendingReconciliation)}. Khoản này đang ở: {StatusNames.Quote(payment.PaymentStatus)}.");
 
-            var invoiceRepo = _unitOfWork.Repository<Invoice>();
-            var orderRepo = _unitOfWork.Repository<Order>();
-
-            Order? order = null;
-            Invoice? invoice = null;
-            if (payment.InvoiceId.HasValue)
+            // Một mã giao dịch ngân hàng chỉ xác nhận một lần — tránh dùng một lần chuyển tiền để
+            // đánh dấu hai khoản thu.
+            if (!string.IsNullOrWhiteSpace(request.TransactionCode))
             {
-                invoice = await invoiceRepo.GetByIdAsync(payment.InvoiceId.Value);
-                if (invoice?.QuotationId != null)
-                {
-                    var quotation = await _unitOfWork.Repository<Quotation>().GetByIdAsync(invoice.QuotationId.Value);
-                    if (quotation?.OrderId != null)
-                        order = await orderRepo.GetByIdAsync(quotation.OrderId.Value);
-                }
+                var reference = request.TransactionCode.Trim();
+                var storedReference = BuildManualTransactionCode(reference);
+                var duplicated = (await _unitOfWork.Repository<Payment>().GetAllAsync())
+                    .Any(p => p.Id != payment.Id
+                              && (string.Equals(p.TransactionCode, reference, StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(p.TransactionCode, storedReference, StringComparison.OrdinalIgnoreCase))
+                              && IsSuccessfulPayment(p.PaymentStatus));
+                if (duplicated)
+                    throw new ArgumentException($"Mã giao dịch {reference} đã được dùng để xác nhận một khoản thu khác.");
             }
 
-            var statusBefore = order?.Status ?? string.Empty;
-
-            payment.PaymentStatus = "PAID";
-            payment.PaidAt = DateTime.UtcNow;
-            payment.TransactionCode = BuildManualTransactionCode(request.TransactionCode);
-            _unitOfWork.Repository<Payment>().Update(payment);
-
-            if (order != null)
+            var result = await _paymentConfirmation.ConfirmAsync(payment, new PaymentConfirmationInput
             {
-                var installment = payment.InstallmentType?.Trim().ToUpperInvariant();
-                if (installment == "DEPOSIT")
-                {
-                    order.Status = "DEPOSIT_PAID";
-                    orderRepo.Update(order);
-                }
-                else if (installment == StorageFeeInstallment)
-                {
-                    // Phí lưu kho thu tại quầy, không phải một đợt của hoá đơn gốc — đụng vào
-                    // order.Status ở đây sẽ đánh dấu đơn tất toán xong trong khi thực tế còn dở.
-                }
-                else
-                {
-                    order.Status = "PAID";
-                    orderRepo.Update(order);
-                    if (invoice != null)
-                    {
-                        invoice.InvoiceStatus = "PAID";
-                        invoiceRepo.Update(invoice);
-                    }
-                }
-            }
+                Source = PaymentConfirmationSources.AdminManual,
+                ReceivedAmount = request.ReceivedAmount,
+                Reference = BuildManualTransactionCode(request.TransactionCode),
+                ActorId = actorId,
+                Note = request.Note
+            });
 
-            await _unitOfWork.SaveChangesAsync();
-
-            // Đơn vừa thu được tiền thì kho phải có phiếu tiếp nhận, bất kể tiền vào bằng đường
-            // nào. Nhánh duyệt tay này trước đây bị bỏ quên nên đơn đối soát thủ công không có
-            // phiếu, kho mở app ra không thấy việc.
-            if (order != null && !string.Equals(payment.InstallmentType?.Trim(), StorageFeeInstallment,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(order.Id);
-            }
+            if (result.Outcome == PaymentConfirmationOutcome.Underpaid)
+                throw new ArgumentException(result.Message);
 
             return new ManualTransactionResultDto
             {
                 PaymentId = payment.Id,
                 Source = "CONSIGNMENT",
                 PaymentStatus = payment.PaymentStatus,
-                OrderId = order?.Id,
-                ConsignmentCode = order?.ConsignmentCode ?? string.Empty,
-                OrderStatusBefore = statusBefore,
-                OrderStatusAfter = order?.Status ?? string.Empty,
+                OrderId = result.Order?.Id,
+                ConsignmentCode = result.Order?.ConsignmentCode ?? string.Empty,
+                OrderStatusBefore = result.OrderStatusBefore,
+                OrderStatusAfter = result.OrderStatusAfter,
                 Amount = payment.Amount ?? 0m,
                 TransactionCode = payment.TransactionCode ?? string.Empty,
                 PaidAt = payment.PaidAt
@@ -646,7 +609,7 @@ namespace VCL_BLL.Services
 
             if (!IsAwaitingManualReview(payment.Status))
                 throw new ArgumentException(
-                    $"Chỉ duyệt được khoản đang PENDING hoặc {PendingReconciliation}. Khoản này đang ở: {payment.Status}.");
+                    $"Chỉ duyệt được khoản đang {StatusNames.QuoteAny("PENDING", PendingReconciliation)}. Khoản này đang ở: {StatusNames.Quote(payment.Status)}.");
 
             var requestRepo = _unitOfWork.Repository<PurchaseRequest>();
             var purchaseRequest = await requestRepo.GetByIdAsync(payment.PurchaseRequestId);
@@ -657,21 +620,8 @@ namespace VCL_BLL.Services
             payment.TransactionCode = BuildManualTransactionCode(request.TransactionCode);
             _unitOfWork.Repository<PurchasePayment>().Update(payment);
 
-            if (purchaseRequest != null)
-            {
-                // Dữ liệu cũ để trống payment_type -> coi như đợt đầu, giống IsPaymentType bên
-                // PurchasePaymentService (mặc định FULL_PAYMENT chứ không phải FINAL_PAYMENT).
-                var isFinal = string.Equals(payment.PaymentType?.Trim(), "FINAL_PAYMENT", StringComparison.OrdinalIgnoreCase);
-                var paidStatus = isFinal ? "COMPLETED" : "PAID";
-
-                // Không kéo lùi tiến độ: Sale có thể đã bấm PURCHASED/SELLER_SHIPPED trước khi tiền
-                // về. Giữ nguyên luật của MarkPaymentAsPaidAsync bên PurchasePaymentService.
-                if (paidStatus == "COMPLETED" || !IsPurchaseProgressStatus(purchaseRequest.Status))
-                {
-                    purchaseRequest.Status = paidStatus;
-                    requestRepo.Update(purchaseRequest);
-                }
-            }
+            // Cùng một luật với webhook / đồng bộ cổng thanh toán.
+            await PurchasePaymentEffects.ApplyPaidAsync(_unitOfWork, payment);
 
             await _unitOfWork.SaveChangesAsync();
 
@@ -707,7 +657,7 @@ namespace VCL_BLL.Services
                 if (IsSuccessfulPayment(consignmentPayment.PaymentStatus))
                     throw new ArgumentException("Khoản này đã ghi nhận thu tiền, không từ chối được nữa.");
                 if (!IsAwaitingManualReview(consignmentPayment.PaymentStatus))
-                    throw new ArgumentException($"Khoản này đang ở {consignmentPayment.PaymentStatus}, không còn chờ đối soát.");
+                    throw new ArgumentException($"Khoản này đang ở {StatusNames.Quote(consignmentPayment.PaymentStatus)}, không còn chờ đối soát.");
 
                 consignmentPayment.PaymentStatus = "CANCELLED";
                 consignmentPayment.FailureReason = reason;
@@ -729,7 +679,7 @@ namespace VCL_BLL.Services
                 if (IsSuccessfulPayment(purchasePayment.Status))
                     throw new ArgumentException("Khoản này đã ghi nhận thu tiền, không từ chối được nữa.");
                 if (!IsAwaitingManualReview(purchasePayment.Status))
-                    throw new ArgumentException($"Khoản này đang ở {purchasePayment.Status}, không còn chờ đối soát.");
+                    throw new ArgumentException($"Khoản này đang ở {StatusNames.Quote(purchasePayment.Status)}, không còn chờ đối soát.");
 
                 purchasePayment.Status = "CANCELLED";
                 // PURCHASE_PAYMENTS không có cột lý do như PAYMENTS.FailureReason. Ghi nhờ vào
@@ -786,17 +736,5 @@ namespace VCL_BLL.Services
 
         private static string Truncate(string value, int maxLength)
             => value.Length <= maxLength ? value : value.Substring(0, maxLength);
-
-        /// <summary>
-        /// Trạng thái cho thấy Sale đã đẩy yêu cầu mua hộ đi xa hơn mốc "đã trả tiền".
-        /// Danh sách chép nguyên từ PurchasePaymentService.PurchaseProgressStatuses để duyệt tay
-        /// không kéo lùi tiến độ đơn.
-        /// </summary>
-        private static readonly string[] PurchaseProgressStatuses =
-            { "PURCHASED", "SELLER_SHIPPED", "ARRIVED_ORIGIN_WAREHOUSE" };
-
-        private static bool IsPurchaseProgressStatus(string? status) =>
-            !string.IsNullOrWhiteSpace(status)
-            && PurchaseProgressStatuses.Contains(status.Trim(), StringComparer.OrdinalIgnoreCase);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -22,10 +22,8 @@ namespace VCL_BLL.Services
         private readonly ILogger<ConsignmentPaymentService> _logger;
         private readonly IStorageFeeService _storageFeeService;
 
-        /// <summary>
-        /// Thu được tiền là kho có việc: phiếu tiếp nhận sinh ngay tại đây thay vì đợi Sale bấm.
-        /// </summary>
-        private readonly IWarehouseReceivingNoteService _receivingNoteService;
+        /// <summary>Mọi đường ghi nhận tiền thực nhận đi qua một chỗ.</summary>
+        private readonly IPaymentConfirmationService _paymentConfirmation;
 
         // Role nội bộ được tạo thanh toán cuối / xem lịch sử thanh toán.
         private static readonly string[] StaffRoles =
@@ -42,9 +40,11 @@ namespace VCL_BLL.Services
         // sale bấm là mốc gọi khách tất toán phần còn lại, nên mốc này phải mở được thanh toán cuối.
         private const string ParcelArrivedAtDestination = "ARRIVED_DESTINATION";
 
-        // Thanh toán offline (chuyển khoản tay): chờ Sales đối soát chứng từ rồi mới xác nhận.
+        // Thanh toán offline (chuyển khoản tay): chờ Admin đối soát sao kê rồi mới xác nhận.
         private const string PaymentMethodOffline = "OFFLINE";
         private const string PendingReconciliation = "PENDING_RECONCILIATION";
+
+        private readonly IVnSettlementService _vnSettlementService;
 
         public ConsignmentPaymentService(
             IUnitOfWork unitOfWork,
@@ -53,15 +53,17 @@ namespace VCL_BLL.Services
             IConfiguration configuration,
             ILogger<ConsignmentPaymentService> logger,
             IStorageFeeService storageFeeService,
-            IWarehouseReceivingNoteService receivingNoteService)
+            IPaymentConfirmationService paymentConfirmation,
+            IVnSettlementService vnSettlementService)
         {
+            _vnSettlementService = vnSettlementService;
             _unitOfWork = unitOfWork;
             _payOsService = payOsService;
             _sePayService = sePayService;
             _configuration = configuration;
             _logger = logger;
             _storageFeeService = storageFeeService;
-            _receivingNoteService = receivingNoteService;
+            _paymentConfirmation = paymentConfirmation;
         }
 
         // ---------------------------------------------------------------------
@@ -77,23 +79,14 @@ namespace VCL_BLL.Services
             if (quotation == null)
                 throw new NotFoundException($"Không tìm thấy báo giá với ID: {quotationId}");
 
-            var status = quotation.Status?.Trim().ToUpperInvariant() ?? string.Empty;
-            if (status == "ACCEPTED")
-                throw new ArgumentException("Báo giá này đã được xác nhận trước đó.");
-            if (status == "REJECTED" || status == "CANCELLED" || status == "EXPIRED")
-                throw new ArgumentException($"Không thể xác nhận báo giá ở trạng thái: {quotation.Status}.");
-            var confirmableStatuses = new[] { "DRAFT", "PENDING", "WAITING_CUSTOMER_CONFIRMATION" };
-            if (!confirmableStatuses.Contains(status))
-                throw new ArgumentException($"Không thể xác nhận báo giá ở trạng thái: {quotation.Status}.");
+            // Khách chỉ xác nhận báo giá Sale đã gửi, còn hiệu lực và không chờ duyệt giá.
+            QuotationAcceptanceRules.EnsureCustomerCanAccept(quotation);
 
-            if (quotation.ExpiredAt.HasValue && quotation.ExpiredAt.Value < DateTime.UtcNow)
-                throw new ArgumentException("Báo giá đã hết hạn. Vui lòng tạo báo giá mới.");
-
-            // Không cho tạo trùng khoản cọc offline đang chờ Sales đối soát cho cùng báo giá
+            // Không cho tạo trùng khoản cọc offline đang chờ Admin đối soát cho cùng báo giá
             if (await HasPendingOfflineDepositAsync(quotationId))
             {
                 throw new ArgumentException(
-                    "Báo giá này đã có khoản cọc chuyển khoản đang chờ đối soát. Vui lòng đợi Sales xác nhận.");
+                    "Báo giá này đã có khoản cọc chuyển khoản đang chờ Admin đối soát.");
             }
 
             var orderRepo = _unitOfWork.Repository<Order>();
@@ -117,9 +110,17 @@ namespace VCL_BLL.Services
             var depositRate = await GetDepositRateAsync();
             var depositAmount = Math.Round(totalAmount * depositRate / 100m, MidpointRounding.AwayFromZero);
 
-            // Cập nhật báo giá -> ACCEPTED
+            // Cập nhật báo giá -> ACCEPTED, lưu người và thời điểm khách xác nhận.
+            var acceptedAt = DateTime.UtcNow;
             quotation.Status = "ACCEPTED";
+            quotation.AcceptedById = userId;
+            quotation.AcceptedAt = acceptedAt;
             quotationRepo.Update(quotation);
+
+            await OrderHistoryWriter.RecordAsync(_unitOfWork, order.Id, order.Status, "WAITING_DEPOSIT",
+                "QUOTATION_ACCEPTED",
+                $"Khách xác nhận báo giá {quotation.Id} ({StatusNames.Quote(quotation.QuoteType)}), tổng {totalAmount:#,##0}đ.",
+                userId);
 
             // Hóa đơn cho TOÀN BỘ bill (cọc là thanh toán một phần của hóa đơn này)
             var invoiceRepo = _unitOfWork.Repository<Invoice>();
@@ -143,10 +144,11 @@ namespace VCL_BLL.Services
             var consignmentCode = order.ConsignmentCode ?? string.Empty;
             var paymentRepo = _unitOfWork.Repository<Payment>();
 
-            // Edge: tỷ lệ cọc = 0% -> không cần cọc, cho phép vận chuyển ngay
+            // Edge: tỷ lệ cọc Admin cấu hình = 0% -> khoản cọc 0đ được hệ thống xác nhận ngay.
+            // Vẫn đi qua luồng xác nhận chung để đơn sang DEPOSIT_PAID và Sale được báo lập phiếu như mọi đơn.
             if (depositAmount <= 0m)
             {
-                order.Status = "DEPOSIT_PAID";
+                order.Status = "WAITING_DEPOSIT";
                 orderRepo.Update(order);
 
                 var noDeposit = new Payment
@@ -155,16 +157,19 @@ namespace VCL_BLL.Services
                     InvoiceId = invoice.Id,
                     Amount = 0m,
                     PaymentMethod = "PAYOS",
-                    PaymentStatus = "PAID",
+                    PaymentStatus = "PENDING",
                     InstallmentType = "DEPOSIT",
-                    PaidAt = DateTime.UtcNow,
                     CreatedAt = DateTime.UtcNow
                 };
                 await paymentRepo.AddAsync(noDeposit);
                 await _unitOfWork.SaveChangesAsync();
 
-                // Cọc 0đ vẫn là "đã chốt tiền" nên kho phải có phiếu như mọi đơn khác.
-                await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(order.Id);
+                await _paymentConfirmation.ConfirmAsync(noDeposit, new PaymentConfirmationInput
+                {
+                    Source = PaymentConfirmationSources.SystemZero,
+                    ReceivedAmount = 0m,
+                    Note = "Tỷ lệ cọc cấu hình 0%."
+                });
 
                 return new ConfirmQuotationPaymentResponse
                 {
@@ -200,7 +205,7 @@ namespace VCL_BLL.Services
 
             if (isOffline)
             {
-                // Chuyển khoản tay: KHÔNG tạo link cổng thanh toán, chờ Sales đối soát chứng từ
+                // Chuyển khoản tay: KHÔNG tạo link cổng thanh toán, chờ Admin đối soát sao kê
                 paymentMethodString = PaymentMethodOffline;
                 paymentLinkId = null;
                 checkoutUrl = null;
@@ -209,20 +214,16 @@ namespace VCL_BLL.Services
             {
                 paymentMethodString = "SEPAY";
                 paymentLinkId = $"SEPAY-{orderCode}";
-                var baseUrl = _configuration["SePay:BaseUrl"] ?? string.Empty;
-                checkoutUrl = $"{baseUrl}/api/payments/sepay/checkout/{orderCode}";
+                checkoutUrl = PaymentReturnUrls.SePayCheckoutUrl(_configuration, orderCode, request.ReturnUrl, request.CancelUrl);
             }
             else
             {
                 paymentMethodString = "PAYOS";
                 var description = BuildDescription("Coc", consignmentCode);
 
-                var inputUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], string.Empty);
-                var isLocal = inputUrl.Contains("localhost") || inputUrl.Contains("127.0.0.1") || inputUrl.Contains("5173") || inputUrl.Contains("3000");
-                var baseFrontendUrl = isLocal ? "http://localhost:5173" : "https://logictic.site";
-
-                var returnUrl = $"{baseFrontendUrl}/history/consignment";
-                var cancelUrl = returnUrl;
+                // URL web gửi (đã lọc origin) hoặc URL cũ; luôn kèm orderCode + status.
+                var (returnUrl, cancelUrl) = PaymentReturnUrls.Build(
+                    _configuration, request.ReturnUrl, request.CancelUrl, PaymentReturnUrls.ConsignmentHistoryPath, orderCode);
                 var items = new List<PayOsItem> { new PayOsItem($"Cọc {consignmentCode}", 1, amountInt) };
 
                 PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
@@ -232,7 +233,7 @@ namespace VCL_BLL.Services
                 paymentLinkId = linkResult.PaymentLinkId;
             }
 
-            // Offline chờ Sales đối soát; cổng online chờ webhook/sync báo về
+            // Offline chờ Admin đối soát; cổng online chờ webhook/sync báo về
             var depositStatus = isOffline ? PendingReconciliation : "PENDING";
 
             var deposit = new Payment
@@ -295,7 +296,7 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Kiểm tra báo giá đã có khoản cọc offline đang chờ Sales đối soát hay chưa
+        /// Kiểm tra báo giá đã có khoản cọc offline đang chờ Admin đối soát hay chưa
         /// (tránh khách bấm xác nhận nhiều lần tạo ra nhiều khoản cọc treo).
         /// </summary>
         private async Task<bool> HasPendingOfflineDepositAsync(Guid quotationId)
@@ -347,6 +348,10 @@ namespace VCL_BLL.Services
                 || (p.BinId.HasValue && destinationBinIds.Contains(p.BinId.Value)));
             if (!anyAtDestination)
                 throw new ArgumentException("Chưa thể tạo thanh toán cuối: đơn chưa có kiện hàng về đến kho đích.");
+
+            // Tất toán sau khi kho VN kiểm xong: tiền tính theo cân đo thật, và khách không trả
+            // tiền cho kiện đang có sự cố chưa rõ kết quả.
+            await _vnSettlementService.EnsureCanIssueAsync(orderId);
 
             // Lấy hóa đơn của đơn (qua báo giá của đơn)
             var (invoice, allOrderPayments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
@@ -416,6 +421,11 @@ namespace VCL_BLL.Services
                 });
             }
 
+            // Cước tính lại theo cân đo tại kho VN (có thể âm nếu hàng nhẹ hơn khai báo).
+            var freightAdjustmentDelta = await _vnSettlementService.ApplyFreightAdjustmentAsync(
+                orderId, invoice, existingItems, invoiceItemRepo);
+            extrasTotal += freightAdjustmentDelta;
+
             // Phí lưu kho tại kho đích: hệ thống tự tính, không bắt nhân viên nhập tay.
             var storageDelta = await ApplyStorageFeeAsync(orderId, invoice, existingItems, invoiceItemRepo);
             extrasTotal += storageDelta;
@@ -464,6 +474,7 @@ namespace VCL_BLL.Services
                     TotalBillAmount = newGrandTotal,
                     DepositPaid = depositPaid,
                     ExtraFeesTotal = extrasTotal,
+                    FreightAdjustmentDelta = freightAdjustmentDelta,
                     FinalAmount = 0m,
                     PaymentId = zeroFinal.Id,
                     OrderCode = null,
@@ -486,20 +497,15 @@ namespace VCL_BLL.Services
             {
                 paymentMethodString = "SEPAY";
                 paymentLinkId = $"SEPAY-{orderCode}";
-                var baseUrl = _configuration["SePay:BaseUrl"] ?? string.Empty;
-                checkoutUrl = $"{baseUrl}/api/payments/sepay/checkout/{orderCode}";
+                checkoutUrl = PaymentReturnUrls.SePayCheckoutUrl(_configuration, orderCode, request.ReturnUrl, request.CancelUrl);
             }
             else
             {
                 paymentMethodString = "PAYOS";
                 var description = BuildDescription("Cuoi", consignmentCode);
 
-                var inputUrl = FirstNonEmpty(request.ReturnUrl, _configuration["PayOS:ReturnUrl"], string.Empty);
-                var isLocal = inputUrl.Contains("localhost") || inputUrl.Contains("127.0.0.1") || inputUrl.Contains("5173") || inputUrl.Contains("3000");
-                var baseFrontendUrl = isLocal ? "http://localhost:5173" : "https://logictic.site";
-
-                var returnUrl = $"{baseFrontendUrl}/history/consignment";
-                var cancelUrl = returnUrl;
+                var (returnUrl, cancelUrl) = PaymentReturnUrls.Build(
+                    _configuration, request.ReturnUrl, request.CancelUrl, PaymentReturnUrls.ConsignmentHistoryPath, orderCode);
                 var items = new List<PayOsItem> { new PayOsItem($"TT cuoi {consignmentCode}", 1, amountInt) };
 
                 PayOsPaymentLink linkResult = await _payOsService.CreatePaymentLinkAsync(
@@ -564,6 +570,7 @@ namespace VCL_BLL.Services
                 TotalBillAmount = newGrandTotal,
                 DepositPaid = depositPaid,
                 ExtraFeesTotal = extrasTotal,
+                FreightAdjustmentDelta = freightAdjustmentDelta,
                 FinalAmount = finalAmount,
                 PaymentId = finalPayment.Id,
                 OrderCode = orderCode,
@@ -670,48 +677,11 @@ namespace VCL_BLL.Services
             invoice.TotalAmount = (invoice.TotalAmount ?? 0m) + payable;
             _unitOfWork.Repository<Invoice>().Update(invoice);
 
-            var orderCode = await GenerateUniqueOrderCodeAsync();
-            var isSePay = !string.Equals(request?.PaymentMethod, "PAYOS", StringComparison.OrdinalIgnoreCase);
-
-            string checkoutUrl;
-            string paymentLinkId;
-            string paymentMethod;
-
-            if (isSePay)
-            {
-                paymentMethod = "SEPAY";
-                paymentLinkId = $"SEPAY-{orderCode}";
-                var baseUrl = _configuration["SePay:BaseUrl"] ?? string.Empty;
-                checkoutUrl = $"{baseUrl}/api/payments/sepay/checkout/{orderCode}";
-            }
-            else
-            {
-                paymentMethod = "PAYOS";
-                var amountInt = (int)Math.Round(payable, MidpointRounding.AwayFromZero);
-                var returnUrl = FirstNonEmpty(request?.ReturnUrl, _configuration["PayOS:ReturnUrl"], string.Empty);
-                var cancelUrl = FirstNonEmpty(request?.CancelUrl, returnUrl, string.Empty);
-                var items = new List<PayOsItem> { new PayOsItem($"Phi luu kho {consignmentCode}", 1, amountInt) };
-
-                var link = await _payOsService.CreatePaymentLinkAsync(
-                    orderCode, amountInt, BuildDescription("LuuKho", consignmentCode), returnUrl, cancelUrl, items);
-                checkoutUrl = link.CheckoutUrl;
-                paymentLinkId = link.PaymentLinkId;
-            }
-
-            var payment = new Payment
-            {
-                Id = Guid.NewGuid(),
-                InvoiceId = invoice.Id,
-                Amount = payable,
-                PaymentMethod = paymentMethod,
-                PaymentStatus = "PENDING",
-                InstallmentType = StorageFeeInstallment,
-                OrderCode = orderCode,
-                CheckoutUrl = checkoutUrl,
-                PaymentLinkId = paymentLinkId,
-                CreatedAt = DateTime.UtcNow,
-            };
-            await paymentRepo.AddAsync(payment);
+            var payment = await CreatePendingPaymentAsync(
+                invoice, payable, StorageFeeInstallment, $"Phi luu kho {consignmentCode}",
+                BuildDescription("LuuKho", consignmentCode), request?.PaymentMethod, request?.ReturnUrl, request?.CancelUrl);
+            var orderCode = payment.OrderCode ?? 0L;
+            var checkoutUrl = payment.CheckoutUrl;
 
             await _unitOfWork.SaveChangesAsync();
 
@@ -721,6 +691,93 @@ namespace VCL_BLL.Services
             response.OrderCode = orderCode;
             return response;
         }
+
+        /// <summary>
+        /// Phát hành một khoản thu PENDING kèm link thanh toán (SePay mặc định, PayOS khi khách
+        /// chọn). Dùng chung cho các khoản phát sinh sau tất toán: phí lưu kho, phí giao lại —
+        /// cùng một cách sinh mã đơn thanh toán và cùng webhook xác nhận.
+        /// </summary>
+        private async Task<Payment> CreatePendingPaymentAsync(
+            Invoice invoice, decimal amount, string installmentType, string payOsItemName, string payOsDescription,
+            string? paymentMethodRequested, string? returnUrlRequested, string? cancelUrlRequested)
+        {
+            var orderCode = await GenerateUniqueOrderCodeAsync();
+            var isSePay = !string.Equals(paymentMethodRequested, "PAYOS", StringComparison.OrdinalIgnoreCase);
+
+            string checkoutUrl;
+            string paymentLinkId;
+            string paymentMethod;
+
+            if (isSePay)
+            {
+                paymentMethod = "SEPAY";
+                paymentLinkId = $"SEPAY-{orderCode}";
+                checkoutUrl = PaymentReturnUrls.SePayCheckoutUrl(_configuration, orderCode, returnUrlRequested, cancelUrlRequested);
+            }
+            else
+            {
+                paymentMethod = "PAYOS";
+                var amountInt = (int)Math.Round(amount, MidpointRounding.AwayFromZero);
+                // Trước đây nhận thẳng URL web gửi (không lọc) — giờ chỉ nhận origin cho phép.
+                var (returnUrl, cancelUrl) = PaymentReturnUrls.Build(
+                    _configuration, returnUrlRequested, cancelUrlRequested, PaymentReturnUrls.ConsignmentHistoryPath, orderCode);
+                var items = new List<PayOsItem> { new PayOsItem(payOsItemName, 1, amountInt) };
+
+                var link = await _payOsService.CreatePaymentLinkAsync(
+                    orderCode, amountInt, payOsDescription, returnUrl, cancelUrl, items);
+                checkoutUrl = link.CheckoutUrl;
+                paymentLinkId = link.PaymentLinkId;
+            }
+
+            var payment = new Payment
+            {
+                Id = Guid.NewGuid(),
+                InvoiceId = invoice.Id,
+                Amount = amount,
+                PaymentMethod = paymentMethod,
+                PaymentStatus = "PENDING",
+                InstallmentType = installmentType,
+                OrderCode = orderCode,
+                CheckoutUrl = checkoutUrl,
+                PaymentLinkId = paymentLinkId,
+                CreatedAt = DateTime.UtcNow,
+            };
+            await _unitOfWork.Repository<Payment>().AddAsync(payment);
+            return payment;
+        }
+
+        /// <summary>Phí giao lại sau khi giao thất bại: ghi lên hoá đơn và phát hành khoản thu riêng.</summary>
+        public async Task<Payment> IssueRedeliveryFeePaymentAsync(Guid orderId, Guid deliveryRequestId, string deliveryCode, decimal amount)
+        {
+            if (amount <= 0m) throw new ArgumentException("Phí giao lại phải lớn hơn 0.");
+
+            var order = await _unitOfWork.Repository<Order>().GetByIdAsync(orderId)
+                ?? throw new NotFoundException($"Không tìm thấy đơn hàng với ID {orderId}");
+            var (invoice, _) = await GetOrderInvoiceAndPaymentsAsync(orderId);
+            if (invoice == null)
+                throw new ArgumentException($"Đơn {order.ConsignmentCode} chưa có hoá đơn nên chưa thu được phí giao lại.");
+
+            var consignmentCode = order.ConsignmentCode ?? string.Empty;
+            await _unitOfWork.Repository<InvoiceItem>().AddAsync(new InvoiceItem
+            {
+                Id = Guid.NewGuid(),
+                InvoiceId = invoice.Id,
+                FeeType = RedeliveryFeeInstallment,
+                ReferenceType = "DELIVERY_REQUEST",
+                ReferenceId = deliveryRequestId,
+                Amount = amount,
+                Currency = "VND",
+                Description = $"Phí giao lại — yêu cầu giao {deliveryCode}"
+            });
+            invoice.TotalAmount = (invoice.TotalAmount ?? 0m) + amount;
+            _unitOfWork.Repository<Invoice>().Update(invoice);
+
+            return await CreatePendingPaymentAsync(
+                invoice, amount, RedeliveryFeeInstallment, $"Phi giao lai {consignmentCode}",
+                BuildDescription("GiaoLai", consignmentCode), null, null, null);
+        }
+
+        public const string RedeliveryFeeInstallment = "REDELIVERY_FEE";
 
         private static string BuildStorageDescription(StorageFeeDto storage)
         {
@@ -858,86 +915,6 @@ namespace VCL_BLL.Services
         }
 
         // ---------------------------------------------------------------------
-        // VCL-209: Sale xác nhận thanh toán đơn ký gửi
-        // ---------------------------------------------------------------------
-        public async Task<ConfirmOrderPaymentResponse> ConfirmOrderPaymentAsync(
-            Guid orderId, Guid userId, string userRole, ConfirmOrderPaymentRequest request)
-        {
-            if (request == null)
-                throw new ArgumentException("Thiếu dữ liệu xác nhận thanh toán.");
-
-            if (!IsSales(userRole))
-                throw new UnauthorizedAccessException("Chỉ Sale được xác nhận thanh toán đơn ký gửi.");
-
-            var orderRepo = _unitOfWork.Repository<Order>();
-            var order = await orderRepo.GetByIdAsync(orderId);
-            if (order == null)
-                throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
-
-            // Không cho xác nhận trùng
-            if (order.PaymentConfirmedAt.HasValue)
-                throw new ArgumentException("Đơn hàng đã được xác nhận thanh toán trước đó.");
-
-            // Payment phải thuộc đơn này
-            var (_, orderPayments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
-            var payment = orderPayments.FirstOrDefault(p => p.Id == request.PaymentId);
-            if (payment == null)
-                throw new NotFoundException("Không tìm thấy khoản thanh toán thuộc đơn hàng này.");
-
-            // Chỉ xác nhận nếu payment đã SUCCESS
-            if (!IsPaid(payment))
-                throw new ArgumentException(
-                    "Không thể xác nhận: khoản thanh toán chưa ở trạng thái SUCCESS (đang PENDING/FAILED/CANCELED).");
-
-            order.PaymentConfirmedById = userId;
-            order.PaymentConfirmedAt = DateTime.UtcNow;
-            order.PaymentConfirmationNote = request.ConfirmationNote;
-            order.Status = "PAYMENT_CONFIRMED";
-            orderRepo.Update(order);
-
-            if (order.CustomerId.HasValue)
-            {
-                try
-                {
-                    var cust = (await _unitOfWork.Repository<Customer>().GetAllAsync())
-                        .FirstOrDefault(c => c.Id == order.CustomerId.Value);
-                    if (cust != null && cust.UserId != Guid.Empty)
-                    {
-                        await _unitOfWork.Repository<Notification>().AddAsync(new Notification
-                        {
-                            Id = Guid.NewGuid(),
-                            UserId = cust.UserId,
-                            Title = "Xác nhận thanh toán thành công",
-                            Content = $"Khoản thanh toán cho đơn ký gửi {order.ConsignmentCode ?? order.Id.ToString()} đã được Sale xác nhận thành công.",
-                            IsRead = false,
-                            CreatedAt = DateTime.UtcNow
-                        });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Lỗi tạo thông báo xác nhận thanh toán cho đơn {ConsignmentCode}", order.ConsignmentCode);
-                }
-            }
-
-            await _unitOfWork.SaveChangesAsync();
-
-            await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(order.Id);
-
-            return new ConfirmOrderPaymentResponse
-            {
-                OrderId = order.Id,
-                ConsignmentCode = order.ConsignmentCode ?? string.Empty,
-                OrderStatus = order.Status,
-                PaymentId = payment.Id,
-                PaymentStatus = NormalizePaymentStatus(payment.PaymentStatus),
-                ConfirmedById = userId,
-                ConfirmedAt = order.PaymentConfirmedAt.Value,
-                ConfirmationNote = order.PaymentConfirmationNote
-            };
-        }
-
-        // ---------------------------------------------------------------------
         // VCL-207: Lịch sử thanh toán chi tiết (Customer + báo giá + các đợt)
         // ---------------------------------------------------------------------
         public async Task<PaymentHistoryResponse> GetPaymentHistoryAsync(Guid orderId, Guid userId, string userRole)
@@ -1070,7 +1047,9 @@ namespace VCL_BLL.Services
                 return false;
             }
 
-            await MarkPaymentAsPaidAsync(payment, result.Reference);
+            // Webhook payOS không kèm số tiền: chữ ký đã xác thực đúng mã đơn, nên coi thực nhận bằng
+            // số của link thanh toán.
+            await MarkPaymentAsPaidAsync(payment, result.Reference, receivedAmount: null);
             return true;
         }
 
@@ -1095,7 +1074,7 @@ namespace VCL_BLL.Services
 
             if (string.Equals(status.Status, "PAID", StringComparison.OrdinalIgnoreCase))
             {
-                await MarkPaymentAsPaidAsync(payment, status.Reference);
+                await MarkPaymentAsPaidAsync(payment, status.Reference, status.AmountPaid);
                 return "PAID";
             }
 
@@ -1103,60 +1082,25 @@ namespace VCL_BLL.Services
         }
 
         /// <summary>
-        /// Ghi nhận thanh toán thành công + đẩy trạng thái đơn/hóa đơn theo đợt thanh toán.
-        /// Dùng chung cho cả webhook lẫn sync chủ động để nghiệp vụ không bị lệch.
+        /// Ghi nhận tiền payOS đã báo về. Toàn bộ luật đổi trạng thái đơn, hoá đơn và sinh phiếu
+        /// kho nằm ở <see cref="IPaymentConfirmationService"/>, dùng chung với SePay và Admin.
         /// </summary>
-        private async Task MarkPaymentAsPaidAsync(Payment payment, string reference)
+        /// <remarks>
+        /// Trước đây nhánh này thiếu trường hợp phí lưu kho nên trả phí lưu kho qua payOS làm cả
+        /// đơn và hoá đơn thành PAID.
+        /// </remarks>
+        private async Task MarkPaymentAsPaidAsync(Payment payment, string reference, decimal? receivedAmount)
         {
-            var paymentRepo = _unitOfWork.Repository<Payment>();
-            payment.PaymentStatus = "PAID";
-            payment.PaidAt = DateTime.UtcNow;
-            payment.TransactionCode = reference;
-            paymentRepo.Update(payment);
-
-            // Đơn vừa thu được tiền — sinh phiếu tiếp nhận kho sau khi đã lưu xong giao dịch.
-            Guid? settledOrderId = null;
-
-            if (payment.InvoiceId.HasValue)
+            var result = await _paymentConfirmation.ConfirmAsync(payment, new PaymentConfirmationInput
             {
-                var invoiceRepo = _unitOfWork.Repository<Invoice>();
-                var invoice = await invoiceRepo.GetByIdAsync(payment.InvoiceId.Value);
-                if (invoice != null && invoice.QuotationId.HasValue)
-                {
-                    var quotation = await _unitOfWork.Repository<Quotation>().GetByIdAsync(invoice.QuotationId.Value);
-                    if (quotation?.OrderId != null)
-                    {
-                        var orderRepo = _unitOfWork.Repository<Order>();
-                        var order = await orderRepo.GetByIdAsync(quotation.OrderId.Value);
-                        if (order != null)
-                        {
-                            // Cọc trả xong -> cho phép vận chuyển; đợt cuối trả xong -> hoàn tất
-                            var installment = payment.InstallmentType?.Trim().ToUpperInvariant();
-                            order.PaymentConfirmedAt = payment.PaidAt ?? DateTime.UtcNow;
-                            if (installment == "DEPOSIT")
-                            {
-                                order.Status = "DEPOSIT_PAID";
-                                // Hóa đơn vẫn PENDING vì mới trả cọc
-                            }
-                            else
-                            {
-                                // FINAL_PAYMENT hoặc thanh toán 1 lần cũ (null) -> hoàn tất
-                                order.Status = "PAID";
-                                invoice.InvoiceStatus = "PAID";
-                                invoiceRepo.Update(invoice);
-                            }
-                            orderRepo.Update(order);
-                            settledOrderId = order.Id;
-                        }
-                    }
-                }
-            }
+                Source = PaymentConfirmationSources.PayOs,
+                ReceivedAmount = receivedAmount,
+                Reference = reference
+            });
 
-            await _unitOfWork.SaveChangesAsync();
-
-            if (settledOrderId.HasValue)
+            if (result.Outcome == PaymentConfirmationOutcome.Underpaid)
             {
-                await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(settledOrderId.Value);
+                _logger.LogWarning("payOS báo thiếu tiền cho khoản {PaymentId}: {Message}", payment.Id, result.Message);
             }
         }
 
@@ -1217,12 +1161,6 @@ namespace VCL_BLL.Services
         private static bool IsStaff(string userRole) =>
             StaffRoleHelper.CanHandlePayments(userRole);
 
-        // Chỉ Sale (và Admin) được xác nhận thanh toán.
-        private static readonly string[] SalesRoles = { "ADMIN", "SALE", "SALES" };
-
-        private static bool IsSales(string userRole) =>
-            !string.IsNullOrWhiteSpace(userRole) && SalesRoles.Contains(userRole.Trim().ToUpperInvariant());
-
         private static bool IsInstallment(Payment p, string type) =>
             string.Equals(p.InstallmentType, type, StringComparison.OrdinalIgnoreCase);
 
@@ -1269,11 +1207,6 @@ namespace VCL_BLL.Services
         {
             var desc = string.IsNullOrWhiteSpace(consignmentCode) ? $"{prefix} ky gui" : $"{prefix} {consignmentCode}";
             return desc.Length > 25 ? desc.Substring(0, 25) : desc;
-        }
-
-        private static string FirstNonEmpty(params string?[] values)
-        {
-            return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
         }
 
         public async Task<bool> HandleSePayWebhookAsync(SePayWebhookDto dto)
@@ -1341,66 +1274,20 @@ namespace VCL_BLL.Services
                 return true;
             }
 
-            if (dto.TransferAmount < payment.Amount)
+            // SePay báo đúng số tiền ngân hàng nhận: ghi lại cả phần chuyển dư, thiếu thì không xác nhận.
+            var result = await _paymentConfirmation.ConfirmAsync(payment, new PaymentConfirmationInput
+            {
+                Source = PaymentConfirmationSources.SePay,
+                ReceivedAmount = dto.TransferAmount,
+                Reference = dto.ReferenceCode
+            });
+
+            if (result.Outcome == PaymentConfirmationOutcome.Underpaid)
             {
                 _logger.LogWarning(
                     "SePay Webhook: Số tiền thanh toán ({TransferAmount}) nhỏ hơn số tiền yêu cầu ({PaymentAmount}) cho OrderCode={OrderCode}",
                     dto.TransferAmount, payment.Amount, orderCode.Value);
                 return false;
-            }
-
-            payment.PaymentStatus = "PAID";
-            payment.PaidAt = DateTime.UtcNow;
-            payment.TransactionCode = dto.ReferenceCode;
-            paymentRepo.Update(payment);
-
-            // Đơn vừa thu được tiền — sinh phiếu tiếp nhận kho sau khi đã lưu xong giao dịch.
-            Guid? settledOrderId = null;
-
-            if (payment.InvoiceId.HasValue)
-            {
-                var invoiceRepo = _unitOfWork.Repository<Invoice>();
-                var invoice = await invoiceRepo.GetByIdAsync(payment.InvoiceId.Value);
-                if (invoice != null && invoice.QuotationId.HasValue)
-                {
-                    var quotation = await _unitOfWork.Repository<Quotation>().GetByIdAsync(invoice.QuotationId.Value);
-                    if (quotation?.OrderId != null)
-                    {
-                        var orderRepo = _unitOfWork.Repository<Order>();
-                        var order = await orderRepo.GetByIdAsync(quotation.OrderId.Value);
-                        if (order != null)
-                        {
-                            var installment = payment.InstallmentType?.Trim().ToUpperInvariant();
-                            if (installment == "DEPOSIT")
-                            {
-                                order.Status = "DEPOSIT_PAID";
-                                orderRepo.Update(order);
-                                settledOrderId = order.Id;
-                            }
-                            else if (installment == StorageFeeInstallment)
-                            {
-                                // Phí lưu kho thu tại quầy lúc lấy hàng, không phải một đợt của
-                                // hoá đơn gốc. Đụng vào order.Status ở đây sẽ đánh dấu đơn đã
-                                // thanh toán xong trong khi tất toán có thể còn dở.
-                            }
-                            else
-                            {
-                                order.Status = "PAID";
-                                invoice.InvoiceStatus = "PAID";
-                                invoiceRepo.Update(invoice);
-                                orderRepo.Update(order);
-                                settledOrderId = order.Id;
-                            }
-                        }
-                    }
-                }
-            }
-
-            await _unitOfWork.SaveChangesAsync();
-
-            if (settledOrderId.HasValue)
-            {
-                await _receivingNoteService.EnsureReceivingNoteForPaidOrderAsync(settledOrderId.Value);
             }
 
             return true;

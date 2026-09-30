@@ -86,8 +86,9 @@ namespace VCL_BLL.Services
         private async Task CollectPurchaseSettlementsAsync(
             IReadOnlyCollection<Order> orders, HashSet<Guid> settled)
         {
+            // Đơn kho mua hộ luồng mới tất toán qua hoá đơn chặng VN như ký gửi (nhánh trên).
             var orderByRequest = orders
-                .Where(o => o.PurchaseRequestId.HasValue)
+                .Where(o => o.PurchaseRequestId.HasValue && !o.PurchaseOrderId.HasValue)
                 .GroupBy(o => o.PurchaseRequestId!.Value)
                 .ToDictionary(g => g.Key, g => g.First().Id);
 

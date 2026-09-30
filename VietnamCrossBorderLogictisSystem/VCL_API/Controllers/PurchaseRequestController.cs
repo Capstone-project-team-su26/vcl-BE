@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
 using VCL_BLL.Interface;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -47,7 +48,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -55,11 +56,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -93,7 +94,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -101,11 +102,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -117,7 +118,8 @@ namespace VCL_API.Controllers
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? status = null,
-            [FromQuery] string? searchKeyword = null)
+            [FromQuery] string? searchKeyword = null,
+            [FromQuery] string? stage = null)
         {
             if (pageNumber < 1) pageNumber = 1;
             if (pageSize < 1) pageSize = 10;
@@ -133,16 +135,20 @@ namespace VCL_API.Controllers
 
             try
             {
-                var result = await _purchaseRequestService.GetPurchaseRequestsAsync(userId, userRole, pageNumber, pageSize, status, searchKeyword);
+                var result = await _purchaseRequestService.GetPurchaseRequestsAsync(userId, userRole, pageNumber, pageSize, status, searchKeyword, stage);
                 return Ok(new { message = "Lấy danh sách yêu cầu mua hộ thành công.", data = result });
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = ex.Message });
+                return Unauthorized(new { message = this.UserError(ex) });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -168,7 +174,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -176,12 +182,13 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
         /// <summary>
-        /// Staff/Sales cập nhật trạng thái yêu cầu mua hộ (tiếp nhận, yêu cầu bổ sung, từ chối)
+        /// Sale/Admin cập nhật trạng thái xem xét yêu cầu mua hộ (tiếp nhận, yêu cầu bổ sung, từ chối).
+        /// Nhân viên nội bộ khác (kho, giao vận, OM) nhận 403.
         /// </summary>
         [HttpPut("{requestId}/status")]
         public async Task<IActionResult> UpdatePurchaseRequestStatus(Guid requestId, [FromBody] UpdatePurchaseRequestStatusRequestDto request)
@@ -206,7 +213,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -214,11 +221,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -250,7 +257,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { success = false, message = ex.Message });
+                return StatusCode(403, new { success = false, message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -258,104 +265,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(new { success = false, message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
-        }
-
-        /// <summary>
-        /// Xác nhận mua hộ &amp; cập nhật tiến độ đơn mua hàng.
-        /// Nhận PURCHASED, SELLER_SHIPPED hoặc ARRIVED_ORIGIN_WAREHOUSE, kèm tối đa 3 ảnh bằng chứng.
-        /// </summary>
-        [HttpPut("{requestId}/confirm-purchase")]
-        public async Task<IActionResult> ConfirmPurchase(Guid requestId, [FromBody] ConfirmPurchaseRequestDto request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-            {
-                return Unauthorized(new { message = "Không thể xác định danh tính người dùng." });
-            }
-
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-            try
-            {
-                var result = await _purchaseRequestService.ConfirmPurchaseAsync(requestId, userId, userRole, request);
-                return Ok(new
-                {
-                    success = true,
-                    message = "Xác nhận mua hộ & cập nhật tiến độ thành công.",
-                    data = result
-                });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(403, new { success = false, message = ex.Message });
-            }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { success = false, message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { success = false, message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
-            }
-        }
-
-        /// <summary>
-        /// Manager/Ops duyệt kiểm kê &amp; nhập kho chính thức — bước 5 của luồng mua hộ.
-        /// Sale gọi sẽ nhận 403.
-        /// </summary>
-        [HttpPost("{requestId}/approve-store")]
-        public async Task<IActionResult> ApproveStore(Guid requestId, [FromBody] ApproveStoreRequestDto? request)
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-            {
-                return Unauthorized(new { success = false, message = "Không thể xác định danh tính người dùng." });
-            }
-
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-            try
-            {
-                var result = await _purchaseRequestService.ApproveStoreAsync(
-                    requestId, userId, userRole, request ?? new ApproveStoreRequestDto());
-
-                return Ok(new
-                {
-                    success = true,
-                    message = "Duyệt kiểm kê & nhập kho thành công.",
-                    data = result
-                });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(403, new { success = false, message = ex.Message });
-            }
-            catch (NotFoundException ex)
-            {
-                return NotFound(new { success = false, message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { success = false, message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { success = false, message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -376,7 +290,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -385,7 +299,7 @@ namespace VCL_API.Controllers
         }
 
         /// <summary>
-        /// Staff/Sales tạo báo giá cho một yêu cầu mua hộ
+        /// Sale/Admin lập báo giá cho một yêu cầu mua hộ. Nhân viên nội bộ khác nhận 403.
         /// </summary>
         [HttpPost("{requestId}/quotation")]
         public async Task<IActionResult> CreatePurchaseQuotation(Guid requestId, [FromBody] CreatePurchaseQuotationDto dto)
@@ -410,7 +324,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(403, new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -418,11 +332,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -443,7 +357,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
 
@@ -469,11 +383,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = ex.Message });
+                return StatusCode(500, new { message = "Đã xảy ra lỗi hệ thống.", error = this.UserError(ex) });
             }
         }
     }

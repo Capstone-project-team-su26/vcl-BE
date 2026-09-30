@@ -1,6 +1,7 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using MimeKit;
 using VCL_BLL.Interface;
 
@@ -8,11 +9,20 @@ namespace VCL_BLL.Services
 {
     public class EmailService : IEmailService
     {
-        private readonly IConfiguration _configuration;
+        /// <summary>
+        /// Câu trả cho người dùng khi thiếu cấu hình SMTP: không lộ tên khoá cấu hình tiếng Anh ra
+        /// màn hình; chi tiết (khoá nào thiếu) chỉ ghi log cho người vận hành.
+        /// </summary>
+        private const string SmtpNotConfiguredMessage =
+            "Hệ thống gửi email chưa được cấu hình nên chưa gửi được mã OTP. Vui lòng liên hệ VCL để được hỗ trợ.";
 
-        public EmailService(IConfiguration configuration)
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<EmailService> _logger;
+
+        public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
         {
             _configuration = configuration;
+            _logger = logger;
         }
 
         public async Task SendPasswordResetOtpAsync(
@@ -54,21 +64,21 @@ namespace VCL_BLL.Services
             var settings = GetSmtpSettings();
             var safeName = System.Net.WebUtility.HtmlEncode(toName);
             var message = CreateMessage(settings, toEmail, toName);
-            message.Subject = "[VCL] Account registration verification";
+            message.Subject = "[VCL] Mã OTP xác thực đăng ký tài khoản";
             message.Body = new BodyBuilder
             {
                 HtmlBody = $@"
 <div style=""font-family:Arial,sans-serif;max-width:600px;margin:0 auto"">
-    <h2 style=""color:#2c3e50"">Verify your VCL account</h2>
-    <p>Hello <strong>{safeName}</strong>,</p>
-    <p>Your account registration OTP is:</p>
+    <h2 style=""color:#2c3e50"">Xác thực tài khoản VCL</h2>
+    <p>Xin chào <strong>{safeName}</strong>,</p>
+    <p>Mã OTP đăng ký tài khoản của bạn là:</p>
     <div style=""background:#f4f4f4;padding:16px;text-align:center;font-size:30px;font-weight:bold;letter-spacing:8px"">
         {otp}
     </div>
-    <p>This code is valid for <strong>{expiryMinutes} minutes</strong>. Do not share it with anyone.</p>
-    <p style=""color:#777;font-size:12px"">Ignore this email if you did not make this request.</p>
+    <p>Mã này có hiệu lực trong <strong>{expiryMinutes} phút</strong>. Không chia sẻ mã này với bất kỳ ai.</p>
+    <p style=""color:#777;font-size:12px"">Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email này.</p>
 </div>",
-                TextBody = $"Hello {toName},\n\nYour VCL registration OTP is: {otp}\nThe code is valid for {expiryMinutes} minutes."
+                TextBody = $"Xin chào {toName},\n\nMã OTP đăng ký tài khoản VCL của bạn: {otp}\nMã có hiệu lực trong {expiryMinutes} phút."
             }.ToMessageBody();
 
             await SendAsync(message, settings);
@@ -88,12 +98,9 @@ namespace VCL_BLL.Services
         private SmtpConfiguration GetSmtpSettings()
         {
             var section = _configuration.GetSection("SmtpSettings");
-            var host = section["Host"]
-                ?? throw new InvalidOperationException("SmtpSettings:Host is not configured.");
-            var username = section["Username"]
-                ?? throw new InvalidOperationException("SmtpSettings:Username is not configured.");
-            var password = section["Password"]
-                ?? throw new InvalidOperationException("SmtpSettings:Password is not configured.");
+            var host = section["Host"] ?? throw SmtpNotConfigured("SmtpSettings:Host");
+            var username = section["Username"] ?? throw SmtpNotConfigured("SmtpSettings:Username");
+            var password = section["Password"] ?? throw SmtpNotConfigured("SmtpSettings:Password");
 
             return new SmtpConfiguration(
                 host,
@@ -101,6 +108,12 @@ namespace VCL_BLL.Services
                 username,
                 password,
                 bool.Parse(section["EnableSsl"] ?? "true"));
+        }
+
+        private InvalidOperationException SmtpNotConfigured(string key)
+        {
+            _logger.LogError("Thiếu cấu hình {ConfigKey} — không gửi được email.", key);
+            return new InvalidOperationException(SmtpNotConfiguredMessage);
         }
 
         private static async Task SendAsync(MimeMessage message, SmtpConfiguration settings)

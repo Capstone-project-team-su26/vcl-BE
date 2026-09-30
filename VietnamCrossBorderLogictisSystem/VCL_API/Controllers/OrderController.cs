@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using VCL_API.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using VCL_BLL.Interface;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_API.Infrastructure;
 
 namespace VCL_API.Controllers
 {
@@ -16,11 +18,79 @@ namespace VCL_API.Controllers
     {
         private readonly IOrderService _orderService;
         private readonly IConsignmentReceiptService _consignmentReceiptService;
+        private readonly IExportHoldService _exportHoldService;
+        private readonly IShipmentTrackingService _trackingService;
 
-        public OrderController(IOrderService orderService, IConsignmentReceiptService consignmentReceiptService)
+        public OrderController(
+            IOrderService orderService,
+            IConsignmentReceiptService consignmentReceiptService,
+            IExportHoldService exportHoldService,
+            IShipmentTrackingService trackingService)
         {
             _orderService = orderService;
             _consignmentReceiptService = consignmentReceiptService;
+            _exportHoldService = exportHoldService;
+            _trackingService = trackingService;
+        }
+
+        /// <summary>
+        /// Các đơn đang có hàng ở kho hoặc đang trên đường, kèm chặng hiện tại. Khách chỉ thấy đơn
+        /// của mình; nhân viên thấy tất cả. Mặc định bỏ đơn đã về tới kho VN.
+        /// </summary>
+        [HttpGet("consignments/tracking")]
+        public async Task<IActionResult> GetTrackedOrders([FromQuery] TrackedOrderQuery query)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+            var data = await _trackingService.GetTrackedOrdersAsync(userId, role, query);
+            return Ok(new { message = "Lấy danh sách đơn đang theo dõi thành công.", data });
+        }
+
+        /// <summary>
+        /// Hành trình một đơn: chặng hiện tại, từng kiện, chuyến chở, mã vận đơn và dòng thời gian.
+        /// Khách chỉ xem được đơn của mình; chỉ thấy lời nhắn dành cho khách, không thấy ghi chú nội bộ.
+        /// </summary>
+        [HttpGet("consignments/{orderId}/tracking")]
+        public async Task<IActionResult> GetOrderTracking(Guid orderId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+            try
+            {
+                var data = await _trackingService.GetOrderTrackingAsync(userId, role, orderId);
+                return Ok(new { message = "Lấy hành trình đơn hàng thành công.", data });
+            }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
+        }
+
+        /// <summary>
+        /// Bật/tắt giữ hàng tại kho nguồn. Hàng ký gửi mặc định đi theo chuyến gần nhất; bật cờ
+        /// này thì kho không đưa kiện của đơn vào phiếu xuất mới.
+        /// </summary>
+        [HttpPut("consignments/{orderId}/export-hold")]
+        public async Task<IActionResult> SetExportHold(Guid orderId, [FromBody] SetExportHoldRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
+            try
+            {
+                var data = await _exportHoldService.SetHoldAsync(userId, role, orderId, request?.Hold ?? false, request?.Reason);
+                return Ok(new { message = (request?.Hold ?? false) ? "Đã bật giữ hàng." : "Đã tắt giữ hàng.", data });
+            }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -32,6 +102,41 @@ namespace VCL_API.Controllers
         /// <response code="201">Tạo yêu cầu ký gửi thành công</response>
         /// <response code="400">Dữ liệu không hợp lệ hoặc chứa hàng cấm</response>
         /// <response code="401">Chưa đăng nhập</response>
+        /// <summary>
+        /// ƯỚC TÍNH chi phí đơn ký gửi TRƯỚC KHI TẠO — không tạo đơn, không ghi gì.
+        /// </summary>
+        /// <remarks>
+        /// Nhận ĐÚNG payload của POST /api/orders/consignments và chạy ĐÚNG phép tính sinh ra
+        /// báo giá tạm tính lúc tạo đơn, nên con số ở màn xác nhận bằng đúng con số trên hoá
+        /// đơn hệ thống phát hành ngay sau đó.
+        ///
+        /// Vẫn kiểm đầy đủ như lúc tạo thật (tuyến, phương án vận chuyển, giới hạn kiện, hàng
+        /// cấm, bắt buộc chọn cỡ thùng khi tick đóng thùng gỗ) — sai thì trả 400 ngay ở bước
+        /// xem trước, khách không phải bấm tạo đơn mới biết.
+        /// </remarks>
+        /// <response code="200">Trả bảng ước tính: cước, phí dịch vụ, phụ phí theo kiện, thuế</response>
+        /// <response code="400">Dữ liệu không hợp lệ hoặc chứa hàng cấm</response>
+        [HttpPost("consignments/preview")]
+        [Authorize(Roles = "Customer")]
+        [ProducesResponseType(typeof(EstimateQuotationResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        public async Task<IActionResult> PreviewConsignment([FromBody] CreateConsignmentRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            try
+            {
+                var result = await _orderService.PreviewConsignmentAsync(request, userId);
+                return Ok(new { message = "Ước tính chi phí đơn ký gửi thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = this.UserError(ex) }); }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
+        }
+
         [HttpPost("consignments")]
         [Authorize(Roles = "Customer")]
         [ProducesResponseType(typeof(object), 201)]
@@ -51,11 +156,11 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = ex.Message });
+                return Unauthorized(new { message = this.UserError(ex) });
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -72,6 +177,38 @@ namespace VCL_API.Controllers
         /// <response code="400">Dữ liệu không hợp lệ hoặc chứa hàng cấm</response>
         /// <response code="401">Chưa đăng nhập hoặc không phải nhân viên Sales</response>
         /// <response code="404">Không tìm thấy Customer</response>
+        /// <summary>
+        /// ƯỚC TÍNH chi phí đơn Sale tạo hộ khách, TRƯỚC KHI tạo — không tạo đơn, không ghi gì.
+        /// </summary>
+        /// <remarks>
+        /// Cùng payload và cùng phép tính với POST /api/staff/consignments, nên con số Sale
+        /// đọc cho khách nghe ở màn xác nhận bằng đúng con số trên báo giá hệ thống phát hành.
+        /// </remarks>
+        /// <response code="200">Trả bảng ước tính</response>
+        /// <response code="400">Dữ liệu không hợp lệ hoặc chứa hàng cấm</response>
+        /// <response code="404">Không tìm thấy khách hàng</response>
+        [HttpPost("~/api/staff/consignments/preview")]
+        [Authorize(Roles = "Sale")]
+        [ProducesResponseType(typeof(EstimateQuotationResponse), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> PreviewConsignmentByStaff([FromBody] CreateConsignmentByStaffRequest request)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var staffUserId))
+                return Unauthorized(new { message = "Không thể xác định người dùng nhân viên." });
+
+            try
+            {
+                var result = await _orderService.PreviewConsignmentByStaffAsync(request, staffUserId);
+                return Ok(new { message = "Ước tính chi phí đơn ký gửi thành công.", data = result });
+            }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = this.UserError(ex) }); }
+            catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
+        }
+
         [HttpPost("~/api/staff/consignments")]
         [Authorize(Roles = "Sale")]
         [ProducesResponseType(typeof(CreateConsignmentResponse), 201)]
@@ -92,7 +229,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (NotFoundException ex)
             {
@@ -100,7 +237,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = ex.Message });
+                return Unauthorized(new { message = this.UserError(ex) });
             }
         }
 
@@ -114,7 +251,7 @@ namespace VCL_API.Controllers
         /// <response code="400">Danh sách mặt hàng rỗng</response>
         /// <response code="401">Chưa đăng nhập</response>
         [HttpPost("consignments/validate-items")]
-        [Authorize(Roles = "Customer,Admin,Sale,WarehouseStaff,OperationsManager,Delivery")]
+        [AuthorizeRoles("Customer,Admin,Sale,WarehouseStaff,OperationsManager,Delivery")]
         [ProducesResponseType(typeof(object), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
@@ -127,7 +264,7 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -172,11 +309,11 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = ex.Message });
+                return Unauthorized(new { message = this.UserError(ex) });
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -205,8 +342,8 @@ namespace VCL_API.Controllers
                 return Ok(new { message = "Đã ghi nhận xác nhận nhận hàng của khách.", data = result });
             }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = this.UserError(ex) }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -236,8 +373,8 @@ namespace VCL_API.Controllers
                 return Ok(new { message = "Đơn hàng đã hoàn thành.", data = result });
             }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = this.UserError(ex) }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -267,8 +404,8 @@ namespace VCL_API.Controllers
                 return Ok(new { message = "Đã từ chối đơn do quá hạn thanh toán.", data = result });
             }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = this.UserError(ex) }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -288,8 +425,8 @@ namespace VCL_API.Controllers
                 var result = await _orderService.GetSettlementQueueAsync(role, settled: false, actorId);
                 return Ok(new { message = "Lấy danh sách hàng chờ tất toán thành công.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -309,8 +446,8 @@ namespace VCL_API.Controllers
                 var result = await _orderService.GetActionQueueAsync(role);
                 return Ok(new { message = "Lấy danh sách đơn cần xử lý thành công.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -341,9 +478,9 @@ namespace VCL_API.Controllers
                     orderId, actorUserId, role, request ?? new NotifyWarehouseRequest());
                 return Ok(new { message = result.AlreadyNotified ? "Đơn này đã được báo cho kho từ trước." : "Đã thông báo cho kho.", data = result });
             }
-            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = ex.Message }); }
+            catch (UnauthorizedAccessException ex) { return StatusCode(403, new { message = this.UserError(ex) }); }
             catch (NotFoundException ex) { return NotFound(new { message = ex.Message }); }
-            catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (ArgumentException ex) { return BadRequest(new { message = this.UserError(ex) }); }
         }
 
         /// <summary>
@@ -353,7 +490,7 @@ namespace VCL_API.Controllers
         /// <param name="request">Thông tin trạng thái cần cập nhật và lý do từ chối (nếu có)</param>
         /// <returns>Kết quả cập nhật trạng thái</returns>
         [HttpPut("consignments/{orderId}/status")]
-        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager,Delivery")]
+        [Authorize(Roles = "Admin,ADMIN,Sale,SALE,Sales,SALES")]
         [ProducesResponseType(typeof(object), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
@@ -381,11 +518,11 @@ namespace VCL_API.Controllers
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -398,7 +535,7 @@ namespace VCL_API.Controllers
         /// <response code="401">Chưa đăng nhập</response>
         /// <response code="404">Không tìm thấy yêu cầu ký gửi</response>
         [HttpGet("consignments/{orderId}/receipt")]
-        [Authorize(Roles = "Admin,Sale,WarehouseStaff,OperationsManager")]
+        [AuthorizeRoles("Admin,Sale,WarehouseStaff,OperationsManager")]
         [ProducesResponseType(typeof(FileResult), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
@@ -418,7 +555,7 @@ namespace VCL_API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = "Không thể tạo phiếu xác nhận ký gửi.", error = ex.Message });
+                return BadRequest(new { message = "Không thể tạo phiếu xác nhận ký gửi.", error = this.UserError(ex) });
             }
         }
 
@@ -431,6 +568,30 @@ namespace VCL_API.Controllers
         /// <response code="200">Lấy chi tiết thành công</response>
         /// <response code="401">Chưa đăng nhập hoặc không phải chủ đơn</response>
         /// <response code="404">Không tìm thấy yêu cầu ký gửi</response>
+        [HttpGet("consignments/{orderId}/timeline")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetOrderTimeline(Guid orderId)
+        {
+            if (!Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId))
+                return Unauthorized(new { message = "Không thể xác định người dùng." });
+
+            try
+            {
+                var result = await _orderService.GetOrderTimelineAsync(orderId, userId, User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty);
+                return Ok(new { message = "Lấy lịch sử đơn thành công.", data = result });
+            }
+            catch (NotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = this.UserError(ex) });
+            }
+        }
+
         [HttpGet("consignments/{orderId}")]
         [ProducesResponseType(typeof(object), 200)]
         [ProducesResponseType(401)]
@@ -455,7 +616,7 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = ex.Message });
+                return Unauthorized(new { message = this.UserError(ex) });
             }
         }
 
@@ -504,11 +665,11 @@ namespace VCL_API.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
-                return Unauthorized(new { message = ex.Message });
+                return Unauthorized(new { message = this.UserError(ex) });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { message = this.UserError(ex) });
             }
         }
 
@@ -535,6 +696,30 @@ namespace VCL_API.Controllers
         {
             var data = await _orderService.GetShippingOptionsAsync(route);
             return Ok(new { message = "Lấy danh sách phương án vận chuyển thành công.", data });
+        }
+
+        /// <summary>
+        /// Dịch vụ khách chọn cho từng kiện khi tạo đơn ký gửi (kiểm hàng, bảo hiểm, đóng lại carton...).
+        /// Gửi ID vào <c>items[].services[].pricingRuleId</c>. Thùng gỗ không nằm ở đây — chọn qua
+        /// <c>items[].packageConfigurationId</c>.
+        /// </summary>
+        /// <param name="route">Tuyến hàng (tuỳ chọn, đi cùng shippingOption)</param>
+        /// <param name="shippingOption">Phương án vận chuyển (tuỳ chọn, đi cùng route)</param>
+        [HttpGet("consignments/item-services")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(List<ItemServiceDto>), 200)]
+        [ProducesResponseType(400)]
+        public async Task<IActionResult> GetItemServices([FromQuery] string? route = null, [FromQuery] string? shippingOption = null)
+        {
+            try
+            {
+                var data = await _orderService.GetItemServicesAsync(route, shippingOption);
+                return Ok(new { message = "Lấy danh sách dịch vụ theo kiện thành công.", data });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = this.UserError(ex) });
+            }
         }
 
         /// <summary>

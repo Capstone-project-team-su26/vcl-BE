@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using VCL_BLL.DTOs;
 using VCL_BLL.Exceptions;
+using VCL_BLL.Helpers;
 using VCL_BLL.Interface;
 using VCL_DLL.Interface;
 using VCL_DLL.Models;
@@ -63,17 +64,8 @@ namespace VCL_BLL.Services
                 throw new ArgumentException("Yêu cầu ký gửi không liên kết với khách hàng nào.");
             }
 
-            // 5. Tìm OrderItem và tổng số lượng hàng trong Parcel
-            var orderItemRepo = _unitOfWork.Repository<OrderItem>();
-            var allItems = await orderItemRepo.GetAllAsync();
-            var consignmentItems = allItems.Where(i => i.OrderId == order.Id).ToList();
-
-            Guid? orderItemId = consignmentItems.FirstOrDefault()?.Id;
-            int quantity = consignmentItems.Sum(item => item.Quantity ?? 1);
-            if (quantity <= 0)
-            {
-                quantity = 1;
-            }
+            // 5. Lượng hàng của đúng kiện này (không phải tổng cả đơn)
+            var (orderItemId, quantity) = await ParcelQuantityResolver.ResolveAsync(_unitOfWork, parcel, order.Id);
 
             // 6. Ghi nhận bản ghi tồn kho mới
             var inventory = new Inventory
@@ -97,7 +89,7 @@ namespace VCL_BLL.Services
             return createdDtos.First();
         }
 
-        public async Task<List<InventoryResponseDto>> GetInventoriesAsync(string? status, Guid? customerId, Guid? warehouseId, string? region = null)
+        public async Task<List<InventoryResponseDto>> GetInventoriesAsync(string? status, Guid? customerId, Guid? warehouseId, string? region = null, IReadOnlyCollection<Guid>? warehouseIds = null)
         {
             var inventoryRepo = _unitOfWork.Repository<Inventory>();
             var allInventories = await inventoryRepo.GetAllAsync();
@@ -125,6 +117,12 @@ namespace VCL_BLL.Services
                 dtos = dtos.Where(d => d.WarehouseId == warehouseId.Value).ToList();
             }
 
+            // Nhân viên kho đã được gán kho: chỉ tồn kho của các kho được gán.
+            if (warehouseIds != null)
+            {
+                dtos = dtos.Where(d => d.WarehouseId.HasValue && warehouseIds.Contains(d.WarehouseId.Value)).ToList();
+            }
+
             if (!string.IsNullOrWhiteSpace(region))
             {
                 var regUpper = region.Trim().ToUpperInvariant();
@@ -142,9 +140,9 @@ namespace VCL_BLL.Services
 
         public async Task<InventoryResponseDto> RelocateInventoryAsync(Guid inventoryId, RelocateInventoryRequestDto request, Guid? userId)
         {
-            if (request == null || request.ToBinId == Guid.Empty)
+            if (request == null || ((request.ToBinId ?? Guid.Empty) == Guid.Empty && string.IsNullOrWhiteSpace(request.ToBinCode)))
             {
-                throw new ArgumentException("Vui lòng chọn ô kệ đích để điều chuyển.");
+                throw new ArgumentException("Vui lòng quét mã hoặc chọn ô kệ đích để điều chuyển.");
             }
 
             if (string.IsNullOrWhiteSpace(request.Reason))
@@ -160,16 +158,13 @@ namespace VCL_BLL.Services
                 throw new NotFoundException($"Không tìm thấy bản ghi tồn kho với ID: {inventoryId}");
             }
 
+            await ExportLockGuard.EnsureNotInActiveReleaseAsync(_unitOfWork, new[] { inventory.ParcelId }, "điều chuyển");
+
             // 2. Hàng đã lấy hoặc đã xuất kho thì không còn nằm ở vị trí cũ để điều chuyển
             var blockedStatuses = new[] { "PICKED", "RELEASED" };
             if (blockedStatuses.Any(s => string.Equals(s, inventory.Status, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new ArgumentException($"Không thể điều chuyển hàng tồn ở trạng thái {inventory.Status}.");
-            }
-
-            if (inventory.BinId == request.ToBinId)
-            {
-                throw new ArgumentException("Ô kệ đích trùng với ô kệ hiện tại của kiện hàng.");
+                throw new ArgumentException($"Không thể điều chuyển hàng tồn ở trạng thái {StatusNames.Quote(inventory.Status)}.");
             }
 
             // 3. Tìm kiện hàng và ô kệ nguồn / đích
@@ -181,68 +176,33 @@ namespace VCL_BLL.Services
             }
 
             var binRepo = _unitOfWork.Repository<Bin>();
-            var fromBin = await binRepo.GetByIdAsync(inventory.BinId);
-            var toBin = await binRepo.GetByIdAsync(request.ToBinId);
-            if (toBin == null)
+            var fromBin = await binRepo.GetByIdAsync(inventory.BinId)
+                ?? throw new NotFoundException("Không tìm thấy ô kệ hiện tại của kiện hàng.");
+            var warehouseId = fromBin.WarehouseId
+                ?? throw new ArgumentException("Ô kệ hiện tại chưa gắn kho nên không điều chuyển được.");
+
+            // Chỉ điều chuyển trong cùng kho (BR-56): mã ô quét được tra trong kho hiện tại.
+            var toBin = await BinPlacementPolicy.ResolveBinAsync(_unitOfWork, warehouseId, request.ToBinId, request.ToBinCode);
+            if (toBin.Id == fromBin.Id)
             {
-                throw new NotFoundException("Không tìm thấy ô kệ đích.");
+                throw new ArgumentException("Ô kệ đích trùng với ô kệ hiện tại của kiện hàng.");
             }
 
-            // 4. Ô kệ đích phải đang hoạt động và thuộc đúng kho đang lưu kiện hàng (BR-56)
-            if (!toBin.IsActive)
-            {
-                throw new ArgumentException("Ô kệ đích đang ngừng sử dụng.");
-            }
-
-            if (fromBin?.WarehouseId != null && toBin.WarehouseId != fromBin.WarehouseId)
-            {
-                throw new ArgumentException("Chỉ được điều chuyển trong phạm vi cùng một kho.");
-            }
-
-            // 5. Kiểm tra sức chứa của ô kệ đích trước khi gán (BR-53)
-            decimal parcelVolume = (parcel.Length ?? 0) * (parcel.Width ?? 0) * (parcel.Height ?? 0);
-            if (toBin.MaxVolume.HasValue)
-            {
-                decimal availableVolume = toBin.MaxVolume.Value - (toBin.CurrentVolume ?? 0);
-                if (parcelVolume > availableVolume)
-                {
-                    throw new ArgumentException($"Ô kệ đích không đủ sức chứa thể tích. Thể tích kiện hàng: {parcelVolume}, thể tích khả dụng: {availableVolume}.");
-                }
-            }
-
-            if (toBin.MaxWeight.HasValue)
-            {
-                var allParcels = await parcelRepo.GetAllAsync();
-                var currentWeightInBin = allParcels
-                    .Where(p => p.BinId == toBin.Id && string.Equals(p.PackageStatus, "STORED", StringComparison.OrdinalIgnoreCase))
-                    .Sum(p => p.ActualWeight ?? 0);
-
-                decimal availableWeight = toBin.MaxWeight.Value - currentWeightInBin;
-                decimal parcelWeight = parcel.ActualWeight ?? 0;
-                if (parcelWeight > availableWeight)
-                {
-                    throw new ArgumentException($"Ô kệ đích không đủ sức chứa tải trọng. Khối lượng kiện hàng: {parcelWeight}, tải trọng khả dụng: {availableWeight}.");
-                }
-            }
+            // 4-5. Ô đích phải là ô khu lưu kho đang dùng, cùng kho, còn đủ chỗ (BR-53)
+            var placement = await BinPlacementPolicy.EnsureCanStoreAsync(_unitOfWork, toBin, warehouseId, new[] { parcel });
 
             // 6. Cập nhật vị trí của kiện hàng, bản ghi tồn kho và thể tích hai ô kệ trong cùng transaction (BR-57)
             var movedAt = DateTime.UtcNow;
             var fromBinId = inventory.BinId;
 
+            fromBin.CurrentVolume = await BinPlacementPolicy.VolumeAfterLeavingAsync(_unitOfWork, fromBin.Id, new[] { parcel.Id });
+            toBin.CurrentVolume = placement.OccupiedVolumeAfter;
             parcel.BinId = toBin.Id;
             inventory.BinId = toBin.Id;
 
-            if (fromBin != null)
-            {
-                var remainingVolume = (fromBin.CurrentVolume ?? 0) - parcelVolume;
-                fromBin.CurrentVolume = remainingVolume < 0 ? 0 : remainingVolume;
-                binRepo.Update(fromBin);
-            }
-
-            toBin.CurrentVolume = (toBin.CurrentVolume ?? 0) + parcelVolume;
-
             parcelRepo.Update(parcel);
             inventoryRepo.Update(inventory);
+            binRepo.Update(fromBin);
             binRepo.Update(toBin);
 
             // 7. Ghi nhật ký điều chuyển (BR-47)
@@ -365,7 +325,7 @@ namespace VCL_BLL.Services
         /// </summary>
         private static readonly string[] InStorageStatuses = { "AVAILABLE", "RESERVED" };
 
-        public async Task<List<LongStayAlertResponseDto>> GetLongStayAlertsAsync(Guid? warehouseId, Guid? customerId, int minDays, int criticalDays, int limit, string? region = null)
+        public async Task<List<LongStayAlertResponseDto>> GetLongStayAlertsAsync(Guid? warehouseId, Guid? customerId, int minDays, int criticalDays, int limit, string? region = null, IReadOnlyCollection<Guid>? warehouseIds = null)
         {
             if (minDays <= 0)
             {
@@ -382,7 +342,7 @@ namespace VCL_BLL.Services
                 limit = 100;
             }
 
-            var inventories = await GetInventoriesAsync(null, customerId, warehouseId, region);
+            var inventories = await GetInventoriesAsync(null, customerId, warehouseId, region, warehouseIds);
 
             return inventories
                 .Where(i => InStorageStatuses.Contains(i.Status, StringComparer.OrdinalIgnoreCase))
@@ -419,9 +379,9 @@ namespace VCL_BLL.Services
                 .ToList();
         }
 
-        public async Task<List<CustomerStorageReportResponseDto>> GetCustomerStorageReportAsync(Guid? warehouseId, Guid? customerId, string? region = null)
+        public async Task<List<CustomerStorageReportResponseDto>> GetCustomerStorageReportAsync(Guid? warehouseId, Guid? customerId, string? region = null, IReadOnlyCollection<Guid>? warehouseIds = null)
         {
-            var inventories = await GetInventoriesAsync(null, customerId, warehouseId, region);
+            var inventories = await GetInventoriesAsync(null, customerId, warehouseId, region, warehouseIds);
 
             var inStorage = inventories
                 .Where(i => InStorageStatuses.Contains(i.Status, StringComparer.OrdinalIgnoreCase))
@@ -560,7 +520,7 @@ namespace VCL_BLL.Services
             // Chỉ phiếu có chênh lệch mới cần xử lý
             if (!string.Equals(cycleCount.Status, "DISCREPANCY", StringComparison.OrdinalIgnoreCase))
             {
-                throw new ArgumentException($"Chỉ xử lý được phiếu kiểm kê có chênh lệch. Trạng thái hiện tại: {cycleCount.Status}.");
+                throw new ArgumentException($"Chỉ xử lý được phiếu kiểm kê có chênh lệch. Trạng thái hiện tại: {StatusNames.Quote(cycleCount.Status)}.");
             }
 
             cycleCount.Status = "RESOLVED";
