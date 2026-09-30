@@ -7,7 +7,8 @@ name: Deploy VCL Backend
 on:
   push:
     branches:
-      - dtrong
+      - main
+      - dev
   workflow_dispatch:
 
 permissions:
