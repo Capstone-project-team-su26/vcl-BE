@@ -1,25 +1,16 @@
 name: vcl-backend
 
-# Luồng request (khớp sơ đồ Conceptual System Architecture):
-#   Người dùng → Cloudflare → cloudflared → vcl-api → sqlserver
-# Không service nào mở cổng ra Internet: VPS chỉ mở SSH, mọi request web đi vào qua
-# Cloudflare Tunnel (cloudflared tự gọi ra Cloudflare nên firewall không cần mở 80/443).
-# Riêng SQL Server mở cổng trên 127.0.0.1 của VPS để quản trị qua đường hầm SSH.
-
 networks:
   vcl-net:
     name: vcl-net
     driver: bridge
 
 volumes:
-  # Dữ liệu SQL Server nằm ở volume riêng nên deploy lại API không mất dữ liệu.
-  # Tuyệt đối không chạy `docker compose down -v` — cờ -v xoá luôn volume này.
   mssql-data:
 
 services:
   # ---------------------------------------------------------------------
-  # SQL Server 2022 bản Express (miễn phí, đủ cho đồ án: DB tối đa 10 GB).
-  # Chỉ các container trong mạng vcl-net gọi được, không lộ ra Internet.
+  # SQL Server 2022
   # ---------------------------------------------------------------------
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -29,12 +20,9 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_PID: Express
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD is required (GitHub secret)}
-      # VPS có 4 GB RAM: chừa phần còn lại cho API, cloudflared và hệ điều hành.
       MSSQL_MEMORY_LIMIT_MB: "2048"
     volumes:
       - mssql-data:/var/opt/mssql
-    # Chỉ mở trên 127.0.0.1 của VPS (không ra Internet) để xem DB bằng SSMS qua đường hầm SSH:
-    #   ssh -N vcl-db   →   SSMS kết nối 127.0.0.1,14333 trên máy mình
     ports:
       - "127.0.0.1:14333:1433"
     networks:
@@ -47,15 +35,13 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------
-  # Backend .NET. Kestrel nghe cổng 8080 bên trong container (ASPNETCORE_URLS
-  # trong Dockerfile); route trên Cloudflare trỏ vào http://vcl-api:8080.
+  # Backend .NET
   # ---------------------------------------------------------------------
   vcl-api:
     build:
       context: .
       dockerfile: Dockerfile
       labels:
-        # Để bước dọn dẹp của workflow chỉ xoá image API cũ, không đụng image khác.
         com.vcl.app: vcl-api
     image: vcl-api:${IMAGE_TAG:-latest}
     container_name: vcl-api
@@ -69,12 +55,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=AppDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=True;"
 
-      # appsettings.json vẫn trỏ domain cũ (api-vcl.zushin.io.vn); ghi đè cho server mới.
       App__PublicBaseUrl: https://api-vcl.vnlogistic.click
       SePay__BaseUrl: https://api-vcl.vnlogistic.click
 
-      # GoShip sandbox không bắn webhook nên muốn chạy hết chặng giao hàng phải đặt tay
-      # trạng thái. Mặc định tắt; bật bằng GitHub variable GOSHIP_ALLOW_STATUS_SIMULATION=true.
       GoshipSettings__AllowStatusSimulation: ${GOSHIP_ALLOW_STATUS_SIMULATION:-false}
 
       JWT__SecretKey: ${JWT_SECRET_KEY}
@@ -96,16 +79,14 @@ services:
       start_period: 20s
 
   # ---------------------------------------------------------------------
-  # Cloudflare Tunnel connector (tunnel "vcl-backend"). Token lấy từ GitHub
+  # Cloudflare Tunnel connector (tunnel "vcl-backend").
   # secret CF_TUNNEL_TOKEN; hostname api-vcl.vnlogistic.click → http://vcl-api:8080
-  # được cấu hình một lần trên Cloudflare (Networking → Tunnels → Routes).
+  # Cloudflare (Networking → Tunnels → Routes).
   # ---------------------------------------------------------------------
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
-    # Nhà cung cấp VPS chặn UDP ra ngoài nên QUIC (UDP 7844) mặc định không kết nối được;
-    # ép dùng HTTP/2 qua TCP 443.
     command: tunnel --no-autoupdate --protocol http2 run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required (GitHub secret CF_TUNNEL_TOKEN)}
