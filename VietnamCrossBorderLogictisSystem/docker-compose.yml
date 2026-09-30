@@ -1,91 +1,96 @@
+name: vcl-backend
+
+networks:
+  vcl-net:
+    name: vcl-net
+    driver: bridge
+
+volumes:
+  mssql-data:
+
 services:
+  # ---------------------------------------------------------------------
+  # SQL Server 2022
+  # ---------------------------------------------------------------------
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: vcl-sqlserver
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD is required (GitHub secret)}
+      MSSQL_MEMORY_LIMIT_MB: "2048"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    ports:
+      - "127.0.0.1:14333:1433"
+    networks:
+      - vcl-net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ---------------------------------------------------------------------
+  # Backend .NET
+  # ---------------------------------------------------------------------
   vcl-api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: vcl-api:latest
+      labels:
+        com.vcl.app: vcl-api
+    image: vcl-api:${IMAGE_TAG:-latest}
     container_name: vcl-api
     restart: unless-stopped
-    stop_grace_period: 30s
-    labels:
-      com.vcl.upstream.repository: "Capstone-project-team-su26/vcl-BE"
-      com.vcl.upstream.revision: "47adffe"
-    ports:
-      - "8085:8080"
-    # Firewall chặn container gọi vòng ra IP public của chính server: nối thẳng mạng Docker của SQL Server.
+    depends_on:
+      sqlserver:
+        condition: service_healthy
     networks:
-      - default
-      - sqlnet
+      - vcl-net
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=AppDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;Encrypt=True;"
 
-      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=AppDb;User Id=sa;Password=RcYw6#thU3j=RLTi93bW;TrustServerCertificate=True;Encrypt=True;"
+      App__PublicBaseUrl: https://api-vcl.vnlogistic.click
+      SePay__BaseUrl: https://api-vcl.vnlogistic.click
 
-      JWT__SecretKey: "AED+rrS0VsY0p3SeFdZfzdi60IS/3QJEHGMWr+udAw8="
-      JWT__ValidIssuer: "vcl-system"
-      JWT__ValidAudience: "vcl-clients"
-      JWT__TokenValidityInMinutes: "240"
+      GoshipSettings__AllowStatusSimulation: ${GOSHIP_ALLOW_STATUS_SIMULATION:-false}
 
-      MailSettings__Host: "smtp.gmail.com"
-      MailSettings__Port: "587"
-      MailSettings__SenderEmail: "vietnamcrossborderlogictis@gmail.com"
-      MailSettings__SenderName: "VCL System"
-      MailSettings__Username: "vietnamcrossborderlogictis@gmail.com"
-      MailSettings__Password: "xqvf bcbs hfym ziwj"
-      MailSettings__UseSsl: "false"
+      JWT__SecretKey: ${JWT_SECRET_KEY}
+      PayOS__ClientId: ${PAYOS_CLIENT_ID}
+      PayOS__ApiKey: ${PAYOS_API_KEY}
+      PayOS__ChecksumKey: ${PAYOS_CHECKSUM_KEY}
+      SePay__WebhookSecret: ${SEPAY_WEBHOOK_SECRET}
+      Cloudinary__ApiSecret: ${CLOUDINARY_API_SECRET}
+      MailSettings__Password: ${MAIL_APP_PASSWORD}
+      SmtpSettings__Password: ${MAIL_APP_PASSWORD}
+      GoshipSettings__ClientSecret: ${GOSHIP_CLIENT_SECRET}
+      GoshipSettings__Token: ${GOSHIP_TOKEN}
+      OpenRouterSettings__ApiKey: ${OPENROUTER_API_KEY}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/swagger/v1/swagger.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
-      SmtpSettings__Host: "smtp.gmail.com"
-      SmtpSettings__Port: "587"
-      SmtpSettings__EnableSsl: "true"
-      SmtpSettings__Username: "vietnamcrossborderlogictis@gmail.com"
-      SmtpSettings__Password: "xqvf bcbs hfym ziwj"
-
-      Cloudinary__CloudName: "penyhvpn"
-      Cloudinary__ApiKey: "922916138354471"
-      Cloudinary__ApiSecret: "ESz2h8SPZGQ8eaO-W23FvYOUct0"
-
-      PayOS__ClientId: ""
-      PayOS__ApiKey: ""
-      PayOS__ChecksumKey: ""
-      PayOS__ReturnUrl: "https://logictic.site/payment/success"
-      PayOS__CancelUrl: "https://logictic.site/payment/cancel"
-
-      SePay__AccountNumber: "0937250343"
-      SePay__BankName: "mbbank"
-      SePay__AccountName: "Thái Công Đạt"
-      SePay__BaseUrl: "https://vcl.henrytech.cloud"
-      SePay__WebhookSecret: ""
-      SePay__ReturnUrl: "https://logictic.site/payment/success"
-      SePay__CancelUrl: "https://logictic.site/payment/cancel"
-
-      GoshipSettings__ApiUrl: "https://sandbox.goship.io/api/v2/"
-      GoshipSettings__ClientId: "305"
-      GoshipSettings__ClientSecret: "${GOSHIP_CLIENT_SECRET:-}"
-      GoshipSettings__Token: "${GOSHIP_TOKEN:-}"
-
-      # Bí mật để xác thực webhook GoShip. Bỏ trống thì webhook vẫn nhận như trước (giữ tương
-      # thích), khai vào là bắt buộc khớp — khai cùng giá trị này bên trang quản trị GoShip.
-      GoshipSettings__WebhookSecret: "${GOSHIP_WEBHOOK_SECRET:-}"
-
-      # Cho phép đặt tay trạng thái vận đơn để chạy thử luồng giao hàng. Sandbox GoShip giữ đơn
-      # ở "Đơn mới" và không bắn webhook nên không chạy hết chặng bằng dữ liệu thật được.
-      # Mặc định tắt — chỉ bật ở môi trường thử.
-      GoshipSettings__AllowStatusSimulation: "${GOSHIP_ALLOW_STATUS_SIMULATION:-false}"
-
-      # Người trực kho cho shipper liên hệ khi tới lấy hàng. Địa chỉ thì hệ thống tự lấy từ kho
-      # đích của lô, chỉ số điện thoại là thứ bảng WAREHOUSES chưa có cột để lưu.
-      GoshipSettings__Pickup__Phone: "${GOSHIP_PICKUP_PHONE:-}"
-
-      # Số ngày miễn phí lưu kho và số ngày ân hạn nối sau đó. Quá tổng hai mốc mới tính tiền.
-      PricingSettings__StorageFreeDays: "7"
-      PricingSettings__StorageGraceDays: "3"
-
-      OpenRouterSettings__ApiKey: "${OPENROUTER_API_KEY:-}"
-      OpenRouterSettings__Model: "google/gemini-2.0-flash-exp:free"
-      OpenRouterSettings__BaseUrl: "https://openrouter.ai/api/v1/chat/completions"
-
-networks:
-  sqlnet:
-    external: true
-    name: sqlserver-docker_default
+  # ---------------------------------------------------------------------
+  # Cloudflare Tunnel connector (tunnel "vcl-backend").
+  # secret CF_TUNNEL_TOKEN; hostname api-vcl.vnlogistic.click → http://vcl-api:8080
+  # Cloudflare (Networking → Tunnels → Routes).
+  # ---------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --protocol http2 run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required (GitHub secret CF_TUNNEL_TOKEN)}
+    networks:
+      - vcl-net
+    depends_on:
+      - vcl-api
