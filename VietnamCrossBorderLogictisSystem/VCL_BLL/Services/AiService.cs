@@ -284,7 +284,7 @@ public class AiService : IAiService
     {
         var apiKey = _configuration["OpenRouterSettings:ApiKey"] 
             ?? Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
-        var model = _configuration["OpenRouterSettings:Model"] ?? "google/gemini-2.0-flash-exp:free";
+        var model = _configuration["OpenRouterSettings:Model"] ?? "google/gemini-2.0-flash-001";
         var baseUrl = _configuration["OpenRouterSettings:BaseUrl"] ?? "https://openrouter.ai/api/v1/chat/completions";
 
         if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_"))
@@ -868,7 +868,7 @@ BẮT BUỘC trả về đúng định dạng JSON theo cấu trúc sau:
     {
         var apiKey = _configuration["OpenRouterSettings:ApiKey"] 
             ?? Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
-        var model = _configuration["OpenRouterSettings:Model"] ?? "google/gemini-2.0-flash-exp:free";
+        var model = _configuration["OpenRouterSettings:Model"] ?? "google/gemini-2.0-flash-001";
         var baseUrl = _configuration["OpenRouterSettings:BaseUrl"] ?? "https://openrouter.ai/api/v1/chat/completions";
 
         if (string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_"))
