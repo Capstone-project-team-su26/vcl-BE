@@ -334,6 +334,10 @@ namespace VCL_BLL.Services
                 {
                     Id = customerId,
                     UserId = userId,
+                    // Trang hồ sơ khách đọc họ tên/email từ CUSTOMERS chứ không phải USERS,
+                    // nên phải chép sang y như luồng đăng ký thường.
+                    FullName = user.FullName,
+                    Email = email,
                     CustomerCode = $"CUS-{now:yyyyMMddHHmmss}-{customerId.ToString("N")[..6].ToUpperInvariant()}",
                     CustomerType = "Individual",
                     Status = "Active",
@@ -347,6 +351,25 @@ namespace VCL_BLL.Services
                 if (string.Equals(user.Status, "Locked", StringComparison.OrdinalIgnoreCase))
                     throw new UnauthorizedAccessException("Tài khoản của bạn đã bị khóa.");
 
+                var customer = (await customerRepo.GetAllAsync()).FirstOrDefault(c => c.UserId == user.Id);
+                var customerChanged = false;
+
+                // Tài khoản tạo qua Google trước khi sửa lỗi có hồ sơ khách thiếu họ tên/email
+                // (chỉ USERS có), nên trang hồ sơ hiện trống. Chép bù từ USERS ngay lần đăng nhập này.
+                if (customer != null)
+                {
+                    if (string.IsNullOrWhiteSpace(customer.FullName) && !string.IsNullOrWhiteSpace(user.FullName))
+                    {
+                        customer.FullName = user.FullName;
+                        customerChanged = true;
+                    }
+                    if (string.IsNullOrWhiteSpace(customer.Email))
+                    {
+                        customer.Email = user.Email;
+                        customerChanged = true;
+                    }
+                }
+
                 // Tài khoản đăng ký bằng mật khẩu nhưng chưa bấm link xác minh, nay đăng nhập
                 // bằng chính email đó qua Google: Google đã xác minh nên mở khoá luôn, không bắt
                 // quay lại nhập OTP nữa.
@@ -359,13 +382,20 @@ namespace VCL_BLL.Services
                     user.Status = "Active";
                     userRepo.Update(user);
 
-                    var customer = (await customerRepo.GetAllAsync()).FirstOrDefault(c => c.UserId == user.Id);
                     if (customer != null)
                     {
                         customer.Status = "Active";
-                        customerRepo.Update(customer);
+                        customerChanged = true;
                     }
+                }
 
+                if (customerChanged)
+                {
+                    customerRepo.Update(customer!);
+                }
+
+                if (needsActivation || customerChanged)
+                {
                     await _unitOfWork.SaveChangesAsync();
                 }
             }
