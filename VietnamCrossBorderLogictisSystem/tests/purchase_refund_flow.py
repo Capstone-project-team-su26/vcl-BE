@@ -347,7 +347,7 @@ def scenario_dispose(supplier_id):
     check("D: phát hành đợt cuối không thu thuế phần hàng huỷ",
           s in (200, 201) and abs(fin.get("finalAmount", -1) - pv["estimatedFinalAmount"]) < 1
           and fin.get("freightAdjustmentDelta") == pv["freightAdjustment"] + pv["vatAdjustment"] - 16000, (fin, pv))
-    s, r = call("POST", f"/api/orders/{order_id}/payments/final", "sale", {"paymentMethod": "SEPAY"})
+    s, r = call("POST", f"/api/orders/{order_id}/payments/final", "sale", {"paymentMethod": "SEPAY", "reissue": True})
     check("D: phát hành lại không trừ thuế lần hai",
           s in (200, 201) and data(r).get("freightAdjustmentDelta") == 0
           and abs(data(r).get("finalAmount", -1) - fin.get("finalAmount", 0)) < 1, r)

@@ -8,10 +8,35 @@ namespace VCL_BLL.DTOs
         public Guid Id { get; set; }
         public string ConfigCode { get; set; } = string.Empty;
         public string ConfigName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Tên tiếng Việt để hiện cho người dùng, cùng cách gọi với web khách
+        /// (SMALL/MEDIUM/LARGE/CUSTOM → "Thùng cỡ nhỏ/vừa/lớn", "Thùng tùy chỉnh").
+        /// Mã khác thì dùng tên Admin đặt (ConfigName).
+        /// </summary>
+        public string DisplayName => GetDisplayName(ConfigCode, ConfigName);
+
         public decimal Length { get; set; }
         public decimal Width { get; set; }
         public decimal Height { get; set; }
         public decimal MaxWeight { get; set; }
+
+        public static string GetDisplayName(string? configCode, string? configName)
+        {
+            switch ((configCode ?? string.Empty).Trim().ToUpperInvariant())
+            {
+                case "SMALL": return "Thùng cỡ nhỏ";
+                case "MEDIUM": return "Thùng cỡ vừa";
+                case "LARGE": return "Thùng cỡ lớn";
+                case "CUSTOM": return "Thùng tùy chỉnh";
+            }
+
+            var name = configName?.Trim();
+            if (!string.IsNullOrEmpty(name)) return name;
+
+            var code = configCode?.Trim();
+            return string.IsNullOrEmpty(code) ? "Thùng" : code;
+        }
 
         /// <summary>
         /// Thùng tiêu chuẩn (S/M/L): phí cố định cho 1 thùng.

@@ -313,6 +313,10 @@ namespace VCL_BLL.Services
             // Luật nghiệp vụ kiểm trước khi đụng tới bên giao hàng.
             await EnsureRedeliveryFeePaidAsync(delivery);
 
+            // Phí lưu kho VN cũng là luật nghiệp vụ: trước đây kiểm SAU bước đọc token GoShip nên
+            // môi trường chưa nạp token báo lỗi cấu hình thay vì "khách chưa trả phí lưu kho".
+            await EnsureStorageFeeSettledAsync(delivery);
+
             var items = (await _unitOfWork.Repository<DeliveryRequestItem>().GetAllAsync())
                 .Where(i => i.DeliveryRequestId == delivery.Id)
                 .ToList();
@@ -329,8 +333,6 @@ namespace VCL_BLL.Services
                 throw new InvalidOperationException(
                     "Chưa cấu hình GoShip Access Token trong hệ thống. Nạp GoshipSettings:Token rồi thử lại.");
             }
-
-            await EnsureStorageFeeSettledAsync(delivery);
 
             var parcels = (await _unitOfWork.Repository<Parcel>().GetAllAsync())
                 .Where(p => parcelIds.Contains(p.Id))
@@ -1254,8 +1256,10 @@ namespace VCL_BLL.Services
                     PackageCode = parcel?.PackageCode ?? string.Empty,
                     PackageStatus = parcel?.PackageStatus ?? string.Empty,
                     PickSource = item.PickSource,
-                    CustomerIntent = order?.DefaultDestinationHandling,
-                    CustomerIntentText = DescribeCustomerIntent(order?.DefaultDestinationHandling),
+                    // Ý khách theo từng kiện, lùi về lựa chọn lúc đặt đơn (xem WarehouseInboundService).
+                    CustomerIntent = DestinationHandlings.Normalize(parcel?.DestinationHandling) ?? order?.DefaultDestinationHandling,
+                    CustomerIntentText = DescribeCustomerIntent(
+                        DestinationHandlings.Normalize(parcel?.DestinationHandling) ?? order?.DefaultDestinationHandling),
                     BinId = parcel?.BinId,
                     BinCode = bin?.BinCode
                 });

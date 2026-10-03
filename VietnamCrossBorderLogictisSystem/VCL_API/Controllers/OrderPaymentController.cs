@@ -1,6 +1,7 @@
 using VCL_API.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -119,6 +120,10 @@ namespace VCL_API.Controllers
         /// Sale tạo thanh toán cuối (phần còn lại + phí phát sinh) cho đơn ký gửi
         /// khi kiện hàng đã về đến kho đích (RECEIVED_AT_DESTINATION).
         /// </summary>
+        /// <remarks>
+        /// Chốt một lần: đơn đã có đợt cuối chờ khách trả (hoặc đã trả xong) trả 409. Muốn tính lại
+        /// phí lưu kho cho đợt cuối đang chờ thì gửi <c>reissue: true</c>.
+        /// </remarks>
         [HttpPost("api/orders/{orderId}/payments/final")]
         public async Task<IActionResult> CreateFinalPayment(Guid orderId, [FromBody] CreateFinalPaymentRequest request)
         {
@@ -136,6 +141,17 @@ namespace VCL_API.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 return StatusCode(403, new { message = this.UserError(ex) });
+            }
+            catch (ConflictException ex)
+            {
+                // Đơn đã chốt phí cuối / đã tất toán: bấm lại không tạo thêm khoản thu nào.
+                return Conflict(new { message = ex.Message });
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Hai lần bấm "Chốt" tới cùng lúc: lần tới sau vấp row_version của đơn ngay ở bước khoá
+                // dòng đơn (lần trước đã ghi xong) — báo 409 thay vì lỗi hệ thống 500.
+                return Conflict(new { message = "Đơn này vừa được chốt phí cuối ở một thao tác khác, đang chờ khách thanh toán — không chốt lại lần nữa. Vui lòng tải lại danh sách." });
             }
             catch (NotFoundException ex)
             {

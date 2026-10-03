@@ -76,6 +76,12 @@ namespace VCL_BLL.DTOs
     {
         public Guid Id { get; set; }
         public string ProductName { get; set; } = string.Empty;
+
+        /// <summary>Giá trị cột loại hàng của dòng (thường là Id PRODUCT_TYPES, đơn cũ là tên).</summary>
+        public string? ProductType { get; set; }
+
+        /// <summary>Tên loại hàng tra từ PRODUCT_TYPES (cột ProductType có thể là Id). Null khi chưa phân loại.</summary>
+        public string? ProductTypeName { get; set; }
         public int? Quantity { get; set; }
         public decimal? Weight { get; set; }
         public decimal? Length { get; set; }

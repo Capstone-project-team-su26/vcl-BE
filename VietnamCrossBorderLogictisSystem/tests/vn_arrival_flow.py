@@ -270,6 +270,8 @@ def main():
           final["freightAdjustmentDelta"] == pv["freightAdjustment"] + pv["vatAdjustment"], (final, pv))
     check("Số tiền đợt cuối khớp xem trước", abs(final["finalAmount"] - pv["estimatedFinalAmount"]) < 1, (final, pv))
     s, r = call("POST", f"/api/orders/{order_id}/payments/final", "sale", {"paymentMethod": "SEPAY"})
+    check("Bấm chốt lần hai (không reissue) bị chặn 409", s == 409 and "đã chốt phí cuối" in r.get("message", ""), r)
+    s, r = call("POST", f"/api/orders/{order_id}/payments/final", "sale", {"paymentMethod": "SEPAY", "reissue": True})
     check("Phát hành lại không cộng dồn điều chỉnh",
           s == 200 and r["data"]["freightAdjustmentDelta"] == 0 and abs(r["data"]["finalAmount"] - final["finalAmount"]) < 1, r)
     final = r["data"]

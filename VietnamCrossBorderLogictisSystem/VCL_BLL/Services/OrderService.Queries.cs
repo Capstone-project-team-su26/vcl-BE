@@ -42,6 +42,10 @@ namespace VCL_BLL.Services
             // Cùng nguồn với báo giá / check-in: rule VOLUMETRIC_DIVISOR trước, cấu hình sau.
             var divisor = await VolumetricDivisorResolver.ResolveAsync(_unitOfWork, _configuration);
 
+            // ProductType lưu Id loại hàng — tra tên một lần cho cả đơn để FE không phải in GUID.
+            var productTypeNames = await ProductTypeNames.LoadAsync(
+                _unitOfWork, allItems.Where(i => i.OrderId == orderId).Select(i => i.ProductType));
+
             var items = allItems
                 .Where(i => i.OrderId == orderId)
                 .Select(i =>
@@ -79,6 +83,7 @@ namespace VCL_BLL.Services
                         Id = i.Id,
                         ProductName = i.ProductName,
                         ProductType = i.ProductType,
+                        ProductTypeName = ProductTypeNames.Resolve(productTypeNames, i.ProductType),
                         Quantity = i.Quantity,
                         Weight = i.Weight,
                         Width = i.Width,

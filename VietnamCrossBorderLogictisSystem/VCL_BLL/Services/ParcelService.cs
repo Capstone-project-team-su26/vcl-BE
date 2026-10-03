@@ -354,10 +354,12 @@ namespace VCL_BLL.Services
                 };
             }).ToList();
 
+            var declaredTypeNames = await ProductTypeNames.LoadAsync(_unitOfWork, orderItems.Select(i => i.ProductType));
             var declaredItems = orderItems.Select(item => new DeclaredItemDto
             {
                 ProductName = item.ProductName ?? string.Empty,
                 ProductType = item.ProductType ?? string.Empty,
+                ProductTypeName = ProductTypeNames.Resolve(declaredTypeNames, item.ProductType),
                 Quantity = item.Quantity ?? 0,
                 Weight = item.Weight,
                 Length = item.Length,
@@ -618,6 +620,8 @@ namespace VCL_BLL.Services
                 ? await ItemServiceRules.LoadDtosAsync(_unitOfWork, new[] { parcelOrderItem.Id })
                 : new Dictionary<Guid, List<ItemServiceDto>>();
 
+            var productTypeNames = await ProductTypeNames.LoadAsync(_unitOfWork, new[] { parcelOrderItem?.ProductType });
+
             // 4. Map response
             return new ParcelDetailResponse
             {
@@ -632,6 +636,7 @@ namespace VCL_BLL.Services
                 OrderItemId = parcel.OrderItemId,
                 ProductName = parcelOrderItem?.ProductName ?? string.Empty,
                 ProductType = parcelOrderItem?.ProductType ?? string.Empty,
+                ProductTypeName = ProductTypeNames.Resolve(productTypeNames, parcelOrderItem?.ProductType),
                 Quantity = parcelOrderItem?.Quantity ?? 0,
                 DeclaredWeight = parcelOrderItem?.Weight,
                 ReferenceUrls = SplitReferenceUrls(parcelOrderItem?.ReferenceUrl),
@@ -757,6 +762,11 @@ namespace VCL_BLL.Services
 
             var allWrns = await _unitOfWork.Repository<WarehouseReceivingNote>().GetAllAsync();
 
+            // Tên loại hàng của các kiện trong danh sách — tra một lần, không tra theo từng kiện.
+            var productTypeNames = await ProductTypeNames.LoadAsync(_unitOfWork,
+                query.Where(p => p.OrderItemId.HasValue && orderItemMap.ContainsKey(p.OrderItemId.Value))
+                    .Select(p => orderItemMap[p.OrderItemId!.Value].ProductType));
+
             // Map all matching parcels first to allow region filtering
             var allMappedItems = query.ToList().Select(p =>
             {
@@ -812,6 +822,7 @@ namespace VCL_BLL.Services
                     OrderItemId = p.OrderItemId,
                     ProductName = orderItem?.ProductName ?? string.Empty,
                     ProductType = orderItem?.ProductType ?? string.Empty,
+                    ProductTypeName = ProductTypeNames.Resolve(productTypeNames, orderItem?.ProductType),
                     Quantity = orderItem?.Quantity ?? 0,
                     ReferenceUrls = SplitReferenceUrls(orderItem?.ReferenceUrl),
                     Id = p.Id,

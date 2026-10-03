@@ -332,6 +332,39 @@ namespace VCL_BLL.Services
             if (order == null)
                 throw new NotFoundException($"Không tìm thấy đơn hàng với ID: {orderId}");
 
+            // KHOÁ DÒNG ĐƠN trước khi đọc các khoản thu. Request ghi chạy trong một transaction
+            // (DbTransactionFilter): ghi đè dòng đơn ngay đầu là giữ khoá ghi tới lúc commit, nên hai
+            // lần bấm "Chốt" tới cùng lúc đi lần lượt — lần sau đọc thấy đợt cuối lần trước vừa phát
+            // hành và bị chặn ở dưới, thay vì cả hai cùng thấy "chưa có" rồi cùng tạo đợt cuối. Đơn có
+            // row_version: lần tới sau ghi vào bản đơn đã cũ nên ném DbUpdateConcurrencyException ngay
+            // tại đây (controller trả 409), không đi tới bước tạo khoản thu.
+            orderRepo.Update(order);
+            await _unitOfWork.SaveChangesAsync();
+
+            var orderLabel = string.IsNullOrWhiteSpace(order.ConsignmentCode) ? "này" : order.ConsignmentCode;
+
+            // Lấy hóa đơn của đơn (qua báo giá của đơn)
+            var (invoice, allOrderPayments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
+
+            // CHỐT MỘT LẦN. Đơn đã trả xong đợt cuối → không chốt lại. Đơn đã có đợt cuối chờ khách
+            // trả → mặc định cũng chặn (bấm đúp / bấm lại trên hàng chờ không được âm thầm huỷ mã QR
+            // khách đang cầm); muốn tính lại phí lưu kho thì gửi Reissue = true.
+            if (allOrderPayments.Any(p => IsInstallment(p, "FINAL_PAYMENT") && IsPaid(p)))
+                throw new ConflictException($"Đơn {orderLabel} đã tất toán xong, không chốt phí cuối lại được.");
+
+            // Khách đã báo chuyển khoản đợt cuối, kế toán đang đối soát: phát hành lại lúc này là đòi
+            // khách trả hai lần — chặn cả khi Reissue.
+            if (allOrderPayments.Any(p => IsInstallment(p, "FINAL_PAYMENT")
+                                          && string.Equals(p.PaymentStatus, PendingReconciliation, StringComparison.OrdinalIgnoreCase)))
+                throw new ConflictException(
+                    $"Đơn {orderLabel} có khoản tất toán khách đã báo chuyển, đang chờ đối soát — không chốt lại được.");
+
+            var issuedFinal = allOrderPayments.FirstOrDefault(p => IsInstallment(p, "FINAL_PAYMENT")
+                && string.Equals(p.PaymentStatus, "PENDING", StringComparison.OrdinalIgnoreCase));
+            if (issuedFinal != null && !request.Reissue)
+                throw new ConflictException(
+                    $"Đơn {orderLabel} đã chốt phí cuối ({issuedFinal.Amount ?? 0m:#,##0}đ), đang chờ khách thanh toán — không chốt lại lần nữa.");
+
             // Điều kiện trigger: đơn phải có kiện đã về kho đích. Kiện đi qua ba mốc và mốc nào
             // cũng là "đã về tới VN", nên phải nhận cả ba, nếu không thì đi đúng quy trình lại
             // không tạo được thanh toán cuối:
@@ -353,8 +386,6 @@ namespace VCL_BLL.Services
             // tiền cho kiện đang có sự cố chưa rõ kết quả.
             await _vnSettlementService.EnsureCanIssueAsync(orderId);
 
-            // Lấy hóa đơn của đơn (qua báo giá của đơn)
-            var (invoice, allOrderPayments) = await GetOrderInvoiceAndPaymentsAsync(orderId);
             if (invoice == null)
                 throw new ArgumentException("Đơn hàng chưa có hóa đơn/thanh toán cọc.");
 
@@ -366,12 +397,9 @@ namespace VCL_BLL.Services
             if (!hasPaidDeposit)
                 throw new ArgumentException("Chưa thể tạo thanh toán cuối: đơn chưa thanh toán cọc thành công.");
 
-            // Không cho trùng đợt cuối
-            if (allOrderPayments.Any(p => IsInstallment(p, "FINAL_PAYMENT") && IsPaid(p)))
-                throw new ArgumentException("Đơn hàng đã hoàn tất thanh toán cuối.");
-            // Phí lưu kho chạy theo ngày nên số tiền thay đổi theo thời điểm chốt. Còn đợt cuối
-            // nào đang chờ thì huỷ đi rồi phát hành lại, đúng như quy tắc "huỷ giao dịch cũ
-            // tính lại" — khách không bao giờ phải trả một con số đã lỗi thời.
+            // Phí lưu kho chạy theo ngày nên số tiền thay đổi theo thời điểm chốt. Sale chủ động phát
+            // hành lại (Reissue) thì huỷ đợt cuối đang chờ rồi phát hành mới, đúng quy tắc "huỷ giao
+            // dịch cũ tính lại" — khách không bao giờ phải trả một con số đã lỗi thời.
             var paymentRepoForReissue = _unitOfWork.Repository<Payment>();
             var stalePending = allOrderPayments
                 .Where(p => IsInstallment(p, "FINAL_PAYMENT")

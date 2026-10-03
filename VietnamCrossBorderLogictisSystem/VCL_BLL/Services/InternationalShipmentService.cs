@@ -602,8 +602,10 @@ namespace VCL_BLL.Services
                         CustomerName = customer?.FullName,
                         PackageStatus = parcel.PackageStatus,
                         DestinationHandling = parcel.DestinationHandling,
-                        CustomerIntent = order?.DefaultDestinationHandling,
-                        CustomerIntentText = DescribeHandling(order?.DefaultDestinationHandling),
+                        // Ý khách theo từng kiện (khách chọn trước khi lô mở), lùi về lựa chọn lúc đặt đơn.
+                        CustomerIntent = DestinationHandlings.Normalize(parcel.DestinationHandling) ?? order?.DefaultDestinationHandling,
+                        CustomerIntentText = DescribeHandling(
+                            DestinationHandlings.Normalize(parcel.DestinationHandling) ?? order?.DefaultDestinationHandling),
                         ArrivalPhotos = VnArrivalPhotos.Of(db.ArrivalPhotosByParcel, parcel.Id)
                     });
                 }
@@ -640,8 +642,10 @@ namespace VCL_BLL.Services
                     CustomerName = customer?.FullName,
                     PackageStatus = parcel.PackageStatus,
                     DestinationHandling = parcel.DestinationHandling,
-                    CustomerIntent = order?.DefaultDestinationHandling,
-                    CustomerIntentText = DescribeHandling(order?.DefaultDestinationHandling),
+                    // Ý khách theo từng kiện (khách chọn trước khi lô mở), lùi về lựa chọn lúc đặt đơn.
+                    CustomerIntent = DestinationHandlings.Normalize(parcel.DestinationHandling) ?? order?.DefaultDestinationHandling,
+                    CustomerIntentText = DescribeHandling(
+                        DestinationHandlings.Normalize(parcel.DestinationHandling) ?? order?.DefaultDestinationHandling),
                     ArrivalPhotos = VnArrivalPhotos.Of(db.ArrivalPhotosByParcel, parcel.Id)
                 });
             }
@@ -1283,8 +1287,8 @@ namespace VCL_BLL.Services
                         PackageCode = p.PackageCode ?? string.Empty,
                         PackageStatus = p.PackageStatus ?? string.Empty,
                         DestinationHandling = p.DestinationHandling,
-                        CustomerIntent = intent,
-                        CustomerIntentText = DescribeHandling(intent),
+                        CustomerIntent = DestinationHandlings.Normalize(p.DestinationHandling) ?? intent,
+                        CustomerIntentText = DescribeHandling(DestinationHandlings.Normalize(p.DestinationHandling) ?? intent),
                         IncidentCode = openedIncidents.Where(x => x.Parcel.Id == p.Id).Select(x => x.Incident.IncidentCode).FirstOrDefault(),
                         IncidentType = openedIncidents.Where(x => x.Parcel.Id == p.Id).Select(x => x.Incident.IncidentType).FirstOrDefault(),
                         Inspection = inspectionsJustSaved.TryGetValue(p.Id, out var ins)

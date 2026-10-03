@@ -681,8 +681,12 @@ namespace VCL_BLL.Services
                     OrderId = order?.Id,
                     OrderCode = order?.ConsignmentCode,
                     CustomerName = customer?.FullName,
-                    CustomerIntent = order?.DefaultDestinationHandling,
-                    CustomerIntentText = DescribeCustomerIntent(order?.DefaultDestinationHandling),
+                    // Ý khách theo TỪNG KIỆN (khách đổi ở PUT destination-handling), lùi về lựa chọn lúc
+                    // đặt đơn. Trước đây chỉ lấy lựa chọn lúc đặt đơn nên kiện khách đã đổi sang gửi kho
+                    // vẫn hiện "Muốn giao ngay" ở màn OM duyệt — OM tưởng kho lập nhầm.
+                    CustomerIntent = DestinationHandlings.Normalize(parcel.DestinationHandling) ?? order?.DefaultDestinationHandling,
+                    CustomerIntentText = DescribeCustomerIntent(
+                        DestinationHandlings.Normalize(parcel.DestinationHandling) ?? order?.DefaultDestinationHandling),
                     BinId = parcel.BinId,
                     BinCode = bin?.BinCode
                 });

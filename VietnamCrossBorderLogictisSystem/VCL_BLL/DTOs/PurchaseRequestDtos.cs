@@ -104,6 +104,8 @@ namespace VCL_BLL.DTOs
         public string ProductLink { get; set; } = string.Empty;
         public string? SourceWebsite { get; set; }
         public string? ProductType { get; set; }
+        /// <summary>Tên loại hàng tra từ PRODUCT_TYPES (cột ProductType có thể là Id). Null khi chưa phân loại.</summary>
+        public string? ProductTypeName { get; set; }
         public string? ProductName { get; set; }
         public int Quantity { get; set; }
         public string? Attributes { get; set; }
