@@ -78,6 +78,7 @@ namespace VCL_BLL.Services
             // Map cấu hình thùng để trả kèm kích thước/phí trong response (FE hiển thị ngay sau khi tạo đơn)
             var packageConfigMap = (await _unitOfWork.Repository<PackageConfiguration>().GetAllAsync())
                 .ToDictionary(c => c.Id, c => c);
+            var productTypeNames = await ProductTypeNames.LoadAsync(_unitOfWork, orderItems.Select(i => i.ProductType));
             var servicesByItem = itemServices.ToDictionary(
                 kv => kv.Key,
                 kv => kv.Value.Select(ItemServiceRules.ToDto).ToList());
@@ -100,6 +101,8 @@ namespace VCL_BLL.Services
                 {
                     Id = item.Id,
                     ProductName = item.ProductName ?? string.Empty,
+                    ProductType = item.ProductType,
+                    ProductTypeName = ProductTypeNames.Resolve(productTypeNames, item.ProductType),
                     Weight = item.Weight,
                     Length = item.Length,
                     Width = item.Width,

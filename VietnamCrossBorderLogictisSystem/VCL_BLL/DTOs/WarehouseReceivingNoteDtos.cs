@@ -24,6 +24,8 @@ namespace VCL_BLL.DTOs
 
         public string ProductName { get; set; } = string.Empty;
         public string ProductType { get; set; } = string.Empty;
+        /// <summary>Tên loại hàng tra từ PRODUCT_TYPES (cột ProductType có thể là Id). Null khi chưa phân loại.</summary>
+        public string? ProductTypeName { get; set; }
         public int Quantity { get; set; }
 
         /// <summary>Cân nặng khách khai, để kho biết mình đang lệch bao nhiêu so với cái gì.</summary>
@@ -162,6 +164,8 @@ namespace VCL_BLL.DTOs
         public Guid? OrderItemId { get; set; }
         public string ProductName { get; set; } = string.Empty;
         public string ProductType { get; set; } = string.Empty;
+        /// <summary>Tên loại hàng tra từ PRODUCT_TYPES (cột ProductType có thể là Id). Null khi chưa phân loại.</summary>
+        public string? ProductTypeName { get; set; }
         public int DeclaredQuantity { get; set; }
         public int ActualQuantity { get; set; }
 

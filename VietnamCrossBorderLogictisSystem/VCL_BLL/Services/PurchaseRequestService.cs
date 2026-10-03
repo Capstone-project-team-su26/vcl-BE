@@ -260,6 +260,7 @@ namespace VCL_BLL.Services
             // 8. Tạo các sản phẩm liên kết
             var itemRepo = _unitOfWork.Repository<PurchaseRequestItem>();
             var resultItems = new List<PurchaseRequestItemResponseDto>();
+            var createdTypeNames = await ProductTypeNames.LoadAsync(_unitOfWork, canonicalProductTypes.Values);
 
             foreach (var item in request.Items)
             {
@@ -286,6 +287,7 @@ namespace VCL_BLL.Services
                     ProductLink = requestItem.ProductLink,
                     SourceWebsite = requestItem.SourceWebsite,
                     ProductType = requestItem.ProductType,
+                    ProductTypeName = ProductTypeNames.Resolve(createdTypeNames, requestItem.ProductType),
                     ProductName = requestItem.ProductName,
                     Quantity = requestItem.Quantity,
                     Attributes = requestItem.Attributes,
@@ -972,6 +974,7 @@ namespace VCL_BLL.Services
             // 4. Lấy danh sách sản phẩm của yêu cầu
             var allItems = await _unitOfWork.Repository<PurchaseRequestItem>().GetAllAsync();
             var relatedItems = allItems.Where(i => i.PurchaseRequestId == requestId).ToList();
+            var itemTypeNames = await ProductTypeNames.LoadAsync(_unitOfWork, relatedItems.Select(i => i.ProductType));
 
             var itemDtos = relatedItems.Select(i => {
                 var urls = SplitImageUrls(i.ImageUrl);
@@ -981,6 +984,7 @@ namespace VCL_BLL.Services
                     ProductLink = i.ProductLink ?? string.Empty,
                     SourceWebsite = i.SourceWebsite,
                     ProductType = i.ProductType,
+                    ProductTypeName = ProductTypeNames.Resolve(itemTypeNames, i.ProductType),
                     ProductName = i.ProductName,
                     Quantity = i.Quantity,
                     Attributes = i.Attributes,

@@ -112,6 +112,12 @@ namespace VCL_BLL.Services
                 var isSettled = settledOrderIds.Contains(order.Id);
                 if (isSettled != settled) continue;
 
+                // Sale đã chốt phí cuối, đơn đang chờ KHÁCH trả: với nhân viên đó không còn là việc
+                // của hàng chờ tất toán (khớp badge "Chờ tất toán" bên admin) — dòng rời hàng chờ
+                // ngay sau khi chốt. Khách vẫn thấy dòng này kèm số tiền + link trả: đó chính là
+                // danh sách "đơn chờ tôi tất toán" bên màn khách.
+                if (!settled && isStaff && pendingPayments.ContainsKey(order.Id)) continue;
+
                 // Đơn đã lập phiếu giao thì việc của Sale coi như xong, không nằm hàng đợi nữa.
                 if (settled && releasedOrderIds.Contains(order.Id)) continue;
 

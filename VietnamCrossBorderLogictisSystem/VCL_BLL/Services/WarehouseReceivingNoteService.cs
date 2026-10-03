@@ -1098,28 +1098,25 @@ namespace VCL_BLL.Services
         /// </remarks>
         private async Task<List<WarehouseReceivingNoteExpectedItemDto>> BuildExpectedItemsAsync(Guid orderId)
         {
-            var productTypeNames = (await _unitOfWork.Repository<ProductType>().GetAllAsync())
-                .ToDictionary(t => t.Id.ToString(), t => t.Name ?? string.Empty);
-
             var orderItems = (await _unitOfWork.Repository<OrderItem>().GetAllAsync())
                 .Where(i => i.OrderId == orderId)
                 .ToList();
+            var productTypeNames = await ProductTypeNames.LoadAsync(_unitOfWork, orderItems.Select(i => i.ProductType));
             var configs = await ItemServiceRules.LoadPackageConfigurationsAsync(_unitOfWork);
             var servicesByItem = await ItemServiceRules.LoadDtosAsync(_unitOfWork, orderItems.Select(i => i.Id));
 
             return orderItems
                 .Select(i =>
                 {
-                    var rawType = i.ProductType ?? string.Empty;
-                    var typeName = productTypeNames.TryGetValue(rawType, out var name) && !string.IsNullOrWhiteSpace(name)
-                        ? name
-                        : rawType;
+                    var typeName = ProductTypeNames.Resolve(productTypeNames, i.ProductType);
 
                     return new WarehouseReceivingNoteExpectedItemDto
                     {
                         OrderItemId = i.Id,
                         ProductName = i.ProductName ?? string.Empty,
-                        ProductType = typeName,
+                        // Giữ hành vi cũ của field này (đã là tên), Id không tra được thì để trống thay vì GUID.
+                        ProductType = typeName ?? string.Empty,
+                        ProductTypeName = typeName,
                         Quantity = i.Quantity ?? 0,
                         Weight = i.Weight,
                         DeclaredValue = i.DeclaredValue,
@@ -1178,6 +1175,7 @@ namespace VCL_BLL.Services
             var noteLines = (await _unitOfWork.Repository<WarehouseReceivingNoteItem>().GetAllAsync())
                 .Where(i => i.ReceivingNoteId == note.Id)
                 .ToList();
+            var noteTypeNames = await ProductTypeNames.LoadAsync(_unitOfWork, noteLines.Select(i => i.ProductType));
 
             var items = noteLines
                 .Select(i => new WarehouseReceivingNoteItemDto
@@ -1186,6 +1184,7 @@ namespace VCL_BLL.Services
                     OrderItemId = i.OrderItemId,
                     ProductName = i.ProductName ?? string.Empty,
                     ProductType = i.ProductType ?? string.Empty,
+                    ProductTypeName = ProductTypeNames.Resolve(noteTypeNames, i.ProductType),
                     DeclaredQuantity = i.DeclaredQuantity,
                     ActualQuantity = i.ActualQuantity,
                     QuantityDifference = i.QuantityDifference,

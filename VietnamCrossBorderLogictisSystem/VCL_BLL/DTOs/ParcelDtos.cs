@@ -214,6 +214,8 @@ namespace VCL_BLL.DTOs
     {
         public string ProductName { get; set; } = string.Empty;
         public string ProductType { get; set; } = string.Empty;
+        /// <summary>Tên loại hàng tra từ PRODUCT_TYPES (cột ProductType có thể là Id). Null khi chưa phân loại.</summary>
+        public string? ProductTypeName { get; set; }
         public int Quantity { get; set; }
         public decimal? Weight { get; set; }
         public decimal? Length { get; set; }
@@ -260,6 +262,8 @@ namespace VCL_BLL.DTOs
         public string ProductName { get; set; } = string.Empty;
 
         public string ProductType { get; set; } = string.Empty;
+        /// <summary>Tên loại hàng tra từ PRODUCT_TYPES (cột ProductType có thể là Id). Null khi chưa phân loại.</summary>
+        public string? ProductTypeName { get; set; }
 
         /// <summary>Số sản phẩm khách khai trong kiện.</summary>
         public int Quantity { get; set; }
@@ -309,6 +313,8 @@ namespace VCL_BLL.DTOs
         public Guid? OrderItemId { get; set; }
         public string ProductName { get; set; } = string.Empty;
         public string ProductType { get; set; } = string.Empty;
+        /// <summary>Tên loại hàng tra từ PRODUCT_TYPES (cột ProductType có thể là Id). Null khi chưa phân loại.</summary>
+        public string? ProductTypeName { get; set; }
         public int Quantity { get; set; }
 
         /// <summary>Cân nặng khách khai cho kiện này, để đối chiếu với số kho cân được.</summary>

@@ -26,6 +26,13 @@ namespace VCL_BLL.DTOs
 
         /// <summary>Phương thức thanh toán: PAYOS hoặc SEPAY. Nếu trống, mặc định dùng PAYOS hoặc theo cấu hình hệ thống.</summary>
         public string? PaymentMethod { get; set; }
+
+        /// <summary>
+        /// Chủ động phát hành LẠI đợt cuối đang chờ khách trả (huỷ mã cũ, tính lại phí lưu kho theo
+        /// ngày hiện tại). Mặc định false: đơn đã có đợt cuối chờ trả thì API trả 409, để bấm đúp /
+        /// bấm lại trên hàng chờ không âm thầm huỷ mã QR khách đang cầm.
+        /// </summary>
+        public bool Reissue { get; set; }
     }
 
     public class CreateFinalPaymentResponse
